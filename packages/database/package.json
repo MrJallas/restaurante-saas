@@ -1,0 +1,18 @@
+{
+  "name": "@restaurant/database",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "create-tenant": "ts-node scripts/create-tenant.ts",
+    "migrate:public": "ts-node scripts/migrate-public.ts"
+  },
+  "dependencies": {
+    "pg": "^8.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/pg": "^8.11.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.4.0"
+  }
+}

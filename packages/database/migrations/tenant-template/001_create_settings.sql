@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  restaurant_name VARCHAR(200) NOT NULL,
+  color_primary VARCHAR(7) NOT NULL DEFAULT '#1a1a2e',
+  color_secondary VARCHAR(7) NOT NULL DEFAULT '#16213e',
+  color_accent VARCHAR(7) NOT NULL DEFAULT '#e94560',
+  font_hero VARCHAR(100) NOT NULL DEFAULT 'Inter',
+  font_body VARCHAR(100) NOT NULL DEFAULT 'Inter',
+  logo_url TEXT,
+  timezone VARCHAR(50) NOT NULL DEFAULT 'America/Sao_Paulo',
+  currency VARCHAR(3) NOT NULL DEFAULT 'BRL',
+  max_ai_messages_per_session INT NOT NULL DEFAULT 20,
+  ai_system_prompt_custom TEXT,
+  psp_provider VARCHAR(50),
+  psp_api_key_encrypted TEXT,
+  psp_pix_key VARCHAR(255),
+  qr_hmac_secret VARCHAR(255) NOT NULL DEFAULT gen_random_uuid()::text,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
