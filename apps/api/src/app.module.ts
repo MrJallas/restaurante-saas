@@ -7,6 +7,8 @@ import { TenantModule } from './modules/tenant/tenant.module';
 import { TenantMiddleware } from './modules/tenant/tenant.middleware';
 import { TableSessionModule } from './modules/table-session/table-session.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { HomeModule } from './modules/home/home.module';
+import { SettingsModule } from './modules/settings/settings.module';
 
 @Module({
   imports: [
@@ -15,6 +17,8 @@ import { CustomersModule } from './modules/customers/customers.module';
     TenantModule,
     TableSessionModule,
     CustomersModule,
+    HomeModule,
+    SettingsModule,
   ],
   controllers: [AppController],
 })

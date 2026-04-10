@@ -2,14 +2,39 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { apiPost } from '../../../../lib/api';
+import { apiPost, apiGet } from '../../../../lib/api';
 import { getRecognitionToken, setRecognitionToken } from '../../../../lib/storage';
 import { SessionProvider } from '../../../../providers/SessionProvider';
 import { useSession } from '../../../../hooks/useSession';
 import { WelcomeModal } from '../../../../components/welcome/WelcomeModal';
+import { AppShell } from '../../../../components/layout/AppShell';
+import { AiMessageHero } from '../../../../components/home/AiMessageHero';
+import { QuickActionButtons } from '../../../../components/home/QuickActionButtons';
+import { HighlightCards } from '../../../../components/home/HighlightCards';
+import { LastVisitBanner } from '../../../../components/home/LastVisitBanner';
 import type { SessionResponseDto, CustomerWelcomeResponseDto } from '@restaurant/shared-types';
 
 type PageState = 'loading' | 'welcome' | 'home' | 'error';
+
+interface HomeData {
+  heroMessage: string;
+  restaurantName: string;
+  tableLabel: string;
+  highlights: { id: string; name: string; shortDescription: string | null; priceCents: number; imageUrl: string | null; badge: string | null }[];
+  quickActions: { id: string; label: string; icon: string; href: string }[];
+  isReturning: boolean;
+  lastVisitSummary: { last_items?: { name: string }[] } | null;
+}
+
+interface PublicSettings {
+  restaurantName: string;
+  colorPrimary: string;
+  colorSecondary: string;
+  colorAccent: string;
+  fontHero: string;
+  fontBody: string;
+  logoUrl: string | null;
+}
 
 function MesaPageInner() {
   const params = useParams<{ slug: string; tableCode: string }>();
@@ -19,13 +44,15 @@ function MesaPageInner() {
   const { setSession, setCustomer, isValid } = useSession();
   const [pageState, setPageState] = useState<PageState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
+  const [homeData, setHomeData] = useState<HomeData | null>(null);
+  const [settings, setSettings] = useState<PublicSettings | null>(null);
+  const [typingDone, setTypingDone] = useState(false);
 
   useEffect(() => {
-    if (isValid) return; // Sessao ja iniciada
+    if (isValid) return;
 
     async function initSession() {
       try {
-        // Extrair HMAC da URL (query params)
         const urlParams = new URLSearchParams(window.location.search);
         const hmac = urlParams.get('hmac') || '';
         const ts = urlParams.get('ts') || '';
@@ -43,7 +70,19 @@ function MesaPageInner() {
           slug,
         });
 
-        // Verifica se tem recognition token
+        // Carrega settings
+        const pubSettings = await apiGet<PublicSettings>(`/${slug}/settings/public`);
+        setSettings(pubSettings);
+
+        // Aplica theme
+        const root = document.documentElement;
+        root.style.setProperty('--color-primary', pubSettings.colorPrimary);
+        root.style.setProperty('--color-secondary', pubSettings.colorSecondary);
+        root.style.setProperty('--color-accent', pubSettings.colorAccent);
+        root.style.setProperty('--font-hero', `'${pubSettings.fontHero}', sans-serif`);
+        root.style.setProperty('--font-body', `'${pubSettings.fontBody}', sans-serif`);
+
+        // Verifica recognition token
         const recognitionToken = getRecognitionToken();
         if (recognitionToken) {
           try {
@@ -51,7 +90,6 @@ function MesaPageInner() {
               `/${slug}/customer/recognize`,
               { recognitionToken },
             );
-
             setRecognitionToken(customer.recognitionToken);
             setCustomer({
               customerId: customer.customerId,
@@ -61,10 +99,15 @@ function MesaPageInner() {
               isReturning: customer.isReturning,
             });
 
+            // Carrega home com customer
+            const home = await apiGet<HomeData>(
+              `/${slug}/home?customerId=${customer.customerId}`,
+            );
+            setHomeData(home);
             setPageState('home');
             return;
           } catch {
-            // Token invalido — mostra modal
+            // Token invalido
           }
         }
 
@@ -79,10 +122,18 @@ function MesaPageInner() {
   }, [slug, tableCode, isValid, setSession, setCustomer]);
 
   const handleWelcomeComplete = useCallback(
-    (_customer: CustomerWelcomeResponseDto | null) => {
-      setPageState('home');
+    async (customer: CustomerWelcomeResponseDto | null) => {
+      try {
+        const cid = customer?.customerId;
+        const url = cid ? `/${slug}/home?customerId=${cid}` : `/${slug}/home`;
+        const home = await apiGet<HomeData>(url);
+        setHomeData(home);
+        setPageState('home');
+      } catch {
+        setPageState('home');
+      }
     },
-    [],
+    [slug],
   );
 
   if (pageState === 'loading') {
@@ -108,19 +159,49 @@ function MesaPageInner() {
       <main className="flex min-h-screen items-center justify-center bg-primary">
         <WelcomeModal
           slug={slug}
-          restaurantName="Restaurante"
+          restaurantName={settings?.restaurantName || 'Restaurante'}
           onComplete={handleWelcomeComplete}
         />
       </main>
     );
   }
 
-  // pageState === 'home'
+  // Home
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center">
-      <h1 className="text-2xl font-hero font-bold">Home do restaurante</h1>
-      <p className="mt-2 text-gray-500">Sprint 2 implementara esta tela.</p>
-    </main>
+    <AppShell
+      slug={slug}
+      restaurantName={settings?.restaurantName || homeData?.restaurantName || 'Restaurante'}
+      logoUrl={settings?.logoUrl || null}
+      tableLabel={homeData?.tableLabel || ''}
+    >
+      <div className="space-y-5">
+        {homeData?.heroMessage && (
+          <AiMessageHero
+            message={homeData.heroMessage}
+            onTypingComplete={() => setTypingDone(true)}
+          />
+        )}
+
+        {homeData?.quickActions && (
+          <QuickActionButtons
+            actions={homeData.quickActions}
+            visible={typingDone}
+            slug={slug}
+          />
+        )}
+
+        {homeData?.isReturning && homeData?.lastVisitSummary?.last_items && (
+          <LastVisitBanner
+            lastItems={homeData.lastVisitSummary.last_items}
+            slug={slug}
+          />
+        )}
+
+        {homeData?.highlights && (
+          <HighlightCards items={homeData.highlights} slug={slug} />
+        )}
+      </div>
+    </AppShell>
   );
 }
 
