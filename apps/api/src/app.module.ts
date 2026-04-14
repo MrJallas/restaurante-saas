@@ -9,6 +9,8 @@ import { TableSessionModule } from './modules/table-session/table-session.module
 import { CustomersModule } from './modules/customers/customers.module';
 import { HomeModule } from './modules/home/home.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { MenuModule } from './modules/menu/menu.module';
+import { OrdersModule } from './modules/orders/orders.module';
 
 @Module({
   imports: [
@@ -19,6 +21,8 @@ import { SettingsModule } from './modules/settings/settings.module';
     CustomersModule,
     HomeModule,
     SettingsModule,
+    MenuModule,
+    OrdersModule,
   ],
   controllers: [AppController],
 })
