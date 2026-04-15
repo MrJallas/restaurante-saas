@@ -14,11 +14,14 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { WebsocketModule } from './modules/websocket/websocket.module';
 import { WaiterCallsModule } from './modules/waiter-calls/waiter-calls.module';
 import { DeliveriesModule } from './modules/deliveries/deliveries.module';
+import { AiModule } from './infra/ai/ai.module';
+import { AssistantModule } from './modules/assistant/assistant.module';
 
 @Module({
   imports: [
     TypeOrmModule.forRoot(databaseConfig),
     RedisModule,
+    AiModule,
     WebsocketModule,
     TenantModule,
     TableSessionModule,
@@ -29,6 +32,7 @@ import { DeliveriesModule } from './modules/deliveries/deliveries.module';
     OrdersModule,
     WaiterCallsModule,
     DeliveriesModule,
+    AssistantModule,
   ],
   controllers: [AppController],
 })
