@@ -12,6 +12,7 @@ import { AiMessageHero } from '../../../../components/home/AiMessageHero';
 import { QuickActionButtons } from '../../../../components/home/QuickActionButtons';
 import { HighlightCards } from '../../../../components/home/HighlightCards';
 import { LastVisitBanner } from '../../../../components/home/LastVisitBanner';
+import { CallWaiterButton } from '../../../../components/home/CallWaiterButton';
 import type { SessionResponseDto, CustomerWelcomeResponseDto } from '@restaurant/shared-types';
 
 type PageState = 'loading' | 'welcome' | 'home' | 'error';
@@ -196,6 +197,8 @@ function MesaPageInner() {
             slug={slug}
           />
         )}
+
+        {typingDone && <CallWaiterButton slug={slug} />}
 
         {homeData?.highlights && (
           <HighlightCards items={homeData.highlights} slug={slug} />

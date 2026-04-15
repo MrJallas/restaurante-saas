@@ -1,5 +1,6 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Inject, Optional } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { EventsGateway } from '../websocket/events.gateway';
 
 // Valid order status transitions
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -20,7 +21,10 @@ export interface CreateOrderItemDto {
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+  constructor(
+    private readonly tenantConn: TenantConnectionProvider,
+    @Optional() private readonly eventsGateway?: EventsGateway,
+  ) {}
 
   async createOrder(
     tableSessionId: string,
@@ -28,6 +32,7 @@ export class OrdersService {
     billingMode: 'table' | 'individual',
     items: CreateOrderItemDto[],
     notes?: string,
+    slug?: string,
   ) {
     if (!items.length) {
       throw new BadRequestException('Pedido deve conter pelo menos 1 item.');
@@ -132,6 +137,18 @@ export class OrdersService {
       [itemIds],
     );
 
+    // Emit new order event via WebSocket
+    if (slug && this.eventsGateway) {
+      const itemNames = items.map((i) => menuItemMap.get(i.menuItemId)?.name || '');
+      this.eventsGateway.emitNewOrder(slug, {
+        orderId: order.id,
+        billingMode,
+        totalCents,
+        itemCount: items.length,
+        itemNames,
+      });
+    }
+
     return {
       orderId: order.id,
       status: order.status,
@@ -235,7 +252,7 @@ export class OrdersService {
     };
   }
 
-  async updateStatus(orderId: string, newStatus: string, changedBy: string) {
+  async updateStatus(orderId: string, newStatus: string, changedBy: string, slug?: string) {
     // Get current status
     const orderRows = (await this.tenantConn.query(
       `SELECT id, status FROM orders WHERE id = $1`,
@@ -271,6 +288,16 @@ export class OrdersService {
     // If delivered, update consumption_summary
     if (newStatus === 'delivered') {
       await this.updateConsumptionSummary(orderId);
+    }
+
+    // Emit status update via WebSocket
+    if (slug && this.eventsGateway) {
+      this.eventsGateway.emitOrderStatusUpdate(slug, orderId, newStatus);
+
+      // If ready, also emit the dedicated ready event for waiters
+      if (newStatus === 'ready') {
+        this.eventsGateway.emitOrderReady(slug, orderId, '');
+      }
     }
 
     return { orderId, previousStatus: currentStatus, newStatus };

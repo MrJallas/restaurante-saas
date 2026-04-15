@@ -86,6 +86,7 @@ export class OrdersController {
   async createOrder(
     @Body() dto: CreateOrderDto,
     @Session() session: SessionData,
+    @Param('slug') slug: string,
   ) {
     return this.ordersService.createOrder(
       session.sessionId,
@@ -93,6 +94,7 @@ export class OrdersController {
       dto.billingMode,
       dto.items,
       dto.notes,
+      slug,
     );
   }
 
@@ -122,15 +124,16 @@ export class OrdersController {
   }
 
   @Patch(':orderId/status')
-  @UseGuards(SessionGuard)
   async updateStatus(
     @Param('orderId') orderId: string,
+    @Param('slug') slug: string,
     @Body() dto: UpdateStatusDto,
   ) {
     return this.ordersService.updateStatus(
       orderId,
       dto.status,
       dto.changedBy || 'system',
+      slug,
     );
   }
 }
