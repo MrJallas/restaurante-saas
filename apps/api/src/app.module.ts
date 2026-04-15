@@ -16,6 +16,8 @@ import { WaiterCallsModule } from './modules/waiter-calls/waiter-calls.module';
 import { DeliveriesModule } from './modules/deliveries/deliveries.module';
 import { AiModule } from './infra/ai/ai.module';
 import { AssistantModule } from './modules/assistant/assistant.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { FeedbacksModule } from './modules/feedbacks/feedbacks.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { AssistantModule } from './modules/assistant/assistant.module';
     WaiterCallsModule,
     DeliveriesModule,
     AssistantModule,
+    PaymentsModule,
+    FeedbacksModule,
   ],
   controllers: [AppController],
 })
