@@ -11,11 +11,15 @@ import { HomeModule } from './modules/home/home.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { MenuModule } from './modules/menu/menu.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { WebsocketModule } from './modules/websocket/websocket.module';
+import { WaiterCallsModule } from './modules/waiter-calls/waiter-calls.module';
+import { DeliveriesModule } from './modules/deliveries/deliveries.module';
 
 @Module({
   imports: [
     TypeOrmModule.forRoot(databaseConfig),
     RedisModule,
+    WebsocketModule,
     TenantModule,
     TableSessionModule,
     CustomersModule,
@@ -23,6 +27,8 @@ import { OrdersModule } from './modules/orders/orders.module';
     SettingsModule,
     MenuModule,
     OrdersModule,
+    WaiterCallsModule,
+    DeliveriesModule,
   ],
   controllers: [AppController],
 })

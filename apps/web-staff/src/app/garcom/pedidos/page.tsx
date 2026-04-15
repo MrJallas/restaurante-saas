@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Clock, CheckCircle, ChefHat, Bell, XCircle, Users, User, RefreshCw } from 'lucide-react';
 import { staffGet, staffPatch } from '../../../lib/api';
+import { WaiterAlerts } from '../../../components/WaiterAlerts';
 
 interface OrderItem {
   id: string;
@@ -119,6 +120,9 @@ export default function GarcomPedidosPage() {
             Atualizar
           </button>
         </div>
+
+        {/* Waiter call alerts */}
+        <WaiterAlerts tenantSlug={TENANT_SLUG} />
 
         {/* Active orders count */}
         <div className="mb-4 rounded-lg bg-staff-card p-3">
