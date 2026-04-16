@@ -18,6 +18,8 @@ import { AiModule } from './infra/ai/ai.module';
 import { AssistantModule } from './modules/assistant/assistant.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { FeedbacksModule } from './modules/feedbacks/feedbacks.module';
+import { PromotionsModule } from './modules/promotions/promotions.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -37,6 +39,8 @@ import { FeedbacksModule } from './modules/feedbacks/feedbacks.module';
     AssistantModule,
     PaymentsModule,
     FeedbacksModule,
+    PromotionsModule,
+    DashboardModule,
   ],
   controllers: [AppController],
 })

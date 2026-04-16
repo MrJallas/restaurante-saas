@@ -34,3 +34,7 @@ export function staffPost<T>(path: string, body: unknown): Promise<T> {
 export function staffPatch<T>(path: string, body: unknown): Promise<T> {
   return staffApi<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 }
+
+export function staffDelete<T>(path: string): Promise<T> {
+  return staffApi<T>(path, { method: 'DELETE' });
+}

@@ -3,7 +3,8 @@ services:
     image: postgres:16
     container_name: restaurant-postgres
     ports:
-      - "5434:5432"
+      - "5434:5434"
+    command: -p 5434
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -11,7 +12,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -p 5434"]
       interval: 5s
       timeout: 5s
       retries: 5
