@@ -30,6 +30,92 @@ services:
       timeout: 5s
       retries: 5
 
+  api:
+    image: node:20-alpine
+    container_name: restaurant-api
+    working_dir: /repo/apps/api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5434
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: restaurant_saas
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5434/restaurant_saas
+      REDIS_URL: redis://redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      QR_HMAC_SECRET: change-me-in-prod
+      AI_SERVICE_URL: http://ai-service:8000
+    volumes:
+      - ./:/repo
+      - /repo/node_modules
+      - /repo/apps/api/node_modules
+    ports:
+      - "3001:3001"
+    command: sh -c "cd /repo && npm install --no-audit --no-fund && cd apps/api && npm run start:dev || npm run dev"
+
+  ai-service:
+    image: python:3.11-slim
+    container_name: restaurant-ai
+    working_dir: /app
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+    volumes:
+      - ./services/ai-service:/app
+    ports:
+      - "8000:8000"
+    command: sh -c "pip install --no-cache-dir -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+
+  web-customer:
+    image: node:20-alpine
+    container_name: restaurant-web-customer
+    working_dir: /repo/apps/web-customer
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+      NEXT_PUBLIC_WS_URL: http://localhost:3001
+    volumes:
+      - ./:/repo
+      - /repo/node_modules
+      - /repo/apps/web-customer/node_modules
+      - /repo/apps/web-customer/.next
+    ports:
+      - "3003:3003"
+    command: sh -c "cd /repo && npm install --no-audit --no-fund && cd apps/web-customer && npm run dev"
+
+  web-staff:
+    image: node:20-alpine
+    container_name: restaurant-web-staff
+    working_dir: /repo/apps/web-staff
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+      NEXT_PUBLIC_WS_URL: http://localhost:3001
+      NEXT_PUBLIC_TENANT_SLUG: restaurant_dev
+    volumes:
+      - ./:/repo
+      - /repo/node_modules
+      - /repo/apps/web-staff/node_modules
+      - /repo/apps/web-staff/.next
+    ports:
+      - "3002:3002"
+    command: sh -c "cd /repo && npm install --no-audit --no-fund && cd apps/web-staff && npm run dev"
+
 volumes:
   postgres_data:
   redis_data:

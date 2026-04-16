@@ -182,6 +182,7 @@ export default function DashboardPage() {
               <QuickLink href="/garcom/pedidos" label="Pedidos" color="bg-staff-accent/20 text-staff-accent" />
               <QuickLink href="/cozinha" label="Cozinha" color="bg-staff-warning/20 text-staff-warning" />
               <QuickLink href="/dashboard/promocoes" label="Promocoes" color="bg-purple-500/20 text-purple-400" />
+              <QuickLink href="/dashboard/funcionarios" label="Funcionarios" color="bg-blue-500/20 text-blue-400" />
               <QuickLink href="/" label="Voltar" color="bg-slate-500/20 text-slate-400" />
             </div>
           </div>
