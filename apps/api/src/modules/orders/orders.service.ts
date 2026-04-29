@@ -235,8 +235,20 @@ export class OrdersService {
       );
     }
 
-    // Do NOT emit `new_order` to the kitchen here — wait until confirm() so the
-    // 15s cancel window really hides the order.
+    // Notifica os outros customers na mesma mesa em tempo real. Antes
+    // ficavam esperando ate 15s o polling buscar — multi-user nunca
+    // conseguia coordenar pedidos. NAO emite pra kitchen aqui (wait
+    // confirm() pra respeitar o 15s cancel window).
+    if (this.eventsGateway) {
+      this.eventsGateway.emitToSession(tableSessionId, 'order:created', {
+        orderId: order.id,
+        status: order.status,
+        billingMode,
+        totalCents,
+        createdAt: order.created_at,
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     return {
       id: order.id,
@@ -301,6 +313,11 @@ export class OrdersService {
         itemNames: items.map((i) => i.name),
       });
       this.eventsGateway.emitOrderStatusUpdate(slug, orderId, 'received');
+      this.eventsGateway.emitToSession(order.table_session_id, 'order:status', {
+        orderId,
+        status: 'received',
+        timestamp: new Date().toISOString(),
+      });
     }
 
     return { orderId, status: 'received' };
@@ -309,9 +326,9 @@ export class OrdersService {
   /** Cancel a pending_confirmation order. Only valid within the 15s window. */
   async cancelOrder(orderId: string, slug?: string) {
     const rows = (await this.tenantConn.query(
-      `SELECT id, status FROM orders WHERE id = $1`,
+      `SELECT id, status, table_session_id FROM orders WHERE id = $1`,
       [orderId],
-    )) as { id: string; status: string }[];
+    )) as { id: string; status: string; table_session_id: string }[];
 
     if (!rows.length) throw new NotFoundException('Pedido nao encontrado.');
     const order = rows[0];
@@ -335,6 +352,13 @@ export class OrdersService {
       [orderId, order.status],
     );
 
+    if (this.eventsGateway) {
+      this.eventsGateway.emitToSession(order.table_session_id, 'order:status', {
+        orderId,
+        status: 'cancelled',
+        timestamp: new Date().toISOString(),
+      });
+    }
     if (slug && this.eventsGateway) {
       this.eventsGateway.emitOrderStatusUpdate(slug, orderId, 'cancelled');
     }
@@ -546,14 +570,15 @@ export class OrdersService {
 
   async updateStatus(orderId: string, newStatus: string, changedBy: string, slug?: string) {
     const orderRows = (await this.tenantConn.query(
-      `SELECT id, status FROM orders WHERE id = $1`,
+      `SELECT id, status, table_session_id FROM orders WHERE id = $1`,
       [orderId],
-    )) as { id: string; status: string }[];
+    )) as { id: string; status: string; table_session_id: string }[];
 
     if (!orderRows.length) {
       throw new NotFoundException('Pedido nao encontrado.');
     }
 
+    const tableSessionId = orderRows[0].table_session_id;
     const currentStatus = orderRows[0].status;
     const allowed = VALID_TRANSITIONS[currentStatus] || [];
 
@@ -578,6 +603,14 @@ export class OrdersService {
       await this.updateConsumptionSummary(orderId);
     }
 
+    if (this.eventsGateway) {
+      // Pra todos os customers na mesma mesa.
+      this.eventsGateway.emitToSession(tableSessionId, 'order:status', {
+        orderId,
+        status: newStatus,
+        timestamp: new Date().toISOString(),
+      });
+    }
     if (slug && this.eventsGateway) {
       this.eventsGateway.emitOrderStatusUpdate(slug, orderId, newStatus);
       if (newStatus === 'ready') {
