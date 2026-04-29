@@ -1,4 +1,9 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+// Chave de staff. Backend exige `x-staff-key` em endpoints protegidos
+// por `StaffOrSessionGuard` (ex.: PATCH /orders/:id/status, antes
+// publico — qualquer um podia avancar status ou cancelar pedido em
+// qualquer tenant). Em prod evolui pra JWT via PIN.
+const STAFF_API_KEY = process.env.NEXT_PUBLIC_STAFF_API_KEY || '';
 
 export async function staffApi<T>(
   path: string,
@@ -11,6 +16,7 @@ export async function staffApi<T>(
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...(STAFF_API_KEY ? { 'x-staff-key': STAFF_API_KEY } : {}),
       ...options.headers,
     },
   });
