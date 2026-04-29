@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from config import settings
-from services.blocked_patterns import check_blocked
+from services.blocked_patterns import check_blocked, check_greeting
 from services.intent_classifier import classify_message
 from services.response_validator import validate_response
 from services.llm.factory import get_provider
@@ -25,6 +25,9 @@ app.add_middleware(
 class ClassifyRequest(BaseModel):
     message: str
     tenant_context: dict | None = None
+    # Historico recente da conversa (2-4 mensagens) usado pelo classificador
+    # para entender follow-ups curtos tipo "os dois", "quanto?", "quero esse".
+    history: list["ChatMessage"] = []
 
 
 class ClassifyResponse(BaseModel):
@@ -72,14 +75,26 @@ async def health():
 async def classify(req: ClassifyRequest):
     """3-layer classification: regex guardrails → LLM classifier."""
 
+    # Layer 0: Greeting detection (zero cost, zero tokens)
+    if check_greeting(req.message):
+        return ClassifyResponse(allowed=True, reason="greeting", confidence=1.0)
+
     # Layer 1: Regex guardrails (zero cost)
     is_blocked, reason = check_blocked(req.message)
     if is_blocked:
         return ClassifyResponse(allowed=False, reason=reason, confidence=1.0)
 
-    # Layer 2: LLM classifier
+    # Heurística de follow-up: mensagens curtas (<=4 palavras) apos contexto
+    # do restaurante normalmente sao confirmacoes/referencias ("os dois",
+    # "quero esse", "quanto?"). Nao faz sentido reclassificar isolado.
+    word_count = len(req.message.strip().split())
+    if word_count <= 4 and len(req.history) > 0:
+        return ClassifyResponse(allowed=True, reason="short-followup", confidence=0.95)
+
+    # Layer 2: LLM classifier (com historico pra reduzir falsos positivos)
     try:
-        result = await classify_message(req.message)
+        history_dicts = [{"role": m.role, "content": m.content} for m in req.history[-4:]]
+        result = await classify_message(req.message, history=history_dicts)
         return ClassifyResponse(
             allowed=result["allowed"],
             reason=result["reason"],
@@ -114,6 +129,8 @@ async def chat(req: ChatRequest):
             temperature=0.7,
         )
     except Exception as e:
+        import logging
+        logging.exception("LLM chat failed: %s", e)
         raise HTTPException(
             status_code=503,
             detail="Desculpe, estou com dificuldade no momento. Posso ajudar em breve.",
@@ -143,27 +160,28 @@ def build_system_prompt(tenant_context: dict, customer_context: dict | None) -> 
     menu_summary = tenant_context.get("menu_summary", "")
     categories = tenant_context.get("categories", "")
 
-    prompt = f"""Voce e o assistente virtual do restaurante "{restaurant_name}".
-Sua funcao e ajudar os clientes EXCLUSIVAMENTE com assuntos do restaurante:
-- Recomendar pratos, bebidas e sobremesas do cardapio
-- Informar sobre ingredientes, alergenos e restricoes alimentares
-- Ajudar com duvidas sobre precos e promocoes
-- Dar informacoes sobre o restaurante
+    prompt = f"""Você é o assistente virtual do restaurante "{restaurant_name}".
+Sua função é ajudar os clientes EXCLUSIVAMENTE com assuntos do restaurante:
+- Recomendar pratos, bebidas e sobremesas do cardápio
+- Informar sobre ingredientes, alérgenos e restrições alimentares
+- Ajudar com dúvidas sobre preços e promoções
+- Dar informações sobre o restaurante
 
 REGRAS IMPORTANTES:
 1. NUNCA fale sobre assuntos fora do restaurante
-2. Seja amigavel, conciso e natural (maximo 3 frases)
-3. Use linguagem informal brasileira
-4. Quando recomendar, sugira 2-3 opcoes do cardapio
-5. Se nao souber a resposta, diga que vai consultar a equipe
-6. NUNCA invente pratos que nao estejam no cardapio
-7. Precos estao em centavos, converta para reais (divida por 100)"""
+2. Seja amigável, conciso e natural (máximo 3 frases)
+3. Use linguagem informal brasileira com acentuação correta (á, é, í, ó, ú, â, ê, ô, ã, õ, ç)
+4. Quando recomendar, sugira 2-3 opções do cardápio
+5. Se não souber a resposta, diga que vai consultar a equipe
+6. NUNCA invente pratos que não estejam no cardápio
+7. Preços estão em centavos, converta para reais (divida por 100)
+8. SEMPRE escreva em português do Brasil com acentos (ex: "olá", "você", "experiência", "não", "bebida", "função")"""
 
     if categories:
-        prompt += f"\n\nCATEGORIAS DO CARDAPIO:\n{categories}"
+        prompt += f"\n\nCATEGORIAS DO CARDÁPIO:\n{categories}"
 
     if menu_summary:
-        prompt += f"\n\nITENS DO CARDAPIO:\n{menu_summary}"
+        prompt += f"\n\nITENS DO CARDÁPIO:\n{menu_summary}"
 
     if customer_context:
         name = customer_context.get("name", "")
@@ -172,6 +190,6 @@ REGRAS IMPORTANTES:
         last_items = customer_context.get("last_items", [])
         if last_items:
             items_str = ", ".join([i.get("name", "") for i in last_items if i.get("name")])
-            prompt += f"\nUltimos pedidos do cliente: {items_str}"
+            prompt += f"\nÚltimos pedidos do cliente: {items_str}"
 
     return prompt

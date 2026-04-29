@@ -4,13 +4,19 @@ import { AiServiceClient } from '../../infra/ai/ai-service.client';
 import { RedisService } from '../../infra/redis/redis.service';
 
 const BLOCKED_RESPONSE =
-  'Desculpe, so posso ajudar com assuntos do restaurante: cardapio, pratos, bebidas, recomendacoes e informacoes sobre o estabelecimento.';
+  'Desculpe, só posso ajudar com assuntos do restaurante: cardápio, pratos, bebidas, recomendações e informações sobre o estabelecimento.';
+
+const GREETING_RESPONSES = [
+  'Olá! Que bom ter você aqui! Posso te ajudar a escolher algo do nosso cardápio?',
+  'Oi! Bem-vindo! Quer ver nossas sugestões ou prefere explorar o cardápio?',
+  'Olá! Estou aqui pra te ajudar. Quer uma recomendação ou tem algo em mente?',
+];
 
 const SUGGESTION_CHIPS = [
   'Qual o prato do dia?',
   'Recomende uma bebida',
   'Quais sobremesas tem?',
-  'Opcoes sem glutem',
+  'Opções sem glúten',
   'Mais pedidos do restaurante',
 ];
 
@@ -18,6 +24,73 @@ const FALLBACK_RESPONSE =
   'Desculpe, estou com dificuldade no momento. Posso ajudar em breve.';
 
 const MAX_MESSAGES_PER_SESSION = 50;
+
+interface MenuItemRow {
+  id: string;
+  name: string;
+  short_description: string | null;
+  price_cents: number;
+  image_url: string | null;
+  category_name: string;
+  tags: string[];
+  allergens: string[];
+}
+
+export interface LinkedItem {
+  id: string;
+  name: string;
+  priceCents: number;
+  imageUrl: string | null;
+  categoryName: string;
+  position: number;
+}
+
+function normalizeForMatch(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Scan the AI response for dish names from the menu and return the items in
+ * order of first mention. Uses accent-insensitive substring matching on the
+ * normalized name. Dedupes by item id. Skips ultra-generic names that would
+ * false-positive (e.g. a 3-letter item like "sal").
+ */
+function extractLinkedItems(
+  responseText: string,
+  menuItems: MenuItemRow[],
+): LinkedItem[] {
+  const haystack = normalizeForMatch(responseText);
+  if (!haystack) return [];
+
+  const seen = new Set<string>();
+  const found: LinkedItem[] = [];
+
+  for (const item of menuItems) {
+    const needle = normalizeForMatch(item.name);
+    if (needle.length < 4) continue; // too generic to trust a substring hit
+    const pos = haystack.indexOf(needle);
+    if (pos === -1) continue;
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    found.push({
+      id: item.id,
+      name: item.name,
+      priceCents: item.price_cents,
+      imageUrl: item.image_url,
+      categoryName: item.category_name,
+      position: pos,
+    });
+  }
+
+  found.sort((a, b) => a.position - b.position);
+  return found.slice(0, 4); // cap to avoid overwhelming the UI
+}
 
 @Injectable()
 export class AssistantService {
@@ -50,8 +123,27 @@ export class AssistantService {
       };
     }
 
-    // Step 1: Classify message
-    const classification = await this.aiClient.classify(message);
+    // Step 1: Classify message (com historico pra desambiguar follow-ups)
+    const recentHistory = await this.getHistory(tableSessionId);
+    const classification = await this.aiClient.classify(
+      message,
+      recentHistory.slice(-4),
+    );
+
+    if (classification.reason === 'greeting') {
+      const greeting =
+        GREETING_RESPONSES[Math.floor(Math.random() * GREETING_RESPONSES.length)];
+      await this.saveMessage(tableSessionId, customerId, message, greeting, {
+        tokensIn: 0,
+        tokensOut: 0,
+      });
+      return {
+        response: greeting,
+        wasBlocked: false,
+        suggestions: SUGGESTION_CHIPS.slice(0, 3),
+        linkedItems: [],
+      };
+    }
 
     if (!classification.allowed) {
       // Save blocked message
@@ -69,11 +161,11 @@ export class AssistantService {
     }
 
     // Step 2: Build context
-    const tenantContext = await this.buildTenantContext();
+    const { context: tenantContext, menuItems } = await this.buildTenantContext();
     const customerContext = customerId
       ? await this.buildCustomerContext(customerId)
       : undefined;
-    const history = await this.getHistory(tableSessionId);
+    const history = recentHistory;
 
     // Step 3: Call AI
     try {
@@ -94,10 +186,13 @@ export class AssistantService {
         latencyMs: result.latency_ms,
       });
 
+      const linkedItems = extractLinkedItems(result.response, menuItems);
+
       return {
         response: result.response,
         wasBlocked: false,
         suggestions: SUGGESTION_CHIPS.slice(0, 3),
+        linkedItems,
       };
     } catch (err) {
       this.logger.error(`AI chat error: ${err}`);
@@ -110,6 +205,7 @@ export class AssistantService {
         response: FALLBACK_RESPONSE,
         wasBlocked: false,
         suggestions: SUGGESTION_CHIPS,
+        linkedItems: [],
       };
     }
   }
@@ -136,7 +232,10 @@ export class AssistantService {
     });
   }
 
-  private async buildTenantContext(): Promise<Record<string, unknown>> {
+  private async buildTenantContext(): Promise<{
+    context: Record<string, unknown>;
+    menuItems: MenuItemRow[];
+  }> {
     // Get restaurant settings
     const settingsRows = (await this.tenantConn.query(
       `SELECT restaurant_name FROM settings LIMIT 1`,
@@ -149,29 +248,34 @@ export class AssistantService {
       `SELECT name FROM menu_categories WHERE is_active = true ORDER BY sort_order`,
     )) as { name: string }[];
 
-    // Get available menu items (summary)
+    // Get available menu items (summary). Includes id + image_url so the
+    // caller can resolve dish mentions in the AI response back to real items.
     const items = (await this.tenantConn.query(
-      `SELECT mi.name, mi.short_description, mi.price_cents, mc.name as category_name, mi.tags, mi.allergens
+      `SELECT mi.id, mi.name, mi.short_description, mi.price_cents,
+              mi.image_url, mc.name as category_name, mi.tags, mi.allergens
        FROM menu_items mi
        JOIN menu_categories mc ON mc.id = mi.category_id
        WHERE mi.is_available = true
        ORDER BY mc.sort_order, mi.sort_order
        LIMIT 50`,
-    )) as { name: string; short_description: string; price_cents: number; category_name: string; tags: string[]; allergens: string[] }[];
+    )) as MenuItemRow[];
 
     const menuSummary = items
       .map(
         (i) =>
           `- ${i.name} (${i.category_name}) - R$${(i.price_cents / 100).toFixed(2)}${
             i.short_description ? `: ${i.short_description}` : ''
-          }${i.allergens.length ? ` [Alergenos: ${i.allergens.join(', ')}]` : ''}`,
+          }${i.allergens?.length ? ` [Alergenos: ${i.allergens.join(', ')}]` : ''}`,
       )
       .join('\n');
 
     return {
-      restaurant_name: restaurantName,
-      categories: categories.map((c) => c.name).join(', '),
-      menu_summary: menuSummary,
+      context: {
+        restaurant_name: restaurantName,
+        categories: categories.map((c) => c.name).join(', '),
+        menu_summary: menuSummary,
+      },
+      menuItems: items,
     };
   }
 

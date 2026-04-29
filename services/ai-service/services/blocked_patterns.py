@@ -19,12 +19,33 @@ BLOCKED_PATTERNS = [
     # Medical
     re.compile(r"\b(remedio|medicamento|doenca|sintoma|diagnostico|tratamento\s+medico)\b", re.IGNORECASE),
     # Violence / inappropriate
-    re.compile(r"\b(matar|morrer|suicidio|arma|bomba|droga|sexo|pornografia)\b", re.IGNORECASE),
+    # "matar/morrer" so bloqueiam se NAO for expressao idiomatica com fome/sede
+    # ("matar a fome", "morrer de fome", "matando a sede" sao contexto de restaurante)
+    re.compile(r"\bmatar\b(?!\s+a?\s*(fome|sede))", re.IGNORECASE),
+    re.compile(r"\bmorrer\b(?!\s+de\s+(fome|sede))", re.IGNORECASE),
+    re.compile(r"\b(suicidio|arma\s+de\s+fogo|bomba|cocaina|maconha|sexo|pornografia)\b", re.IGNORECASE),
     # Homework / academic
     re.compile(r"\b(tarefa|trabalho\s+escolar|prova|vestibular|enem|faculdade|tcc)\b", re.IGNORECASE),
     # General off-topic signals
     re.compile(r"\b(me\s+conte\s+uma\s+piada|quem\s+e\s+voce|voce\s+e\s+uma?\s+ia|qual\s+seu\s+nome)\b", re.IGNORECASE),
 ]
+
+
+GREETING_PATTERNS = [
+    re.compile(r"^\s*(ol[aá]|oi|e\s*a[ií]?|fala|salve|hey|hello|hi)\s*[!?.]*\s*$", re.IGNORECASE),
+    re.compile(r"^\s*(bom\s+dia|boa\s+(tarde|noite))\s*[!?.]*\s*$", re.IGNORECASE),
+    re.compile(r"^\s*(tudo\s+(bem|bom|certo|tranquilo|joia))\s*[!?.]*\s*$", re.IGNORECASE),
+    re.compile(r"^\s*(como\s+vai|como\s+voc[eê]\s+(est[aá]|ta|tá))\s*[!?.]*\s*$", re.IGNORECASE),
+    re.compile(r"^\s*(beleza|tranquilo|suave|firmeza)\s*[!?.]*\s*$", re.IGNORECASE),
+]
+
+
+def check_greeting(message: str) -> bool:
+    """Returns True if the message is a simple greeting/pleasantry."""
+    for pattern in GREETING_PATTERNS:
+        if pattern.search(message):
+            return True
+    return False
 
 
 def check_blocked(message: str) -> tuple[bool, str | None]:
