@@ -404,18 +404,22 @@ export class OrdersService {
    * elapsed. Returns the list of promoted order ids so the scheduler can log.
    */
   async sweepAutoConfirm(): Promise<string[]> {
+    // Le tambem o table_session_id pra passar pro confirmOrder, que
+    // agora exige ownership. Aqui o sweep e o "system" agindo, entao
+    // usa-se o proprio table_session_id da row — mesmo dono, ownership
+    // valida.
     const due = (await this.tenantConn.query(
-      `SELECT id FROM orders
+      `SELECT id, table_session_id FROM orders
        WHERE status = 'pending_confirmation' AND auto_confirm_at IS NOT NULL
          AND auto_confirm_at <= now()
        FOR UPDATE SKIP LOCKED`,
       [],
-    )) as { id: string }[];
+    )) as { id: string; table_session_id: string }[];
 
     const ids: string[] = [];
     for (const row of due) {
       try {
-        await this.confirmOrder(row.id);
+        await this.confirmOrder(row.id, row.table_session_id);
         ids.push(row.id);
       } catch {
         /* continue */
