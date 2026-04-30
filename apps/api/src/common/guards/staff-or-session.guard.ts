@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Injectable,
 } from '@nestjs/common';
+import { timingSafeEqual } from 'crypto';
 import { RedisService } from '../../infra/redis/redis.service';
 import type { SessionData, SessionRequest } from './session.guard';
 
@@ -34,10 +35,12 @@ export class StaffOrSessionGuard implements CanActivate {
 
     const staffKeyHeader = request.headers['x-staff-key'];
     const expected = process.env.STAFF_API_KEY;
-    if (expected && staffKeyHeader && staffKeyHeader === expected) {
-      // Encurta-circuita pra staff. Nao popula `sessionData` — o handler
-      // que precisar saber quem alterou o status le `dto.changedBy`.
-      return true;
+    if (expected && staffKeyHeader) {
+      const a = Buffer.from(expected, 'utf8');
+      const b = Buffer.from(staffKeyHeader, 'utf8');
+      if (a.length === b.length && timingSafeEqual(a, b)) {
+        return true;
+      }
     }
 
     const token =

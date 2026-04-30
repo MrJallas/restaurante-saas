@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 @Injectable()
 export class QrCodeService {
@@ -13,7 +13,7 @@ export class QrCodeService {
     signature: string,
     timestamp: string,
     secret: string,
-    maxAgeMs = 24 * 60 * 60 * 1000,
+    maxAgeMs = 30 * 60 * 1000,
   ): boolean {
     const age = Date.now() - parseInt(timestamp, 10);
     if (isNaN(age) || age < 0 || age > maxAgeMs) {
@@ -21,6 +21,9 @@ export class QrCodeService {
     }
 
     const expected = this.generateHmac(tableCode, secret, timestamp);
-    return expected === signature;
+    const a = Buffer.from(expected, 'hex');
+    const b = Buffer.from(signature, 'hex');
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
   }
 }

@@ -223,15 +223,17 @@ export default function MesaPage() {
         if (cancelled) return;
         setSettings(pubSettings);
 
-        const recognitionToken = getRecognitionToken();
-        if (recognitionToken) {
+        // Auto-recognize via httpOnly cookie (server reads req.cookies)
+        {
           try {
             const customer = await apiPost<CustomerWelcomeResponseDto>(
               `/${slug}/customer/recognize`,
-              { recognitionToken },
+              {},
             );
             if (cancelled) return;
-            setRecognitionToken(customer.recognitionToken);
+            if (!customer || !(customer as Record<string, unknown>).customerId) {
+              throw new Error('not recognized');
+            }
             setCustomer({
               customerId: customer.customerId,
               visitId: customer.visitId,

@@ -1,18 +1,16 @@
-const RECOGNITION_COOKIE = 'recognition_token';
-const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
-
-export function setRecognitionToken(token: string): void {
-  const expires = new Date(Date.now() + ONE_YEAR_MS).toUTCString();
-  document.cookie = `${RECOGNITION_COOKIE}=${token}; expires=${expires}; path=/; SameSite=Lax`;
+// recognition_token is now set as httpOnly cookie by the server.
+// These functions are kept for call-site compat but no longer write document.cookie.
+export function setRecognitionToken(_token: string): void {
+  // no-op: server sets httpOnly cookie
 }
 
 export function getRecognitionToken(): string | null {
-  const match = document.cookie.match(new RegExp(`(?:^|; )${RECOGNITION_COOKIE}=([^;]*)`));
-  return match ? decodeURIComponent(match[1]) : null;
+  // httpOnly cookies are not readable from JS — the server reads from req.cookies
+  return null;
 }
 
 export function clearRecognitionToken(): void {
-  document.cookie = `${RECOGNITION_COOKIE}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+  // no-op: server controls the cookie
 }
 
 // Fallback para ambientes cross-origin (LAN + celular real) onde o cookie
