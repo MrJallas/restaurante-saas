@@ -1,6 +1,7 @@
 import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { TableSessionService } from '../table-session/table-session.service';
 import { validateCpf } from './cpf.util';
 
 export interface CustomerWelcomeResult {
@@ -11,13 +12,17 @@ export interface CustomerWelcomeResult {
   totalVisits: number;
   lastVisitSummary: Record<string, unknown> | null;
   visitId: string;
+  color?: string;
 }
 
 @Injectable()
 export class CustomersService {
   private readonly logger = new Logger(CustomersService.name);
 
-  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+  constructor(
+    private readonly tenantConn: TenantConnectionProvider,
+    private readonly tableSessionService: TableSessionService,
+  ) {}
 
   async welcome(
     name: string,
@@ -71,6 +76,14 @@ export class CustomersService {
     );
     const visitId = (visitResult as Record<string, unknown>[])[0].id as string;
 
+    // Attach this customer to the table's participant roster so the avatar
+    // stack (SM3, SP1) and per-item attribution have a stable color.
+    const participant = await this.tableSessionService.upsertParticipant(
+      sessionId,
+      customerId,
+      visitId,
+    );
+
     // Busca consumption_summary se existir
     let lastVisitSummary: Record<string, unknown> | null = null;
     if (isReturning) {
@@ -91,6 +104,7 @@ export class CustomersService {
       totalVisits,
       lastVisitSummary,
       visitId,
+      color: participant.color,
     };
   }
 
@@ -124,6 +138,14 @@ export class CustomersService {
     );
     const visitId = (visitResult as Record<string, unknown>[])[0].id as string;
 
+    // Attach to the table's participant roster (idempotent — reuses color
+    // if this customer has been at this table before).
+    const participant = await this.tableSessionService.upsertParticipant(
+      sessionId,
+      customerId,
+      visitId,
+    );
+
     // Busca consumption_summary
     let lastVisitSummary: Record<string, unknown> | null = null;
     const summary = await this.tenantConn.query(
@@ -142,6 +164,7 @@ export class CustomersService {
       totalVisits,
       lastVisitSummary,
       visitId,
+      color: participant.color,
     };
   }
 }

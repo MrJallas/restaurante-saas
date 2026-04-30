@@ -78,13 +78,13 @@ export function WelcomeModal({ slug, restaurantName, onComplete }: WelcomeModalP
     // teclado em iPhones menores (15/SE). Solucao: wrapper com overflow-y-auto
     // e min-h-full, modal alinhado em items-start com padding vertical e
     // pb-safe pra respeitar safe-area + viewport com keyboard.
+    // Backdrop solido (sem blur). App roda em Safari iOS direto, nao
+    // PWA — backdrop-filter era custoso e causava jank no teclado.
+    // Politica do projeto: zero blur. Mantemos so o overlay escuro
+    // pra dar contraste com o modal branco.
     <div
       className="fixed inset-0 z-50 overflow-y-auto overscroll-contain"
-      style={{
-        background: 'rgba(0,0,0,0.25)',
-        backdropFilter: 'blur(4px)',
-        WebkitBackdropFilter: 'blur(4px)',
-      }}
+      style={{ background: 'rgba(0,0,0,0.45)' }}
     >
       <div className="flex min-h-full w-full items-start justify-center px-[18px] pb-[max(env(safe-area-inset-bottom),24px)] pt-[max(env(safe-area-inset-top),24px)]">
       <div

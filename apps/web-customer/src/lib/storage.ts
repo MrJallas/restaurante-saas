@@ -14,3 +14,32 @@ export function getRecognitionToken(): string | null {
 export function clearRecognitionToken(): void {
   document.cookie = `${RECOGNITION_COOKIE}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
 }
+
+// Fallback para ambientes cross-origin (LAN + celular real) onde o cookie
+// httpOnly SameSite=Lax nao e enviado nas chamadas `fetch` a outra origem.
+// O server aceita este valor como header `x-session-token` via SessionGuard.
+const SESSION_TOKEN_KEY = 'session_token';
+
+export function setSessionToken(token: string): void {
+  try {
+    window.sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+  } catch {
+    /* storage bloqueado (private mode) — seguimos sem header */
+  }
+}
+
+export function getSessionToken(): string | null {
+  try {
+    return window.sessionStorage.getItem(SESSION_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function clearSessionToken(): void {
+  try {
+    window.sessionStorage.removeItem(SESSION_TOKEN_KEY);
+  } catch {
+    /* ignore */
+  }
+}

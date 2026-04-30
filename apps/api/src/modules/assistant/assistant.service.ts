@@ -108,6 +108,23 @@ export class AssistantService {
     message: string,
     schemaName: string,
   ) {
+    // IDOR guard: cliente nao pode passar `customerId` de outro cliente
+    // pra extrair contexto de consumo / historico alheio. Validamos que
+    // o customerId pertence aos session_participants da sessao atual
+    // antes de usar — se nao bater, ignoramos (cai no flow anonimo
+    // dentro da propria sessao).
+    let safeCustomerId: string | null = null;
+    if (customerId) {
+      const participants = (await this.tenantConn.query(
+        `SELECT 1 FROM session_participants
+         WHERE table_session_id = $1 AND customer_id = $2 LIMIT 1`,
+        [tableSessionId, customerId],
+      )) as unknown[];
+      if (participants.length > 0) {
+        safeCustomerId = customerId;
+      }
+    }
+
     // Rate limit check
     const rateKey = `assistant:rate:${tableSessionId}`;
     const count = await this.redis.incr(rateKey);
@@ -127,7 +144,7 @@ export class AssistantService {
     // Passa customerId pra que o classifier so veja a propria conversa do
     // usuario — sem isso, follow-ups de outro cliente da mesma mesa
     // poluiam o contexto e davam falsos positivos. P1-B do bug-hunt.
-    const recentHistory = await this.getHistory(tableSessionId, customerId);
+    const recentHistory = await this.getHistory(tableSessionId, safeCustomerId);
     const classification = await this.aiClient.classify(
       message,
       recentHistory.slice(-4),
@@ -136,7 +153,7 @@ export class AssistantService {
     if (classification.reason === 'greeting') {
       const greeting =
         GREETING_RESPONSES[Math.floor(Math.random() * GREETING_RESPONSES.length)];
-      await this.saveMessage(tableSessionId, customerId, message, greeting, {
+      await this.saveMessage(tableSessionId, safeCustomerId, message, greeting, {
         tokensIn: 0,
         tokensOut: 0,
       });
@@ -150,7 +167,7 @@ export class AssistantService {
 
     if (!classification.allowed) {
       // Save blocked message
-      await this.saveMessage(tableSessionId, customerId, message, BLOCKED_RESPONSE, {
+      await this.saveMessage(tableSessionId, safeCustomerId, message, BLOCKED_RESPONSE, {
         wasBlocked: true,
         blockReason: classification.reason || 'classifier',
       });
@@ -165,8 +182,8 @@ export class AssistantService {
 
     // Step 2: Build context
     const { context: tenantContext, menuItems } = await this.buildTenantContext();
-    const customerContext = customerId
-      ? await this.buildCustomerContext(customerId)
+    const customerContext = safeCustomerId
+      ? await this.buildCustomerContext(safeCustomerId)
       : undefined;
     const history = recentHistory;
 
@@ -180,7 +197,7 @@ export class AssistantService {
       );
 
       // Save message
-      await this.saveMessage(tableSessionId, customerId, message, result.response, {
+      await this.saveMessage(tableSessionId, safeCustomerId, message, result.response, {
         tokensIn: result.tokens_in,
         tokensOut: result.tokens_out,
         modelUsed: result.model,
@@ -200,7 +217,7 @@ export class AssistantService {
     } catch (err) {
       this.logger.error(`AI chat error: ${err}`);
 
-      await this.saveMessage(tableSessionId, customerId, message, FALLBACK_RESPONSE, {
+      await this.saveMessage(tableSessionId, safeCustomerId, message, FALLBACK_RESPONSE, {
         wasBlocked: false,
       });
 

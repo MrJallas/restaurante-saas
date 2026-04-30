@@ -17,7 +17,6 @@ import { PillButton } from '../../../../components/ui/PillButton';
 import { SoftInput } from '../../../../components/ui/SoftInput';
 import { HostApprovalModal } from '../../../../components/host/HostApprovalModal';
 import { PendingApprovalScreen } from '../../../../components/host/PendingApprovalScreen';
-import { apiGet as apiGetExternal } from '../../../../lib/api';
 import { useTableSocket } from '../../../../hooks/useTableSocket';
 import type { SessionResponseDto, CustomerWelcomeResponseDto } from '@restaurant/shared-types';
 
@@ -56,8 +55,9 @@ interface HomeData {
 
 interface PublicSettings {
   restaurantName: string;
-  colorPrimary: string;
-  colorSecondary: string;
+  // Identidade visual e monocromatica (preto+branco). Tenants so
+  // customizam colorAccent; colorPrimary/colorSecondary deixaram de
+  // ser aplicados no DOM ha tempos.
   colorAccent: string;
   fontHero: string;
   fontBody: string;
@@ -281,7 +281,7 @@ export default function MesaPage() {
     async (cid: string | null): Promise<'approved' | 'pending' | 'rejected' | null> => {
       if (!cid) return null;
       try {
-        const res = await apiGetExternal<ParticipantsResponse>(
+        const res = await apiGet<ParticipantsResponse>(
           `/${slug}/table/participants`,
         );
         const me = res.participants.find((p) => p.customerId === cid);
@@ -406,7 +406,6 @@ export default function MesaPage() {
     <AppShell
       slug={slug}
       restaurantName={restaurantName}
-      logoUrl={settings?.logoUrl || null}
       tableLabel={tableLabel}
       variant="default"
       activeHref={`/${slug}/mesa/${tableCode}`}

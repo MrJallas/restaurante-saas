@@ -3,9 +3,124 @@
 @tailwind utilities;
 
 :root {
-  --color-primary: #1a1a2e;
-  --color-secondary: #16213e;
-  --color-accent: #e94560;
+  --color-bg: #ffffff;
+  --color-ink: #0a0a0a;
+  --color-border: #0a0a0a;
+  --color-border-soft: #e5e5e5;
+  --color-mute: #6b6b6b;
+  --color-faint: #a3a3a3;
+  --color-surface: #f6f5f2;
+  --color-danger: #c43a3a;
+  --color-success: #2f7d4f;
+  --color-accent: #0a0a0a;
+
   --font-hero: 'Inter', sans-serif;
   --font-body: 'Inter', sans-serif;
+}
+
+html, body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  /* 100dvh segue o viewport do iOS quando a toolbar/teclado muda.
+     100vh causa layout shift em Safari, entao nao usamos mais. */
+  min-height: 100dvh;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* iOS Safari: viewport + safe areas */
+@supports (-webkit-touch-callout: none) {
+  html, body {
+    min-height: -webkit-fill-available;
+  }
+
+  /* iOS Safari da zoom automatico ao focar inputs com font-size < 16px —
+     quebra UX em formularios e textareas pequenas (ex.: observacao do
+     pedido, comentario de feedback). Forcamos minimo de 16px so em iOS
+     pra nao bagunca tipografia em desktop. */
+  input:not([type='submit']):not([type='button']):not([type='reset']):not([type='checkbox']):not([type='radio']),
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
+/* Keyframes usados nos fluxos novos */
+@keyframes bounce-dot {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-4px); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes pop-in {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes fade-up {
+  0% { opacity: 0; transform: translateY(12px); filter: blur(6px); }
+  100% { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+@keyframes ripple {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.25); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-bounce-dot { animation: bounce-dot 1.2s ease-in-out infinite; }
+.animate-blink { animation: blink 1s steps(2, start) infinite; }
+.animate-pop-in { animation: pop-in 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.animate-fade-up { animation: fade-up 420ms ease-out both; }
+.animate-ripple { animation: ripple 1.6s ease-out infinite; }
+.animate-pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+
+/* Safe area helpers
+   Antes: `pb-safe` = max(env, 0px) — quase no-op, e em telas sem safe-area
+   o resultado era 0. Combinado com `pb-6` virava bug: classe duplicada,
+   ultima vence (pb-safe vence por source order), perde os 24px baseline.
+   Agora `pb-safe` ja garante 24px mesmo quando nao ha notch — qualquer
+   `pb-safe pb-6` continua funcional. */
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 24px); }
+.pt-safe { padding-top: max(env(safe-area-inset-top), 0px); }
+.h-dvh { height: 100dvh; }
+.min-h-dvh { min-height: 100dvh; }
+
+/* Mobile fluidity utilities
+   keyboard-anchor:   garante que containers ancorados no fundo (input do chat)
+                      respeitem o safe-area e nao colem no keyboard quando aberto.
+   gpu-layer:         promove o elemento pra camada de composicao do Safari iOS —
+                      rolagem e transform ficam no GPU, sem repaint.
+   contain-paint:     isola pintura de subarvores (ex.: Drawer sobre main) —
+                      evita invalidacao global ao abrir/fechar overlays.
+   prefers-reduced-motion: acessibilidade — zera animacoes pra quem pediu. */
+.keyboard-anchor { padding-bottom: max(env(safe-area-inset-bottom), 16px); }
+.gpu-layer { transform: translateZ(0); will-change: transform; backface-visibility: hidden; }
+.contain-paint { contain: layout style paint; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

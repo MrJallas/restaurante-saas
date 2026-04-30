@@ -1,7 +1,14 @@
-import { Controller, Post, Get, Param } from '@nestjs/common';
+import { Controller, Post, Get, Param, UseGuards } from '@nestjs/common';
+import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { DeliveriesService } from './deliveries.service';
 
+/**
+ * Endpoints de entrega — exclusivos de staff (waiter/cozinha). Antes
+ * eram TOTALMENTE publicos: qualquer um claimava pedidos, marcava
+ * delivered, listava pendentes. P0 do bug-hunt round audit.
+ */
 @Controller(':slug/deliveries')
+@UseGuards(StaffOrSessionGuard)
 export class DeliveriesController {
   constructor(private readonly deliveriesService: DeliveriesService) {}
 

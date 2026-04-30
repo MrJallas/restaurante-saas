@@ -104,7 +104,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
-  emitWaiterCall(slug: string, callData: { callId: string; tableLabel: string; tableCode: string }) {
+  emitWaiterCall(
+    slug: string,
+    callData: {
+      callId: string;
+      tableLabel: string;
+      tableCode: string;
+      reason?: string;
+    },
+  ) {
     this.server.to(`tenant:${slug}:waiter`).emit('waiter:call', {
       ...callData,
       timestamp: new Date().toISOString(),

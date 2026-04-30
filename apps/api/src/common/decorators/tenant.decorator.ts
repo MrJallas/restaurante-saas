@@ -5,10 +5,3 @@ export const Tenant = createParamDecorator((_data: unknown, ctx: ExecutionContex
   const request = ctx.switchToHttp().getRequest<TenantRequest>();
   return request.tenantSchemaName!;
 });
-
-export const TenantRestaurantId = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext): string => {
-    const request = ctx.switchToHttp().getRequest<TenantRequest>();
-    return request.tenantRestaurantId!;
-  },
-);

@@ -132,9 +132,9 @@ export class HomeService {
 
     // 6. Quick actions (fixas)
     const quickActions: QuickAction[] = [
-      { id: 'menu', label: 'Ver cardapio', icon: 'book-open', href: '/cardapio' },
-      { id: 'suggest', label: 'Sugestao da IA', icon: 'sparkles', href: '/assistente' },
-      { id: 'waiter', label: 'Chamar garcom', icon: 'bell', href: '#chamar-garcom' },
+      { id: 'menu', label: 'Ver cardápio', icon: 'book-open', href: '/cardapio' },
+      { id: 'suggest', label: 'Sugestão da IA', icon: 'sparkles', href: '/assistente' },
+      { id: 'waiter', label: 'Chamar garçom', icon: 'bell', href: '#chamar-garcom' },
       { id: 'order', label: 'Ver meu pedido', icon: 'clipboard-list', href: '/pedido' },
       { id: 'pay', label: 'Pagar conta', icon: 'credit-card', href: '/pagamento' },
     ];

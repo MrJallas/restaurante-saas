@@ -1,6 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 
+// Fields common to every menu-item read. `kind`, `sizes`, and `preferences`
+// were added by migration 016 for the drink-detail (SD1) and food/drink
+// tabs on the customer app. Keep this list in-sync with MenuItemApi in
+// apps/web-customer/src/app/[slug]/cardapio/[itemId]/page.tsx.
+const ITEM_COLUMNS = `
+  mi.id, mi.name, mi.short_description, mi.price_cents, mi.image_url,
+  mi.tags, mi.allergens, mi.is_featured, mi.is_day_special, mi.category_id,
+  mi.kind, mi.sizes, mi.preferences
+`;
+
 @Injectable()
 export class MenuService {
   constructor(private readonly tenantConn: TenantConnectionProvider) {}
@@ -17,8 +27,7 @@ export class MenuService {
   async getItems(categoryId?: string) {
     if (categoryId) {
       return this.tenantConn.query(
-        `SELECT mi.id, mi.name, mi.short_description, mi.price_cents, mi.image_url,
-                mi.tags, mi.allergens, mi.is_featured, mi.is_day_special, mi.category_id,
+        `SELECT ${ITEM_COLUMNS},
                 COALESCE(json_agg(
                   json_build_object('id', mie.id, 'name', mie.name, 'priceCents', mie.price_cents)
                 ) FILTER (WHERE mie.id IS NOT NULL AND mie.is_available = true), '[]') as extras
@@ -32,8 +41,7 @@ export class MenuService {
     }
 
     return this.tenantConn.query(
-      `SELECT mi.id, mi.name, mi.short_description, mi.price_cents, mi.image_url,
-              mi.tags, mi.allergens, mi.is_featured, mi.is_day_special, mi.category_id,
+      `SELECT ${ITEM_COLUMNS},
               COALESCE(json_agg(
                 json_build_object('id', mie.id, 'name', mie.name, 'priceCents', mie.price_cents)
               ) FILTER (WHERE mie.id IS NOT NULL AND mie.is_available = true), '[]') as extras
@@ -46,6 +54,7 @@ export class MenuService {
   }
 
   async getItemById(id: string) {
+    // mi.* already includes kind/sizes/preferences, so no change needed here.
     const rows = await this.tenantConn.query(
       `SELECT mi.*, mc.name as category_name,
               COALESCE(json_agg(
@@ -64,7 +73,8 @@ export class MenuService {
   async search(query: string) {
     const pattern = `%${query}%`;
     return this.tenantConn.query(
-      `SELECT id, name, short_description, price_cents, image_url, tags, allergens, category_id
+      `SELECT id, name, short_description, price_cents, image_url,
+              tags, allergens, category_id, kind, sizes, preferences
        FROM menu_items
        WHERE is_available = true
          AND (name ILIKE $1 OR tags @> ARRAY[$2]::text[] OR ingredients @> ARRAY[$2]::text[])
@@ -76,7 +86,7 @@ export class MenuService {
 
   async getFeatured() {
     return this.tenantConn.query(
-      `SELECT id, name, short_description, price_cents, image_url, tags,
+      `SELECT id, name, short_description, price_cents, image_url, tags, kind,
               CASE
                 WHEN is_day_special THEN 'Prato do dia'
                 WHEN is_featured THEN 'Destaque'

@@ -9,15 +9,11 @@ interface ThemeProviderProps {
 }
 
 export function ThemeProvider({ slug, children }: ThemeProviderProps) {
-  const { isLoading } = useTenantTheme(slug);
-
-  if (isLoading && slug) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    );
-  }
+  // Dispara o fetch do tema mas NUNCA troca o render por um spinner. O design
+  // base ja casa com os defaults (branco/preto), entao o tema do tenant entra
+  // transparente quando carregar. Substituir children por um spinner aqui
+  // desmonta a MesaPage no meio da inicializacao e trava o pageState.
+  useTenantTheme(slug);
 
   return <>{children}</>;
 }

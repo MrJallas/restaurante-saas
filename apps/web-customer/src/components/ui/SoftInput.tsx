@@ -58,15 +58,21 @@ export function SoftInput({
       onSubmit={handleSubmit}
       className="relative flex items-center gap-3 rounded-full border border-transparent bg-surface p-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-colors duration-150 focus-within:border-ink/20"
     >
-      <button
-        type="button"
-        onClick={onPlayClick}
-        disabled={disabled}
-        aria-label="Enviar áudio"
-        className="shrink-0 transition-transform duration-100 active:scale-95 focus:outline-none"
-      >
-        <PlayIcon size={42} />
-      </button>
+      {/* Botao de audio so aparece quando o consumidor passa onPlayClick.
+          Deixar visivel sem handler era pegadinha de UX — bug-hunter
+          relatou que o usuario tocava e nada acontecia. Quando a feature
+          de gravacao de audio for implementada, basta passar a prop. */}
+      {onPlayClick && (
+        <button
+          type="button"
+          onClick={onPlayClick}
+          disabled={disabled}
+          aria-label="Enviar áudio"
+          className="shrink-0 transition-transform duration-100 active:scale-95 focus:outline-none"
+        >
+          <PlayIcon size={42} />
+        </button>
+      )}
       <input
         type="text"
         inputMode="text"

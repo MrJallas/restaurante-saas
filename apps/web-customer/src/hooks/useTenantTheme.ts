@@ -5,8 +5,9 @@ import { apiGet } from '../lib/api';
 
 interface TenantTheme {
   restaurantName: string;
-  colorPrimary: string;
-  colorSecondary: string;
+  // colorPrimary/colorSecondary nao sao mais aplicados — identidade do
+  // app e monocromatica (preto+branco). Mantemos so colorAccent que
+  // tenants podem customizar.
   colorAccent: string;
   fontHero: string;
   fontBody: string;
@@ -25,25 +26,25 @@ export function useTenantTheme(slug: string | null) {
         const data = await apiGet<TenantTheme>(`/${slug}/settings/public`);
         setTheme(data);
 
-        // Aplica CSS variables
+        // Identidade visual é monocromática (branco + preto). Tenant só pode
+        // customizar o accent, que aparece em poucos highlights.
         const root = document.documentElement;
-        root.style.setProperty('--color-primary', data.colorPrimary);
-        root.style.setProperty('--color-secondary', data.colorSecondary);
-        root.style.setProperty('--color-accent', data.colorAccent);
+        if (data.colorAccent) {
+          root.style.setProperty('--color-accent', data.colorAccent);
+        }
         root.style.setProperty('--font-hero', `'${data.fontHero}', sans-serif`);
         root.style.setProperty('--font-body', `'${data.fontBody}', sans-serif`);
 
-        // Carrega Google Fonts dinamicamente
         const fonts = new Set([data.fontHero, data.fontBody]);
         fonts.forEach((font) => {
-          if (font === 'Inter') return; // Ja carregada por padrao
+          if (font === 'Inter') return;
           const link = document.createElement('link');
           link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@400;500;600;700&display=swap`;
           link.rel = 'stylesheet';
           document.head.appendChild(link);
         });
       } catch {
-        // Usa defaults
+        // Usa defaults monocromáticos
       } finally {
         setIsLoading(false);
       }

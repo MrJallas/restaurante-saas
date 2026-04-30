@@ -15,7 +15,6 @@ export function CpfInput({ value, onChange }: CpfInputProps) {
   const isComplete = raw.length === 11;
   const isValid = isComplete && validateCpf(raw);
   const showError = touched && isComplete && !isValid;
-  const showSuccess = touched && isValid;
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -36,17 +35,13 @@ export function CpfInput({ value, onChange }: CpfInputProps) {
         onChange={handleChange}
         onBlur={() => setTouched(true)}
         maxLength={14}
-        className={`w-full rounded-lg border-2 px-4 py-3 text-lg outline-none transition-colors ${
-          showError
-            ? 'border-red-500 bg-red-50'
-            : showSuccess
-              ? 'border-green-500 bg-green-50'
-              : 'border-gray-200 focus:border-primary'
+        className={`w-full rounded-[14px] bg-bg px-4 py-3 text-[15px] text-ink outline-none transition-colors tabular-nums border-[1.3px] ${
+          showError ? 'border-danger' : 'border-ink focus:border-ink'
         }`}
       />
       {showError && (
-        <p className="mt-1 text-sm text-red-500">
-          CPF invalido. Verifique os numeros digitados.
+        <p className="mt-1.5 text-[11px] text-danger">
+          CPF inválido. Verifique os números digitados.
         </p>
       )}
     </div>

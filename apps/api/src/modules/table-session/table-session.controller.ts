@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Res, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { IsString, IsNotEmpty } from 'class-validator';
 import { Tenant } from '../../common/decorators/tenant.decorator';

@@ -28,12 +28,15 @@ export class AiServiceClient {
   private readonly baseUrl = aiConfig.serviceUrl;
   private readonly timeout = aiConfig.timeoutMs;
 
-  async classify(message: string): Promise<ClassifyResponse> {
+  async classify(
+    message: string,
+    history: ChatMessage[] = [],
+  ): Promise<ClassifyResponse> {
     try {
       const res = await fetch(`${this.baseUrl}/classify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, history }),
         signal: AbortSignal.timeout(10000),
       });
 
