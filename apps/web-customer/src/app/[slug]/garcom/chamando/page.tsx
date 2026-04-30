@@ -81,9 +81,9 @@ export default function GarcomChamandoPage() {
     replace(`/${slug}/assistente`);
   }, [cancelling, callId, replace, slug]);
 
-  const waiterName = call?.waiterName ?? 'Rodrigo';
-  const initial = (waiterName[0] || 'G').toUpperCase();
-  const eta = call?.etaMinutes ?? 2;
+  const isAcknowledged = call?.status === 'acknowledged';
+  const waiterName = call?.waiterName;
+  const eta = call?.etaMinutes;
 
   return (
     <AppShell
@@ -107,33 +107,53 @@ export default function GarcomChamandoPage() {
             />
             <span className="text-[44px]">◔</span>
           </div>
-          <div className="mb-2 text-[11px] font-bold uppercase tracking-[2px] text-success">
-            Chamado recebido
-          </div>
-          <div className="text-center text-[26px] font-semibold leading-[1.2] tracking-[-0.02em] text-pretty">
-            Um garçom está a caminho{'.'.repeat(dots)}
-          </div>
-          <div className="mx-auto mt-2.5 max-w-[300px] text-center text-[13px] leading-[1.5] text-mute text-pretty">
-            Ele foi notificado e já está se dirigindo à sua mesa.
-          </div>
+          {isAcknowledged ? (
+            <>
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-[2px] text-success">
+                Chamado confirmado
+              </div>
+              <div className="text-center text-[26px] font-semibold leading-[1.2] tracking-[-0.02em] text-pretty">
+                Um garçom está a caminho!
+              </div>
+              <div className="mx-auto mt-2.5 max-w-[300px] text-center text-[13px] leading-[1.5] text-mute text-pretty">
+                Ele já está se dirigindo à sua mesa.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-[2px] text-mute">
+                Aguardando confirmação
+              </div>
+              <div className="text-center text-[26px] font-semibold leading-[1.2] tracking-[-0.02em] text-pretty">
+                Chamando garçom{'.'.repeat(dots)}
+              </div>
+              <div className="mx-auto mt-2.5 max-w-[300px] text-center text-[13px] leading-[1.5] text-mute text-pretty">
+                O chamado foi enviado. Aguarde a confirmação do garçom.
+              </div>
+            </>
+          )}
         </div>
 
-        <div className="mb-3.5 flex items-center gap-3.5 rounded-[18px] border-[1.3px] border-ink p-4">
-          <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border-[1.2px] border-ink bg-surface text-[18px] font-semibold">
-            {initial}
+        {isAcknowledged && waiterName && (
+          <div className="mb-3.5 flex items-center gap-3.5 rounded-[18px] border-[1.3px] border-ink p-4">
+            <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border-[1.2px] border-ink bg-surface text-[18px] font-semibold">
+              {waiterName[0].toUpperCase()}
+            </div>
+            <div className="flex-1">
+              <div className="text-[11px] font-semibold uppercase tracking-[1px] text-mute">
+                Seu garçom
+              </div>
+              <div className="mt-0.5 text-[17px] font-semibold tracking-[-0.01em]">
+                {waiterName}
+              </div>
+              {eta != null && (
+                <div className="mt-0.5 text-[11px] text-mute">
+                  Tempo estimado: {eta} min
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex-1">
-            <div className="text-[11px] font-semibold uppercase tracking-[1px] text-mute">
-              Seu garçom
-            </div>
-            <div className="mt-0.5 text-[17px] font-semibold tracking-[-0.01em]">
-              {waiterName}
-            </div>
-            <div className="mt-0.5 text-[11px] text-mute">
-              Tempo estimado: {eta} min
-            </div>
-          </div>
-        </div>
+        )}
 
         <div className="mb-3.5 flex items-start gap-2.5 rounded-[12px] border border-border-soft bg-surface p-3.5 text-[12px] leading-[1.5] text-ink text-pretty">
           <span className="text-[14px]">✦</span>

@@ -83,16 +83,16 @@ SELECT c.id, 'Salmao Grelhado', 'Filet 220g com legumes',
        6890, ARRAY['peixe','saudavel'], ARRAY['peixe'], ARRAY['salmao','legumes','batata doce'], 18, 3
 FROM menu_categories c WHERE c.name = 'Pratos Principais';
 
-INSERT INTO menu_items (category_id, name, short_description, price_cents, tags, ingredients, prep_time_minutes, sort_order)
-SELECT c.id, 'Suco de Laranja', 'Natural, 400ml', 1290, ARRAY['natural','sem-alcool'], ARRAY['laranja'], 3, 1
+INSERT INTO menu_items (category_id, name, short_description, price_cents, tags, ingredients, prep_time_minutes, sort_order, kind)
+SELECT c.id, 'Suco de Laranja', 'Natural, 400ml', 1290, ARRAY['natural','sem-alcool'], ARRAY['laranja'], 3, 1, 'drink'
 FROM menu_categories c WHERE c.name = 'Bebidas';
 
-INSERT INTO menu_items (category_id, name, short_description, price_cents, tags, ingredients, prep_time_minutes, sort_order)
-SELECT c.id, 'Caipirinha', 'Cachaca, limao e acucar', 1990, ARRAY['alcoolico','classico'], ARRAY['cachaca','limao','acucar'], 5, 2
+INSERT INTO menu_items (category_id, name, short_description, price_cents, tags, ingredients, prep_time_minutes, sort_order, kind)
+SELECT c.id, 'Caipirinha', 'Cachaca, limao e acucar', 1990, ARRAY['alcoolico','classico'], ARRAY['cachaca','limao','acucar'], 5, 2, 'drink'
 FROM menu_categories c WHERE c.name = 'Bebidas';
 
-INSERT INTO menu_items (category_id, name, short_description, price_cents, tags, ingredients, prep_time_minutes, sort_order)
-SELECT c.id, 'Agua Mineral', 'Com ou sem gas, 500ml', 790, ARRAY['sem-alcool'], ARRAY['agua'], 1, 3
+INSERT INTO menu_items (category_id, name, short_description, price_cents, tags, ingredients, prep_time_minutes, sort_order, kind)
+SELECT c.id, 'Agua Mineral', 'Com ou sem gas, 500ml', 790, ARRAY['sem-alcool'], ARRAY['agua'], 1, 3, 'drink'
 FROM menu_categories c WHERE c.name = 'Bebidas';
 
 INSERT INTO menu_items (category_id, name, short_description, long_description, price_cents, tags, allergens, ingredients, prep_time_minutes, is_featured, sort_order)

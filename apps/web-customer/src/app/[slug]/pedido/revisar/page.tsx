@@ -15,7 +15,7 @@ const SERVICE_RATE = 0.1;
 export default function PedidoRevisarPage() {
   const params = useParams();
   const { push } = useNav();
-  const { tableLabel, visitId } = useSession();
+  const { tableLabel, visitId, customerId } = useSession();
   const slug = params.slug as string;
   const { items, updateItem, removeItem, totalCents } = useDraftOrder();
   const [submitting, setSubmitting] = useState(false);
@@ -41,6 +41,7 @@ export default function PedidoRevisarPage() {
         menuItemId: it.menuItemId,
         quantity: it.quantity,
         notes: it.note || undefined,
+        customerId: it.commandMode === 'individual' ? customerId : null,
       }));
       const res = await apiPost<{ id: string; autoConfirmAt?: string }>(
         `/${slug}/orders`,
