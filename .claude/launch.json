@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-customer",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev", "-H", "0.0.0.0", "-p", "3003"],
+      "cwd": "apps/web-customer",
+      "port": 3003,
+      "autoPort": false
+    }
+  ]
+}
