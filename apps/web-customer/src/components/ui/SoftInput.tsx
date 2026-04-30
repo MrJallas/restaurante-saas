@@ -3,7 +3,7 @@
 import { FormEvent, useState } from 'react';
 import { PlayIcon } from './PlayIcon';
 
-interface LiquidGlassInputProps {
+interface SoftInputProps {
   placeholder?: string;
   value?: string;
   defaultValue?: string;
@@ -21,13 +21,12 @@ interface LiquidGlassInputProps {
 }
 
 /**
- * Input ancorado no rodape do chat / home. O nome historico vem do "liquid
- * glass" do design inicial, mas como o app roda em Safari (nao e PWA), o
- * backdrop-filter era caro e causava jank ao abrir teclado. Substituimos por
- * superficie solida com sombra sutil — identidade pill preservada, sem o
- * custo de GPU do blur. Veja `SoftInput` (mesmo componente, nome novo).
+ * Input pill ancorado no rodape do chat / home / assistente. Superficie
+ * solida com sombra sutil — sem backdrop-filter porque o app roda em
+ * Safari iOS direto (nao e PWA) e o blur era caro / causava jank ao
+ * abrir teclado.
  */
-export function LiquidGlassInput({
+export function SoftInput({
   placeholder = 'Digite aqui',
   value,
   defaultValue,
@@ -36,7 +35,7 @@ export function LiquidGlassInput({
   onPlayClick,
   disabled,
   maxLength,
-}: LiquidGlassInputProps) {
+}: SoftInputProps) {
   const [internal, setInternal] = useState(defaultValue ?? '');
   const isControlled = value !== undefined;
   const current = isControlled ? value : internal;
@@ -109,10 +108,3 @@ export function LiquidGlassInput({
     </form>
   );
 }
-
-/**
- * Nome novo do componente apos a remocao do liquid-glass. Use `SoftInput` em
- * arquivos novos; o alias `LiquidGlassInput` continua funcionando pra nao
- * quebrar imports existentes ate o rename fisico em um PR futuro.
- */
-export const SoftInput = LiquidGlassInput;

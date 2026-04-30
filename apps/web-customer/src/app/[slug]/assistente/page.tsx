@@ -8,7 +8,7 @@ import { useNav } from '../../../hooks/useNav';
 import { useDraftOrder } from '../../../providers/DraftOrderProvider';
 import { AppShell } from '../../../components/layout/AppShell';
 import { Bubble } from '../../../components/ui/Bubble';
-import { LiquidGlassInput } from '../../../components/ui/LiquidGlassInput';
+import { SoftInput } from '../../../components/ui/SoftInput';
 
 interface LinkedItem {
   id: string;
@@ -508,7 +508,7 @@ export default function AssistentePage() {
         </div>
 
         <div className="keyboard-anchor shrink-0 px-[22px] pt-2">
-          <LiquidGlassInput
+          <SoftInput
             maxLength={2000}
             placeholder="Digite aqui"
             value={input}

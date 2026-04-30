@@ -14,7 +14,7 @@ import { WelcomeModal } from '../../../../components/welcome/WelcomeModal';
 import { AppShell } from '../../../../components/layout/AppShell';
 import { HomeHero } from '../../../../components/home/HomeHero';
 import { PillButton } from '../../../../components/ui/PillButton';
-import { LiquidGlassInput } from '../../../../components/ui/LiquidGlassInput';
+import { SoftInput } from '../../../../components/ui/SoftInput';
 import { HostApprovalModal } from '../../../../components/host/HostApprovalModal';
 import { PendingApprovalScreen } from '../../../../components/host/PendingApprovalScreen';
 import { apiGet as apiGetExternal } from '../../../../lib/api';
@@ -441,7 +441,7 @@ export default function MesaPage() {
       </div>
 
       <div className="px-6 pb-safe pb-8">
-        <LiquidGlassInput
+        <SoftInput
           placeholder="Digite aqui"
           value={inputValue}
           onChange={setInputValue}
