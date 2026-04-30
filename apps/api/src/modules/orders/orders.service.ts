@@ -680,7 +680,16 @@ export class OrdersService {
       [orderId],
     )) as { name: string; category_id: string; category_name: string; quantity: number }[];
 
-    const lastItems = orderItems.map((i) => ({ name: i.name, quantity: i.quantity }));
+    // Inclui category pra que home.service.ts conseguir distinguir
+    // ultimo prato vs ultima bebida vs ultima sobremesa em returning
+    // customers (templates de welcome). Antes era so {name,quantity} e
+    // i.category ficava undefined, fazendo todos os templates caírem
+    // no fallback generico (P2 do bug-hunt).
+    const lastItems = orderItems.map((i) => ({
+      name: i.name,
+      quantity: i.quantity,
+      category: i.category_name,
+    }));
     const categories = [...new Set(orderItems.map((i) => i.category_name))];
 
     await this.tenantConn.query(
