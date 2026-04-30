@@ -1,31 +1,28 @@
-import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Req, Res, UseGuards } from '@nestjs/common';
 import {
   IsString,
   IsNotEmpty,
   MinLength,
   MaxLength,
   Matches,
+  IsOptional,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { Response } from 'express';
 import { SessionGuard } from '../../common/guards/session.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { SessionData } from '../../common/guards/session.guard';
 import { CustomersService } from './customers.service';
 
+const RECOGNITION_COOKIE_MAX_AGE = 365 * 24 * 60 * 60 * 1000;
+
 class CustomerWelcomeDto {
-  // Bug-hunter encontrou HTTP 500 com nome de 10k chars (overflow no
-  // VARCHAR do customers.name). Sem MaxLength a request passa do guard
-  // e explode no DB. 120 e suficiente pra qualquer nome real br.
   @IsString()
   @IsNotEmpty()
   @MinLength(2)
   @MaxLength(120)
   name!: string;
 
-  // CPF: aceitamos formato com ou sem mascara — o @Transform stripa
-  // tudo que nao for digito antes da validacao. Frontend ja envia raw
-  // mas integradores externos / testes via curl podem mandar
-  // "111.444.777-35"; nao faz sentido bloquear isso (era P3 do bug-hunt).
   @IsString()
   @IsNotEmpty()
   @Transform(({ value }) =>
@@ -38,10 +35,10 @@ class CustomerWelcomeDto {
 }
 
 class CustomerRecognizeDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(256)
-  recognitionToken!: string;
+  recognitionToken?: string;
 }
 
 @Controller(':slug/customer')
@@ -53,12 +50,23 @@ export class CustomersController {
   async welcome(
     @Body() dto: CustomerWelcomeDto,
     @Session() session: SessionData,
+    @Req() req: { cookies?: Record<string, string> },
+    @Res({ passthrough: true }) res: Response,
   ) {
+    const callerRecognitionToken = req.cookies?.recognition_token ?? null;
     const result = await this.customersService.welcome(
       dto.name,
       dto.cpf,
       session.sessionId,
+      callerRecognitionToken,
     );
+
+    res.cookie('recognition_token', result.recognitionToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: RECOGNITION_COOKIE_MAX_AGE,
+    });
 
     return {
       customerId: result.customerId,
@@ -76,10 +84,27 @@ export class CustomersController {
   async recognize(
     @Body() dto: CustomerRecognizeDto,
     @Session() session: SessionData,
+    @Req() req: { cookies?: Record<string, string> },
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.customersService.recognize(
-      dto.recognitionToken,
+    const token =
+      dto.recognitionToken ?? req.cookies?.recognition_token ?? null;
+    if (!token) {
+      return { recognized: false };
+    }
+
+    const result = await this.customersService.recognize(
+      token,
       session.sessionId,
     );
+
+    res.cookie('recognition_token', result.recognitionToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: RECOGNITION_COOKIE_MAX_AGE,
+    });
+
+    return result;
   }
 }

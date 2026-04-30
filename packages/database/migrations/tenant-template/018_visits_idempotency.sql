@@ -1,0 +1,35 @@
+-- Dedupe existing visits keeping the oldest per (table_session_id, customer_id).
+-- Must null FK refs before deleting duplicates.
+DO $$
+DECLARE
+  _dup_count INT;
+BEGIN
+  CREATE TEMP TABLE _dup_visit_ids ON COMMIT DROP AS
+    WITH ranked AS (
+      SELECT id, ROW_NUMBER() OVER (PARTITION BY table_session_id, customer_id ORDER BY created_at) AS rn
+      FROM visits
+    )
+    SELECT id FROM ranked WHERE rn > 1;
+
+  SELECT COUNT(*) INTO _dup_count FROM _dup_visit_ids;
+  IF _dup_count > 0 THEN
+    UPDATE session_participants SET visit_id = NULL WHERE visit_id IN (SELECT id FROM _dup_visit_ids);
+    UPDATE waiter_calls SET visit_id = NULL WHERE visit_id IN (SELECT id FROM _dup_visit_ids);
+    UPDATE orders SET visit_id = NULL WHERE visit_id IN (SELECT id FROM _dup_visit_ids);
+    UPDATE payments SET visit_id = NULL WHERE visit_id IN (SELECT id FROM _dup_visit_ids);
+    UPDATE feedbacks SET visit_id = NULL WHERE visit_id IN (SELECT id FROM _dup_visit_ids);
+    DELETE FROM visits WHERE id IN (SELECT id FROM _dup_visit_ids);
+    RAISE NOTICE 'Removed % duplicate visits', _dup_count;
+  END IF;
+END $$;
+
+-- One visit per customer per session
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'visits_session_customer_unique'
+  ) THEN
+    ALTER TABLE visits ADD CONSTRAINT visits_session_customer_unique
+      UNIQUE (table_session_id, customer_id);
+  END IF;
+END $$;

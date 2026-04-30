@@ -28,6 +28,7 @@ export class CustomersService {
     name: string,
     cpf: string,
     sessionId: string,
+    callerRecognitionToken?: string | null,
   ): Promise<CustomerWelcomeResult> {
     const cleanCpf = cpf.replace(/\D/g, '');
 
@@ -35,7 +36,6 @@ export class CustomersService {
       throw new HttpException('CPF invalido. Verifique os numeros digitados.', HttpStatus.BAD_REQUEST);
     }
 
-    // Busca customer pelo CPF
     const existing = await this.tenantConn.query(
       'SELECT id, name, recognition_token, total_visits FROM customers WHERE cpf = $1',
       [cleanCpf],
@@ -49,14 +49,32 @@ export class CustomersService {
     if ((existing as unknown[]).length > 0) {
       const customer = (existing as Record<string, unknown>[])[0];
       customerId = customer.id as string;
-      recognitionToken = customer.recognition_token as string;
+      const storedToken = customer.recognition_token as string;
       isReturning = true;
       totalVisits = (customer.total_visits as number) + 1;
 
-      // Atualiza nome se diferente, incrementa visits
+      const tokenMatches =
+        callerRecognitionToken != null && callerRecognitionToken === storedToken;
+
+      if (!tokenMatches) {
+        this.logger.warn(
+          `CPF takeover attempt blocked: CPF ${cleanCpf.slice(0, 3)}*** without valid recognition_token`,
+        );
+        throw new HttpException(
+          JSON.stringify({
+            status: 'recognition_required',
+            message: 'CPF ja registrado. Use seu token de reconhecimento ou peca ao garcom para confirmar.',
+          }),
+          HttpStatus.CONFLICT,
+        );
+      }
+
+      recognitionToken = storedToken;
+
+      // Only bump visit counter, never overwrite name
       await this.tenantConn.query(
-        `UPDATE customers SET name = $1, total_visits = $2, last_visit_at = now(), updated_at = now() WHERE id = $3`,
-        [name.trim(), totalVisits, customerId],
+        `UPDATE customers SET total_visits = $1, last_visit_at = now(), updated_at = now() WHERE id = $2`,
+        [totalVisits, customerId],
       );
     } else {
       recognitionToken = uuidv4();
@@ -69,15 +87,18 @@ export class CustomersService {
       customerId = (result as Record<string, unknown>[])[0].id as string;
     }
 
-    // Cria visit
-    const visitResult = await this.tenantConn.query(
-      `INSERT INTO visits (customer_id, table_session_id) VALUES ($1, $2) RETURNING id`,
+    // Idempotent visit: ON CONFLICT returns nothing, so we SELECT after.
+    await this.tenantConn.query(
+      `INSERT INTO visits (customer_id, table_session_id) VALUES ($1, $2)
+       ON CONFLICT (table_session_id, customer_id) DO NOTHING`,
       [customerId, sessionId],
     );
-    const visitId = (visitResult as Record<string, unknown>[])[0].id as string;
+    const visitRow = await this.tenantConn.query(
+      `SELECT id FROM visits WHERE customer_id = $1 AND table_session_id = $2`,
+      [customerId, sessionId],
+    );
+    const visitId = (visitRow as Record<string, unknown>[])[0].id as string;
 
-    // Attach this customer to the table's participant roster so the avatar
-    // stack (SM3, SP1) and per-item attribution have a stable color.
     const participant = await this.tableSessionService.upsertParticipant(
       sessionId,
       customerId,
@@ -131,15 +152,17 @@ export class CustomersService {
       [totalVisits, customerId],
     );
 
-    // Cria visit
-    const visitResult = await this.tenantConn.query(
-      `INSERT INTO visits (customer_id, table_session_id) VALUES ($1, $2) RETURNING id`,
+    await this.tenantConn.query(
+      `INSERT INTO visits (customer_id, table_session_id) VALUES ($1, $2)
+       ON CONFLICT (table_session_id, customer_id) DO NOTHING`,
       [customerId, sessionId],
     );
-    const visitId = (visitResult as Record<string, unknown>[])[0].id as string;
+    const visitRow = await this.tenantConn.query(
+      `SELECT id FROM visits WHERE customer_id = $1 AND table_session_id = $2`,
+      [customerId, sessionId],
+    );
+    const visitId = (visitRow as Record<string, unknown>[])[0].id as string;
 
-    // Attach to the table's participant roster (idempotent — reuses color
-    // if this customer has been at this table before).
     const participant = await this.tableSessionService.upsertParticipant(
       sessionId,
       customerId,
