@@ -16,6 +16,9 @@ import {
   IsArray,
   IsInt,
   Min,
+  Max,
+  ArrayMaxSize,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
@@ -27,12 +30,17 @@ class SplitAllocationDto implements SplitAllocation {
   @IsNotEmpty()
   customerId!: string;
 
+  // 10 milhoes de centavos = R$ 100.000 — teto absurdo pra qualquer
+  // mesa real. Sem isso o validador `Math.abs(sum - totalCents) > N`
+  // podia ser falsificado por overflow de floating-point.
   @IsInt()
   @Min(0)
+  @Max(10_000_000)
   amountCents!: number;
 
   @IsOptional()
   @IsString()
+  @MaxLength(60)
   label?: string;
 }
 
@@ -68,12 +76,16 @@ class ComputeSplitDto {
   @IsIn(['equal', 'by_item', 'custom'])
   mode!: string;
 
+  // Cap em 50 participantes — cobre mesa de festa com folga e evita
+  // DoS via array gigante consumindo CPU no computeSplit.
   @IsArray()
+  @ArrayMaxSize(50)
   @IsString({ each: true })
   participants!: string[];
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(50)
   @ValidateNested({ each: true })
   @Type(() => SplitAllocationDto)
   allocations?: SplitAllocationDto[];
@@ -84,6 +96,7 @@ class NotifySplitDto {
   mode!: string;
 
   @IsArray()
+  @ArrayMaxSize(50)
   @ValidateNested({ each: true })
   @Type(() => SplitAllocationDto)
   allocations!: SplitAllocationDto[];
@@ -191,7 +204,14 @@ export class PaymentsController {
 
   @Get(':paymentId')
   @UseGuards(SessionGuard)
-  async getPaymentStatus(@Param('paymentId') paymentId: string) {
-    return this.paymentsService.getPaymentStatus(paymentId);
+  async getPaymentStatus(
+    @Param('paymentId') paymentId: string,
+    @Session() session: SessionData,
+  ) {
+    // Passa session pra que o service filtre por ownership; antes,
+    // qualquer cliente autenticado podia ler QR Code Pix e
+    // pix_copy_paste de pagamentos de OUTRA mesa adivinhando o UUID
+    // (P1 do bug-hunt).
+    return this.paymentsService.getPaymentStatus(paymentId, session.sessionId);
   }
 }

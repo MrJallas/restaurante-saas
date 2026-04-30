@@ -213,8 +213,9 @@ export class OrdersController {
   async confirmOrder(
     @Param('orderId') orderId: string,
     @Param('slug') slug: string,
+    @Session() session: SessionData,
   ) {
-    return this.ordersService.confirmOrder(orderId, slug);
+    return this.ordersService.confirmOrder(orderId, session.sessionId, slug);
   }
 
   /**
@@ -227,8 +228,9 @@ export class OrdersController {
   async cancelOrder(
     @Param('orderId') orderId: string,
     @Param('slug') slug: string,
+    @Session() session: SessionData,
   ) {
-    return this.ordersService.cancelOrder(orderId, slug);
+    return this.ordersService.cancelOrder(orderId, session.sessionId, slug);
   }
 
   /**
@@ -260,8 +262,13 @@ export class OrdersController {
    * 15s window has elapsed to `received`. Safe to call frequently — it
    * only touches expired rows and is idempotent. A lazy sweep also runs
    * on every GET /orders so this is a backstop, not the primary path.
+   *
+   * Protegido pelo StaffOrSessionGuard pra que atacante externo nao
+   * consiga forcar auto-confirmacao em massa eliminando a janela de 15s
+   * que o cliente tem pra cancelar (P1 do bug-hunt).
    */
   @Post('_sweep-auto-confirm')
+  @UseGuards(StaffOrSessionGuard)
   async sweepAutoConfirm() {
     const ids = await this.ordersService.sweepAutoConfirm();
     return { promoted: ids.length, orderIds: ids };

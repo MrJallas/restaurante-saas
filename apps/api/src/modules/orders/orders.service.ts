@@ -263,10 +263,13 @@ export class OrdersService {
   }
 
   /** Promote a pending_confirmation order to `received`. Idempotent. */
-  async confirmOrder(orderId: string, slug?: string) {
+  async confirmOrder(orderId: string, tableSessionId: string, slug?: string) {
+    // Filtra por table_session_id pra que cliente de outra mesa nao
+    // possa confirmar pedido alheio (P1 ownership do bug-hunt).
     const rows = (await this.tenantConn.query(
-      `SELECT id, status, table_session_id, billing_mode, total_cents FROM orders WHERE id = $1`,
-      [orderId],
+      `SELECT id, status, table_session_id, billing_mode, total_cents
+       FROM orders WHERE id = $1 AND table_session_id = $2`,
+      [orderId, tableSessionId],
     )) as {
       id: string;
       status: string;
@@ -287,10 +290,27 @@ export class OrdersService {
       );
     }
 
-    await this.tenantConn.query(
-      `UPDATE orders SET status = 'received', auto_confirm_at = NULL, updated_at = now() WHERE id = $1`,
-      [orderId],
-    );
+    // CAS atomico: UPDATE com WHERE status = $expected RETURNING. Se
+    // outro client/sweep confirmar primeiro, rowCount = 0 e tratamos
+    // como ja-confirmado. Resolve race read-modify-write sem precisar
+    // de SELECT FOR UPDATE explicito.
+    const updated = (await this.tenantConn.query(
+      `UPDATE orders
+       SET status = 'received', auto_confirm_at = NULL, updated_at = now()
+       WHERE id = $1 AND status = $2
+       RETURNING id`,
+      [orderId, order.status],
+    )) as { id: string }[];
+
+    if (!updated.length) {
+      // Outra request ja transicionou — re-le e retorna o status atual.
+      const refresh = (await this.tenantConn.query(
+        `SELECT status FROM orders WHERE id = $1`,
+        [orderId],
+      )) as { status: string }[];
+      return { orderId, status: refresh[0]?.status ?? 'received' };
+    }
+
     await this.tenantConn.query(
       `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
        VALUES ($1, $2, 'received', 'customer')`,
@@ -324,10 +344,12 @@ export class OrdersService {
   }
 
   /** Cancel a pending_confirmation order. Only valid within the 15s window. */
-  async cancelOrder(orderId: string, slug?: string) {
+  async cancelOrder(orderId: string, tableSessionId: string, slug?: string) {
+    // Mesma logica de ownership/CAS do confirmOrder.
     const rows = (await this.tenantConn.query(
-      `SELECT id, status, table_session_id FROM orders WHERE id = $1`,
-      [orderId],
+      `SELECT id, status, table_session_id FROM orders
+       WHERE id = $1 AND table_session_id = $2`,
+      [orderId, tableSessionId],
     )) as { id: string; status: string; table_session_id: string }[];
 
     if (!rows.length) throw new NotFoundException('Pedido nao encontrado.');
@@ -342,10 +364,22 @@ export class OrdersService {
       );
     }
 
-    await this.tenantConn.query(
-      `UPDATE orders SET status = 'cancelled', auto_confirm_at = NULL, updated_at = now() WHERE id = $1`,
-      [orderId],
-    );
+    const updated = (await this.tenantConn.query(
+      `UPDATE orders
+       SET status = 'cancelled', auto_confirm_at = NULL, updated_at = now()
+       WHERE id = $1 AND status = $2
+       RETURNING id`,
+      [orderId, order.status],
+    )) as { id: string }[];
+
+    if (!updated.length) {
+      const refresh = (await this.tenantConn.query(
+        `SELECT status FROM orders WHERE id = $1`,
+        [orderId],
+      )) as { status: string }[];
+      return { orderId, status: refresh[0]?.status ?? 'cancelled' };
+    }
+
     await this.tenantConn.query(
       `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
        VALUES ($1, $2, 'cancelled', 'customer')`,

@@ -267,13 +267,16 @@ export class PaymentsService {
     return { paymentId, status: 'cancelled' };
   }
 
-  async getPaymentStatus(paymentId: string) {
+  async getPaymentStatus(paymentId: string, tableSessionId: string) {
+    // Filtra por table_session_id pra que cliente em mesa diferente
+    // nao consiga ler QR Code Pix / pix_copy_paste / amount_cents de
+    // pagamento alheio adivinhando o UUID. P1 do bug-hunt.
     const rows = (await this.tenantConn.query(
       `SELECT id, status, amount_cents, method, pix_qr_code, pix_copy_paste,
               paid_at, created_at, expires_at, cancelled_at,
               split_mode, split_allocations
-       FROM payments WHERE id = $1`,
-      [paymentId],
+       FROM payments WHERE id = $1 AND table_session_id = $2`,
+      [paymentId, tableSessionId],
     )) as Array<{
       id: string;
       status: string;
