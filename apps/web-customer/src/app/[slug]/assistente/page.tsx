@@ -45,9 +45,10 @@ const DEFAULT_SUGGESTIONS = [
 ];
 
 // Palavras que, combinadas com itens ja mencionados pela IA, indicam "quero
-// pedir". Mantemos flexivel pra cobrir variacoes naturais ("pode mandar",
-// "vou querer", "pede pra mim", "quero esse"). O acento e removido na
-// normalizacao, entao aqui escrevemos sem.
+// pedir". Tem que ter VERBO de pedido — "tudo bem"/"tudo certo" virava falso
+// positivo (P0 do bug-hunt: usuario respondia saudacao e o app criava
+// pedido fake de R$ 78,90 sem confirmacao). "tudo"/"todos"/"ambos" sozinhos
+// nao bastam mais — precisam vir junto com verbo de acao.
 const ORDER_INTENT_PATTERNS = [
   /\bquero (os |as |o |a |esse|essa|esses|essas|tudo|todos|todas|ambos|ambas|esses|essas|ele|ela|eles|elas)/,
   /\b(pode|podes|poderia) (pedir|mandar|trazer|pegar)\b/,
@@ -57,17 +58,22 @@ const ORDER_INTENT_PATTERNS = [
   /\bpede pra mim\b/,
   /\bme (traz|ve|vê|da)\b/,
   /\bpedir (os|as|o|a|esse|essa|todos|tudo|ambos)\b/,
-  /\bconfirma(r)?\b/,
-  /\bisso mesmo\b/,
-  /\bpode ser\b/,
-  /\b(os|as) (dois|duas|2)\b/,
-  /\btodos\b/,
-  /\btudo\b/,
-  /\bambos\b/,
+  /\bconfirma(r)? (o |os |a |as )?pedido\b/,
+  /\bisso mesmo,? (pode |peca|manda|pede)/,
+  /\bpode ser,? (manda|pede|pode pedir)/,
+  /\b(os|as) (dois|duas|2),? (manda|pede|pode pedir|por favor)/,
 ];
 
+// "tudo bem"/"tudo certo"/"tudo otimo" sao saudacoes — NAO pedido. Bloqueia
+// match espurio quando o usuario acabou de receber linkedItems e responde
+// "tudo bem" pra um cumprimento da IA.
+const NON_ORDER_TUDO_PATTERNS =
+  /\btudo (bem|certo|joia|otimo|ok|legal|tranquilo|certinho|beleza|firmeza)\b/;
+
+// "todos os/as" especifico = pedido; "todos" sozinho ambiguo, exigimos
+// contexto de verbo (coberto em ORDER_INTENT_PATTERNS acima).
 const ALL_ITEMS_KEYWORDS =
-  /\b(os dois|as duas|os 2|ambos|ambas|todos|tudo|todas|os tres|as tres|os 3)\b/;
+  /\b(os dois|as duas|os 2|ambos|ambas|os tres|as tres|os 3|todos os|todas as)\b/;
 
 function normalize(text: string): string {
   return text
@@ -83,6 +89,11 @@ function detectOrderIntent(
 ): LinkedItem[] | null {
   if (!previousLinkedItems || previousLinkedItems.length === 0) return null;
   const msg = normalize(message);
+
+  // Curto-circuito: saudacao com "tudo bem/certo/etc" nao e pedido.
+  // Sem esse guard, "tudo bem" disparava placeOrderForItems(linkedItems
+  // do turno anterior), criando pedido fake e navegando pra /pix.
+  if (NON_ORDER_TUDO_PATTERNS.test(msg)) return null;
 
   const hasIntent = ORDER_INTENT_PATTERNS.some((re) => re.test(msg));
   if (!hasIntent) return null;
@@ -292,11 +303,23 @@ export default function AssistentePage() {
       if (res.suggestions && res.suggestions.length > 0) {
         setSuggestions(res.suggestions);
       }
-    } catch {
+    } catch (err) {
+      // Distingue erros de validacao (mensagem muito longa, formato
+      // invalido) do erro generico de rede pra que o usuario saiba se
+      // pode editar e tentar de novo. Backend valida @MaxLength(2000).
+      const isValidationError =
+        err instanceof Error && /400/.test(err.message);
+      const isLengthError =
+        err instanceof Error && /shorter than|2000 characters/i.test(err.message);
+      const content = isLengthError
+        ? 'Mensagem muito longa. Por favor, encurte para no máximo 2000 caracteres.'
+        : isValidationError
+          ? 'Não consegui processar essa mensagem. Tente reformular.'
+          : 'Desculpe, estou com dificuldade no momento. Tente novamente.';
       const errorMsg: ChatMessage = {
         id: `error-${Date.now()}`,
         role: 'ai',
-        content: 'Desculpe, estou com dificuldade no momento. Tente novamente.',
+        content,
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
@@ -486,6 +509,7 @@ export default function AssistentePage() {
 
         <div className="keyboard-anchor shrink-0 px-[22px] pt-2">
           <LiquidGlassInput
+            maxLength={2000}
             placeholder="Digite aqui"
             value={input}
             onChange={setInput}

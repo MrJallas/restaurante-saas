@@ -127,6 +127,55 @@ test.describe('Mesa — troca silenciosa de mesa', () => {
   });
 });
 
+test.describe('Assistente — falsos positivos de pedido', () => {
+  test.beforeEach(async ({ context }) => {
+    await context.clearCookies();
+  });
+
+  test('"tudo bem" depois de prato sugerido NAO dispara pedido fake', async ({
+    page,
+  }) => {
+    await page.goto(buildMesaUrl(), { waitUntil: 'networkidle' });
+    const welcome = page.getByRole('heading', { name: /Bem-vindo ao/i });
+    if (await welcome.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await page.getByPlaceholder('Seu nome').fill('Caleb QA');
+      await page.getByPlaceholder('000.000.000-00').fill('12345678909');
+      await page.getByRole('button', { name: /^Continuar$/ }).click();
+    }
+    await expect(page.getByRole('button', { name: /Chamar gar.om/ })).toBeVisible({
+      timeout: 10_000,
+    });
+
+    // Vai pro assistente direto via URL.
+    await page.goto(buildMesaUrl().replace(/\/mesa\/[^?]+/, '/assistente'), {
+      waitUntil: 'networkidle',
+    });
+    const input = page.getByPlaceholder('Digite aqui');
+    await expect(input).toBeVisible({ timeout: 10_000 });
+
+    // Pergunta que provavelmente retorna linkedItems do menu.
+    await input.fill('qual o prato do dia');
+    await page.getByRole('button', { name: 'Enviar', exact: true }).click();
+    // Espera a IA responder (loading dots somem).
+    await expect(page.locator('.animate-bounce-dot').first()).toBeHidden({
+      timeout: 30_000,
+    });
+
+    // Agora envia uma saudacao — NAO deve disparar pedido nem navegar
+    // pra /pagamento.
+    await input.fill('tudo bem');
+    await page.getByRole('button', { name: 'Enviar', exact: true }).click();
+    await expect(page.locator('.animate-bounce-dot').first()).toBeHidden({
+      timeout: 15_000,
+    });
+
+    // URL nao mudou pra pagamento/pix.
+    expect(page.url()).not.toContain('/pagamento');
+    expect(page.url()).not.toContain('/pedido/confirmando');
+    expect(page.url()).toContain('/assistente');
+  });
+});
+
 test.describe('Welcome — capitalizeName nao deforma input', () => {
   test.beforeEach(async ({ context }) => {
     await context.clearCookies();
