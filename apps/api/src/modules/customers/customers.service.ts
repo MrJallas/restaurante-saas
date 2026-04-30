@@ -45,13 +45,14 @@ export class CustomersService {
     let recognitionToken: string;
     let isReturning = false;
     let totalVisits = 1;
+    let resolvedName = name.trim();
 
     if ((existing as unknown[]).length > 0) {
       const customer = (existing as Record<string, unknown>[])[0];
       customerId = customer.id as string;
+      resolvedName = customer.name as string;
       const storedToken = customer.recognition_token as string;
       isReturning = true;
-      totalVisits = (customer.total_visits as number) + 1;
 
       const tokenMatches =
         callerRecognitionToken != null && callerRecognitionToken === storedToken;
@@ -61,21 +62,21 @@ export class CustomersService {
           `CPF takeover attempt blocked: CPF ${cleanCpf.slice(0, 3)}*** without valid recognition_token`,
         );
         throw new HttpException(
-          JSON.stringify({
+          {
             status: 'recognition_required',
-            message: 'CPF ja registrado. Use seu token de reconhecimento ou peca ao garcom para confirmar.',
-          }),
+            message: 'CPF ja registrado. Peca ao garcom para confirmar sua identidade.',
+          },
           HttpStatus.CONFLICT,
         );
       }
 
       recognitionToken = storedToken;
 
-      // Only bump visit counter, never overwrite name
-      await this.tenantConn.query(
-        `UPDATE customers SET total_visits = $1, last_visit_at = now(), updated_at = now() WHERE id = $2`,
-        [totalVisits, customerId],
+      const updatedRows = await this.tenantConn.query(
+        `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
+        [customerId],
       );
+      totalVisits = (updatedRows as Record<string, unknown>[])[0].total_visits as number;
     } else {
       recognitionToken = uuidv4();
       const result = await this.tenantConn.query(
@@ -119,7 +120,7 @@ export class CustomersService {
 
     return {
       customerId,
-      name: name.trim(),
+      name: resolvedName,
       recognitionToken,
       isReturning,
       totalVisits,
@@ -144,13 +145,12 @@ export class CustomersService {
 
     const customer = (customers as Record<string, unknown>[])[0];
     const customerId = customer.id as string;
-    const totalVisits = (customer.total_visits as number) + 1;
 
-    // Incrementa visits
-    await this.tenantConn.query(
-      `UPDATE customers SET total_visits = $1, last_visit_at = now(), updated_at = now() WHERE id = $2`,
-      [totalVisits, customerId],
+    const updatedRows = await this.tenantConn.query(
+      `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
+      [customerId],
     );
+    const totalVisits = (updatedRows as Record<string, unknown>[])[0].total_visits as number;
 
     await this.tenantConn.query(
       `INSERT INTO visits (customer_id, table_session_id) VALUES ($1, $2)
