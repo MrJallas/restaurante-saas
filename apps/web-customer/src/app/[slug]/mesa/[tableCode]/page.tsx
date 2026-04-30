@@ -15,13 +15,28 @@ import { AppShell } from '../../../../components/layout/AppShell';
 import { HomeHero } from '../../../../components/home/HomeHero';
 import { PillButton } from '../../../../components/ui/PillButton';
 import { LiquidGlassInput } from '../../../../components/ui/LiquidGlassInput';
+import { HostApprovalModal } from '../../../../components/host/HostApprovalModal';
+import { PendingApprovalScreen } from '../../../../components/host/PendingApprovalScreen';
+import { apiGet as apiGetExternal } from '../../../../lib/api';
+import { useTableSocket } from '../../../../hooks/useTableSocket';
 import type { SessionResponseDto, CustomerWelcomeResponseDto } from '@restaurant/shared-types';
 
 // Hard cap para a splash "Preparando sua experiencia". Se o initSession demorar
 // mais que isso, o pageState e forcado para 'welcome' para a UI nao travar.
 const SPLASH_MAX_MS = 1500;
 
-type PageState = 'loading' | 'welcome' | 'home' | 'error';
+type PageState = 'loading' | 'welcome' | 'home' | 'error' | 'pending_approval';
+
+interface ParticipantsResponse {
+  participants: {
+    customerId: string;
+    name: string;
+    initial: string;
+    color: string;
+    status: 'pending' | 'approved' | 'rejected';
+    isHost: boolean;
+  }[];
+}
 
 interface HomeData {
   heroMessage: string;
@@ -256,10 +271,50 @@ export default function MesaPage() {
     // `isValid` e usado so como guard inicial, por isso fica fora das deps.
   }, [slug, tableCode, setSession, setCustomer]);
 
+  const [hostName, setHostName] = useState<string | null>(null);
+  const [isHost, setIsHost] = useState(false);
+
+  // Verifica status do participant atual (apos welcome ou rehydrate).
+  // Se status='pending', renderiza PendingApprovalScreen ate o host
+  // aprovar via WS. Se rejeitado, mostra mensagem terminal.
+  const checkParticipantStatus = useCallback(
+    async (cid: string | null): Promise<'approved' | 'pending' | 'rejected' | null> => {
+      if (!cid) return null;
+      try {
+        const res = await apiGetExternal<ParticipantsResponse>(
+          `/${slug}/table/participants`,
+        );
+        const me = res.participants.find((p) => p.customerId === cid);
+        const host = res.participants.find((p) => p.isHost);
+        setHostName(host?.name ?? null);
+        setIsHost(!!me?.isHost);
+        return me?.status ?? null;
+      } catch {
+        return null;
+      }
+    },
+    [slug],
+  );
+
   const handleWelcomeComplete = useCallback(
     async (customer: CustomerWelcomeResponseDto | null) => {
       try {
         const cid = customer?.customerId;
+        // Checa status: se pending, host_customer_id ja existe e o
+        // customer entrou na fila — mostra tela de espera ate o host
+        // decidir.
+        const status = await checkParticipantStatus(cid ?? null);
+        if (status === 'pending') {
+          setPageState('pending_approval');
+          return;
+        }
+        if (status === 'rejected') {
+          setErrorMessage(
+            'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.',
+          );
+          setPageState('error');
+          return;
+        }
         const url = cid ? `/${slug}/home?customerId=${cid}` : `/${slug}/home`;
         const home = await apiGet<HomeData>(url);
         setHomeData(home);
@@ -268,7 +323,7 @@ export default function MesaPage() {
         setPageState('home');
       }
     },
-    [slug],
+    [slug, checkParticipantStatus],
   );
 
   const handleAssistantSubmit = useCallback(
@@ -297,6 +352,27 @@ export default function MesaPage() {
         </button>
         <p className="text-[12px] text-mute">Ou escaneie o QR Code novamente.</p>
       </main>
+    );
+  }
+
+  if (pageState === 'pending_approval') {
+    return (
+      <PendingApprovalScreen
+        hostName={hostName}
+        onApproved={async () => {
+          // Quando aprovado, recarrega home com customerId.
+          try {
+            const url = customerId
+              ? `/${slug}/home?customerId=${customerId}`
+              : `/${slug}/home`;
+            const home = await apiGet<HomeData>(url);
+            setHomeData(home);
+          } catch {
+            /* ignore */
+          }
+          setPageState('home');
+        }}
+      />
     );
   }
 
@@ -336,6 +412,10 @@ export default function MesaPage() {
       activeHref={`/${slug}/mesa/${tableCode}`}
       noMainPadding
     >
+      {/* Modal flutuante so pra host: lista pendentes e oferece
+          aprovar/rejeitar. Desaparece sozinho quando nao tem
+          ninguem pendente. */}
+      {isHost && <HostApprovalModal slug={slug} />}
       <div className="flex flex-1 flex-col justify-center gap-3.5 px-6 pb-8">
         <div className="flex flex-col items-center gap-3">
           <PillButton onClick={() => push(`/${slug}/garcom/chamar`)}>

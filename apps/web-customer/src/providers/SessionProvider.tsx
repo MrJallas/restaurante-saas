@@ -80,6 +80,10 @@ export interface TableParticipant {
   name: string;
   initial: string;
   color: string;
+  // Status pra fluxo de host de mesa (migration 017): primeiro entra
+  // como approved+host; demais como pending ate o host aprovar.
+  status?: 'pending' | 'approved' | 'rejected';
+  isHost?: boolean;
 }
 
 export type CommandMode = 'individual' | 'table' | null;
