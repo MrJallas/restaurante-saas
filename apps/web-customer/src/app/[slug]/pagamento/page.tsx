@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { apiGet, apiPost } from '../../../lib/api';
+import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
 import { AppShell } from '../../../components/layout/AppShell';
@@ -46,9 +47,16 @@ const SERVICE_RATE = 0.1;
 
 export default function PagamentoPage() {
   const params = useParams();
+  const router = useRouter();
   const { push } = useNav();
   const { tableLabel, visitId } = useSession();
   const slug = params.slug as string;
+
+  useEffect(() => {
+    if (!getSessionToken()) {
+      router.replace(`/${slug}`);
+    }
+  }, [slug, router]);
 
   const [tableBill, setTableBill] = useState<BillData | null>(null);
   const [individualBill, setIndividualBill] = useState<BillData | null>(null);

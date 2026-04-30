@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { apiGet } from '../../../lib/api';
+import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
 import { useTableSocket } from '../../../hooks/useTableSocket';
@@ -62,9 +63,16 @@ function timeAgo(iso: string): string {
 
 export default function PedidoPage() {
   const params = useParams();
+  const router = useRouter();
   const { push } = useNav();
   const { tableLabel, sessionId } = useSession();
   const slug = params.slug as string;
+
+  useEffect(() => {
+    if (!getSessionToken()) {
+      router.replace(`/${slug}`);
+    }
+  }, [slug, router]);
 
   const [orders, setOrders] = useState<OrderApi[]>([]);
   const [loading, setLoading] = useState(true);

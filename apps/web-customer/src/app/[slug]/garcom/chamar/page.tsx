@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { apiPost } from '../../../../lib/api';
+import { getSessionToken } from '../../../../lib/storage';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
 import { PillButton } from '../../../../components/ui/PillButton';
@@ -34,6 +35,12 @@ export default function ChamarGarcomPage() {
   const { push } = useNav();
   const { visitId, customerId } = useSession();
   const slug = params.slug as string;
+
+  useEffect(() => {
+    if (!getSessionToken()) {
+      router.replace(`/${slug}`);
+    }
+  }, [slug, router]);
 
   const [selected, setSelected] = useState<Reason>('place_order');
   const [submitting, setSubmitting] = useState(false);

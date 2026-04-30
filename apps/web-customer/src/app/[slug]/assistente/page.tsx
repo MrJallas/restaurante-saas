@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { apiPost, apiGet } from '../../../lib/api';
+import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
 import { useDraftOrder } from '../../../providers/DraftOrderProvider';
@@ -122,9 +123,16 @@ export default function AssistentePage() {
   const session = useSession();
   const { push } = useNav();
   const { addItem } = useDraftOrder();
+  const router = useRouter();
   const slug = params.slug as string;
   const prefill = searchParams.get('prefill') ?? '';
   const itemId = searchParams.get('itemId') ?? '';
+
+  useEffect(() => {
+    if (!getSessionToken()) {
+      router.replace(`/${slug}`);
+    }
+  }, [slug, router]);
 
   // Se chegou via prefill (usuario ja digitou algo na home), arrancamos com o
   // bubble do usuario ja visivel + loading — sem exibir o greeting "Olá" —
@@ -140,6 +148,7 @@ export default function AssistentePage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(!!prefill);
   const [suggestions, setSuggestions] = useState<string[]>(DEFAULT_SUGGESTIONS);
+  const [chipBusy, setChipBusy] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoSentRef = useRef(false);
 
@@ -307,15 +316,19 @@ export default function AssistentePage() {
       // Distingue erros de validacao (mensagem muito longa, formato
       // invalido) do erro generico de rede pra que o usuario saiba se
       // pode editar e tentar de novo. Backend valida @MaxLength(2000).
+      const isTimeout =
+        err instanceof Error && err.message === 'TIMEOUT';
       const isValidationError =
         err instanceof Error && /400/.test(err.message);
       const isLengthError =
         err instanceof Error && /shorter than|2000 characters/i.test(err.message);
-      const content = isLengthError
-        ? 'Mensagem muito longa. Por favor, encurte para no máximo 2000 caracteres.'
-        : isValidationError
-          ? 'Não consegui processar essa mensagem. Tente reformular.'
-          : 'Desculpe, estou com dificuldade no momento. Tente novamente.';
+      const content = isTimeout
+        ? 'Conexão lenta. Tente novamente.'
+        : isLengthError
+          ? 'Mensagem muito longa. Por favor, encurte para no máximo 2000 caracteres.'
+          : isValidationError
+            ? 'Não consegui processar essa mensagem. Tente reformular.'
+            : 'Desculpe, estou com dificuldade no momento. Tente novamente.';
       const errorMsg: ChatMessage = {
         id: `error-${Date.now()}`,
         role: 'ai',
@@ -497,8 +510,16 @@ export default function AssistentePage() {
               <button
                 key={s}
                 type="button"
-                onClick={() => sendMessage(s)}
-                disabled={loading}
+                disabled={loading || chipBusy}
+                onClick={async () => {
+                  if (chipBusy) return;
+                  setChipBusy(true);
+                  try {
+                    await sendMessage(s);
+                  } finally {
+                    setTimeout(() => setChipBusy(false), 800);
+                  }
+                }}
                 className="shrink-0 whitespace-nowrap rounded-full border border-ink/[0.15] bg-surface px-3.5 py-1.5 text-[12px] text-ink transition-colors duration-100 active:bg-white disabled:opacity-50"
               >
                 {s}

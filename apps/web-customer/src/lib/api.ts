@@ -1,6 +1,7 @@
 import { getSessionToken } from './storage';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const DEFAULT_TIMEOUT_MS = 15_000;
 
 interface ApiError {
   message: string;
@@ -29,15 +30,26 @@ export async function api<T>(
   const sessionToken =
     typeof window !== 'undefined' ? getSessionToken() : null;
 
-  const res = await fetch(url, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(sessionToken ? { 'x-session-token': sessionToken } : {}),
-      ...options.headers,
-    },
-  });
+  const signal = options.signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...options,
+      signal,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(sessionToken ? { 'x-session-token': sessionToken } : {}),
+        ...options.headers,
+      },
+    });
+  } catch (err: unknown) {
+    if (err instanceof DOMException && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
+      throw new Error('TIMEOUT');
+    }
+    throw err;
+  }
 
   if (!res.ok) {
     if (res.status === 401) {

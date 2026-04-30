@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { apiGet } from '../../../lib/api';
+import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
 import { AppShell } from '../../../components/layout/AppShell';
@@ -41,10 +42,17 @@ function inferKind(cat: Category): 'food' | 'drink' {
 
 export default function CardapioPage() {
   const params = useParams();
+  const router = useRouter();
   const { push } = useNav();
   const searchParams = useSearchParams();
   const session = useSession();
   const slug = params.slug as string;
+
+  useEffect(() => {
+    if (!getSessionToken()) {
+      router.replace(`/${slug}`);
+    }
+  }, [slug, router]);
 
   const initialTab: Tab = searchParams.get('tab') === 'bebidas' ? 'drink' : 'food';
   const [tab, setTab] = useState<Tab>(initialTab);
