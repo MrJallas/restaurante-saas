@@ -6,6 +6,7 @@ import {
   MaxLength,
   Matches,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { SessionGuard } from '../../common/guards/session.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { SessionData } from '../../common/guards/session.guard';
@@ -21,11 +22,15 @@ class CustomerWelcomeDto {
   @MaxLength(120)
   name!: string;
 
-  // CPF: aceitamos so digitos (11 chars exatos). O frontend envia clean
-  // (sem mascara), entao Matches /^\d{11}$/. MaxLength 11 evita ataque
-  // de payload gigante.
+  // CPF: aceitamos formato com ou sem mascara — o @Transform stripa
+  // tudo que nao for digito antes da validacao. Frontend ja envia raw
+  // mas integradores externos / testes via curl podem mandar
+  // "111.444.777-35"; nao faz sentido bloquear isso (era P3 do bug-hunt).
   @IsString()
   @IsNotEmpty()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') : value,
+  )
   @MinLength(11)
   @MaxLength(11)
   @Matches(/^\d{11}$/, { message: 'cpf must be 11 digits' })

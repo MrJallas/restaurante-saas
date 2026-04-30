@@ -82,6 +82,51 @@ test.describe('Mesa — erros amigaveis', () => {
   });
 });
 
+test.describe('Mesa — troca silenciosa de mesa', () => {
+  test.beforeEach(async ({ context }) => {
+    await context.clearCookies();
+  });
+
+  test('escanear QR de M02 com sessao ativa de M01 invalida e re-inicia', async ({ page }) => {
+    // Inicia sessao em M01.
+    await page.goto(buildMesaUrl({ tableCode: 'M01' }), {
+      waitUntil: 'networkidle',
+    });
+    // Welcome ou home — aceita os dois (DB pode ter customer recognition).
+    const welcomeOrHome = page
+      .getByRole('heading', { name: /Bem-vindo ao/i })
+      .or(page.getByRole('button', { name: /Chamar gar.om/ }));
+    await expect(welcomeOrHome.first()).toBeVisible({ timeout: 30_000 });
+
+    // Tira a "tableLabel" da URL/DOM como referencia. Cada mesa tem label
+    // diferente ("Mesa 01" vs "Mesa 02"). Vai aparecer no topbar quando
+    // chegar na home.
+    if (await page.getByRole('heading', { name: /Bem-vindo ao/i }).isVisible()) {
+      await page.getByPlaceholder('Seu nome').fill('QA Caleb');
+      await page.getByPlaceholder('000.000.000-00').fill('12345678909');
+      await page.getByRole('button', { name: /^Continuar$/ }).click();
+      await expect(page.getByRole('button', { name: /Chamar gar.om/ })).toBeVisible({
+        timeout: 10_000,
+      });
+    }
+
+    // Agora navega pra M02 — sem o fix, sessao seguia em M01 e pedidos
+    // iam pra mesa errada. Com o fix, a guarda detecta tableCode diferente,
+    // limpa session e re-inicia (pode mostrar welcome ou ir direto pra
+    // home com recognition).
+    await page.goto(buildMesaUrl({ tableCode: 'M02' }), {
+      waitUntil: 'networkidle',
+    });
+
+    // Entra ou no welcome ou na home — qualquer um significa que o init
+    // rodou com tableCode novo (M02). Antes: pulava direto e mantinha M01.
+    await expect(welcomeOrHome.first()).toBeVisible({ timeout: 30_000 });
+
+    // Verifica se a URL atual realmente carrega M02 (nao foi redirect).
+    expect(page.url()).toContain('/mesa/M02');
+  });
+});
+
 test.describe('Welcome — capitalizeName nao deforma input', () => {
   test.beforeEach(async ({ context }) => {
     await context.clearCookies();

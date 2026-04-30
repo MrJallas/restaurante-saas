@@ -123,8 +123,11 @@ export class AssistantService {
       };
     }
 
-    // Step 1: Classify message (com historico pra desambiguar follow-ups)
-    const recentHistory = await this.getHistory(tableSessionId);
+    // Step 1: Classify message (com historico pra desambiguar follow-ups).
+    // Passa customerId pra que o classifier so veja a propria conversa do
+    // usuario — sem isso, follow-ups de outro cliente da mesma mesa
+    // poluiam o contexto e davam falsos positivos. P1-B do bug-hunt.
+    const recentHistory = await this.getHistory(tableSessionId, customerId);
     const classification = await this.aiClient.classify(
       message,
       recentHistory.slice(-4),
@@ -210,14 +213,24 @@ export class AssistantService {
     }
   }
 
-  async getHistory(tableSessionId: string) {
+  async getHistory(tableSessionId: string, customerId: string | null = null) {
+    // Filtro por customer_id quando presente — sem isso o cliente B na
+    // mesma mesa do cliente A via TODA a conversa de A no /assistente
+    // (LGPD/privacidade, P1-B). Para fluxo anonimo (customerId null),
+    // limitamos as linhas tambem-anonimas (`customer_id IS NULL`) pra que
+    // dois anonimos na mesma mesa tampouco se vejam.
     const rows = (await this.tenantConn.query(
       `SELECT user_message, assistant_response
        FROM assistant_messages
-       WHERE table_session_id = $1 AND was_blocked = false
+       WHERE table_session_id = $1
+         AND was_blocked = false
+         AND (
+           ($2::uuid IS NOT NULL AND customer_id = $2)
+           OR ($2::uuid IS NULL AND customer_id IS NULL)
+         )
        ORDER BY created_at DESC
        LIMIT 10`,
-      [tableSessionId],
+      [tableSessionId, customerId],
     )) as { user_message: string; assistant_response: string | null }[];
 
     // Reverse to get chronological order

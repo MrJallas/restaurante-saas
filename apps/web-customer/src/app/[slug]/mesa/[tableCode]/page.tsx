@@ -62,7 +62,15 @@ export default function MesaPage() {
   const slug = params.slug;
   const tableCode = params.tableCode;
 
-  const { setSession, setCustomer, isValid, customerName, customerId } = useSession();
+  const {
+    setSession,
+    setCustomer,
+    clearSession,
+    isValid,
+    customerName,
+    customerId,
+    tableCode: sessionTableCode,
+  } = useSession();
   const [pageState, setPageState] = useState<PageState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
   const [homeData, setHomeData] = useState<HomeData | null>(null);
@@ -121,6 +129,15 @@ export default function MesaPage() {
     // `isValid` nas deps porque ele vira true quando chamarmos setSession
     // dentro de initSession — e ai o effect reiniciaria, cancelando a si
     // mesmo antes de terminar a transicao.
+    //
+    // EXCEÇÃO: se a URL aponta pra outro tableCode que o da sessao atual,
+    // o usuario escaneou QR de mesa diferente — invalida a sessao em
+    // memoria pra forçar re-init. Sem isso, pedidos iam pra mesa errada
+    // silenciosamente (P1-G do bug-hunt).
+    if (isValid && sessionTableCode && sessionTableCode !== tableCode) {
+      clearSession();
+      return; // proximo render, isValid sera false e cai no fluxo normal
+    }
     if (isValid) return;
 
     // Escopo local por mount — em StrictMode o effect roda mount→unmount→mount

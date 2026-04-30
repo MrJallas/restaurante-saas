@@ -34,8 +34,18 @@ export class AssistantController {
 
   @Get('history')
   @UseGuards(SessionGuard)
-  async getHistory(@Session() session: SessionData) {
-    const history = await this.assistantService.getHistory(session.sessionId);
+  async getHistory(
+    @Session() session: SessionData,
+    @Query('customerId') customerId?: string,
+  ) {
+    // customerId e obrigatorio na pratica: cliente B na mesma mesa do
+    // cliente A nao pode ver historico de A. Antes vazava (P1-B). Se o
+    // cliente nao mandar (ex.: ainda no welcome), retornamos so as
+    // mensagens anonimas (customer_id IS NULL).
+    const history = await this.assistantService.getHistory(
+      session.sessionId,
+      customerId || null,
+    );
     return { messages: history };
   }
 }
