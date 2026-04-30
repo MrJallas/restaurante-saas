@@ -41,16 +41,30 @@ ALTER TABLE payments
   ADD COLUMN IF NOT EXISTS split_allocations JSONB;
 
 -- 6) Table participants: many customers per session (multi-person QR check-in)
+--
+-- ON DELETE RESTRICT (nao CASCADE): a aplicacao NUNCA deve DELETE em
+-- table_sessions — o ciclo de vida e via status='closed'. Manter as linhas
+-- preservadas e fundamental pra metricas (quem participou, quanto tempo
+-- ficou, retorno). Se alguem tentar DROP a sessao, o FK trava o DELETE
+-- em vez de levar os participants junto.
 CREATE TABLE IF NOT EXISTS session_participants (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  table_session_id UUID NOT NULL REFERENCES table_sessions(id) ON DELETE CASCADE,
+  table_session_id UUID NOT NULL REFERENCES table_sessions(id) ON DELETE RESTRICT,
   customer_id UUID NOT NULL REFERENCES customers(id),
   visit_id UUID REFERENCES visits(id),
   color_index SMALLINT NOT NULL DEFAULT 0,
   joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  left_at TIMESTAMPTZ,
-  UNIQUE (table_session_id, customer_id)
+  left_at TIMESTAMPTZ
 );
+
+-- Unicidade so vale enquanto o cliente esta ATIVO na sessao (left_at IS NULL).
+-- Permite o caso "saiu e voltou": a row antiga fica preservada com left_at
+-- setado (fora do indice parcial) e uma nova row entra com left_at NULL.
+-- Tentar entrar 2x simultaneamente (sem ter saido) ainda falha — preserva
+-- a idempotencia do scan QR.
+CREATE UNIQUE INDEX IF NOT EXISTS session_participants_active_unique
+  ON session_participants (table_session_id, customer_id)
+  WHERE left_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_session_participants_session
   ON session_participants(table_session_id);
