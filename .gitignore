@@ -13,3 +13,18 @@ __pycache__/
 .mypy_cache/
 coverage/
 .nyc_output/
+
+# Playwright E2E artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+e2e/.auth/
+**/test-results/
+**/playwright-report/
+
+# Playwright MCP (cache de browser automation via MCP — sessao-local)
+.playwright-mcp/
+
+# Worktrees criadas por agentes Claude (cada sessao do harness gera uma) —
+# nao versionar nada dentro, evita poluir o repo.
+.claude/worktrees/

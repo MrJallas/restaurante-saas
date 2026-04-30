@@ -6,7 +6,8 @@
       "Bash(git init:*)",
       "Bash(npm install:*)",
       "Bash(docker --version)",
-      "Bash(docker compose:*)"
+      "Bash(docker compose:*)",
+      "Bash(node -e \"console.log\\(require\\('./package.json'\\).dependencies.next\\)\")"
     ]
   }
 }

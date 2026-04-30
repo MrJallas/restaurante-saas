@@ -8,7 +8,11 @@ def create_provider() -> LLMProvider:
 
     if provider == "openai":
         from .providers.openai_provider import OpenAIProvider
-        return OpenAIProvider(api_key=settings.LLM_API_KEY)
+        return OpenAIProvider(
+            api_key=settings.LLM_API_KEY,
+            base_url=settings.LLM_BASE_URL,
+            timeout=settings.LLM_REQUEST_TIMEOUT,
+        )
     elif provider == "anthropic":
         from .providers.anthropic_provider import AnthropicProvider
         return AnthropicProvider(api_key=settings.LLM_API_KEY)

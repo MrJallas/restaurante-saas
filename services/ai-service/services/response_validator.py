@@ -8,8 +8,8 @@ OFF_SCOPE_PATTERNS = [
 ]
 
 FALLBACK_RESPONSE = (
-    "Posso ajudar com informacoes sobre nosso cardapio, pratos, bebidas, "
-    "recomendacoes e qualquer duvida sobre o restaurante. "
+    "Posso ajudar com informações sobre nosso cardápio, pratos, bebidas, "
+    "recomendações e qualquer dúvida sobre o restaurante. "
     "Como posso ajudar?"
 )
 

@@ -13,19 +13,26 @@
 --     ON CONFLICT DO NOTHING;
 
 -- === Clean previous demo content (keep schema/categories/settings) ===
+-- Order matters for FK integrity: children first, parents last.
+DELETE FROM order_item_extras;
 DELETE FROM order_items;
+DELETE FROM order_status_history;
+DELETE FROM order_deliveries;
 DELETE FROM orders;
-DELETE FROM visits;
-DELETE FROM table_sessions;
 DELETE FROM feedbacks;
+DELETE FROM assistant_messages;
+DELETE FROM waiter_calls;
+DELETE FROM payments;
+DELETE FROM visits;
+DELETE FROM session_participants;
+DELETE FROM table_sessions;
+DELETE FROM customer_consumption_summary;
 DELETE FROM customers;
 DELETE FROM menu_item_extras;
 DELETE FROM menu_items;
 DELETE FROM tables;
 DELETE FROM staff;
 DELETE FROM promotions;
-DELETE FROM assistant_messages;
-DELETE FROM customer_consumption_summary;
 
 -- === Tables ===
 INSERT INTO tables (code, label, capacity, sort_order) VALUES

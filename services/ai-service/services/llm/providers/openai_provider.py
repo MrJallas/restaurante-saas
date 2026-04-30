@@ -3,9 +3,12 @@ from ..base import LLMProvider
 
 
 class OpenAIProvider(LLMProvider):
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, base_url: str = "", timeout: float = 60.0):
         from openai import AsyncOpenAI
-        self.client = AsyncOpenAI(api_key=api_key)
+        kwargs: dict = {"api_key": api_key or "sk-no-key", "timeout": timeout}
+        if base_url:
+            kwargs["base_url"] = base_url
+        self.client = AsyncOpenAI(**kwargs)
 
     async def chat(
         self,
