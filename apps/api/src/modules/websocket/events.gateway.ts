@@ -9,6 +9,15 @@ import {
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
+import { timingSafeEqual } from 'crypto';
+import { RedisService } from '../../infra/redis/redis.service';
+
+interface AuthedSocket extends Socket {
+  data: {
+    authType?: 'staff' | 'session';
+    sessionId?: string;
+  };
+}
 
 @WebSocketGateway({
   cors: {
@@ -23,8 +32,41 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly logger = new Logger(EventsGateway.name);
 
-  handleConnection(client: Socket) {
-    this.logger.log(`Client connected: ${client.id}`);
+  constructor(private readonly redis: RedisService) {}
+
+  async handleConnection(client: AuthedSocket) {
+    const staffKey =
+      (client.handshake.headers['x-staff-key'] as string) ??
+      (client.handshake.auth?.staffKey as string);
+    const sessionToken =
+      (client.handshake.headers['x-session-token'] as string) ??
+      (client.handshake.auth?.sessionToken as string);
+
+    const expected = process.env.STAFF_API_KEY;
+    if (expected && staffKey) {
+      const a = Buffer.from(expected, 'utf8');
+      const b = Buffer.from(staffKey, 'utf8');
+      if (a.length === b.length && timingSafeEqual(a, b)) {
+        client.data.authType = 'staff';
+        this.logger.log(`Staff client connected: ${client.id}`);
+        return;
+      }
+    }
+
+    if (sessionToken) {
+      const data = await this.redis.get(`session:${sessionToken}`);
+      if (data) {
+        const session = JSON.parse(data) as { sessionId: string };
+        client.data.authType = 'session';
+        client.data.sessionId = session.sessionId;
+        this.logger.log(`Session client connected: ${client.id}`);
+        return;
+      }
+    }
+
+    this.logger.warn(`Unauthenticated WS connection rejected: ${client.id}`);
+    client.emit('error', { message: 'Authentication required' });
+    client.disconnect(true);
   }
 
   handleDisconnect(client: Socket) {
@@ -33,20 +75,33 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('join:tenant')
   handleJoinTenant(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { slug: string; role: string },
   ) {
+    if (client.data.authType !== 'staff') {
+      client.emit('error', { message: 'Staff auth required for tenant rooms' });
+      return;
+    }
+
     const room = `tenant:${data.slug}:${data.role}`;
     client.join(room);
-    client.join(`tenant:${data.slug}`); // also join general tenant room
+    client.join(`tenant:${data.slug}`);
     this.logger.log(`Client ${client.id} joined room ${room}`);
   }
 
   @SubscribeMessage('join:session')
   handleJoinSession(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { sessionId: string },
   ) {
+    if (
+      client.data.authType === 'session' &&
+      client.data.sessionId !== data.sessionId
+    ) {
+      client.emit('error', { message: 'Session mismatch' });
+      return;
+    }
+
     const room = `session:${data.sessionId}`;
     client.join(room);
     this.logger.log(`Client ${client.id} joined session room ${room}`);
@@ -55,7 +110,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // --- Emit helpers used by other services ---
 
   emitOrderStatusUpdate(slug: string, orderId: string, status: string, tableLabel?: string) {
-    // Notify all tenant staff
     this.server.to(`tenant:${slug}:waiter`).emit('order:status', {
       orderId,
       status,
@@ -63,7 +117,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       timestamp: new Date().toISOString(),
     });
 
-    // Notify kitchen
     this.server.to(`tenant:${slug}:kitchen`).emit('order:status', {
       orderId,
       status,
@@ -73,13 +126,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   emitNewOrder(slug: string, orderData: Record<string, unknown>) {
-    // Notify kitchen of new order
     this.server.to(`tenant:${slug}:kitchen`).emit('order:new', {
       ...orderData,
       timestamp: new Date().toISOString(),
     });
 
-    // Notify waiters
     this.server.to(`tenant:${slug}:waiter`).emit('order:new', {
       ...orderData,
       timestamp: new Date().toISOString(),
@@ -87,7 +138,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   emitOrderReady(slug: string, orderId: string, tableLabel: string) {
-    // Notify all waiters that an order is ready for pickup
     this.server.to(`tenant:${slug}:waiter`).emit('order:ready', {
       orderId,
       tableLabel,
@@ -96,7 +146,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   emitOrderClaimed(slug: string, orderId: string, claimedBy: string) {
-    // Notify all waiters that this order was claimed (remove from other waiters)
     this.server.to(`tenant:${slug}:waiter`).emit('order:claimed', {
       orderId,
       claimedBy,
@@ -120,7 +169,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   emitWaiterCallAcknowledged(slug: string, callId: string, sessionId: string) {
-    // Notify customer that waiter acknowledged
     this.server.to(`session:${sessionId}`).emit('waiter:acknowledged', {
       callId,
       timestamp: new Date().toISOString(),

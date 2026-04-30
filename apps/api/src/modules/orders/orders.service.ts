@@ -156,12 +156,27 @@ export class OrdersService {
       };
     });
 
-    // Tudo num bloco transacional: orders + order_items + order_item_extras
-    // + order_status_history + UPDATE menu_items.total_orders. Antes
-    // rodavam em conexoes separadas do pool — falha no meio (item invalid,
-    // FK quebrada, deadlock) deixava order orfa sem items, ou com
-    // total_orders incrementado sem order valida. Agora ou tudo commita
-    // ou nada vai.
+    const distinctCustomerIds = [
+      ...new Set(
+        orderItemsData.map((i) => i.customerId).filter((id): id is string => id != null),
+      ),
+    ];
+    if (distinctCustomerIds.length > 0) {
+      const validParticipants = (await this.tenantConn.query(
+        `SELECT customer_id FROM session_participants
+         WHERE table_session_id = $1 AND customer_id = ANY($2::uuid[])
+           AND status = 'approved' AND left_at IS NULL`,
+        [tableSessionId, distinctCustomerIds],
+      )) as { customer_id: string }[];
+      const validIds = new Set(validParticipants.map((p) => p.customer_id));
+      const invalid = distinctCustomerIds.filter((id) => !validIds.has(id));
+      if (invalid.length > 0) {
+        throw new BadRequestException(
+          `Cliente(s) nao fazem parte desta mesa: ${invalid.join(', ')}`,
+        );
+      }
+    }
+
     const order = await this.tenantConn.transaction(async (tx) => {
       const orderRows = (await tx.query(
         `INSERT INTO orders (table_session_id, visit_id, billing_mode, status, notes, total_cents, created_by, auto_confirm_at)

@@ -18,7 +18,7 @@ import {
   IsUUID,
 } from 'class-validator';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
-import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
+import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { WaiterCallsService } from './waiter-calls.service';
 
@@ -73,7 +73,7 @@ export class WaiterCallsController {
   // Endpoint de staff — agora protegido pelo StaffOrSessionGuard. Antes
   // era publico (qualquer um listava todos os chamados de todas as mesas).
   @Get('pending')
-  @UseGuards(StaffOrSessionGuard)
+  @UseGuards(StaffOnlyGuard)
   async getPendingCalls() {
     return this.waiterCallsService.getPendingCalls();
   }
@@ -110,7 +110,7 @@ export class WaiterCallsController {
   // um podia se passar por garcom (impersonation no nome+ETA) ou fechar
   // chamados ativos. P0 do bug-hunt.
   @Post(':callId/acknowledge')
-  @UseGuards(StaffOrSessionGuard)
+  @UseGuards(StaffOnlyGuard)
   async acknowledgeCall(
     @Param('callId') callId: string,
     @Param('slug') slug: string,
@@ -125,7 +125,7 @@ export class WaiterCallsController {
   }
 
   @Post(':callId/resolve')
-  @UseGuards(StaffOrSessionGuard)
+  @UseGuards(StaffOnlyGuard)
   async resolveCall(@Param('callId') callId: string) {
     return this.waiterCallsService.resolveCall(callId);
   }
