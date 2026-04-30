@@ -91,6 +91,7 @@ export default function MesaPage() {
   const [homeData, setHomeData] = useState<HomeData | null>(null);
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [inputValue, setInputValue] = useState('');
+  const [reclaimBanner, setReclaimBanner] = useState(false);
 
   // Bug recorrente: usuario cancela um chamado de garcom (ou fecha o
   // bottom sheet) → `router.back()` traz pra ca → isValid ja e true
@@ -317,6 +318,10 @@ export default function MesaPage() {
           setPageState('error');
           return;
         }
+        if (customer?.wasReclaim) {
+          setReclaimBanner(true);
+          setTimeout(() => setReclaimBanner(false), 5000);
+        }
         const url = cid ? `/${slug}/home?customerId=${cid}` : `/${slug}/home`;
         const home = await apiGet<HomeData>(url);
         setHomeData(home);
@@ -417,6 +422,11 @@ export default function MesaPage() {
           aprovar/rejeitar. Desaparece sozinho quando nao tem
           ninguem pendente. */}
       {isHost && <HostApprovalModal slug={slug} />}
+      {reclaimBanner && (
+        <div className="mx-4 mt-3 rounded-[12px] border border-amber-300/50 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
+          Bem-vindo de volta! Se você não fez login agora, avise o garçom.
+        </div>
+      )}
       <div className="flex flex-1 flex-col justify-center gap-3.5 px-6 pb-8">
         <div className="flex flex-col items-center gap-3">
           <PillButton onClick={() => push(`/${slug}/garcom/chamar`)}>
