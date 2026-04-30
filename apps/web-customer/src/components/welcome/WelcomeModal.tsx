@@ -78,17 +78,25 @@ export function WelcomeModal({ slug, restaurantName, onComplete }: WelcomeModalP
     // teclado iOS reduzir o viewport e o modal exceder altura, da pra
     // scrollar — items-center cai pra "scroll natural" quando container
     // = content, mantendo o "Continuar" sempre alcancavel.
-    <div
-      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain"
-      style={{
-        background: 'rgba(0,0,0,0.25)',
-        backdropFilter: 'blur(4px)',
-        WebkitBackdropFilter: 'blur(4px)',
-      }}
-    >
-      <div className="flex min-h-full w-full items-center justify-center px-[18px] py-6">
+    //
+    // Backdrop em elemento proprio (irmao do conteudo) pra blur nao vazar
+    // pro modal: em Safari iOS, quando um pai tem backdrop-filter, filhos
+    // com bg branco renderizam acinzentados porque o filtro entra no mesmo
+    // stacking context que eles. Isolando o filter num <div absolute>, o
+    // <div relative> com o card fica num contexto limpo.
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain">
       <div
-        className="w-full rounded-[24px] border-[1.5px] border-ink bg-bg p-[26px]"
+        aria-hidden
+        className="absolute inset-0"
+        style={{
+          background: 'rgba(0,0,0,0.25)',
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
+        }}
+      />
+      <div className="relative flex min-h-full w-full items-center justify-center px-[18px] py-6">
+      <div
+        className="w-full max-w-[420px] rounded-[24px] border-[1.5px] border-ink bg-bg p-[26px]"
         style={{ boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}
       >
         <h2 className="text-center text-[22px] font-semibold tracking-[-0.02em] text-ink text-pretty">
