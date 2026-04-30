@@ -230,28 +230,37 @@ export class TableSessionService {
 
       // Insert atomico via SELECT inline, sem read separado de COUNT —
       // resolve race condition de color_index encontrada pelo bug-hunt.
-      const inserted = (await this.tenantConn.query(
-        `INSERT INTO session_participants
-           (table_session_id, customer_id, visit_id, color_index, status, approved_at, approved_by)
-         SELECT $1::uuid, $2::uuid, $3::uuid,
-                (SELECT COUNT(*)::int FROM session_participants
-                  WHERE table_session_id = $1::uuid) % $5::int,
-                $4::varchar,
-                CASE WHEN $4::varchar = 'approved' THEN now() ELSE NULL END,
-                CASE WHEN $4::varchar = 'approved' THEN $2::uuid ELSE NULL END
-         ON CONFLICT (table_session_id, customer_id) DO NOTHING
-         RETURNING color_index, status`,
-        [tableSessionId, customerId, visitId ?? null, status, PARTICIPANT_COLORS.length],
-      )) as { color_index: number; status: string }[];
+      let inserted: { color_index: number; status: string }[];
+      try {
+        inserted = (await this.tenantConn.query(
+          `INSERT INTO session_participants
+             (table_session_id, customer_id, visit_id, color_index, status, approved_at, approved_by)
+           SELECT $1::uuid, $2::uuid, $3::uuid,
+                  (SELECT COUNT(*)::int FROM session_participants
+                    WHERE table_session_id = $1::uuid) % $5::int,
+                  $4::varchar,
+                  CASE WHEN $4::varchar = 'approved' THEN now() ELSE NULL END,
+                  CASE WHEN $4::varchar = 'approved' THEN $2::uuid ELSE NULL END
+           ON CONFLICT (table_session_id, customer_id) WHERE left_at IS NULL DO NOTHING
+           RETURNING color_index, status`,
+          [tableSessionId, customerId, visitId ?? null, status, PARTICIPANT_COLORS.length],
+        )) as { color_index: number; status: string }[];
+      } catch (err: unknown) {
+        const pgErr = err as { code?: string };
+        if (pgErr.code === '23505') {
+          inserted = [];
+        } else {
+          throw err;
+        }
+      }
 
       if (inserted.length > 0) {
         colorIndex = inserted[0].color_index;
         status = inserted[0].status as 'pending' | 'approved' | 'rejected';
       } else {
-        // Race: outra request inseriu primeiro. Re-le.
         const refresh = (await this.tenantConn.query(
           `SELECT color_index, status FROM session_participants
-           WHERE table_session_id = $1 AND customer_id = $2`,
+           WHERE table_session_id = $1 AND customer_id = $2 AND left_at IS NULL`,
           [tableSessionId, customerId],
         )) as { color_index: number; status: string }[];
         colorIndex = refresh[0]?.color_index ?? 0;

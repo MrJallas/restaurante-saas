@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS session_participants (
 -- setado (fora do indice parcial) e uma nova row entra com left_at NULL.
 -- Tentar entrar 2x simultaneamente (sem ter saido) ainda falha — preserva
 -- a idempotencia do scan QR.
-CREATE UNIQUE INDEX IF NOT EXISTS session_participants_active_unique
+DROP INDEX IF EXISTS session_participants_active_unique;
+CREATE UNIQUE INDEX session_participants_active_unique
   ON session_participants (table_session_id, customer_id)
   WHERE left_at IS NULL;
 
