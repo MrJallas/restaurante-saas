@@ -73,22 +73,22 @@ export function WelcomeModal({ slug, restaurantName, onComplete }: WelcomeModalP
   };
 
   return (
-    // Container precisa SCROLLAR quando o teclado iOS sobe — `flex items-center`
-    // sem overflow deixa o botao "Continuar" escondido atras do toolbar do
-    // teclado em iPhones menores (15/SE). Solucao: wrapper com overflow-y-auto
-    // e min-h-full, modal alinhado em items-start com padding vertical e
-    // pb-safe pra respeitar safe-area + viewport com keyboard.
-    // Backdrop solido (sem blur). App roda em Safari iOS direto, nao
-    // PWA — backdrop-filter era custoso e causava jank no teclado.
-    // Politica do projeto: zero blur. Mantemos so o overlay escuro
-    // pra dar contraste com o modal branco.
+    // Modal centralizado vertical e horizontalmente (design original do
+    // Figma). overflow-y-auto + min-h-full no inner garante que se o
+    // teclado iOS reduzir o viewport e o modal exceder altura, da pra
+    // scrollar — items-center cai pra "scroll natural" quando container
+    // = content, mantendo o "Continuar" sempre alcancavel.
     <div
       className="fixed inset-0 z-50 overflow-y-auto overscroll-contain"
-      style={{ background: 'rgba(0,0,0,0.45)' }}
+      style={{
+        background: 'rgba(0,0,0,0.25)',
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
+      }}
     >
-      <div className="flex min-h-full w-full items-start justify-center px-[18px] pb-[max(env(safe-area-inset-bottom),24px)] pt-[max(env(safe-area-inset-top),24px)]">
+      <div className="flex min-h-full w-full items-center justify-center px-[18px] py-6">
       <div
-        className="w-full max-w-[420px] rounded-[24px] border-[1.5px] border-ink bg-bg p-[26px]"
+        className="w-full rounded-[24px] border-[1.5px] border-ink bg-bg p-[26px]"
         style={{ boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}
       >
         <h2 className="text-center text-[22px] font-semibold tracking-[-0.02em] text-ink text-pretty">

@@ -17,14 +17,16 @@ export function TopBar({
 }: TopBarProps) {
   const { openDrawer } = useUIState();
   return (
-    // Respeita a notch/Dynamic Island do iPhone com baseline de 8px —
-    // sem isso o titulo fica encostado na borda em iPhone e em Android
-    // o header parece sem padding superior. `pt-safe` da globals.css
-    // sozinho daria 0 em browsers sem safe-area; o calc com max garante
-    // pelo menos 8px sempre.
+    // Padding superior maior pra que botoes "Voltar"/menu fiquem ABAIXO
+    // do Dynamic Island do iPhone. O bug-hunter encontrou em iPhone 16
+    // (Dynamic Island ~59pt) que o botao Voltar caia exatamente sob a
+    // ilha — usuario tocava em y=44 (instinto) e o tap ia pro hardware,
+    // nao pra UI. max(safe-area-inset-top, 12px) + extra 8px de margem
+    // visual garantem que o centro do touch target fica abaixo da ilha
+    // em qualquer iPhone moderno.
     <header
-      className="sticky top-0 z-30 flex shrink-0 items-center justify-between border-b-[0.5px] border-border-soft bg-bg px-[22px] pb-3.5"
-      style={{ paddingTop: 'max(env(safe-area-inset-top), 8px)' }}
+      className="sticky top-0 z-30 flex shrink-0 items-center justify-between border-b-[0.5px] border-border-soft bg-bg px-[22px] pb-3.5 pt-2"
+      style={{ paddingTop: 'calc(max(env(safe-area-inset-top), 12px) + 8px)' }}
     >
       <div className="flex items-center gap-3">
         {onBack && (

@@ -23,6 +23,20 @@ export function useNav() {
     [router],
   );
 
+  /**
+   * Como `push` mas substitui a entry atual no history em vez de empilhar.
+   * Use quando a tela atual nao deve aparecer no browser-back — ex.: tela
+   * de "chamando garcom" depois de cancelar o chamado, tela de pagamento
+   * apos confirmar. Sem isso, o usuario voltava com swipe-da-esquerda e
+   * via "CHAMADO RECEBIDO" de um chamado ja cancelado (ghost screen).
+   */
+  const replace = useCallback(
+    (href: string) => {
+      start(() => router.replace(href));
+    },
+    [router],
+  );
+
   const prefetch = useCallback(
     (href: string) => {
       router.prefetch(href);
@@ -30,5 +44,5 @@ export function useNav() {
     [router],
   );
 
-  return { push, prefetch, pending };
+  return { push, replace, prefetch, pending };
 }

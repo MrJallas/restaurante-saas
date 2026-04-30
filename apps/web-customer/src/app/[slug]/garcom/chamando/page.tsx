@@ -28,7 +28,7 @@ interface WaiterCall {
 export default function GarcomChamandoPage() {
   const params = useParams();
   const router = useRouter();
-  const { push } = useNav();
+  const { push, replace } = useNav();
   const searchParams = useSearchParams();
   const { tableLabel } = useSession();
   const slug = params.slug as string;
@@ -75,12 +75,11 @@ export default function GarcomChamandoPage() {
     } catch {
       /* ignore */
     }
-    // Antes: router.back() — caia na bottom-sheet de selecionar motivo
-    // (estranho), e se o usuario tinha vindo de /mesa pelo botao "Chamar
-    // garcom", a back chain inteira terminava em /mesa, que travava no
-    // splash. Push direto pro assistente: UX consistente com onBack.
-    push(`/${slug}/assistente`);
-  }, [cancelling, callId, push, slug]);
+    // replace em vez de push: assim o swipe-back do iOS Safari nao
+    // traz o usuario de volta pra tela "CHAMADO RECEBIDO" de um chamado
+    // ja cancelado (ghost screen do bug-hunt).
+    replace(`/${slug}/assistente`);
+  }, [cancelling, callId, replace, slug]);
 
   const waiterName = call?.waiterName ?? 'Rodrigo';
   const initial = (waiterName[0] || 'G').toUpperCase();
