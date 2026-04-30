@@ -76,6 +76,7 @@ export class CustomersController {
       totalVisits: result.totalVisits,
       lastVisitSummary: result.lastVisitSummary,
       visitId: result.visitId,
+      wasReclaim: result.wasReclaim,
     };
   }
 

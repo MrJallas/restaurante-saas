@@ -13,6 +13,7 @@ export interface CustomerWelcomeResult {
   lastVisitSummary: Record<string, unknown> | null;
   visitId: string;
   color?: string;
+  wasReclaim: boolean;
 }
 
 @Injectable()
@@ -46,6 +47,7 @@ export class CustomersService {
     let isReturning = false;
     let totalVisits = 1;
     let resolvedName = name.trim();
+    let wasReclaim = false;
 
     if ((existing as unknown[]).length > 0) {
       const customer = (existing as Record<string, unknown>[])[0];
@@ -57,26 +59,34 @@ export class CustomersService {
       const tokenMatches =
         callerRecognitionToken != null && callerRecognitionToken === storedToken;
 
-      if (!tokenMatches) {
-        this.logger.warn(
-          `CPF takeover attempt blocked: CPF ${cleanCpf.slice(0, 3)}*** without valid recognition_token`,
+      if (tokenMatches) {
+        recognitionToken = storedToken;
+      } else {
+        recognitionToken = uuidv4();
+        wasReclaim = true;
+
+        await this.tenantConn.query(
+          'UPDATE customers SET recognition_token = $1, updated_at = now() WHERE id = $2',
+          [recognitionToken, customerId],
         );
-        throw new HttpException(
-          {
-            status: 'recognition_required',
-            message: 'CPF ja registrado. Peca ao garcom para confirmar sua identidade.',
-          },
-          HttpStatus.CONFLICT,
+
+        this.logger.warn(
+          JSON.stringify({
+            event: 'recognition_token_rotated',
+            cpf_hash: cleanCpf.slice(0, 3) + '***' + cleanCpf.slice(-2),
+            customer_id: customerId,
+            table_session_id: sessionId,
+            reason: callerRecognitionToken == null ? 'no_cookie' : 'token_mismatch',
+          }),
         );
       }
-
-      recognitionToken = storedToken;
 
       const updatedRows = await this.tenantConn.query(
         `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
         [customerId],
       );
-      totalVisits = (updatedRows as Record<string, unknown>[])[0].total_visits as number;
+      const rows = (updatedRows as unknown as [Array<Record<string, unknown>>, number])[0];
+      totalVisits = rows[0].total_visits as number;
     } else {
       recognitionToken = uuidv4();
       const result = await this.tenantConn.query(
@@ -127,6 +137,7 @@ export class CustomersService {
       lastVisitSummary,
       visitId,
       color: participant.color,
+      wasReclaim,
     };
   }
 
@@ -150,7 +161,8 @@ export class CustomersService {
       `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
       [customerId],
     );
-    const totalVisits = (updatedRows as Record<string, unknown>[])[0].total_visits as number;
+    const rows = (updatedRows as unknown as [Array<Record<string, unknown>>, number])[0];
+    const totalVisits = rows[0].total_visits as number;
 
     await this.tenantConn.query(
       `INSERT INTO visits (customer_id, table_session_id) VALUES ($1, $2)
@@ -188,6 +200,7 @@ export class CustomersService {
       lastVisitSummary,
       visitId,
       color: participant.color,
+      wasReclaim: false,
     };
   }
 }
