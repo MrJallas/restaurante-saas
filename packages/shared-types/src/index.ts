@@ -86,5 +86,5 @@ export interface CustomerWelcomeResponseDto {
     total_spent_cents?: number;
   } | null;
   visitId: string;
-  wasReclaim?: boolean;
+  wasReclaim: boolean;
 }
