@@ -232,7 +232,7 @@ export default function MesaPage() {
               {},
             );
             if (cancelled) return;
-            if (!customer || !(customer as Record<string, unknown>).customerId) {
+            if (!customer || !customer.customerId) {
               throw new Error('not recognized');
             }
             setCustomer({
