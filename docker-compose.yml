@@ -30,6 +30,19 @@ services:
       timeout: 5s
       retries: 5
 
+  mongodb:
+    image: mongo:7
+    container_name: restaurant-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     image: node:20-alpine
     container_name: restaurant-api
@@ -38,6 +51,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      mongodb:
         condition: service_healthy
     environment:
       NODE_ENV: development
@@ -51,6 +66,8 @@ services:
       REDIS_URL: redis://redis:6379
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DB: restaurant_chat
       QR_HMAC_SECRET: change-me-in-prod
       STAFF_API_KEY: ${STAFF_API_KEY:-dev-staff-api-key-change-in-prod}
       AI_SERVICE_URL: http://ai-service:8000
@@ -132,3 +149,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  mongodb_data:
