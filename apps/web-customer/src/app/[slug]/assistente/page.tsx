@@ -743,7 +743,6 @@ export default function AssistentePage() {
                         >
                           <div className="relative aspect-[4/3] w-full bg-surface">
                             {it.imageUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
                               <img
                                 src={it.imageUrl}
                                 alt={it.name}
