@@ -13,6 +13,13 @@
   --color-danger: #c43a3a;
   --color-success: #2f7d4f;
   --color-accent: #0a0a0a;
+  /* V20 hand-off B.1 — tokens novos do canvas que primitivas Phase 3 precisam.
+     `warning` = mostarda mute (border-left ManagerBubble + categoria mostarda
+     do ToolCallIndicator); washes pegam corpos de alerta sutis (LGPD, etc.). */
+  --color-warning: #b88a1a;
+  --color-danger-wash: #fbe9e7;
+  --color-success-wash: #e3efe7;
+  --color-warning-wash: #fbf1d8;
 
   --font-hero: 'Inter', sans-serif;
   --font-body: 'Inter', sans-serif;
@@ -86,12 +93,40 @@ body {
   100% { background-position: 200% 0; }
 }
 
+/* Phase 3 (C1) — animações dos primitivos novos.
+   `dot-pulse-stagger` é usado em ToolCallIndicator: 3 dots com delay 0/0.16/0.32
+   formam o "USANDO TOOL ···" do canvas (ciclo 1.4s ease-in-out, alinhado a
+   pulse-dot mas com stagger explícito). */
+@keyframes dot-pulse-stagger {
+  0%, 100% { opacity: 0.25; transform: scale(0.7); }
+  50%      { opacity: 1;    transform: scale(1); }
+}
+
+/* `liquid-morph` é o chip→input expand inspirado em Apple Music card transition
+   (canvas v14): 580ms cubic-bezier ease-out, abre clip-path do meio pra fora
+   + fade. Usado por ContextualInputExpand. */
+@keyframes liquid-morph {
+  0%   { opacity: 0; clip-path: inset(50% 0 50% 0 round 14px); }
+  60%  { opacity: 1; clip-path: inset(0 0 0 0 round 14px); }
+  100% { opacity: 1; clip-path: inset(0 0 0 0 round 14px); }
+}
+
+/* `slide-up-overlay` para overlays full-screen (OverlaySalonMap) — slide do
+   bottom + fade do backdrop, 220ms ease-out (alinha cOverlayFade do canvas). */
+@keyframes slide-up-overlay {
+  0%   { opacity: 0; transform: translateY(16px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
 .animate-bounce-dot { animation: bounce-dot 1.2s ease-in-out infinite; }
 .animate-blink { animation: blink 1s steps(2, start) infinite; }
 .animate-pop-in { animation: pop-in 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 .animate-fade-up { animation: fade-up 420ms ease-out both; }
 .animate-ripple { animation: ripple 1.6s ease-out infinite; }
 .animate-pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+.animate-dot-pulse-stagger { animation: dot-pulse-stagger 1.4s ease-in-out infinite; }
+.animate-liquid-morph { animation: liquid-morph 580ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+.animate-slide-up-overlay { animation: slide-up-overlay 220ms ease-out both; }
 
 /* Safe area helpers
    Antes: `pb-safe` = max(env, 0px) — quase no-op, e em telas sem safe-area
