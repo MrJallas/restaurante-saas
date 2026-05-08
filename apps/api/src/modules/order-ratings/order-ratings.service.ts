@@ -1,0 +1,145 @@
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
+import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { ComplaintsService } from '../complaints/complaints.service';
+
+@Injectable()
+export class OrderRatingsService {
+  private readonly logger = new Logger(OrderRatingsService.name);
+
+  constructor(
+    private readonly tenantConn: TenantConnectionProvider,
+    private readonly complaints: ComplaintsService,
+  ) {}
+
+  async submit(input: {
+    orderId: string;
+    customerId: string;
+    visitId?: string | null;
+    rating: number;
+    comment?: string;
+  }) {
+    // ON CONFLICT do nothing — UNIQUE(order_id) enforces idempotency. We then
+    // SELECT to know whether the row was new or pre-existing.
+    const inserted = (await this.tenantConn.query(
+      `INSERT INTO order_ratings (order_id, customer_id, visit_id, rating,
+                                  prompted_at, submitted_at, comment)
+       VALUES ($1, $2, $3, $4, now(), now(), $5)
+       ON CONFLICT (order_id) DO NOTHING
+       RETURNING *`,
+      [
+        input.orderId,
+        input.customerId,
+        input.visitId ?? null,
+        input.rating,
+        input.comment ?? null,
+      ],
+    )) as Array<Record<string, unknown>>;
+
+    let alreadyRated = false;
+    let row: Record<string, unknown>;
+    if (!inserted.length) {
+      alreadyRated = true;
+      const existing = (await this.tenantConn.query(
+        `SELECT * FROM order_ratings WHERE order_id = $1`,
+        [input.orderId],
+      )) as Array<Record<string, unknown>>;
+      if (!existing.length) {
+        throw new HttpException(
+          'Falha ao gravar rating.',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+      row = existing[0];
+    } else {
+      row = inserted[0];
+    }
+
+    let redirectTo: string | null = null;
+    let complaintId: string | null = null;
+
+    // Auto-complaint when rating is low + comment populated.
+    if (
+      !alreadyRated &&
+      input.rating <= 2 &&
+      input.comment &&
+      input.comment.trim().length > 0
+    ) {
+      const complaint = await this.complaints.createFromRating({
+        customerId: input.customerId,
+        visitId: input.visitId ?? null,
+        orderId: input.orderId,
+        orderRatingId: row.id as string,
+        rating: input.rating,
+        comment: input.comment,
+      });
+      complaintId = complaint.id;
+      redirectTo = `/complaint/${complaint.id}`;
+    } else if (input.rating <= 3) {
+      redirectTo = `/complaint/compose?orderId=${input.orderId}`;
+    }
+
+    return {
+      id: row.id as string,
+      orderId: row.order_id as string,
+      rating: row.rating as number,
+      comment: (row.comment as string | null) ?? null,
+      savedAt: row.submitted_at as string,
+      alreadyRated,
+      redirectTo,
+      complaintId,
+    };
+  }
+
+  async getByOrderId(orderId: string) {
+    const rows = (await this.tenantConn.query(
+      `SELECT * FROM order_ratings WHERE order_id = $1`,
+      [orderId],
+    )) as Array<Record<string, unknown>>;
+    if (!rows.length) {
+      throw new HttpException(
+        'Rating nao encontrado.',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const r = rows[0];
+    return {
+      id: r.id as string,
+      orderId: r.order_id as string,
+      rating: r.rating as number,
+      comment: (r.comment as string | null) ?? null,
+      promptedAt: r.prompted_at as string,
+      submittedAt: (r.submitted_at as string | null) ?? null,
+    };
+  }
+
+  /**
+   * Called by the orders module when an order transitions to `delivered`.
+   * Inserts a `prompted_at` row so B2's job runner can later push the rating
+   * prompt at ~13min. Idempotent (UNIQUE on order_id).
+   *
+   * Note: the prompt push delivery itself lives in B2 (cron), this hook only
+   * marks the order as eligible for the prompt.
+   */
+  async schedulePromptForDelivered(input: {
+    orderId: string;
+    customerId?: string | null;
+    visitId?: string | null;
+  }) {
+    await this.tenantConn.query(
+      `INSERT INTO order_ratings (order_id, customer_id, visit_id, prompted_at)
+       VALUES ($1, $2, $3, now())
+       ON CONFLICT (order_id) DO NOTHING`,
+      [
+        input.orderId,
+        input.customerId ?? null,
+        input.visitId ?? null,
+      ],
+    );
+    return { orderId: input.orderId, scheduled: true };
+  }
+}
