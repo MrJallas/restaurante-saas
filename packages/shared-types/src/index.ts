@@ -88,3 +88,18 @@ export interface CustomerWelcomeResponseDto {
   visitId: string;
   wasReclaim: boolean;
 }
+
+// === New feature contracts (per docs/features/*) ===
+// Domain entities + DTOs + WS events for the 5 new product features. Each
+// module groups types by feature; this barrel re-exports them flat to keep
+// existing import sites (`from '@restaurant/shared-types'`) unchanged.
+
+export * from './customer-host';
+export * from './chat-history';
+export * from './lgpd';
+export * from './complaint';
+export * from './staff-message';
+export * from './vip';
+export * from './zone-pause';
+export * from './ai';
+export * from './ws-events';
