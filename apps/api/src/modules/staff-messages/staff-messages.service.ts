@@ -152,7 +152,7 @@ export class StaffMessagesService {
        WHERE id = $1
          AND (recipient_staff_id = $2 OR recipient_staff_id IS NULL)
          AND read_at IS NULL
-       RETURNING id, read_at`,
+       RETURNING id, thread_id, read_at`,
       [messageId, by.staffId],
     )) as Array<Record<string, unknown>>;
     if (!updated.length) {
@@ -161,10 +161,21 @@ export class StaffMessagesService {
         HttpStatus.NOT_FOUND,
       );
     }
-    return {
+    const result = {
       messageId: updated[0].id as string,
       readAt: updated[0].read_at as string,
     };
+
+    if (this.events) {
+      this.events.emitStaffMessageRead({
+        messageId: result.messageId,
+        threadId: updated[0].thread_id as string,
+        readAt: result.readAt,
+        by: by.staffId,
+      });
+    }
+
+    return result;
   }
 
   private mapMessageRow(r: Record<string, unknown>, threadId: string) {

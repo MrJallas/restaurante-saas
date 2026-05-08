@@ -17,6 +17,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { SessionGuard } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ComplaintsService } from './complaints.service';
@@ -121,7 +122,7 @@ export class ComplaintsController {
   }
 
   @Post(':id/respond')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async respond(
     @Param('slug') slug: string,
     @Param('id') id: string,

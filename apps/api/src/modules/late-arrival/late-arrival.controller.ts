@@ -84,6 +84,16 @@ class ListQueryDto {
 /**
  * Late-arrival requests · per docs/features/customer-host-model.md.
  * Customer-host approves; staff/host fallback when host doesn't respond.
+ *
+ * Routes:
+ *   - `POST /:slug/late-arrival-requests`              · create (session)
+ *   - `POST /:slug/late-arrival-requests/:id/approve`  · host approves
+ *   - `POST /:slug/late-arrival-requests/:id/reject`   · host rejects
+ *   - `GET  /:slug/late-arrival-requests`              · staff list
+ *
+ * Two distinct endpoints (approve/reject) instead of a single `/respond`
+ * endpoint with a body discriminator. RESTful and avoids ambiguity in
+ * audit logs and access logs.
  */
 @Controller(':slug/late-arrival-requests')
 export class LateArrivalController {

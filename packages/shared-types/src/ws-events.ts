@@ -223,6 +223,22 @@ export interface WsStaffMessageReceived {
   };
 }
 
+/**
+ * Read-receipt for a previously delivered `staff_message`. Mirrors the
+ * `complaint.read` shape so the staff app can update its inbox UI when the
+ * counterpart marks a message as read.
+ */
+export interface WsStaffMessageRead {
+  event: 'staff_message.read';
+  payload: {
+    messageId: string;
+    threadId: string;
+    readAt: string;
+    /** Staff id of the reader. */
+    by: string;
+  };
+}
+
 // ─── Zone pause ───
 
 export interface WsZonePauseStarted {
@@ -288,6 +304,7 @@ export type WsEvent =
   | WsComplaintRead
   | WsComplaintResolved
   | WsStaffMessageReceived
+  | WsStaffMessageRead
   | WsZonePauseStarted
   | WsZonePauseEnded
   | WsSessionFlagChanged;
