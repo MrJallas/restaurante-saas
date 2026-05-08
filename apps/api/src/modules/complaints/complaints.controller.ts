@@ -45,6 +45,15 @@ class CreateComplaintDto {
   @Max(5)
   rating?: number;
 
+  /**
+   * Per docs/features/complaint-flow-v12.md: composer chips classify the
+   * problem in one of 5 buckets so the manager can see at a glance.
+   * Optional because legacy clients don't send it; new composer enforces it.
+   */
+  @IsOptional()
+  @IsIn(['demora', 'item-errado', 'item-faltando', 'comida-fria', 'outro'])
+  problemType?: string;
+
   @IsString()
   @MaxLength(2000)
   text!: string;
@@ -114,6 +123,7 @@ export class ComplaintsController {
         orderId: dto.orderId,
         orderRatingId: dto.orderRatingId,
         rating: dto.rating,
+        problemType: dto.problemType,
         text: dto.text,
         attachedImageUrl: dto.attachedImageUrl,
       },

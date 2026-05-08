@@ -55,6 +55,20 @@ export class VipService {
           JSON.stringify({ reason: by.reason ?? null }),
         ],
       );
+      // Mirror to `table_sessions.flags text[]` (migration 031). The array
+      // is the canonical column read by `priorityOf()` and most JOINs.
+      // session_flags continues to carry the audit trail (who/when).
+      await this.tenantConn.query(
+        `UPDATE table_sessions
+            SET flags = (
+              SELECT ARRAY(
+                SELECT DISTINCT unnest(COALESCE(flags, '{}') || ARRAY[$2::text])
+              )
+            ),
+            updated_at = now()
+          WHERE id = $1`,
+        [tableSessionId, flag],
+      );
     } else {
       await this.tenantConn.query(
         `UPDATE session_flags
@@ -63,6 +77,14 @@ export class VipService {
                updated_at = now()
          WHERE table_session_id = $2 AND flag = $3 AND cleared_at IS NULL`,
         [by.staffId ?? null, tableSessionId, flag],
+      );
+      // Mirror remove to `table_sessions.flags text[]`.
+      await this.tenantConn.query(
+        `UPDATE table_sessions
+            SET flags = array_remove(COALESCE(flags, '{}'), $2::text),
+                updated_at = now()
+          WHERE id = $1`,
+        [tableSessionId, flag],
       );
     }
 

@@ -35,8 +35,21 @@ const THREAD_INDEXES: IndexDef[] = [
     spec: { customer_id: 1 },
   },
   {
+    // Listing rapido pra historico do cliente: customer + restaurant +
+    // ordenacao por created_at desc. Per docs/features/chat-history-lgpd.md.
+    name: 'customer_restaurant_created',
+    spec: { customerId: 1, restaurantId: 1, createdAt: -1 },
+  },
+  {
     name: 'created_at',
     spec: { created_at: 1 },
+  },
+  {
+    // TTL — auto-deleta thread quando expiresAt < now() (per LGPD spec
+    // Art. 6 III: minimizacao). Mongo roda o sweep a cada 60s.
+    name: 'expires_at_ttl',
+    spec: { expiresAt: 1 },
+    options: { expireAfterSeconds: 0 },
   },
 ];
 
@@ -44,6 +57,11 @@ const MESSAGE_INDEXES: IndexDef[] = [
   {
     name: 'thread_created',
     spec: { thread_id: 1, created_at: 1 },
+  },
+  {
+    // Per docs/features/chat-history-lgpd.md: paginacao pelas msgs da thread.
+    name: 'threadId_createdAt',
+    spec: { threadId: 1, createdAt: 1 },
   },
   {
     // CRITICAL: LGPD instant erasure relies on this index.
@@ -61,6 +79,12 @@ const MESSAGE_INDEXES: IndexDef[] = [
   {
     name: 'created_at',
     spec: { created_at: 1 },
+  },
+  {
+    // TTL — mensagem expira junto com a thread (campo herdado).
+    name: 'expires_at_ttl',
+    spec: { expiresAt: 1 },
+    options: { expireAfterSeconds: 0 },
   },
 ];
 

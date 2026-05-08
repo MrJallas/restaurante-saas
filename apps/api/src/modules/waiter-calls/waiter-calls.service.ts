@@ -283,10 +283,15 @@ export class WaiterCallsService {
   }
 
   async getPendingCalls() {
+    // `ts.flags` is required by `priorityOf()` (see
+    // apps/api/src/modules/vip/priority.util.ts and
+    // docs/features/vip-customer.md). Migration 031 added
+    // `table_sessions.flags text[]`.
     return this.tenantConn.query(
       `SELECT wc.id, wc.status, wc.reason, wc.created_at,
               wc.assigned_waiter_name, wc.eta_minutes,
-              t.label as table_label, t.code as table_code
+              t.label as table_label, t.code as table_code,
+              COALESCE(ts.flags, '{}') as flags
        FROM waiter_calls wc
        JOIN table_sessions ts ON ts.id = wc.table_session_id
        JOIN tables t ON t.id = ts.table_id
