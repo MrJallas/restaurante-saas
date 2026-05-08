@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "create-tenant": "ts-node scripts/create-tenant.ts",
-    "migrate:public": "ts-node scripts/migrate-public.ts"
+    "migrate:public": "ts-node scripts/migrate-public.ts",
+    "migrate": "ts-node scripts/migrate-public.ts",
+    "mongo:init": "ts-node scripts/mongo-init.ts"
   },
   "dependencies": {
+    "mongodb": "^6.8.0",
     "pg": "^8.12.0"
   },
   "devDependencies": {
