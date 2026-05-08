@@ -118,6 +118,14 @@ body {
   100% { opacity: 1; transform: translateY(0); }
 }
 
+/* `manager-arrive` — entrada do ManagerBubble (gerente respondendo no chat).
+   Mais firme que fade-up (curva expo-like) pra dar sensacao de "alguem
+   entrou na conversa". Coordenado com `lib/animations.ts#cManagerArrive`. */
+@keyframes managerArrive {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
 .animate-bounce-dot { animation: bounce-dot 1.2s ease-in-out infinite; }
 .animate-blink { animation: blink 1s steps(2, start) infinite; }
 .animate-pop-in { animation: pop-in 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
@@ -127,6 +135,7 @@ body {
 .animate-dot-pulse-stagger { animation: dot-pulse-stagger 1.4s ease-in-out infinite; }
 .animate-liquid-morph { animation: liquid-morph 580ms cubic-bezier(0.4, 0, 0.2, 1) both; }
 .animate-slide-up-overlay { animation: slide-up-overlay 220ms ease-out both; }
+.animate-manager-arrive { animation: managerArrive 360ms cubic-bezier(.2,.8,.2,1) both; }
 
 /* Safe area helpers
    Antes: `pb-safe` = max(env, 0px) — quase no-op, e em telas sem safe-area

@@ -29,12 +29,6 @@ import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard'
 import { Session } from '../../common/decorators/session.decorator';
 import { OrdersService } from './orders.service';
 
-class OrderItemExtraDto {
-  @IsString()
-  @IsNotEmpty()
-  extraId!: string;
-}
-
 class CreateOrderItemDto {
   @IsString()
   @IsNotEmpty()

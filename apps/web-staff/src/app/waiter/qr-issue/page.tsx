@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenWaiterReportQrIssue } from '../../../screens/waiter/ScreenWaiterReportQrIssue';
 
-export default function WaiterReportQrIssuePage() {
+function WaiterReportQrIssuePageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const tenantSlug = params.get('tenant') ?? '';
@@ -17,5 +17,13 @@ export default function WaiterReportQrIssuePage() {
       onClose={() => router.back()}
       onSent={() => router.push(`/waiter?tenant=${tenantSlug}`)}
     />
+  );
+}
+
+export default function WaiterReportQrIssuePage() {
+  return (
+    <React.Suspense fallback={null}>
+      <WaiterReportQrIssuePageInner />
+    </React.Suspense>
   );
 }

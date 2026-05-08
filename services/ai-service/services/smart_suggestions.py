@@ -7,6 +7,30 @@ miss in production we fall back to a small built-in default so the FE never
 gets an empty list.
 
 Key shape: `smart-sug:<tenantId>:<surface>` — list of JSON-encoded SmartSuggestion.
+
+────────────────────────────────────────────────────────────────────────────
+Glossary · `surface` vs `situacao`
+────────────────────────────────────────────────────────────────────────────
+The smart-suggestions module exposes two related concepts that have ended
+up overloaded in spec and code; F2 round documents the distinction so we
+don't break clients while we bring naming together:
+
+    surface   = WHERE the chips render (UI placement)
+                ─ values: 'home' | 'post-rating' | 'idle' | 'continuation'
+                ─ owned by the FE at call time (same tenant can hit the
+                  same pool from different surfaces)
+
+    situacao  = WHY the chips were triggered (trigger context)
+                ─ examples per spec: 'pedido_atrasado' (order is late),
+                  'chamado_sem_resposta' (waiter call unanswered),
+                  'continuation' (post-rating wrap-up)
+                ─ owned by the backend / orchestrator that decides which
+                  surface to push these chips into
+
+Both fields can be set independently — `surface` is required (matches the
+shared-types contract) and `situacao` is optional (alias / extra metadata
+the FE can use for analytics or copy variation). NO BREAKING CHANGE:
+existing callers that only send `surface` keep working unchanged.
 """
 
 import random
@@ -53,9 +77,17 @@ def get_suggestions(
     limit: int = 3,
     customer_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    situacao: Optional[str] = None,
 ) -> dict:
     """
     Returns SmartSuggestionsResponse-shaped dict.
+
+    `surface` is the UI placement (required); `situacao` is an optional
+    trigger-context alias the orchestrator can pass through (e.g.
+    'pedido_atrasado', 'chamado_sem_resposta'). When set, `situacao` is
+    echoed back on the response payload so FE can use it for analytics
+    or copy variation. Pool lookup keys off `surface` only — situacao
+    doesn't change which pool we query.
     """
     if surface not in {"home", "post-rating", "idle", "continuation"}:
         surface = "home"
@@ -69,10 +101,13 @@ def get_suggestions(
             pool = list(defaults)
 
     if not pool:
-        return {
+        out: dict = {
             "suggestions": [],
             "poolExpiresAt": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
         }
+        if situacao:
+            out["situacao"] = situacao
+        return out
 
     # Deterministic-ish: use customer_id+session_id+surface as RNG seed so
     # the same customer doesn't see the SAME chips on every reload, but
@@ -81,7 +116,10 @@ def get_suggestions(
     rng = random.Random(hash(seed_str))
     sample = rng.sample(pool, min(limit, len(pool)))
 
-    return {
+    out = {
         "suggestions": sample,
         "poolExpiresAt": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
     }
+    if situacao:
+        out["situacao"] = situacao
+    return out

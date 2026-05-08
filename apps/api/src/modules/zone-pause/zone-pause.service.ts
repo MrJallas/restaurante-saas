@@ -9,12 +9,19 @@ import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { EventsGateway } from '../websocket/events.gateway';
 
 /**
- * Zone pause · per docs/features/zone-pause.md.
+ * Zone pause · per docs/features/zone-pause.md (V13).
  *
- * Naming caveat: the spec talks about "waiter zones" but the table is keyed
- * by `zone_id` (the spatial zone). For the MVP we expose both `waiterId`
- * (legacy spec) and `zoneId` (DB column) and let the caller choose. Day-2
- * cleanup decision is on the architect side.
+ * Pause is **waiter-specific**: a manager pauses orders for the tables
+ * attended by ONE waiter while the rest of the floor keeps flowing. The
+ * `zone_pauses` table was refactored in migration 032 to:
+ *
+ *   waiter_id   uuid REFERENCES staff(id)   -- whose tables are paused
+ *   started_at  timestamptz
+ *   ends_at     timestamptz                 -- TTL (default 5min)
+ *   started_by  uuid REFERENCES staff(id)   -- the manager who triggered
+ *   ended_at    timestamptz                 -- NULL while active
+ *   ended_by    uuid REFERENCES staff(id)
+ *   reason      text
  */
 @Injectable()
 export class ZonePauseService {
@@ -27,45 +34,40 @@ export class ZonePauseService {
 
   async create(
     input: {
-      zoneId?: string | null;
-      zoneName?: string | null;
-      kind?: 'orders' | 'all';
+      waiterId: string;
       durationMinutes?: number;
       reason?: string;
-      createdByStaffId?: string;
+      startedBy?: string;
     },
     slug?: string,
   ) {
-    const endsAt = input.durationMinutes
-      ? new Date(Date.now() + input.durationMinutes * 60 * 1000).toISOString()
-      : null;
+    const minutes = input.durationMinutes ?? 5;
+    const endsAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+
+    // started_by is NOT NULL in the schema; default to the waiter id when
+    // the caller forgot to pass `startedBy` (legacy client). The DTO marks
+    // it optional so the API doesn't 400 — we close the gap server-side.
+    const startedBy = input.startedBy ?? input.waiterId;
 
     const rows = (await this.tenantConn.query(
       `INSERT INTO zone_pauses
-         (zone_id, zone_name, kind, reason, ends_at, created_by_staff_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
+         (waiter_id, ends_at, started_by, reason)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [
-        input.zoneId ?? null,
-        input.zoneName ?? null,
-        input.kind ?? 'orders',
-        input.reason ?? null,
-        endsAt,
-        input.createdByStaffId ?? null,
-      ],
+      [input.waiterId, endsAt, startedBy, input.reason ?? null],
     )) as Array<Record<string, unknown>>;
 
     const result = this.mapRow(rows[0]);
 
     if (slug && this.events) {
-      // TODO(payload): waiterName needs a join with staff. waiterId here
-      // maps to zoneId per the legacy spec mismatch noted above.
+      // TODO(payload): waiterName needs a join with staff. We pass the id
+      // and the FE re-fetches when expanding the banner.
       this.events.emitZonePauseStarted(slug, {
         id: result.id,
-        waiterId: result.zoneId ?? result.id,
-        waiterName: result.zoneName ?? '',
-        endsAt: result.endsAt ?? new Date().toISOString(),
-        startedBy: result.createdByStaffId ?? '',
+        waiterId: result.waiterId,
+        waiterName: '',
+        endsAt: result.endsAt,
+        startedBy: result.startedBy,
         reason: result.reason,
       });
     }
@@ -73,20 +75,23 @@ export class ZonePauseService {
     return result;
   }
 
-  async end(id: string, by: { staffId?: string; reason?: string }, slug?: string) {
+  async end(
+    id: string,
+    by: { endedBy?: string; reason?: string },
+    slug?: string,
+  ) {
     const updated = (await this.tenantConn.query(
       `UPDATE zone_pauses
-         SET ends_at = LEAST(COALESCE(ends_at, now()), now()),
-             ended_by_staff_id = COALESCE($1, ended_by_staff_id),
-             reason = COALESCE($2, reason),
-             updated_at = now()
-       WHERE id = $3
+         SET ended_at = now(),
+             ended_by = COALESCE($1, ended_by),
+             reason = COALESCE($2, reason)
+       WHERE id = $3 AND ended_at IS NULL
        RETURNING *`,
-      [by.staffId ?? null, by.reason ?? null, id],
+      [by.endedBy ?? null, by.reason ?? null, id],
     )) as Array<Record<string, unknown>>;
     if (!updated.length) {
       throw new HttpException(
-        'Zone pause nao encontrada.',
+        'Zone pause nao encontrada ou ja encerrada.',
         HttpStatus.NOT_FOUND,
       );
     }
@@ -95,9 +100,9 @@ export class ZonePauseService {
     if (slug && this.events) {
       this.events.emitZonePauseEnded(slug, {
         id: result.id,
-        waiterId: result.zoneId ?? result.id,
-        endedAt: result.endsAt ?? new Date().toISOString(),
-        endedBy: result.endedByStaffId,
+        waiterId: result.waiterId,
+        endedAt: result.endedAt ?? new Date().toISOString(),
+        endedBy: result.endedBy,
         autoExpired: false,
       });
     }
@@ -111,25 +116,25 @@ export class ZonePauseService {
    */
   async endEarly(
     id: string,
-    by: { staffId?: string; reason?: string },
+    by: { endedBy?: string; reason?: string },
     slug?: string,
   ) {
     return this.end(id, by, slug);
   }
 
-  async list(filters: { active?: boolean; zoneId?: string }) {
+  async list(filters: { active?: boolean; waiterId?: string }) {
     const where: string[] = [];
     const params: unknown[] = [];
     let i = 1;
-    if (filters.zoneId) {
-      where.push(`zone_id = $${i++}`);
-      params.push(filters.zoneId);
+    if (filters.waiterId) {
+      where.push(`waiter_id = $${i++}`);
+      params.push(filters.waiterId);
     }
     if (filters.active !== undefined) {
       if (filters.active) {
-        where.push(`(ends_at IS NULL OR ends_at > now())`);
+        where.push(`ended_at IS NULL AND ends_at > now()`);
       } else {
-        where.push(`ends_at <= now()`);
+        where.push(`(ended_at IS NOT NULL OR ends_at <= now())`);
       }
     }
     const sql = `SELECT * FROM zone_pauses
@@ -142,18 +147,19 @@ export class ZonePauseService {
   }
 
   private mapRow(row: Record<string, unknown>) {
-    const endsAt = row.ends_at as string | null;
-    const active = !endsAt || new Date(endsAt).getTime() > Date.now();
+    const endedAt = (row.ended_at as string | null) ?? null;
+    const endsAt = row.ends_at as string;
+    const active =
+      endedAt === null && (!endsAt || new Date(endsAt).getTime() > Date.now());
     return {
       id: row.id as string,
-      zoneId: (row.zone_id as string | null) ?? null,
-      zoneName: (row.zone_name as string | null) ?? null,
-      kind: row.kind as string,
-      reason: (row.reason as string | null) ?? null,
+      waiterId: row.waiter_id as string,
       startedAt: row.started_at as string,
       endsAt,
-      endedByStaffId: (row.ended_by_staff_id as string | null) ?? null,
-      createdByStaffId: (row.created_by_staff_id as string | null) ?? null,
+      startedBy: row.started_by as string,
+      endedAt,
+      endedBy: (row.ended_by as string | null) ?? null,
+      reason: (row.reason as string | null) ?? null,
       active,
     };
   }

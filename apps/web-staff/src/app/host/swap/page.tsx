@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenHostTableSwap } from '../../../screens/host/ScreenHostTableSwap';
 
-export default function HostSwapPage() {
+function HostSwapPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const tenantSlug = params.get('tenant') ?? '';
@@ -17,5 +17,13 @@ export default function HostSwapPage() {
       onBack={() => router.back()}
       onDone={() => router.push(`/host?tenant=${tenantSlug}`)}
     />
+  );
+}
+
+export default function HostSwapPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <HostSwapPageInner />
+    </React.Suspense>
   );
 }

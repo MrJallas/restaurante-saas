@@ -106,7 +106,11 @@ export class AssistantService {
     tableSessionId: string,
     customerId: string | null,
     message: string,
-    schemaName: string,
+    // Tenant connection is resolved via `TenantConnectionProvider` and the
+    // request middleware that sets `search_path`; the explicit schema arg
+    // is kept on the public signature so the controller and any future
+    // direct callers don't have to change. Marked unused to satisfy lint.
+    _schemaName: string,
   ) {
     // IDOR guard: cliente nao pode passar `customerId` de outro cliente
     // pra extrair contexto de consumo / historico alheio. Validamos que

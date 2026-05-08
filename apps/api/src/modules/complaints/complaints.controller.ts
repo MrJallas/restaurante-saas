@@ -17,6 +17,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { SessionGuard } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ComplaintsService } from './complaints.service';
@@ -43,6 +44,15 @@ class CreateComplaintDto {
   @Min(1)
   @Max(5)
   rating?: number;
+
+  /**
+   * Per docs/features/complaint-flow-v12.md: composer chips classify the
+   * problem in one of 5 buckets so the manager can see at a glance.
+   * Optional because legacy clients don't send it; new composer enforces it.
+   */
+  @IsOptional()
+  @IsIn(['demora', 'item-errado', 'item-faltando', 'comida-fria', 'outro'])
+  problemType?: string;
 
   @IsString()
   @MaxLength(2000)
@@ -113,6 +123,7 @@ export class ComplaintsController {
         orderId: dto.orderId,
         orderRatingId: dto.orderRatingId,
         rating: dto.rating,
+        problemType: dto.problemType,
         text: dto.text,
         attachedImageUrl: dto.attachedImageUrl,
       },
@@ -121,7 +132,7 @@ export class ComplaintsController {
   }
 
   @Post(':id/respond')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async respond(
     @Param('slug') slug: string,
     @Param('id') id: string,

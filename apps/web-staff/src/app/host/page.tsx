@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenHostHome } from '../../screens/host/ScreenHostHome';
 
-export default function HostHomePage() {
+function HostHomePageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const tenantSlug = params.get('tenant') ?? process.env.NEXT_PUBLIC_DEFAULT_TENANT ?? 'demo';
@@ -23,5 +23,13 @@ export default function HostHomePage() {
         if (tab === 'inbox') router.push(`/host?tenant=${tenantSlug}#inbox`);
       }}
     />
+  );
+}
+
+export default function HostHomePage() {
+  return (
+    <React.Suspense fallback={null}>
+      <HostHomePageInner />
+    </React.Suspense>
   );
 }

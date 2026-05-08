@@ -1,23 +1,16 @@
-"""Add an item to the customer's pending cart."""
+"""
+DEPRECATED — remove next round.
+
+Legacy alias for `add_to_order`. The canonical tool name per F2 spec is
+`add_to_order`; existing callers still reference `add_to_cart`, so this
+thin wrapper forwards to the new module.
+"""
 
 from typing import Any
 from .types import ToolContext, ToolResult
+from .add_to_order import call as _add_to_order_call
 
 
 def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    item_id = args.get("itemId") or args.get("item_id")
-    quantity = int(args.get("quantity") or 1)
-    if not item_id:
-        return ToolResult(error={"code": "missing_item", "message": "itemId obrigatório"})
-
-    payload = {"itemId": item_id, "quantity": quantity, "notes": args.get("notes")}
-    if ctx.api_client:
-        try:
-            ctx.api_client("POST", f"/customer/cart/items", payload)
-        except Exception as e:  # network errors propagate as soft errors
-            return ToolResult(error={"code": "api_error", "message": str(e)})
-
-    return ToolResult(
-        message=f"Adicionei {quantity}x ao seu pedido. Quer mais alguma coisa?",
-        action_payload={"cartUpdated": True, "itemId": item_id, "quantity": quantity},
-    )
+    """DEPRECATED — remove next round. Forwards to `add_to_order`."""
+    return _add_to_order_call(args, ctx)

@@ -3,11 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { apiPost, apiGet } from '../../../../lib/api';
-import {
-  getRecognitionToken,
-  setRecognitionToken,
-  setSessionToken,
-} from '../../../../lib/storage';
+import { setSessionToken } from '../../../../lib/storage';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
 import { WelcomeModal } from '../../../../components/welcome/WelcomeModal';
@@ -17,7 +13,6 @@ import { PillButton } from '../../../../components/ui/PillButton';
 import { SoftInput } from '../../../../components/ui/SoftInput';
 import { HostApprovalModal } from '../../../../components/host/HostApprovalModal';
 import { PendingApprovalScreen } from '../../../../components/host/PendingApprovalScreen';
-import { useTableSocket } from '../../../../hooks/useTableSocket';
 import type { SessionResponseDto, CustomerWelcomeResponseDto } from '@restaurant/shared-types';
 
 // Hard cap para a splash "Preparando sua experiencia". Se o initSession demorar

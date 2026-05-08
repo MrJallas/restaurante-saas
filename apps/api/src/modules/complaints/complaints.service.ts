@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { EventsGateway } from '../websocket/events.gateway';
+import type { ComplaintProblemType } from '@restaurant/shared-types';
 
 @Injectable()
 export class ComplaintsService {
@@ -24,6 +25,12 @@ export class ComplaintsService {
       orderId?: string | null;
       orderRatingId?: string | null;
       rating?: number | null;
+      /**
+       * Per docs/features/complaint-flow-v12.md — one of:
+       * 'demora' | 'item-errado' | 'item-faltando' | 'comida-fria' | 'outro'.
+       * Persisted in the `problem_type` column (migration 033).
+       */
+      problemType?: string | null;
       text: string;
       attachedImageUrl?: string | null;
       autoFromRating?: boolean;
@@ -33,8 +40,8 @@ export class ComplaintsService {
     const rows = (await this.tenantConn.query(
       `INSERT INTO complaints
          (customer_id, visit_id, order_id, order_rating_id, rating,
-          text, attached_image_url, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending_review')
+          problem_type, text, attached_image_url, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending_review')
        RETURNING *`,
       [
         input.customerId ?? null,
@@ -42,6 +49,7 @@ export class ComplaintsService {
         input.orderId ?? null,
         input.orderRatingId ?? null,
         input.rating ?? null,
+        input.problemType ?? null,
         input.text,
         input.attachedImageUrl ?? null,
       ],
@@ -50,17 +58,16 @@ export class ComplaintsService {
     const result = this.mapRow(rows[0]);
 
     if (slug && this.events && result.customerId) {
-      // TODO(payload): tableSessionId / tableNumber / customerName /
-      // problemType need joins with visits + customers + complaint metadata.
-      // Defaulting to '' / 0 / 'outro' so the contract is satisfied; FE
-      // re-fetches via REST when expanding the card.
+      // TODO(payload): tableSessionId / tableNumber / customerName need
+      // joins with visits + customers. Defaulting to '' / 0 so the contract
+      // is satisfied; FE re-fetches via REST when expanding the card.
       this.events.emitComplaintCreated(slug, result.assignedManagerId, {
         complaintId: result.id,
         tableSessionId: '',
         tableNumber: 0,
         customerId: result.customerId,
         customerName: '',
-        problemType: 'outro',
+        problemType: (result.problemType ?? 'outro') as ComplaintProblemType,
         rating: result.rating,
         description: result.text,
         createdAt: result.submittedAt,
@@ -83,6 +90,7 @@ export class ComplaintsService {
       orderRatingId: string;
       rating: number;
       comment: string;
+      problemType?: string | null;
     },
     slug?: string,
   ) {
@@ -93,6 +101,7 @@ export class ComplaintsService {
         orderId: input.orderId,
         orderRatingId: input.orderRatingId,
         rating: input.rating,
+        problemType: input.problemType ?? null,
         text: input.comment,
         autoFromRating: true,
       },
@@ -154,6 +163,7 @@ export class ComplaintsService {
       `UPDATE complaints
          SET status = 'closed',
              closed_at = now(),
+             resolved_at = now(),
              assigned_manager_id = COALESCE($1, assigned_manager_id),
              updated_at = now()
        WHERE id = $2
@@ -228,6 +238,7 @@ export class ComplaintsService {
       customerId: (row.customer_id as string | null) ?? null,
       visitId: (row.visit_id as string | null) ?? null,
       rating: (row.rating as number | null) ?? null,
+      problemType: (row.problem_type as string | null) ?? null,
       text: row.text as string,
       attachedImageUrl: (row.attached_image_url as string | null) ?? null,
       status: row.status as string,
@@ -236,6 +247,7 @@ export class ComplaintsService {
       responseAt: (row.response_at as string | null) ?? null,
       submittedAt: row.submitted_at as string,
       closedAt: (row.closed_at as string | null) ?? null,
+      resolvedAt: (row.resolved_at as string | null) ?? null,
     };
   }
 }

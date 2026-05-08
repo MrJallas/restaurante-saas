@@ -30,6 +30,7 @@ import type {
   WsComplaintRead,
   WsComplaintResolved,
   WsStaffMessageReceived,
+  WsStaffMessageRead,
   WsZonePauseStarted,
   WsZonePauseEnded,
   WsSessionFlagChanged,
@@ -639,6 +640,16 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (staffId) {
       this.server.to(`staff:${staffId}`).emit('staff_message.received', payload);
     }
+  }
+
+  /**
+   * Read receipt for a previously delivered staff message. Broadcast on the
+   * global namespace so any subscriber holding the thread can flip the UI.
+   * Mirrors the simple `complaint.read` pattern — narrower routing can be
+   * layered on later if the fan-out becomes noisy.
+   */
+  emitStaffMessageRead(payload: WsStaffMessageRead['payload']) {
+    this.server.emit('staff_message.read', payload);
   }
 
   /**

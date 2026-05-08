@@ -1,9 +1,13 @@
-"""Tests for the tool registry: counts, metadata flags, dispatch validation."""
+"""
+Tests for the F2 tool registry: canonical set, dispatch validation,
+LGPD notice payload shape, ack-pool rotation.
+"""
 
 import pytest
 
 from services.tools import (
     TOOLS,
+    CANONICAL_TOOL_NAMES,
     STAFF_TOOLS_REQUIRING_TEXT,
     dispatch_tool,
     ToolContext,
@@ -12,48 +16,177 @@ from services.tools import (
 )
 
 
-def test_registers_all_25_tools():
-    assert len(TOOLS) == 25, f"expected 25 tools, got {len(TOOLS)}"
+# ─────────────────────────────────────────────────────────────
+# Canonical tool set per F2 spec
+# ─────────────────────────────────────────────────────────────
+
+EXPECTED_CANONICAL = {
+    # order/menu (8)
+    "view_menu", "search_dish", "check_allergens", "compare_dishes",
+    "recommend_dish", "add_to_order", "view_order", "confirm_order",
+    # payment (4)
+    "split_bill", "pay_individual", "pay_full", "open_payment_screen",
+    # staff/communication (4)
+    "call_waiter", "send_message_to_manager", "send_complaint",
+    "request_table_merge",
+    # lgpd / history (4)
+    "delete_chat", "delete_all_chats", "lgpd_data_request",
+    "show_lgpd_notice",
+    # info (3)
+    "view_courtesy", "ask_about_restaurant", "rate_visit",
+}
 
 
-def test_split_customer_vs_staff():
-    customer = [m for m in TOOLS.values() if m.audience == "customer"]
-    staff = [m for m in TOOLS.values() if m.audience == "staff"]
-    assert len(customer) == 15, f"expected 15 customer tools, got {len(customer)}"
-    assert len(staff) == 10, f"expected 10 staff tools, got {len(staff)}"
+def test_canonical_set_matches_expected():
+    """The CANONICAL_TOOL_NAMES export must match the F2 spec exactly."""
+    assert CANONICAL_TOOL_NAMES == EXPECTED_CANONICAL, (
+        f"\nMissing: {EXPECTED_CANONICAL - CANONICAL_TOOL_NAMES}\n"
+        f"Extra:   {CANONICAL_TOOL_NAMES - EXPECTED_CANONICAL}"
+    )
 
 
-def test_staff_tools_requiring_text_set():
-    expected = {
-        "staff_message_send",
-        "staff_broadcast",
-        "staff_pause_zone",
-        "staff_respond_complaint",
-    }
-    assert STAFF_TOOLS_REQUIRING_TEXT == expected
+@pytest.mark.parametrize("tool_name", sorted(EXPECTED_CANONICAL))
+def test_canonical_tool_is_registered(tool_name: str):
+    """Every canonical tool name must be in the TOOLS registry."""
+    assert tool_name in TOOLS, f"missing canonical tool: {tool_name}"
+    meta = TOOLS[tool_name]
+    assert meta.name == tool_name
+    assert callable(meta.call)
 
 
-def test_complaint_compose_is_router():
-    assert TOOLS["complaint_compose"].router is True
+def test_canonical_count_is_23():
+    """F2 spec calls for ~25 tools (incl. optional session). Currently 23
+    canonical tools without start/end_session (those are NOT in the codebase
+    yet · spec says 'if exists, keep'). When session tools are added, this
+    count bumps to 25."""
+    assert len(CANONICAL_TOOL_NAMES) == 23
 
 
-def test_rate_order_is_router():
-    assert TOOLS["rate_order"].router is True
+# ─────────────────────────────────────────────────────────────
+# Deprecated alias coverage — old names must still dispatch
+# ─────────────────────────────────────────────────────────────
+
+DEPRECATED_TO_CANONICAL = {
+    "add_to_cart": "add_to_order",
+    "recommend": "recommend_dish",
+    "complaint_compose": "send_complaint",
+    "lgpd_erase_chat": "lgpd_data_request",
+    "table_merge_request": "request_table_merge",
+    "rate_order": "rate_visit",
+    "staff_message_send": "send_message_to_manager",
+}
 
 
-def test_lgpd_erase_chat_silent():
-    meta = TOOLS["lgpd_erase_chat"]
-    assert meta.silent is True
-    assert meta.requires_text is False
-    assert meta.router is False
+@pytest.mark.parametrize(
+    "deprecated,canonical",
+    sorted(DEPRECATED_TO_CANONICAL.items()),
+)
+def test_deprecated_alias_still_registered(deprecated: str, canonical: str):
+    """Deprecated names must remain registered so existing callers don't break."""
+    assert deprecated in TOOLS, f"alias {deprecated} unregistered"
+    assert canonical in TOOLS, f"canonical {canonical} unregistered"
 
 
-def test_table_merge_request_metadata():
-    meta = TOOLS["table_merge_request"]
-    assert meta.silent is False
-    assert meta.requires_text is False
-    assert meta.router is False
+# ─────────────────────────────────────────────────────────────
+# show_lgpd_notice — spec-compliant payload
+# ─────────────────────────────────────────────────────────────
 
+def test_show_lgpd_notice_returns_text_and_chips():
+    """show_lgpd_notice() must return a dict-like ToolResult with text + chips."""
+    ctx = ToolContext(tenant_id="t1", customer_id="c1")
+    result = dispatch_tool("show_lgpd_notice", {}, ctx)
+
+    # Spec mandates the canonical text + 2 binary consent chips.
+    assert result.message, "show_lgpd_notice must return canonical text"
+    assert len(result.chips) == 2, "show_lgpd_notice must return 2 chips"
+
+    chip_actions = [c.get("payload", {}).get("tool") if isinstance(c.get("payload"), dict) else c.get("action") for c in result.chips]
+    # First chip routes to lgpd_data_request, second is a dismiss.
+    assert "lgpd_data_request" in str(chip_actions[0]) or chip_actions[0] == "lgpd_data_request"
+    assert "dismiss" in str(chip_actions[1]).lower()
+
+
+def test_show_lgpd_notice_text_matches_canonical():
+    """The text returned must be byte-equal to LGPD_NOTICE."""
+    from services.lgpd_messages import LGPD_NOTICE
+    ctx = ToolContext(tenant_id="t1", customer_id="c1")
+    result = dispatch_tool("show_lgpd_notice", {}, ctx)
+    assert result.message == LGPD_NOTICE
+
+
+def test_show_lgpd_notice_chip_labels_canonical():
+    """Chip labels feed audit logs — must be canonical."""
+    from services.lgpd_messages import LGPD_CHIP_CONFIRM, LGPD_CHIP_DISMISS
+    ctx = ToolContext(tenant_id="t1", customer_id="c1")
+    result = dispatch_tool("show_lgpd_notice", {}, ctx)
+    labels = [c["label"] for c in result.chips]
+    assert LGPD_CHIP_CONFIRM in labels
+    assert LGPD_CHIP_DISMISS in labels
+
+
+# ─────────────────────────────────────────────────────────────
+# ACK pool rotation
+# ─────────────────────────────────────────────────────────────
+
+def test_get_ack_reply_returns_string():
+    """get_ack_reply() must always return a non-empty string."""
+    from services.classify_ack import get_ack_reply
+    reply = get_ack_reply()
+    assert isinstance(reply, str)
+    assert len(reply) > 0
+
+
+def test_get_ack_reply_rotates():
+    """
+    Calling get_ack_reply() N+1 times where N == pool size should cycle
+    back to the first value (LPOP + RPUSH rotation).
+    """
+    from services.classify_ack import (
+        get_ack_reply,
+        seed_ack_replies,
+        ACK_REPLIES,
+        ACK_REPLIES_KEY,
+    )
+    from services.redis_pool import get_client
+
+    # Reset the pool to a deterministic state for the test.
+    client = get_client()
+    client.delete(ACK_REPLIES_KEY)
+    seed_ack_replies()
+
+    pool_size = len(ACK_REPLIES)
+    first_n_replies = [get_ack_reply() for _ in range(pool_size)]
+
+    # All replies should be unique within one full rotation (covers the pool).
+    assert len(set(first_n_replies)) == pool_size, (
+        f"expected {pool_size} unique replies in one rotation, got "
+        f"{len(set(first_n_replies))}: {first_n_replies}"
+    )
+
+    # The (N+1)-th reply should equal the first one (full cycle).
+    next_reply = get_ack_reply()
+    assert next_reply == first_n_replies[0], (
+        f"expected rotation to cycle back to {first_n_replies[0]!r}, "
+        f"got {next_reply!r}"
+    )
+
+
+def test_get_ack_reply_handles_empty_pool():
+    """When the pool is wiped, get_ack_reply() must re-seed and return a value."""
+    from services.classify_ack import get_ack_reply, ACK_REPLIES_KEY
+    from services.redis_pool import get_client
+
+    client = get_client()
+    client.delete(ACK_REPLIES_KEY)
+
+    reply = get_ack_reply()
+    assert isinstance(reply, str)
+    assert len(reply) > 0
+
+
+# ─────────────────────────────────────────────────────────────
+# Dispatcher validation (kept from original suite)
+# ─────────────────────────────────────────────────────────────
 
 def test_dispatch_unknown_tool_raises():
     ctx = ToolContext(tenant_id="t1")
@@ -61,30 +194,47 @@ def test_dispatch_unknown_tool_raises():
         dispatch_tool("nonexistent_tool", {}, ctx)
 
 
-def test_dispatch_staff_message_without_text_fails():
-    ctx = ToolContext(tenant_id="t1", is_staff=True)
+def test_dispatch_send_message_without_text_fails():
+    """Canonical send_message_to_manager requires text."""
+    ctx = ToolContext(tenant_id="t1", customer_id="c1")
     with pytest.raises(ToolValidationError) as exc_info:
-        dispatch_tool("staff_message_send", {}, ctx)
+        dispatch_tool("send_message_to_manager", {}, ctx)
     assert exc_info.value.status_code == 400
     assert exc_info.value.chip_label == "preciso de mais detalhes"
 
 
-def test_dispatch_staff_message_with_text_succeeds():
-    ctx = ToolContext(tenant_id="t1", is_staff=True, waiter_id="w1")
-    result = dispatch_tool("staff_message_send", {"text": "olá"}, ctx)
+def test_dispatch_send_message_with_text_succeeds():
+    ctx = ToolContext(tenant_id="t1", customer_id="c1")
+    result = dispatch_tool("send_message_to_manager", {"text": "olá gerência"}, ctx)
     assert result.error is None
 
 
-def test_dispatch_lgpd_anonymous_returns_login_hint():
+def test_dispatch_legacy_staff_message_send_alias_still_works():
+    """Backward-compat: deprecated `staff_message_send` still dispatches."""
+    ctx = ToolContext(tenant_id="t1", is_staff=True, waiter_id="w1")
+    result = dispatch_tool("staff_message_send", {"text": "oi"}, ctx)
+    assert result.error is None
+
+
+def test_dispatch_lgpd_data_request_anonymous_returns_login_hint():
+    """Anonymous customer asking for LGPD erasure gets a guidance message."""
     ctx = ToolContext(tenant_id="t1", customer_id=None)
-    result = dispatch_tool("lgpd_erase_chat", {}, ctx)
+    result = dispatch_tool("lgpd_data_request", {}, ctx)
     assert result.silent is True
     assert "login" in (result.message or "").lower() or "identificar" in (result.message or "").lower()
 
 
-def test_recommend_renders_chips():
+def test_dispatch_legacy_lgpd_erase_chat_alias_still_works():
+    """Backward-compat: deprecated `lgpd_erase_chat` forwards to lgpd_data_request."""
+    ctx = ToolContext(tenant_id="t1", customer_id=None)
+    result = dispatch_tool("lgpd_erase_chat", {}, ctx)
+    assert result.silent is True
+
+
+def test_recommend_dish_renders_chips():
+    """Canonical recommend_dish (renamed from recommend) returns chips."""
     ctx = ToolContext(tenant_id="t1", customer_id="c1")
-    result = dispatch_tool("recommend", {
+    result = dispatch_tool("recommend_dish", {
         "items": [
             {"id": "i1", "name": "Hamburguer", "priceCents": 4500},
             {"id": "i2", "name": "Salada Caesar", "priceCents": 3500},
@@ -94,8 +244,77 @@ def test_recommend_renders_chips():
     assert result.message is not None
 
 
-def test_table_merge_no_target_returns_error():
+def test_legacy_recommend_alias_still_works():
+    """Backward-compat: deprecated `recommend` forwards to recommend_dish."""
     ctx = ToolContext(tenant_id="t1", customer_id="c1")
-    result = dispatch_tool("table_merge_request", {}, ctx)
+    result = dispatch_tool("recommend", {
+        "items": [{"id": "i1", "name": "Pizza", "priceCents": 5000}],
+    }, ctx)
+    assert len(result.chips) == 1
+
+
+def test_request_table_merge_no_target_returns_error():
+    """Canonical request_table_merge needs a targetTable."""
+    ctx = ToolContext(tenant_id="t1", customer_id="c1")
+    result = dispatch_tool("request_table_merge", {}, ctx)
     assert result.error is not None
     assert result.error["code"] == "missing_target"
+
+
+def test_legacy_table_merge_request_alias_still_works():
+    """Backward-compat: deprecated alias forwards to request_table_merge."""
+    ctx = ToolContext(tenant_id="t1", customer_id="c1")
+    result = dispatch_tool("table_merge_request", {}, ctx)
+    assert result.error is not None  # same missing-target error path
+
+
+# ─────────────────────────────────────────────────────────────
+# New tool stubs — at least dispatch without raising
+# ─────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("tool_name", sorted([
+    "view_menu", "view_order", "split_bill", "pay_individual", "pay_full",
+    "open_payment_screen", "view_courtesy", "ask_about_restaurant",
+    "rate_visit",
+]))
+def test_new_tool_dispatches_without_error(tool_name: str):
+    """Stub tools should at least return a ToolResult (router or message)."""
+    ctx = ToolContext(tenant_id="t1", customer_id="c1")
+    result = dispatch_tool(tool_name, {}, ctx)
+    assert result is not None
+
+
+def test_check_allergens_requires_items():
+    ctx = ToolContext(tenant_id="t1", customer_id="c1")
+    result = dispatch_tool("check_allergens", {}, ctx)
+    assert result.error is not None
+    assert result.error["code"] == "missing_items"
+
+
+def test_compare_dishes_requires_two_items():
+    ctx = ToolContext(tenant_id="t1", customer_id="c1")
+    result = dispatch_tool("compare_dishes", {"itemIds": ["only-one"]}, ctx)
+    assert result.error is not None
+    assert result.error["code"] == "need_two_items"
+
+
+def test_search_dish_requires_query():
+    ctx = ToolContext(tenant_id="t1", customer_id="c1")
+    result = dispatch_tool("search_dish", {}, ctx)
+    assert result.error is not None
+    assert result.error["code"] == "missing_query"
+
+
+def test_delete_chat_requires_thread_id():
+    ctx = ToolContext(tenant_id="t1", customer_id="c1")
+    result = dispatch_tool("delete_chat", {}, ctx)
+    assert result.error is not None
+    assert result.error["code"] == "missing_thread_id"
+
+
+def test_delete_all_chats_anonymous_returns_login_hint():
+    ctx = ToolContext(tenant_id="t1", customer_id=None)
+    result = dispatch_tool("delete_all_chats", {}, ctx)
+    # Anonymous → silent guidance message, no error.
+    assert result.silent is True
+    assert "identificar" in (result.message or "").lower()

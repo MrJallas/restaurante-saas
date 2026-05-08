@@ -37,6 +37,10 @@ services:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
+      # Init script (TTL + lookup indexes pro chat history). Mongo executa
+      # entrypoint-initdb.d/* SO no primeiro boot (volume vazio). Pra re-run
+      # idempotente em volume existente, use `npm run mongo:init`.
+      - ./packages/database/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1"]
       interval: 5s

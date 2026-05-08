@@ -6,11 +6,16 @@ import { apiPost, apiGet } from '../../../lib/api';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
+import { useTableMerge } from '../../../hooks/useTableMerge';
 import { useDraftOrder } from '../../../providers/DraftOrderProvider';
 import { AppShell } from '../../../components/layout/AppShell';
 import { Bubble } from '../../../components/ui/Bubble';
 import { SoftInput } from '../../../components/ui/SoftInput';
 import { ToolCallIndicator } from '../../../components/ui/ToolCallIndicator';
+import {
+  OverlaySalonMap,
+  type SalonTable,
+} from '../../../components/ui/OverlaySalonMap';
 import { createLgpdRequest } from '../../../lib/api/feedback';
 
 interface LinkedItem {
@@ -31,12 +36,13 @@ interface ChatMessage {
   /** true once the user confirmed the selection from this bubble */
   orderPlaced?: boolean;
   /**
-   * When set, this message is the result of the `lgpd_erase_chat` /
-   * `show_lgpd_notice` tool. The AI service returns the canonical text
-   * (verbatim from `services/ai-service/services/lgpd_messages.py`) plus
-   * 2 chips. Per the spec, the FE never paraphrases — it renders what
-   * the tool returns. `lgpdConsumed` flips after the user picks a chip
-   * so the chips disappear and the bubble persists in the history.
+   * When set, this message is the result of the `show_lgpd_notice` tool
+   * (followed by `lgpd_data_request` if the customer accepts). The AI
+   * service returns the canonical text (verbatim from
+   * `services/ai-service/services/lgpd_messages.py`) plus 2 chips. Per
+   * the spec, the FE never paraphrases — it renders what the tool
+   * returns. `lgpdConsumed` flips after the user picks a chip so the
+   * chips disappear and the bubble persists in the history.
    */
   lgpdNotice?: {
     chipConfirmLabel: string;
@@ -56,13 +62,36 @@ interface ChatMessage {
 
 interface AssistantToolHint {
   /**
-   * `lgpd_notice` → render the canonical LGPD bubble + 2 chips inline.
-   * The AI service returns this when it detects "quero apagar meus dados"
-   * style intents and emits the notice. FE responsibility: render verbatim.
+   * Discriminator on the tool the AI service decided to render specially:
+   *  - `lgpd_notice` → canonical LGPD bubble + 2 consent chips (from
+   *    `lgpd_messages.py`). Trigger for `show_lgpd_notice`.
+   *  - `table_merge_pick` → AI ran `request_table_merge` without a target;
+   *    FE opens `OverlaySalonMap` so the customer can pick. (Wired through
+   *    `useTableMerge` below.)
    */
-  type?: 'lgpd_notice';
+  type?: 'lgpd_notice' | 'table_merge_pick';
   /** Labels to render on the 2 chips (canonical from `lgpd_messages.py`). */
   chips?: { confirm: string; dismiss: string };
+  /**
+   * For `table_merge_pick`: tables the LLM thinks are merge-eligible.
+   * When undefined the overlay falls back to its default 3×3 salon grid.
+   */
+  tables?: SalonTable[];
+}
+
+/**
+ * Generic tool call envelope · mirror of `services/tools/__init__.py`'s
+ * `ToolMeta`. Today the assistant endpoint only emits this for tools the FE
+ * needs to react to (table merge, LGPD); the pure-text tools resolve in B3
+ * and arrive as `response` text instead. Listed here so the FE can dispatch
+ * the 23 canonical tools deterministically (per F2 round).
+ */
+interface AssistantToolCall {
+  name: string;
+  arguments?: Record<string, unknown>;
+  result?: unknown;
+  silent?: boolean;
+  router?: boolean;
 }
 
 interface SendResponse {
@@ -73,6 +102,14 @@ interface SendResponse {
   linkedItems?: LinkedItem[];
   /** Optional tool hints from B3's AI service — see `AssistantToolHint`. */
   toolHint?: AssistantToolHint;
+  /**
+   * Optional · raw tool calls the AI service emitted this turn. Most are
+   * already resolved (e.g. `view_menu` returns text the FE renders as
+   * `response`); a handful — `request_table_merge` without `targetTable`,
+   * `open_payment_screen`, `delete_chat`, `delete_all_chats` — need FE-side
+   * dispatch. See `dispatchToolCall` below.
+   */
+  toolCalls?: AssistantToolCall[];
 }
 
 const DEFAULT_SUGGESTIONS = [
@@ -235,6 +272,103 @@ export default function AssistentePage() {
   // destructive (deletes all chat history) and idempotent, but we still
   // don't want to fire 2 protocols.
   const lgpdBusyRef = useRef(false);
+  // Salon-map overlay bridge for `request_table_merge` without `targetTable`.
+  // The hook owns the open/close state + pending-promise plumbing; the chat
+  // handler awaits `handleToolCall(call)` and the customer's table tap
+  // resolves with the enriched envelope.
+  const tableMerge = useTableMerge();
+  // Tables to render in the overlay — empty default for now. C5 will wire
+  // `/salon/tables/adjacent?from={ourTable}` once the BE endpoint lands.
+  const salonTables = useMemo<SalonTable[]>(() => [], []);
+
+  /**
+   * Dispatch a tool call coming back from the AI service. Most canonical
+   * tools resolve server-side and just produce text in `res.response`; this
+   * function handles the subset that needs FE-side reaction (overlay, route
+   * navigation, destructive confirms). Per F2 round naming.
+   *
+   * Tools handled fully:
+   *  - `request_table_merge` (no targetTable) → opens OverlaySalonMap, awaits
+   *    pick, re-emits enriched call to BE
+   *  - `lgpd_data_request`, `show_lgpd_notice` → handled inline above via
+   *    `toolHint`/chips (canonical text comes from `lgpd_messages.py`)
+   *
+   * Tools stubbed (logged + generic OK bubble — no crash):
+   *  - `view_menu`, `search_dish`, `check_allergens`, `compare_dishes`,
+   *    `view_order`, `split_bill`, `pay_individual`, `pay_full`,
+   *    `open_payment_screen`, `delete_chat`, `delete_all_chats`,
+   *    `view_courtesy`, `ask_about_restaurant`
+   *
+   * The stubs exist so an unexpected tool name doesn't break the chat — F4
+   * fixes the contract; C5/C6 will fill the UX for each tool individually.
+   */
+  const dispatchToolCall = async (
+    call: AssistantToolCall,
+  ): Promise<void> => {
+    const name = call.name;
+    // 1) Tools the FE owns end-to-end.
+    if (name === 'request_table_merge') {
+      const enriched = await tableMerge.handleToolCall({
+        name: call.name,
+        arguments: call.arguments,
+      });
+      // null → not handled (shouldn't happen given the if above)
+      // sync envelope → already had targetTable; nothing to re-dispatch
+      // Promise → resolved by overlay tap
+      if (!enriched) return;
+      const final = await Promise.resolve(enriched);
+      if (final.arguments?.targetTable) {
+        // Re-emit the call to the BE so the merge request actually persists.
+        try {
+          await apiPost(`/${slug}/assistant/tool-result`, {
+            name: 'request_table_merge',
+            arguments: final.arguments,
+            customerId: session.customerId || undefined,
+          });
+        } catch (err) {
+          console.warn('[chat] table-merge re-emit failed:', err);
+        }
+      }
+      return;
+    }
+
+    // 2) Tools whose UX isn't fully designed yet — render a generic "OK"
+    //    bubble so the chat doesn't crash, log a warning so devs see the
+    //    gap. Per F4 brief.
+    const stubbedTools = new Set<string>([
+      'view_menu',
+      'search_dish',
+      'check_allergens',
+      'compare_dishes',
+      'view_order',
+      'split_bill',
+      'pay_individual',
+      'pay_full',
+      'open_payment_screen',
+      'delete_chat',
+      'delete_all_chats',
+      'view_courtesy',
+      'ask_about_restaurant',
+    ]);
+    if (stubbedTools.has(name)) {
+      console.warn('[chat] tool not implemented in client:', name);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `tool-stub-${Date.now()}`,
+          role: 'ai',
+          content: 'OK',
+          toolCall: { name, category: 'info' },
+        },
+      ]);
+      return;
+    }
+
+    // 3) Tools handled by other flows (lgpd handled via toolHint above; rest
+    //    of the canonical set is text-only and arrives as `res.response`).
+    //    Log unknown-but-not-stubbed names for visibility.
+    console.debug('[chat] tool resolved server-side, no FE dispatch:', name);
+  };
 
   /**
    * Core order placement: adiciona itens ao draft, cria o pedido e leva pro
@@ -365,6 +499,20 @@ export default function AssistentePage() {
 
       if (res.suggestions && res.suggestions.length > 0) {
         setSuggestions(res.suggestions);
+      }
+
+      // Dispatch FE-side tool calls (overlay opens, screen navigations, etc.).
+      // Fired AFTER the bubble is in the DOM so the order in the transcript
+      // is `bubble → tool effect`. Errors are caught per-call inside dispatch
+      // — one failing tool doesn't poison the whole turn.
+      if (res.toolCalls && res.toolCalls.length > 0) {
+        for (const tc of res.toolCalls) {
+          try {
+            await dispatchToolCall(tc);
+          } catch (e) {
+            console.warn('[chat] tool dispatch failed:', tc.name, e);
+          }
+        }
       }
     } catch (err) {
       // Distingue erros de validacao (mensagem muito longa, formato
@@ -595,7 +743,6 @@ export default function AssistentePage() {
                         >
                           <div className="relative aspect-[4/3] w-full bg-surface">
                             {it.imageUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
                               <img
                                 src={it.imageUrl}
                                 alt={it.name}
@@ -727,6 +874,18 @@ export default function AssistentePage() {
           />
         </div>
       </div>
+
+      {/* Salon-map overlay · driven by the LLM tool `request_table_merge`
+          when no `targetTable` is provided. Tap on a table resolves the
+          pending tool-call promise (see `useTableMerge`). */}
+      <OverlaySalonMap
+        open={tableMerge.overlayOpen}
+        tables={salonTables}
+        onSelectTable={(t) => tableMerge.selectTable(t.num)}
+        onClose={tableMerge.cancelOverlay}
+        title="Com qual mesa você quer juntar?"
+        ctaLabel="Pedir pra juntar"
+      />
     </AppShell>
   );
 }

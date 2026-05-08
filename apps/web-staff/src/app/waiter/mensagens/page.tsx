@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenStaffMessages } from '../../../screens/waiter/ScreenStaffMessages';
 
-export default function WaiterMessagesPage() {
+function WaiterMessagesPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const tenantSlug = params.get('tenant') ?? '';
@@ -18,5 +18,13 @@ export default function WaiterMessagesPage() {
       onBack={() => router.back()}
       onOpenThread={(threadId) => router.push(`/waiter/mensagens/${threadId}?tenant=${tenantSlug}&waiterId=${userId}`)}
     />
+  );
+}
+
+export default function WaiterMessagesPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <WaiterMessagesPageInner />
+    </React.Suspense>
   );
 }

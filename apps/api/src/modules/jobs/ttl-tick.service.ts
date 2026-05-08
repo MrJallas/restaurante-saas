@@ -282,40 +282,29 @@ export class TtlTickService {
 
   private async sweepZonePauses(slug: string, schemaName: string) {
     const ended = await this.withTenant(schemaName, async (qr) => {
-      // Only end pauses that have not been ended manually. Use the system
-      // sentinel NULL for ended_by_staff_id and rely on `cleared_at`-style
-      // semantics: ends_at acts as the natural close marker, but we set
-      // updated_at to record the auto-close moment (the schema has no
-      // dedicated `ended_at`).
+      // Per migration 032 the schema is waiter-specific:
+      //   ended_at IS NULL  -> still active
+      //   ends_at < now()   -> TTL elapsed
+      // Auto-end populates ended_at (system close — ended_by stays NULL).
       const rows = (await qr.query(
         `UPDATE zone_pauses
-            SET ended_by_staff_id = NULL,
-                updated_at = now()
-          WHERE ends_at IS NOT NULL
+            SET ended_at = now()
+          WHERE ended_at IS NULL
             AND ends_at < now()
-            AND ended_by_staff_id IS NULL
-            AND (updated_at < ends_at)
-        RETURNING id, zone_id, zone_name, ends_at, created_by_staff_id`,
+        RETURNING id, waiter_id, ends_at, started_by`,
       )) as Array<{
         id: string;
-        zone_id: string | null;
-        zone_name: string | null;
+        waiter_id: string;
         ends_at: string;
-        created_by_staff_id: string | null;
+        started_by: string;
       }>;
       return rows;
     });
 
     for (const row of ended) {
-      // The current schema doesn't carry `waiterId` directly on zone_pauses;
-      // the WS event uses `waiterId` semantically as "the staff scope this
-      // pause targets" — we proxy with `created_by_staff_id`. FE treats
-      // empty string as "tenant-wide" so we never emit an empty id (use
-      // creator id when known; fall back to zone id).
-      const waiterId = row.created_by_staff_id ?? row.zone_id ?? row.id;
       this.gateway.emitZonePauseEnded(slug, {
         id: row.id,
-        waiterId,
+        waiterId: row.waiter_id,
         endedAt: new Date().toISOString(),
         endedBy: null,
         autoExpired: true,

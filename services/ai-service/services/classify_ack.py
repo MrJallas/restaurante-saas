@@ -127,7 +127,12 @@ def detect_ack(text: str) -> Optional[AckResult]:
 # Canned tiny replies the orchestrator can rotate through when an ack is
 # detected and silent=False. Keep them short — the customer's saying "got it",
 # the assistant's job is to NOT keep talking.
-ACK_REPLIES = [
+#
+# These are now seeded into Redis at app startup (key: `ack:replies`) and
+# rotated via LPOP + RPUSH (see `get_ack_reply()` below). Same pattern as
+# smart-suggestions and continuation pools. Falling back to this list when
+# Redis is unreachable keeps tests/dev runs deterministic.
+ACK_REPLIES: list[str] = [
     "Tô por aqui se precisar de mais alguma coisa.",
     "À disposição.",
     "Beleza!",
@@ -136,4 +141,39 @@ ACK_REPLIES = [
 ]
 
 
-__all__ = ["AckResult", "detect_ack", "ACK_REPLIES"]
+# Redis key for the rotating ack-replies pool. Seeded at startup if empty
+# (LLEN ack:replies == 0). LPOP returns one entry; we RPUSH it back so the
+# pool rotates without needing a global counter.
+ACK_REPLIES_KEY = "ack:replies"
+
+
+def seed_ack_replies(values: list[str] | None = None) -> int:
+    """
+    Seed the Redis pool ONCE (idempotent). Called at app startup.
+
+    If Redis already has entries under `ack:replies`, this is a no-op.
+    Returns the number of entries seeded (0 if pool already exists).
+    """
+    from .redis_pool import pool_seed_strings_if_empty
+    return pool_seed_strings_if_empty(ACK_REPLIES_KEY, values or ACK_REPLIES)
+
+
+def get_ack_reply() -> str:
+    """
+    Return the next canned reply, rotating through the Redis-backed pool.
+
+    Implementation: LPOP → if empty re-seed from ACK_REPLIES → LPOP →
+    RPUSH popped value back to the tail. Always returns a non-empty string.
+    """
+    from .redis_pool import pool_rotate_lpop
+    return pool_rotate_lpop(ACK_REPLIES_KEY, ACK_REPLIES)
+
+
+__all__ = [
+    "AckResult",
+    "detect_ack",
+    "ACK_REPLIES",
+    "ACK_REPLIES_KEY",
+    "get_ack_reply",
+    "seed_ack_replies",
+]

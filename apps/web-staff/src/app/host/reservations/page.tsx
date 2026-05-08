@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenHostReservations } from '../../../screens/host/ScreenHostReservations';
 
-export default function HostReservationsPage() {
+function HostReservationsPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const tenantSlug = params.get('tenant') ?? '';
@@ -20,5 +20,13 @@ export default function HostReservationsPage() {
         if (tab === 'me') router.push(`/host/profile?tenant=${tenantSlug}&hostId=${hostId}`);
       }}
     />
+  );
+}
+
+export default function HostReservationsPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <HostReservationsPageInner />
+    </React.Suspense>
   );
 }

@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenHostWaitlist } from '../../../screens/host/ScreenHostWaitlist';
 
-export default function HostWaitlistPage() {
+function HostWaitlistPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const tenantSlug = params.get('tenant') ?? '';
@@ -20,5 +20,13 @@ export default function HostWaitlistPage() {
         if (tab === 'me') router.push(`/host/profile?tenant=${tenantSlug}&hostId=${hostId}`);
       }}
     />
+  );
+}
+
+export default function HostWaitlistPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <HostWaitlistPageInner />
+    </React.Suspense>
   );
 }
