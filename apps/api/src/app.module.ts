@@ -21,6 +21,7 @@ import { FeedbacksModule } from './modules/feedbacks/feedbacks.module';
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { StaffModule } from './modules/staff/staff.module';
+import { JobsModule } from './modules/jobs/jobs.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { StaffModule } from './modules/staff/staff.module';
     PromotionsModule,
     DashboardModule,
     StaffModule,
+    JobsModule,
   ],
   controllers: [AppController],
 })
