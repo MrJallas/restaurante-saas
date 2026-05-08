@@ -3,8 +3,10 @@ import {
   HttpStatus,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { EventsGateway } from '../websocket/events.gateway';
 
 /**
  * Zone pause · per docs/features/zone-pause.md.
@@ -18,16 +20,22 @@ import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 export class ZonePauseService {
   private readonly logger = new Logger(ZonePauseService.name);
 
-  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+  constructor(
+    private readonly tenantConn: TenantConnectionProvider,
+    @Optional() private readonly events?: EventsGateway,
+  ) {}
 
-  async create(input: {
-    zoneId?: string | null;
-    zoneName?: string | null;
-    kind?: 'orders' | 'all';
-    durationMinutes?: number;
-    reason?: string;
-    createdByStaffId?: string;
-  }) {
+  async create(
+    input: {
+      zoneId?: string | null;
+      zoneName?: string | null;
+      kind?: 'orders' | 'all';
+      durationMinutes?: number;
+      reason?: string;
+      createdByStaffId?: string;
+    },
+    slug?: string,
+  ) {
     const endsAt = input.durationMinutes
       ? new Date(Date.now() + input.durationMinutes * 60 * 1000).toISOString()
       : null;
@@ -47,10 +55,25 @@ export class ZonePauseService {
       ],
     )) as Array<Record<string, unknown>>;
 
-    return this.mapRow(rows[0]);
+    const result = this.mapRow(rows[0]);
+
+    if (slug && this.events) {
+      // TODO(payload): waiterName needs a join with staff. waiterId here
+      // maps to zoneId per the legacy spec mismatch noted above.
+      this.events.emitZonePauseStarted(slug, {
+        id: result.id,
+        waiterId: result.zoneId ?? result.id,
+        waiterName: result.zoneName ?? '',
+        endsAt: result.endsAt ?? new Date().toISOString(),
+        startedBy: result.createdByStaffId ?? '',
+        reason: result.reason,
+      });
+    }
+
+    return result;
   }
 
-  async end(id: string, by: { staffId?: string; reason?: string }) {
+  async end(id: string, by: { staffId?: string; reason?: string }, slug?: string) {
     const updated = (await this.tenantConn.query(
       `UPDATE zone_pauses
          SET ends_at = LEAST(COALESCE(ends_at, now()), now()),
@@ -67,7 +90,31 @@ export class ZonePauseService {
         HttpStatus.NOT_FOUND,
       );
     }
-    return this.mapRow(updated[0]);
+    const result = this.mapRow(updated[0]);
+
+    if (slug && this.events) {
+      this.events.emitZonePauseEnded(slug, {
+        id: result.id,
+        waiterId: result.zoneId ?? result.id,
+        endedAt: result.endsAt ?? new Date().toISOString(),
+        endedBy: result.endedByStaffId,
+        autoExpired: false,
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Alias for the wiring contract. Delegates to `end()` and forwards slug so
+   * the WS event fires.
+   */
+  async endEarly(
+    id: string,
+    by: { staffId?: string; reason?: string },
+    slug?: string,
+  ) {
+    return this.end(id, by, slug);
   }
 
   async list(filters: { active?: boolean; zoneId?: string }) {

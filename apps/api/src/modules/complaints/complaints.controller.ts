@@ -105,28 +105,39 @@ export class ComplaintsController {
 
   @Post()
   @UseGuards(SessionGuard)
-  async create(@Body() dto: CreateComplaintDto) {
-    return this.service.create({
-      customerId: dto.customerId,
-      visitId: dto.visitId,
-      orderId: dto.orderId,
-      orderRatingId: dto.orderRatingId,
-      rating: dto.rating,
-      text: dto.text,
-      attachedImageUrl: dto.attachedImageUrl,
-    });
+  async create(@Param('slug') slug: string, @Body() dto: CreateComplaintDto) {
+    return this.service.create(
+      {
+        customerId: dto.customerId,
+        visitId: dto.visitId,
+        orderId: dto.orderId,
+        orderRatingId: dto.orderRatingId,
+        rating: dto.rating,
+        text: dto.text,
+        attachedImageUrl: dto.attachedImageUrl,
+      },
+      slug,
+    );
   }
 
   @Post(':id/respond')
   @UseGuards(StaffOnlyGuard)
-  async respond(@Param('id') id: string, @Body() dto: RespondDto) {
-    return this.service.respond(id, { staffId: dto.staffId }, dto);
+  async respond(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: RespondDto,
+  ) {
+    return this.service.respond(id, { staffId: dto.staffId }, dto, slug);
   }
 
   @Post(':id/resolve')
   @UseGuards(StaffOnlyGuard)
-  async resolve(@Param('id') id: string, @Body() dto: ResolveDto = {}) {
-    return this.service.resolve(id, { staffId: dto.staffId });
+  async resolve(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: ResolveDto = {},
+  ) {
+    return this.service.resolve(id, { staffId: dto.staffId }, slug);
   }
 
   @Post(':id/forward')

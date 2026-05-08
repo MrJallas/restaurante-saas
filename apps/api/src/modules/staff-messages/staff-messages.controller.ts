@@ -59,8 +59,8 @@ export class StaffMessagesController {
   constructor(private readonly service: StaffMessagesService) {}
 
   @Post()
-  async send(@Body() dto: SendMessageDto) {
-    return this.service.send(dto);
+  async send(@Param('slug') slug: string, @Body() dto: SendMessageDto) {
+    return this.service.send(dto, slug);
   }
 
   @Get('threads')

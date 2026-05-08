@@ -3,8 +3,10 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { EventsGateway } from '../websocket/events.gateway';
 
 /**
  * Default TTL for a late-arrival request — host has 60s to approve before the
@@ -35,15 +37,21 @@ interface LateArrivalRow {
 export class LateArrivalService {
   private readonly logger = new Logger(LateArrivalService.name);
 
-  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+  constructor(
+    private readonly tenantConn: TenantConnectionProvider,
+    @Optional() private readonly events?: EventsGateway,
+  ) {}
 
-  async create(input: {
-    customerId: string;
-    visitId?: string | null;
-    tableSessionId?: string | null;
-    expectedArrivalAt?: string;
-    message?: string;
-  }) {
+  async create(
+    input: {
+      customerId: string;
+      visitId?: string | null;
+      tableSessionId?: string | null;
+      expectedArrivalAt?: string;
+      message?: string;
+    },
+    slug?: string,
+  ) {
     const ttlExpiresAt = new Date(
       Date.now() + DEFAULT_TTL_SECONDS * 1000,
     ).toISOString();
@@ -66,19 +74,41 @@ export class LateArrivalService {
       ],
     )) as LateArrivalRow[];
 
-    return this.mapRow(rows[0]);
+    const result = this.mapRow(rows[0]);
+
+    if (slug && this.events && result.tableSessionId) {
+      // TODO(payload): tableNumber + requesterName + visitContext are not
+      // joined here yet — passing 0 / row-derived placeholders so subscribers
+      // still get a valid event shape. A subsequent enrichment query can fill
+      // these in if the FE needs them before subscribers query the REST API.
+      this.events.emitLateArrivalCreated(slug, null, {
+        requestId: result.id,
+        tableSessionId: result.tableSessionId,
+        tableNumber: 0,
+        requesterCustomerId: result.customerId,
+        requesterName: '',
+        expiresAt: result.ttlExpiresAt,
+      });
+    }
+
+    return result;
   }
 
-  async approve(id: string, by: { staffId?: string; customerId?: string }) {
-    return this.respond(id, 'approved', by);
+  async approve(
+    id: string,
+    by: { staffId?: string; customerId?: string },
+    slug?: string,
+  ) {
+    return this.respond(id, 'approved', by, undefined, slug);
   }
 
   async reject(
     id: string,
     by: { staffId?: string; customerId?: string },
     reason?: string,
+    slug?: string,
   ) {
-    return this.respond(id, 'rejected', by, reason);
+    return this.respond(id, 'rejected', by, reason, slug);
   }
 
   private async respond(
@@ -86,6 +116,7 @@ export class LateArrivalService {
     status: 'approved' | 'rejected',
     by: { staffId?: string; customerId?: string },
     reason?: string,
+    slug?: string,
   ) {
     const existing = (await this.tenantConn.query(
       `SELECT * FROM late_arrival_requests WHERE id = $1`,
@@ -122,7 +153,33 @@ export class LateArrivalService {
         id,
       ],
     )) as LateArrivalRow[];
-    return this.mapRow(updated[0]);
+    const result = this.mapRow(updated[0]);
+
+    if (slug && this.events && result.tableSessionId) {
+      if (status === 'approved') {
+        // TODO(payload): tableNumber, requesterName and partySize would
+        // require joins with visits / customers / participants. Defaulting
+        // to 0 / empty so the WS contract is satisfied; FE re-fetches via
+        // REST when it needs the full data.
+        this.events.emitLateArrivalApproved(slug, {
+          requestId: result.id,
+          tableSessionId: result.tableSessionId,
+          tableNumber: 0,
+          requesterCustomerId: result.customerId,
+          requesterName: '',
+          partySize: 0,
+        });
+      } else {
+        this.events.emitLateArrivalRejected(slug, {
+          requestId: result.id,
+          tableSessionId: result.tableSessionId,
+          requesterCustomerId: result.customerId,
+          reason: by.staffId ? 'host_rejected' : 'host_rejected',
+        });
+      }
+    }
+
+    return result;
   }
 
   async list(filters: { status?: string; visitId?: string; tableSessionId?: string }) {

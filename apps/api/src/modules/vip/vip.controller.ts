@@ -49,14 +49,21 @@ export class VipController {
   @Post(':tableSessionId/flags')
   @UseGuards(StaffOnlyGuard)
   async toggle(
+    @Param('slug') slug: string,
     @Param('tableSessionId') tableSessionId: string,
     @Body() dto: ToggleFlagDto,
   ) {
-    return this.service.toggle(tableSessionId, dto.flag, dto.action, {
-      staffId: dto.staffId,
-      customerId: dto.customerId,
-      reason: dto.reason,
-    });
+    return this.service.toggle(
+      tableSessionId,
+      dto.flag,
+      dto.action,
+      {
+        staffId: dto.staffId,
+        customerId: dto.customerId,
+        reason: dto.reason,
+      },
+      slug,
+    );
   }
 
   @Get(':tableSessionId/flags')

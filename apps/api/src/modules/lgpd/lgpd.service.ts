@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
+import { EventsGateway } from '../websocket/events.gateway';
 
 /**
  * LGPD requests · per docs/features/chat-history-lgpd.md.
@@ -20,18 +21,22 @@ export class LgpdService {
   constructor(
     private readonly tenantConn: TenantConnectionProvider,
     private readonly chatHistory: ChatHistoryService,
+    @Optional() private readonly events?: EventsGateway,
   ) {}
 
-  async createRequest(input: {
-    customerId?: string | null;
-    customerCpf?: string | null;
-    customerEmail?: string | null;
-    kind: 'erasure' | 'export';
-    notes?: string;
-  }) {
+  async createRequest(
+    input: {
+      customerId?: string | null;
+      customerCpf?: string | null;
+      customerEmail?: string | null;
+      kind: 'erasure' | 'export';
+      notes?: string;
+    },
+    slug?: string,
+  ) {
     const protocolNumber = generateProtocolNumber();
 
-    return this.tenantConn.transaction(async (tx) => {
+    const fulfilled = await this.tenantConn.transaction(async (tx) => {
       const inserted = (await tx.query(
         `INSERT INTO lgpd_requests
            (customer_id, customer_cpf, customer_email, kind, status,
@@ -71,11 +76,35 @@ export class LgpdService {
           `SELECT * FROM lgpd_requests WHERE id = $1`,
           [row.id],
         )) as Array<Record<string, unknown>>;
-        return this.toProtocolDto(refreshed[0]);
+        return {
+          dto: this.toProtocolDto(refreshed[0]),
+          row: refreshed[0],
+          wasFulfilled: true,
+        };
       }
 
-      return this.toProtocolDto(row);
+      return {
+        dto: this.toProtocolDto(row),
+        row,
+        wasFulfilled: false,
+      };
     });
+
+    if (
+      fulfilled.wasFulfilled &&
+      slug &&
+      this.events &&
+      input.customerId
+    ) {
+      this.events.emitLgpdFulfilled(
+        slug,
+        input.customerId,
+        protocolNumber,
+        fulfilled.row.id as string,
+      );
+    }
+
+    return fulfilled.dto;
   }
 
   async list(filters: { status?: string; kind?: string }) {
