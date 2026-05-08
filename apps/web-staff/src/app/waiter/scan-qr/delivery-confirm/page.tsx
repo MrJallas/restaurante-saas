@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenWaiterDeliveryConfirm } from '../../../../screens/waiter/ScreenWaiterDeliveryConfirm';
 
-export default function WaiterDeliveryConfirmPage() {
+function WaiterDeliveryConfirmPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const tenantSlug = params.get('tenant') ?? '';
@@ -25,5 +25,13 @@ export default function WaiterDeliveryConfirmPage() {
       onBack={() => router.back()}
       onConfirm={() => router.push(`/waiter?tenant=${tenantSlug}`)}
     />
+  );
+}
+
+export default function WaiterDeliveryConfirmPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <WaiterDeliveryConfirmPageInner />
+    </React.Suspense>
   );
 }

@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenHostProfile } from '../../../screens/host/ScreenHostProfile';
 
-export default function HostProfilePage() {
+function HostProfilePageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const tenantSlug = params.get('tenant') ?? '';
@@ -25,5 +25,13 @@ export default function HostProfilePage() {
       }}
       onOpenMessages={() => router.push(`/waiter/mensagens?tenant=${tenantSlug}&waiterId=${hostId}`)}
     />
+  );
+}
+
+export default function HostProfilePage() {
+  return (
+    <React.Suspense fallback={null}>
+      <HostProfilePageInner />
+    </React.Suspense>
   );
 }

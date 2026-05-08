@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenWaiterNewEntry } from '../../../screens/waiter/ScreenWaiterNewEntry';
 
-export default function WaiterNewEntryPage() {
+function WaiterNewEntryPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const tenantSlug = params.get('tenant') ?? '';
@@ -17,5 +17,13 @@ export default function WaiterNewEntryPage() {
       onReservar={() => router.push(`/host/reservations?tenant=${tenantSlug}`)}
       onContactManager={() => router.push(`/waiter/qr-issue?tenant=${tenantSlug}`)}
     />
+  );
+}
+
+export default function WaiterNewEntryPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <WaiterNewEntryPageInner />
+    </React.Suspense>
   );
 }
