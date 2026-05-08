@@ -13,7 +13,11 @@ const config: Config = {
         faint: 'var(--color-faint)',
         surface: 'var(--color-surface)',
         danger: 'var(--color-danger)',
+        'danger-wash': 'var(--color-danger-wash)',
         success: 'var(--color-success)',
+        'success-wash': 'var(--color-success-wash)',
+        warning: 'var(--color-warning)',
+        'warning-wash': 'var(--color-warning-wash)',
         accent: 'var(--color-accent)',
       },
       borderColor: {
@@ -43,6 +47,10 @@ const config: Config = {
       animation: {
         fadeIn: 'fadeIn 300ms ease-out both',
         fadeOut: 'fadeOut 250ms ease-in both',
+      },
+      transitionTimingFunction: {
+        // Curva oficial do canvas para morph chip→input (Apple Music card)
+        'liquid': 'cubic-bezier(0.4, 0, 0.2, 1)',
       },
     },
   },

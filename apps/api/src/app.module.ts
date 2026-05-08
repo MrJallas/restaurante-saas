@@ -21,11 +21,23 @@ import { FeedbacksModule } from './modules/feedbacks/feedbacks.module';
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { StaffModule } from './modules/staff/staff.module';
+import { MongoModule } from './infra/mongo/mongo.module';
+import { LateArrivalModule } from './modules/late-arrival/late-arrival.module';
+import { TableMergeModule } from './modules/table-merge/table-merge.module';
+import { LgpdModule } from './modules/lgpd/lgpd.module';
+import { ComplaintsModule } from './modules/complaints/complaints.module';
+import { OrderRatingsModule } from './modules/order-ratings/order-ratings.module';
+import { StaffMessagesModule } from './modules/staff-messages/staff-messages.module';
+import { ZonePauseModule } from './modules/zone-pause/zone-pause.module';
+import { VipModule } from './modules/vip/vip.module';
+import { ChatHistoryModule } from './modules/chat-history/chat-history.module';
+import { JobsModule } from './modules/jobs/jobs.module';
 
 @Module({
   imports: [
     TypeOrmModule.forRoot(databaseConfig),
     RedisModule,
+    MongoModule,
     AiModule,
     WebsocketModule,
     TenantModule,
@@ -34,6 +46,9 @@ import { StaffModule } from './modules/staff/staff.module';
     HomeModule,
     SettingsModule,
     MenuModule,
+    // OrdersModule depends on OrderRatingsModule via forwardRef. Both are
+    // listed here; Nest figures out the resolution order.
+    OrderRatingsModule,
     OrdersModule,
     WaiterCallsModule,
     DeliveriesModule,
@@ -43,6 +58,16 @@ import { StaffModule } from './modules/staff/staff.module';
     PromotionsModule,
     DashboardModule,
     StaffModule,
+    // Phase 2 modules:
+    LateArrivalModule,
+    TableMergeModule,
+    ChatHistoryModule,
+    LgpdModule,
+    ComplaintsModule,
+    StaffMessagesModule,
+    ZonePauseModule,
+    VipModule,
+    JobsModule,
   ],
   controllers: [AppController],
 })

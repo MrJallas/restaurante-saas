@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { RedisService } from '../../infra/redis/redis.service';
 import { renderTemplate, TOTAL_TEMPLATES } from './welcome-messages';
+import type { ContinuationMessage } from '@restaurant/shared-types';
 
 export interface HomeData {
   heroMessage: string;
@@ -11,6 +12,12 @@ export interface HomeData {
   quickActions: QuickAction[];
   isReturning: boolean;
   lastVisitSummary: Record<string, unknown> | null;
+  /**
+   * Optional continuation message rendered by the AI service.
+   * Shape mirrors `packages/shared-types/src/ai.ts::ContinuationMessage`.
+   * Populated via `GET <AI_SERVICE_URL>/continuation` when available.
+   */
+  continuationMessage?: ContinuationMessage & { rendered?: string };
 }
 
 export interface HighlightItem {
@@ -139,6 +146,31 @@ export class HomeService {
       { id: 'pay', label: 'Pagar conta', icon: 'credit-card', href: '/pagamento' },
     ];
 
+    // 7. Continuation message (best-effort) — fetched from the AI service.
+    // Failure is silent: we'd rather render the home without the bubble than
+    // fail the whole request when the Python service is down.
+    let continuationMessage: HomeData['continuationMessage'];
+    try {
+      const aiUrl = process.env.AI_SERVICE_URL || 'http://localhost:8001';
+      const params = new URLSearchParams({
+        tenantId: process.env.TENANT_ID || 'restaurant_dev',
+        isReturning: String(isReturning),
+        isVip: 'false',
+        customerName: nome,
+      });
+      const res = await fetch(`${aiUrl}/continuation?${params.toString()}`, {
+        signal: AbortSignal.timeout(800),
+      });
+      if (res.ok) {
+        const body = (await res.json()) as { message: ContinuationMessage | null; rendered: string | null };
+        if (body.message) {
+          continuationMessage = { ...body.message, rendered: body.rendered || undefined };
+        }
+      }
+    } catch (err) {
+      this.logger.debug(`continuation fetch skipped: ${(err as Error).message}`);
+    }
+
     return {
       heroMessage,
       restaurantName,
@@ -147,6 +179,7 @@ export class HomeService {
       quickActions,
       isReturning,
       lastVisitSummary,
+      continuationMessage,
     };
   }
 }

@@ -3,10 +3,12 @@ import {
   BadRequestException,
   NotFoundException,
   Optional,
+  Logger,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { RedisService } from '../../infra/redis/redis.service';
 import { EventsGateway } from '../websocket/events.gateway';
+import { OrderRatingsService } from '../order-ratings/order-ratings.service';
 
 // TTL do guard de idempotencia. 5 minutos cobre folgado o double-tap
 // (segundos) e ate retries de cliente apos timeout (alguns segundos).
@@ -42,10 +44,13 @@ export interface CreateOrderItemDto {
 
 @Injectable()
 export class OrdersService {
+  private readonly ordersLogger = new Logger(OrdersService.name);
+
   constructor(
     private readonly tenantConn: TenantConnectionProvider,
     private readonly redis: RedisService,
     @Optional() private readonly eventsGateway?: EventsGateway,
+    @Optional() private readonly orderRatings?: OrderRatingsService,
   ) {}
 
   async createOrder(
@@ -654,6 +659,31 @@ export class OrdersService {
 
     if (newStatus === 'delivered') {
       await this.updateConsumptionSummary(orderId);
+      // Schedule rating prompt — B2's job runner picks this up ~13min later
+      // and pushes the prompt. Fire-and-forget; errors don't block the
+      // status transition because the rating prompt is best-effort.
+      if (this.orderRatings) {
+        try {
+          const orderInfo = (await this.tenantConn.query(
+            `SELECT v.customer_id, o.visit_id
+             FROM orders o LEFT JOIN visits v ON v.id = o.visit_id
+             WHERE o.id = $1`,
+            [orderId],
+          )) as Array<{ customer_id: string | null; visit_id: string | null }>;
+          const info = orderInfo[0];
+          if (info) {
+            await this.orderRatings.schedulePromptForDelivered({
+              orderId,
+              customerId: info.customer_id,
+              visitId: info.visit_id,
+            });
+          }
+        } catch (err) {
+          this.ordersLogger.warn(
+            `Falha ao agendar rating prompt: ${(err as Error).message}`,
+          );
+        }
+      }
     }
 
     if (this.eventsGateway) {

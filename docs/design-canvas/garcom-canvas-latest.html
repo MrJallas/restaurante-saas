@@ -1,0 +1,162 @@
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>App do Gerente · V17 — Junção de mesas · notificação passiva (round 8c · staff-side)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet" />
+<style>
+  html, body, #root {
+    margin: 0; height: 100%;
+    background: #f0eee9;
+    font-family: Inter, system-ui, sans-serif;
+  }
+  @keyframes gPulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  @keyframes gAlertPulse { 0%,100%{box-shadow:0 0 0 0 rgba(217,142,43,.55)} 50%{box-shadow:0 0 0 6px rgba(217,142,43,0)} }
+  @keyframes gNotifPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.012)} }
+  @keyframes gBlink { 50%{opacity:0} }
+  @keyframes gFadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="handoff/garcom/ios-frame.jsx"></script>
+<script type="text/babel" src="handoff/garcom/android-frame.jsx"></script>
+<script type="text/babel" src="handoff/garcom/design-canvas.jsx"></script>
+<script type="text/babel" src="handoff/garcom/garcom-tokens.jsx"></script>
+<script type="text/babel" src="handoff/garcom/garcom-qr-issue.jsx"></script>
+<script type="text/babel" src="handoff/garcom/garcom-late-arrival-info.jsx"></script>
+<script type="text/babel" src="handoff/garcom/garcom-table-merge-info.jsx"></script>
+
+<script type="text/babel">
+  const monoG17 = {
+    fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5,
+    padding: '1px 6px', background: '#e8e6e0', borderRadius: 4,
+  };
+
+  const HeaderG17 = () => (
+    <div style={{
+      padding: '40px 60px 32px', maxWidth: 980,
+      fontFamily: "'Inter', system-ui, sans-serif",
+    }}>
+      <div style={{
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontSize: 11, fontWeight: 500, letterSpacing: 1.5,
+        textTransform: 'uppercase', color: '#6b6b6b', marginBottom: 14,
+      }}>App do Gerente · V17 · round 8c · staff-side junção de mesas</div>
+
+      <div style={{
+        fontSize: 36, fontWeight: 600, letterSpacing: -0.6,
+        color: '#0a0a0a', lineHeight: 1.1, marginBottom: 12,
+      }}>Junção de mesas aprovada pelos hosts · staff vê info passiva + mapa atualizado</div>
+
+      <div style={{
+        fontSize: 15, lineHeight: 1.55, color: '#4d4d4d', maxWidth: 760,
+        letterSpacing: -0.05,
+      }}>
+        Round 8c é majoritariamente <b>customer-side</b> (ver{' '}
+        <code style={monoG17}>app-cliente-canvas-v16.html</code> · seção{' '}
+        <i>customer-table-merge-flow</i> · 9 frames). Do lado staff, 3 deltas:
+        (1) <b>MInProgressCard kind="info-table-merge"</b> no Painel · Em curso (border-left
+        ink · auto-some 60 s · 2 ações outline "Dispensar" + "Realocar garçom"). (2) Mesas
+        juntadas no Mapa do salão (sub-tab Mapa em ScreenManagerOps · V3) com tratamento
+        <b> CANÔNICO V3 "fundidas"</b> · card único largo (escolhido entre V1/V2/V3 no
+        round V17 por densidade informacional + leitura como entidade unificada).
+        (3) <b>MInProgressCard kind="staff-recommendation"</b> · IA sugere realocar garçom
+        sobrecarregado quando junção/late-arrival eleva carga acima do limiar. V17 estende V16:
+        as 3 seções anteriores permanecem · adiciona{' '}
+        <code style={monoG17}>staff-table-merge-info</code> com 4 frames novos
+        (info-card · Mapa V3 iOS · staff-recommendation · Mapa V3 Android paridade).
+      </div>
+
+      <div style={{
+        marginTop: 24, display: 'flex', flexWrap: 'wrap', gap: 12,
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase', color: '#6b6b6b',
+      }}>
+        <span style={{ padding: '6px 10px', background: '#fff', border: '1px solid #e5e5e5', borderRadius: 4 }}>4 seções (V16 + 1 nova)</span>
+        <span style={{ padding: '6px 10px', background: '#fff', border: '1px solid #e5e5e5', borderRadius: 4 }}>16 frames (12 herdados + 4 novos)</span>
+        <span style={{ padding: '6px 10px', background: '#fff', border: '1px solid #e5e5e5', borderRadius: 4 }}>iOS + Android</span>
+        <span style={{ padding: '6px 10px', background: '#0a0a0a', border: '1px solid #0a0a0a', color: '#fff', borderRadius: 4 }}>✓ V3 "fundidas" CANÔNICO</span>
+        <span style={{ padding: '6px 10px', background: '#fff', border: '1px solid #e5e5e5', borderRadius: 4 }}>handoff em /handoff/garcom/garcom-table-merge-info.jsx</span>
+      </div>
+
+      <div style={{
+        marginTop: 28, padding: '16px 18px', background: '#fff',
+        border: '1px solid #e5e5e5', borderRadius: 12, maxWidth: 760,
+      }}>
+        <div style={{
+          fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 500,
+          letterSpacing: 1.4, textTransform: 'uppercase', color: '#0a0a0a',
+          marginBottom: 12,
+        }}>Decisões deste round (escopo reduzido · 3 deltas)</div>
+        {[
+          ['1 · 2 kinds de MInProgressCard', 'kind="info-table-merge" (border-left INK · só info · auto-some 60 s · 2 ações outline) + kind="staff-recommendation" (border-left MOSTARDA · recomendação atencional · 1 filled "Aplicar sugestão" + outline "Ignorar"). Linguagem dos cards consistente com info-late-arrival do V16.'],
+          ['2 · V3 "fundidas" CANÔNICO no Mapa', 'V3 venceu V1 ("encostadas" · borda contínua · banner inferior) e V2 ("ligadas" · linha pontilhada · glifo no canto) por densidade informacional (cabe meta "1 comanda" no próprio tile sem custo) + leitura como entidade unificada (operação trata merged como single-row no fluxo). Aplicado igual em iOS e Android · V1/V2 descartadas.'],
+          ['3 · Tap rotaciona pra session merged', 'Tap no card único merged-tile (V3) abre ScreenManagerTableMenu (V5) da session merged · não da session individual. Backend resolve pela coluna table_sessions.merged_with_session_id.'],
+          ['4 · Critérios da staff-recommendation', 'Junção que leva carga TOTAL do garçom acima do limiar de sobrecarga (~80% das mesas) OU late-arrival que faz mesa exceder 6 pessoas. Pode ser silenciado pelo gerente em settings (futuro · V18). Trigger é pós-fato · staff já viu o info-card antes de receber a sugestão.'],
+        ].map(([num, body]) => (
+          <div key={num} style={{
+            display: 'grid', gridTemplateColumns: '210px 1fr', gap: 14,
+            padding: '10px 0', borderBottom: '1px solid #f0eee9',
+            fontSize: 13, color: '#0a0a0a', lineHeight: 1.5, letterSpacing: -0.05,
+          }}>
+            <div style={{
+              fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 600,
+              letterSpacing: 0.5, color: '#0a0a0a',
+            }}>{num}</div>
+            <div>{body}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const Root = () => (
+    <DesignCanvas>
+      <DCSection id="header" title="" subtitle="">
+        <div key="hdr"><HeaderG17 /></div>
+      </DCSection>
+
+      {/* Princípio · herdado de V15/16 · customer-host pattern */}
+      {window.GARCOM_HOST_PATTERN_SECTIONS.map(sec => (
+        <DCSection key={sec.id} id={sec.id} title={`${sec.id} · ${sec.title}`} subtitle={sec.subtitle}>
+          {sec.frames}
+        </DCSection>
+      ))}
+
+      {/* Staff QR-issue · herdado de V15 */}
+      {window.GARCOM_QR_ISSUE_SECTIONS.map(sec => (
+        <DCSection key={sec.id} id={sec.id} title={`${sec.id} · ${sec.title}`} subtitle={sec.subtitle}>
+          {sec.frames}
+        </DCSection>
+      ))}
+
+      {/* Late-arrival info · herdado de V16 */}
+      {window.GARCOM_LATE_ARRIVAL_INFO_SECTIONS.map(sec => (
+        <DCSection key={sec.id} id={sec.id} title={`${sec.id} · ${sec.title}`} subtitle={sec.subtitle}>
+          {sec.frames}
+        </DCSection>
+      ))}
+
+      {/* ★ NOVO V17 · Junção de mesas · staff-side (4 frames · V3 canônico) */}
+      {window.GARCOM_TABLE_MERGE_INFO_SECTIONS.map(sec => (
+        <DCSection key={sec.id} id={sec.id} title={`${sec.id} · ${sec.title}`} subtitle={sec.subtitle}>
+          {sec.frames}
+        </DCSection>
+      ))}
+    </DesignCanvas>
+  );
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+</script>
+</body>
+</html>

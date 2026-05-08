@@ -1,0 +1,158 @@
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>App do Cliente · V16 — round 8c · junção de mesas com consent duplo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  html, body, #root { margin: 0; height: 100%; background: #f0eee9; font-family: Inter, system-ui, sans-serif; }
+  .dc-card *::-webkit-scrollbar { display: none; }
+  .dc-card * { scrollbar-width: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="handoff/cliente/cliente-tokens.jsx"></script>
+<script type="text/babel" src="handoff/cliente/cliente-late-arrival.jsx"></script>
+<script type="text/babel" src="handoff/cliente/cliente-table-merge.jsx"></script>
+
+<script type="text/babel">
+  const mono16 = {
+    fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5,
+    padding: '1px 6px', background: '#e8e6e0', borderRadius: 4,
+  };
+
+  const Tag16 = ({ children, tone = 'neutral' }) => {
+    const tones = {
+      neutral: { bg: '#fff', border: '#e5e5e5', color: '#0a0a0a' },
+      new:     { bg: '#fbf1d8', border: '#b88a1a', color: '#7a5b0d' },
+      ink:     { bg: '#0a0a0a', border: '#0a0a0a', color: '#fff' },
+    };
+    const t = tones[tone];
+    return (
+      <span style={{
+        padding: '6px 10px', background: t.bg, border: `1px solid ${t.border}`,
+        color: t.color, borderRadius: 4,
+      }}>{children}</span>
+    );
+  };
+
+  const HeaderV16 = () => (
+    <div style={{
+      padding: '40px 60px 32px', maxWidth: 980,
+      fontFamily: "'Inter', system-ui, sans-serif",
+    }}>
+      <div style={{
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontSize: 11, fontWeight: 500, letterSpacing: 1.5,
+        textTransform: 'uppercase', color: '#6b6b6b', marginBottom: 14,
+      }}>App do Cliente · V16 · round 8c · junção de mesas (consent duplo · cooldown 20 min)</div>
+
+      <div style={{
+        fontSize: 36, fontWeight: 600, letterSpacing: -0.6,
+        color: '#0a0a0a', lineHeight: 1.1, marginBottom: 12,
+      }}>Junção de mesas via OverlaySalonMap + typewriter no receptor</div>
+
+      <div style={{
+        fontSize: 15, lineHeight: 1.55, color: '#4d4d4d', maxWidth: 760,
+        letterSpacing: -0.05,
+      }}>
+        Último flow do <b>customer-host model</b> (V8a/8b → 8c). Cliente A (host da M14) digita
+        "quero juntar com a mesa do lado" no chat IA · LLM chama{' '}
+        <code style={mono16}>request_table_merge</code> sem target → abre <b>OverlaySalonMap</b>{' '}
+        (overlay sobre o chat · grade 3×3 espacial real · M14 no centro · 6-8 mesas próximas).
+        Após escolha, <code style={mono16}>escalation_chains</code> ganha tipo{' '}
+        <code style={mono16}>type='table-merge'</code> com <b>consent duplo</b> · 2 timers paralelos
+        (60 s cada) · ambos hosts decidem em paralelo. Receptor (M15) vê <b>bubble TYPEWRITER</b>{' '}
+        no chat IA com border-left mostarda · texto digitando 25 ms/char · cursor blink · chips
+        Aceitar/Negar só após texto completar. Recusa OU timeout ativa <b>cooldown 20 min</b>{' '}
+        unidirecional · LLM responde canned em re-tentativas (HTTP 429). V16 estende V15 · seção
+        anterior <i>customer-late-arrival-flow</i> permanece · adiciona{' '}
+        <code style={mono16}>customer-table-merge-flow</code> com 9 frames novos
+        (inclui <b>push lockscreen</b> dedicado pro receptor com app fechado · INK NEUTRO ·
+        mesma família do push customer-host de V8b).
+      </div>
+
+      <div style={{
+        marginTop: 24, display: 'flex', flexWrap: 'wrap', gap: 12,
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase', color: '#6b6b6b',
+      }}>
+        <Tag16>2 seções (V15 + 1 nova)</Tag16>
+        <Tag16>17 frames (8 herdados + 9 novos)</Tag16>
+        <Tag16 tone="new">★ OverlaySalonMap (cliente-tokens.jsx)</Tag16>
+        <Tag16 tone="new">★ MergeTypewriterBubble</Tag16>
+        <Tag16 tone="new">★ PushMergeReceiverIOS</Tag16>
+        <Tag16 tone="new">★ ScreenCustomerHostApproveMerge</Tag16>
+        <Tag16>handoff em /handoff/cliente/cliente-table-merge.jsx</Tag16>
+        <Tag16>staff-side · canvas garçom V17</Tag16>
+      </div>
+
+      <div style={{
+        marginTop: 28, padding: '16px 18px', background: '#fff',
+        border: '1px solid #e5e5e5', borderRadius: 12, maxWidth: 760,
+      }}>
+        <div style={{
+          fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 500,
+          letterSpacing: 1.4, textTransform: 'uppercase', color: '#0a0a0a',
+          marginBottom: 12,
+        }}>5 decisões deste round</div>
+        {[
+          ['1 · Mini-mapa fixo · grade 3×3', 'OverlaySalonMap mostra 6-8 mesas próximas em grade espacial real (M14 no centro · 4 vizinhas adjacentes selecionáveis · 4 cantos atenuados pra contexto). Lista vertical perderia a noção espacial · "salão" implica geometria real.'],
+          ['2 · Typewriter com border mostarda', 'Único uso de mostarda no app cliente · sinaliza decisão tempo-sensitive (vocabulário staff transitando pra cliente). Texto digita 25 ms/char · cursor blink · chips só após texto completar · border vira normal após chip usado.'],
+          ['3 · Auto-scroll padrão chat moderno', 'Se chat ancorado no fim · auto-scroll acompanha typewriter. Se ancorado pra cima lendo histórico · pill "↓ Pedido novo da Mesa 14" sticky-bottom · tap leva pro bubble (WhatsApp/iMessage behavior).'],
+          ['4 · Cooldown unidirecional 20 min', 'Recusa OU timeout ativa cooldown M14→M15. Re-tentativa retorna HTTP 429 · LLM responde canned (não chama tool de novo). Caminho reverso M15→M14 continua aberto. Escape valves: chamar recepcionista · pedir pra outra mesa · esperar.'],
+          ['5 · 2 caminhos de aprovação', 'Bubble inline com chips (UI primária · padrão chat moderno) + ScreenCustomerHostApproveMerge fullscreen como alternativa pra quando cliente quer mais contexto antes de decidir. Ambos chamam o mesmo endpoint backend.'],
+        ].map(([num, body]) => (
+          <div key={num} style={{
+            display: 'grid', gridTemplateColumns: '210px 1fr', gap: 14,
+            padding: '10px 0', borderBottom: '1px solid #f0eee9',
+            fontSize: 13, color: '#0a0a0a', lineHeight: 1.5, letterSpacing: -0.05,
+          }}>
+            <div style={{
+              fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 600,
+              letterSpacing: 0.5, color: '#0a0a0a',
+            }}>{num}</div>
+            <div>{body}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const Root = () => (
+    <DesignCanvas>
+      <DCSection id="header" title="" subtitle="">
+        <div key="hdr"><HeaderV16 /></div>
+      </DCSection>
+
+      {/* Late-arrival · herdado de V15 (8 frames) */}
+      {window.CLIENTE_LATE_ARRIVAL_SECTIONS.map(sec => (
+        <DCSection key={sec.id} id={sec.id} title={`${sec.id} · ${sec.title}`} subtitle={sec.subtitle}>
+          {sec.frames}
+        </DCSection>
+      ))}
+
+      {/* ★ NOVO V16 · Junção de mesas (9 frames · inclui push lockscreen receptor) */}
+      {window.CLIENTE_TABLE_MERGE_SECTIONS.map(sec => (
+        <DCSection key={sec.id} id={sec.id} title={`${sec.id} · ${sec.title}`} subtitle={sec.subtitle}>
+          {sec.frames}
+        </DCSection>
+      ))}
+    </DesignCanvas>
+  );
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+</script>
+</body>
+</html>
