@@ -31,6 +31,7 @@ import { StaffMessagesModule } from './modules/staff-messages/staff-messages.mod
 import { ZonePauseModule } from './modules/zone-pause/zone-pause.module';
 import { VipModule } from './modules/vip/vip.module';
 import { ChatHistoryModule } from './modules/chat-history/chat-history.module';
+import { JobsModule } from './modules/jobs/jobs.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { ChatHistoryModule } from './modules/chat-history/chat-history.module';
     StaffMessagesModule,
     ZonePauseModule,
     VipModule,
+    JobsModule,
   ],
   controllers: [AppController],
 })
