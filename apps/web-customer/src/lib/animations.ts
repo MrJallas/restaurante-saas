@@ -48,6 +48,29 @@ export const FADE_IN_UP_MS = 420;
 /** Slide-up overlay (OverlaySalonMap, BottomSheet variants). */
 export const SLIDE_UP_OVERLAY_MS = 220;
 
+/**
+ * `cManagerArrive` — dedicated arrival animation pro `ManagerBubble`.
+ *
+ * Por que separado de `fadeInUp`: o bubble do gerente é tempo-sensível
+ * (chega quando a IA já está respondendo OU em paralelo) e o canvas v14
+ * pediu uma curva levemente mais firme (cubic-bezier "expo") pra dar
+ * sensação de "alguém entrou na conversa", em vez do fade neutro do
+ * `fadeInUp`. Mantemos como objeto auto-contido (keyframes + className +
+ * duration + easing) pro callsite poder coordenar timeouts (ex: esperar
+ * a animação terminar antes de tocar som).
+ *
+ * As keyframes propriamente ditas vivem em `globals.css` como
+ * `@keyframes managerArrive` — Tailwind/CSS é mais barato que JS pra
+ * uma animação que pode rodar 5-10× por sessão.
+ */
+export const cManagerArrive = {
+  keyframes:
+    '@keyframes managerArrive { from { transform: translateY(8px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }',
+  className: 'animate-manager-arrive',
+  duration: '360ms',
+  easing: 'cubic-bezier(.2,.8,.2,1)',
+} as const;
+
 // ─── Tailwind classes ─────────────────────────────────────────────────
 
 /**

@@ -34,6 +34,7 @@ export { AssistantBlock, AssistantText, SuggestionChipRow } from './AssistantBlo
 export { ContextualInputExpand } from './ContextualInputExpand';
 export { ContinuationHome } from './ContinuationHome';
 export { ManagerBubble } from './ManagerBubble';
+export type { ManagerChipActionKind } from './ManagerBubble';
 export { OverlaySalonMap } from './OverlaySalonMap';
 export type { SalonTable, SalonTableStatus, SalonZone } from './OverlaySalonMap';
 export { SuggestionChip } from './SuggestionChip';
