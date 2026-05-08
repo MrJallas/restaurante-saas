@@ -3,8 +3,11 @@ import {
   HttpStatus,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { EventsGateway } from '../websocket/events.gateway';
+import type { SessionFlag } from '@restaurant/shared-types';
 
 const KNOWN_FLAGS = new Set(['vip', 'allergy', 'reincidente']);
 
@@ -18,13 +21,17 @@ const KNOWN_FLAGS = new Set(['vip', 'allergy', 'reincidente']);
 export class VipService {
   private readonly logger = new Logger(VipService.name);
 
-  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+  constructor(
+    private readonly tenantConn: TenantConnectionProvider,
+    @Optional() private readonly events?: EventsGateway,
+  ) {}
 
   async toggle(
     tableSessionId: string,
     flag: string,
     action: 'add' | 'remove',
     by: { staffId?: string; customerId?: string; reason?: string },
+    slug?: string,
   ) {
     if (!KNOWN_FLAGS.has(flag)) {
       throw new HttpException(
@@ -59,7 +66,24 @@ export class VipService {
       );
     }
 
-    return this.getActiveFlags(tableSessionId);
+    const result = await this.getActiveFlags(tableSessionId);
+
+    if (slug && this.events) {
+      // TODO(payload): tableNumber + staff name require joins with
+      // table_sessions / staff. Defaulting to 0 / '' so the contract is
+      // satisfied; FE re-fetches via REST when rendering the chip.
+      this.events.emitSessionFlagChanged(slug, {
+        sessionId: tableSessionId,
+        tableNumber: 0,
+        flags: result.flags as SessionFlag[],
+        by: {
+          staffId: by.staffId ?? '',
+          name: '',
+        },
+      });
+    }
+
+    return result;
   }
 
   async getActiveFlags(tableSessionId: string) {

@@ -80,23 +80,34 @@ export class ZonePauseController {
   constructor(private readonly service: ZonePauseService) {}
 
   @Post()
-  async create(@Body() dto: CreateZonePauseDto) {
-    return this.service.create({
-      zoneId: dto.zoneId ?? null,
-      zoneName: dto.zoneName ?? null,
-      kind: dto.kind,
-      durationMinutes: dto.durationMinutes,
-      reason: dto.reason,
-      createdByStaffId: dto.createdByStaffId,
-    });
+  async create(@Param('slug') slug: string, @Body() dto: CreateZonePauseDto) {
+    return this.service.create(
+      {
+        zoneId: dto.zoneId ?? null,
+        zoneName: dto.zoneName ?? null,
+        kind: dto.kind,
+        durationMinutes: dto.durationMinutes,
+        reason: dto.reason,
+        createdByStaffId: dto.createdByStaffId,
+      },
+      slug,
+    );
   }
 
   @Post(':id/end')
-  async end(@Param('id') id: string, @Body() dto: EndZonePauseDto = {}) {
-    return this.service.end(id, {
-      staffId: dto.staffId,
-      reason: dto.reason,
-    });
+  async end(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: EndZonePauseDto = {},
+  ) {
+    return this.service.endEarly(
+      id,
+      {
+        staffId: dto.staffId,
+        reason: dto.reason,
+      },
+      slug,
+    );
   }
 
   @Get()

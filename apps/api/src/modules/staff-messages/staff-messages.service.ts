@@ -3,24 +3,32 @@ import {
   HttpStatus,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { EventsGateway } from '../websocket/events.gateway';
 
 @Injectable()
 export class StaffMessagesService {
   private readonly logger = new Logger(StaffMessagesService.name);
 
-  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+  constructor(
+    private readonly tenantConn: TenantConnectionProvider,
+    @Optional() private readonly events?: EventsGateway,
+  ) {}
 
-  async send(input: {
-    senderStaffId: string;
-    recipientStaffId?: string | null;
-    threadId?: string | null;
-    body: string;
-    subject?: string;
-    isBroadcast?: boolean;
-  }) {
-    return this.tenantConn.transaction(async (tx) => {
+  async send(
+    input: {
+      senderStaffId: string;
+      recipientStaffId?: string | null;
+      threadId?: string | null;
+      body: string;
+      subject?: string;
+      isBroadcast?: boolean;
+    },
+    slug?: string,
+  ) {
+    const result = await this.tenantConn.transaction(async (tx) => {
       let threadId = input.threadId ?? null;
       if (!threadId) {
         const thRows = (await tx.query(
@@ -67,6 +75,37 @@ export class StaffMessagesService {
 
       return this.mapMessageRow(msgRows[0], threadId);
     });
+
+    if (slug && this.events) {
+      // TODO(payload): customer-facing fields (customerId / tableSessionId
+      // / visitId) require a complaint or thread join — staff-to-staff
+      // messages don't always have a customer counterpart. We emit on the
+      // tenant + recipient-staff rooms; subscribers fetch full thread data
+      // via REST when they need to render. The customerId here is the
+      // recipient staff id (best available proxy for room routing).
+      const recipientId = result.recipientStaffId ?? result.senderStaffId;
+      this.events.emitStaffMessageReceived(
+        slug,
+        recipientId,
+        result.recipientStaffId,
+        {
+          message: {
+            id: result.id,
+            threadId: result.threadId,
+            fromRole: 'staff',
+            staffId: result.senderStaffId,
+            staffName: null,
+            kind: 'direct_reply',
+            content: result.body,
+            metadata: {},
+            createdAt: result.sentAt,
+            readAt: result.readAt,
+          },
+        },
+      );
+    }
+
+    return result;
   }
 
   async listThreadsForStaff(staffId: string) {

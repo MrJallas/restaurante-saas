@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Post,
   Query,
   UseGuards,
@@ -62,14 +63,17 @@ export class LgpdController {
    */
   @Post()
   @UseGuards(SessionGuard)
-  async create(@Body() dto: CreateLgpdDto) {
-    return this.service.createRequest({
-      kind: dto.kind,
-      customerId: dto.customerId ?? null,
-      customerCpf: dto.customerCpf ?? null,
-      customerEmail: dto.customerEmail ?? null,
-      notes: dto.notes,
-    });
+  async create(@Param('slug') slug: string, @Body() dto: CreateLgpdDto) {
+    return this.service.createRequest(
+      {
+        kind: dto.kind,
+        customerId: dto.customerId ?? null,
+        customerCpf: dto.customerCpf ?? null,
+        customerEmail: dto.customerEmail ?? null,
+        notes: dto.notes,
+      },
+      slug,
+    );
   }
 
   /** `GET /lgpd-requests` · manager view. */

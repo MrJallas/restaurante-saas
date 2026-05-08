@@ -3,25 +3,33 @@ import {
   HttpStatus,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { EventsGateway } from '../websocket/events.gateway';
 
 @Injectable()
 export class ComplaintsService {
   private readonly logger = new Logger(ComplaintsService.name);
 
-  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+  constructor(
+    private readonly tenantConn: TenantConnectionProvider,
+    @Optional() private readonly events?: EventsGateway,
+  ) {}
 
-  async create(input: {
-    customerId?: string | null;
-    visitId?: string | null;
-    orderId?: string | null;
-    orderRatingId?: string | null;
-    rating?: number | null;
-    text: string;
-    attachedImageUrl?: string | null;
-    autoFromRating?: boolean;
-  }) {
+  async create(
+    input: {
+      customerId?: string | null;
+      visitId?: string | null;
+      orderId?: string | null;
+      orderRatingId?: string | null;
+      rating?: number | null;
+      text: string;
+      attachedImageUrl?: string | null;
+      autoFromRating?: boolean;
+    },
+    slug?: string,
+  ) {
     const rows = (await this.tenantConn.query(
       `INSERT INTO complaints
          (customer_id, visit_id, order_id, order_rating_id, rating,
@@ -39,7 +47,27 @@ export class ComplaintsService {
       ],
     )) as Array<Record<string, unknown>>;
 
-    return this.mapRow(rows[0]);
+    const result = this.mapRow(rows[0]);
+
+    if (slug && this.events && result.customerId) {
+      // TODO(payload): tableSessionId / tableNumber / customerName /
+      // problemType need joins with visits + customers + complaint metadata.
+      // Defaulting to '' / 0 / 'outro' so the contract is satisfied; FE
+      // re-fetches via REST when expanding the card.
+      this.events.emitComplaintCreated(slug, result.assignedManagerId, {
+        complaintId: result.id,
+        tableSessionId: '',
+        tableNumber: 0,
+        customerId: result.customerId,
+        customerName: '',
+        problemType: 'outro',
+        rating: result.rating,
+        description: result.text,
+        createdAt: result.submittedAt,
+      });
+    }
+
+    return result;
   }
 
   /**
@@ -47,29 +75,36 @@ export class ComplaintsService {
    * submitted with comment text — auto-creates a complaint so the manager
    * sees it in their queue.
    */
-  async createFromRating(input: {
-    customerId: string;
-    visitId?: string | null;
-    orderId: string;
-    orderRatingId: string;
-    rating: number;
-    comment: string;
-  }) {
-    return this.create({
-      customerId: input.customerId,
-      visitId: input.visitId,
-      orderId: input.orderId,
-      orderRatingId: input.orderRatingId,
-      rating: input.rating,
-      text: input.comment,
-      autoFromRating: true,
-    });
+  async createFromRating(
+    input: {
+      customerId: string;
+      visitId?: string | null;
+      orderId: string;
+      orderRatingId: string;
+      rating: number;
+      comment: string;
+    },
+    slug?: string,
+  ) {
+    return this.create(
+      {
+        customerId: input.customerId,
+        visitId: input.visitId,
+        orderId: input.orderId,
+        orderRatingId: input.orderRatingId,
+        rating: input.rating,
+        text: input.comment,
+        autoFromRating: true,
+      },
+      slug,
+    );
   }
 
   async respond(
     id: string,
     by: { staffId?: string },
     body: { content: string; chipAction?: string },
+    slug?: string,
   ) {
     const updated = (await this.tenantConn.query(
       `UPDATE complaints
@@ -88,10 +123,33 @@ export class ComplaintsService {
         HttpStatus.NOT_FOUND,
       );
     }
-    return { ...this.mapRow(updated[0]), chipAction: body.chipAction ?? null };
+    const mapped = this.mapRow(updated[0]);
+    const result = { ...mapped, chipAction: body.chipAction ?? null };
+
+    if (slug && this.events && mapped.customerId) {
+      const chipAction = body.chipAction as
+        | 'on-the-way'
+        | 'kitchen-check'
+        | 'courtesy'
+        | 'custom'
+        | undefined;
+      // TODO(payload): messageId is the complaint's own id here because the
+      // V1 complaint flow stores the response inline (response_text) rather
+      // than minting a separate staff_messages row. The dedicated
+      // staff_messages row is created via POST /staff-messages.
+      this.events.emitComplaintResponded(slug, mapped.customerId, {
+        complaintId: mapped.id,
+        messageId: mapped.id,
+        content: body.content,
+        chipAction,
+        staffName: '',
+      });
+    }
+
+    return result;
   }
 
-  async resolve(id: string, by: { staffId?: string }) {
+  async resolve(id: string, by: { staffId?: string }, slug?: string) {
     const updated = (await this.tenantConn.query(
       `UPDATE complaints
          SET status = 'closed',
@@ -108,7 +166,17 @@ export class ComplaintsService {
         HttpStatus.NOT_FOUND,
       );
     }
-    return this.mapRow(updated[0]);
+    const result = this.mapRow(updated[0]);
+
+    if (slug && this.events) {
+      this.events.emitComplaintResolved(slug, result.customerId, {
+        complaintId: result.id,
+        resolvedAt: result.closedAt ?? new Date().toISOString(),
+        resolvedBy: by.staffId ?? '',
+      });
+    }
+
+    return result;
   }
 
   async forward(id: string, toStaffId: string, notes?: string) {

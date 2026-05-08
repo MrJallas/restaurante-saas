@@ -69,20 +69,32 @@ export class TableMergeController {
 
   @Post()
   @UseGuards(SessionGuard)
-  async create(@Body() dto: CreateMergeDto, @Session() _s: SessionData) {
-    return this.service.createRequest(dto);
+  async create(
+    @Param('slug') slug: string,
+    @Body() dto: CreateMergeDto,
+    @Session() _s: SessionData,
+  ) {
+    return this.service.createRequest(dto, slug);
   }
 
   @Post(':id/approve')
   @UseGuards(SessionGuard)
-  async approve(@Param('id') id: string, @Body() dto: DecisionDto = {}) {
-    return this.service.approve(id, dto.decidedByCustomerId);
+  async approve(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: DecisionDto = {},
+  ) {
+    return this.service.approve(id, dto.decidedByCustomerId, slug);
   }
 
   @Post(':id/reject')
   @UseGuards(SessionGuard)
-  async reject(@Param('id') id: string, @Body() dto: DecisionDto = {}) {
-    return this.service.reject(id, dto.decidedByCustomerId, dto.reason);
+  async reject(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: DecisionDto = {},
+  ) {
+    return this.service.reject(id, dto.decidedByCustomerId, dto.reason, slug);
   }
 
   @Get()

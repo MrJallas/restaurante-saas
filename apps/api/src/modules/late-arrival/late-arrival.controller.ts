@@ -92,34 +92,51 @@ export class LateArrivalController {
   @Post()
   @UseGuards(SessionGuard)
   async create(
+    @Param('slug') slug: string,
     @Body() dto: CreateLateArrivalDto,
     @Session() session: SessionData,
   ) {
-    return this.service.create({
-      customerId: dto.customerId,
-      visitId: dto.visitId,
-      tableSessionId: dto.tableSessionId ?? session.sessionId,
-      expectedArrivalAt: dto.expectedArrivalAt,
-      message: dto.message,
-    });
+    return this.service.create(
+      {
+        customerId: dto.customerId,
+        visitId: dto.visitId,
+        tableSessionId: dto.tableSessionId ?? session.sessionId,
+        expectedArrivalAt: dto.expectedArrivalAt,
+        message: dto.message,
+      },
+      slug,
+    );
   }
 
   @Post(':id/approve')
   @UseGuards(SessionGuard)
-  async approve(@Param('id') id: string, @Body() dto: ApproveDto = {}) {
-    return this.service.approve(id, {
-      staffId: dto.staffId,
-      customerId: dto.customerId,
-    });
+  async approve(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: ApproveDto = {},
+  ) {
+    return this.service.approve(
+      id,
+      {
+        staffId: dto.staffId,
+        customerId: dto.customerId,
+      },
+      slug,
+    );
   }
 
   @Post(':id/reject')
   @UseGuards(SessionGuard)
-  async reject(@Param('id') id: string, @Body() dto: RejectDto = {}) {
+  async reject(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: RejectDto = {},
+  ) {
     return this.service.reject(
       id,
       { staffId: dto.staffId, customerId: dto.customerId },
       dto.reason,
+      slug,
     );
   }
 
