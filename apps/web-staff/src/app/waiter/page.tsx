@@ -1,0 +1,26 @@
+'use client';
+
+import * as React from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ScreenHomeGrid } from '../../screens/waiter/ScreenHomeGrid';
+
+export default function WaiterHomePage() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const tenantSlug = params.get('tenant') ?? process.env.NEXT_PUBLIC_DEFAULT_TENANT ?? 'demo';
+  const waiterId = params.get('waiterId') ?? '';
+
+  return (
+    <ScreenHomeGrid
+      tenantSlug={tenantSlug}
+      waiterId={waiterId}
+      onNewEntry={() => router.push(`/waiter/new-entry?tenant=${tenantSlug}`)}
+      onOpenCall={(callId) => router.push(`/waiter?call=${callId}&tenant=${tenantSlug}`)}
+      onOpenTable={(t) => router.push(`/waiter?table=${t}&tenant=${tenantSlug}`)}
+      onTabChange={(tab) => {
+        if (tab === 'me') router.push(`/waiter/mensagens?tenant=${tenantSlug}`);
+      }}
+      fab
+    />
+  );
+}
