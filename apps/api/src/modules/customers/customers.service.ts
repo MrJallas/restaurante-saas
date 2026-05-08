@@ -141,6 +141,114 @@ export class CustomersService {
     };
   }
 
+  /**
+   * `POST /customers/identify` — CPF-first identification used by late-arrival
+   * flow. Creates the customer row if CPF is new; returns the canonical name +
+   * recognition token if returning. No session is required here (pre-join).
+   */
+  async identify(
+    cpf: string,
+    nameInput?: string,
+    _currentSessionId?: string,
+  ): Promise<{
+    customerId: string;
+    isReturning: boolean;
+    canonicalName: string;
+    customer: { customerId: string; name: string; totalVisits: number };
+    recognitionToken: string;
+  }> {
+    const cleanCpf = cpf.replace(/\D/g, '');
+    if (!validateCpf(cleanCpf)) {
+      throw new HttpException(
+        'CPF invalido. Verifique os numeros digitados.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const existing = (await this.tenantConn.query(
+      'SELECT id, name, recognition_token, total_visits FROM customers WHERE cpf = $1',
+      [cleanCpf],
+    )) as Array<Record<string, unknown>>;
+
+    if (existing.length > 0) {
+      const customer = existing[0];
+      const customerId = customer.id as string;
+      const canonicalName = customer.name as string;
+      let recognitionToken = customer.recognition_token as string | null;
+      if (!recognitionToken) {
+        recognitionToken = uuidv4();
+        await this.tenantConn.query(
+          'UPDATE customers SET recognition_token = $1, updated_at = now() WHERE id = $2',
+          [recognitionToken, customerId],
+        );
+      }
+      return {
+        customerId,
+        isReturning: true,
+        canonicalName,
+        customer: {
+          customerId,
+          name: canonicalName,
+          totalVisits: customer.total_visits as number,
+        },
+        recognitionToken,
+      };
+    }
+
+    // CPF new → create on the fly. `name` becomes mandatory in this branch.
+    const trimmedName = (nameInput ?? '').trim();
+    if (!trimmedName) {
+      throw new HttpException(
+        'Nome obrigatorio para CPF novo.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const recognitionToken = uuidv4();
+    const inserted = (await this.tenantConn.query(
+      `INSERT INTO customers (name, cpf, recognition_token, total_visits)
+       VALUES ($1, $2, $3, 0)
+       RETURNING id`,
+      [trimmedName, cleanCpf, recognitionToken],
+    )) as Array<Record<string, unknown>>;
+    const customerId = inserted[0].id as string;
+    return {
+      customerId,
+      isReturning: false,
+      canonicalName: trimmedName,
+      customer: {
+        customerId,
+        name: trimmedName,
+        totalVisits: 0,
+      },
+      recognitionToken,
+    };
+  }
+
+  /**
+   * Toggle the persistent VIP flag on a customer (separate from the
+   * session-scoped `table_sessions.flags`). Used by manager UI; session-level
+   * VIP marking lives on the `vip` module / session-flags endpoint.
+   */
+  async setVipFlag(customerId: string, isVip: boolean) {
+    const updated = (await this.tenantConn.query(
+      `UPDATE customers SET is_vip = $1, updated_at = now()
+       WHERE id = $2
+       RETURNING id, is_vip`,
+      [isVip, customerId],
+    )) as Array<Record<string, unknown>>;
+    if (!updated.length) {
+      throw new HttpException(
+        'Cliente nao encontrado.',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return {
+      customerId: updated[0].id as string,
+      isVip: updated[0].is_vip as boolean,
+    };
+  }
+
   async recognize(
     recognitionToken: string,
     sessionId: string,

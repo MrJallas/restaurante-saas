@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Req, Res, UseGuards } from '@nestjs/common';
+import { Controller, Post, Delete, Body, Param, Req, Res, UseGuards } from '@nestjs/common';
 import {
   IsString,
   IsNotEmpty,
@@ -6,10 +6,12 @@ import {
   MaxLength,
   Matches,
   IsOptional,
+  IsUUID,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { Response } from 'express';
 import { SessionGuard } from '../../common/guards/session.guard';
+import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { SessionData } from '../../common/guards/session.guard';
 import { CustomersService } from './customers.service';
@@ -41,9 +43,71 @@ class CustomerRecognizeDto {
   recognitionToken?: string;
 }
 
+class CustomerIdentifyDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  name?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') : value,
+  )
+  @MinLength(11)
+  @MaxLength(11)
+  @Matches(/^\d{11}$/, { message: 'cpf must be 11 digits' })
+  cpf!: string;
+
+  @IsOptional()
+  @IsUUID()
+  currentSessionId?: string;
+}
+
 @Controller(':slug/customer')
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
+
+  /**
+   * `POST /customers/identify` — CPF lookup before late-arrival join.
+   * Public (this is itself the auth bootstrap for late-arrival flow).
+   * Returns recognition token for the customer-host approval UI.
+   */
+  @Post('identify')
+  async identify(
+    @Body() dto: CustomerIdentifyDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.customersService.identify(
+      dto.cpf,
+      dto.name,
+      dto.currentSessionId,
+    );
+
+    res.cookie('recognition_token', result.recognitionToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: RECOGNITION_COOKIE_MAX_AGE,
+    });
+
+    return result;
+  }
+
+  /** Manager marks a customer as VIP (permanent flag on customers table). */
+  @Post(':customerId/vip')
+  @UseGuards(StaffOnlyGuard)
+  async markVip(@Param('customerId') customerId: string) {
+    return this.customersService.setVipFlag(customerId, true);
+  }
+
+  /** Manager unmarks a customer as VIP. */
+  @Delete(':customerId/vip')
+  @UseGuards(StaffOnlyGuard)
+  async unmarkVip(@Param('customerId') customerId: string) {
+    return this.customersService.setVipFlag(customerId, false);
+  }
 
   @Post('welcome')
   @UseGuards(SessionGuard)
