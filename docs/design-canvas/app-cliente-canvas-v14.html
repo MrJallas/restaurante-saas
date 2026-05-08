@@ -1,0 +1,147 @@
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>App do Cliente · V14 — round 9-bis · animação B + 3 fixes de tools</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  html, body, #root { margin: 0; height: 100%; background: #f0eee9; font-family: Inter, system-ui, sans-serif; }
+  .dc-card *::-webkit-scrollbar { display: none; }
+  .dc-card * { scrollbar-width: none; }
+  @keyframes gNotifPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.012)} }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="handoff/cliente/cliente-tokens.jsx"></script>
+<script type="text/babel" src="handoff/cliente/cliente-screens-v14.jsx"></script>
+
+<script type="text/babel">
+  const mono = {
+    fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5,
+    padding: '1px 6px', background: '#e8e6e0', borderRadius: 4,
+  };
+
+  const HeaderV14 = () => {
+    const Tag = ({ children, tone = 'neutral' }) => {
+      const tones = {
+        neutral: { bg: '#fff', border: '#e5e5e5', color: '#0a0a0a' },
+        fix:     { bg: '#0a0a0a', border: '#0a0a0a', color: '#fff' },
+        new:     { bg: '#fbf1d8', border: '#b88a1a', color: '#7a5b0d' },
+      };
+      const t = tones[tone];
+      return (
+        <span style={{
+          padding: '6px 10px', background: t.bg, border: `1px solid ${t.border}`,
+          color: t.color, borderRadius: 4,
+        }}>{children}</span>
+      );
+    };
+
+    return (
+      <div style={{
+        padding: '40px 60px 32px', maxWidth: 980,
+        fontFamily: "'Inter', system-ui, sans-serif",
+      }}>
+        <div style={{
+          fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+          fontSize: 11, fontWeight: 500, letterSpacing: 1.5,
+          textTransform: 'uppercase', color: '#6b6b6b', marginBottom: 14,
+        }}>App do Cliente · V14 · round 9-bis · correções sobre V13</div>
+
+        <div style={{
+          fontSize: 36, fontWeight: 600, letterSpacing: -0.6,
+          color: '#0a0a0a', lineHeight: 1.1, marginBottom: 12,
+        }}>Animação B (liquid morph) vence · 3 fixes de tools</div>
+
+        <div style={{
+          fontSize: 15, lineHeight: 1.55, color: '#4d4d4d', maxWidth: 760,
+          letterSpacing: -0.05,
+        }}>
+          Round 9-bis aplica 4 correções sobre o V13. <b>Variante B (liquid
+          morph)</b> escolhida pra o ContextualInputExpand · A (snappy) e C
+          (drape) descartadas no componente e no canvas. <b>view_menu</b>
+          marcado como <code style={mono}>silent: true</code> · não gera bubble
+          verbosa nem chips imediatos · só abre o overlay. <b>request_bill</b>
+          virou router · pergunta canal antes de agir · cliente escolhe entre{' '}
+          <code style={mono}>open_payment_screen</code> (UI dedicada) ou{' '}
+          <code style={mono}>call_waiter(reason='ask_bill')</code>. <b>LGPD copy</b>{' '}
+          corrigida · deleção é imediata · protocolo guardado por 90 dias ·
+          prazo legal de 15 dias se aplica só a pedidos de PII completo
+          (escopo separado).
+        </div>
+
+        <div style={{
+          marginTop: 24, display: 'flex', flexWrap: 'wrap', gap: 12,
+          fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+          fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase', color: '#6b6b6b',
+        }}>
+          <Tag>9 seções</Tag>
+          <Tag>28 frames</Tag>
+          <Tag>25 tools · 6 grupos</Tag>
+          <Tag tone="new">★ open_payment_screen</Tag>
+          <Tag tone="new">★ flag silent</Tag>
+          <Tag>handoff em /handoff/cliente/cliente-screens-v14.jsx</Tag>
+          <Tag>spec LGPD · /docs/features/chat-history-lgpd.md</Tag>
+        </div>
+
+        <div style={{
+          marginTop: 28, padding: '16px 18px', background: '#fff',
+          border: '1px solid #e5e5e5', borderRadius: 12, maxWidth: 760,
+        }}>
+          <div style={{
+            fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 500,
+            letterSpacing: 1.4, textTransform: 'uppercase', color: '#0a0a0a',
+            marginBottom: 12,
+          }}>4 correções aplicadas</div>
+          {[
+            ['1 · Animação',      'Variante B (liquid morph) vence. A e C apagadas do componente e canvas. 4 keyframes (0/33/66/100%) documentam o caminho da animação real (380ms clip-path + 200ms CTA fade · cubic-bezier(.4,0,.2,1)).'],
+            ['2 · view_menu silent', 'Tool de navegação direta · não narra · só abre overlay. Tools silent: view_menu · view_order · view_chat_history · view_courtesy · open_payment_screen.'],
+            ['3 · request_bill 2-step', 'Router pergunta canal antes de agir. Internamente chama open_payment_screen OU call_waiter(reason="ask_bill"). Frame retry após 2 min sem ack do garçom.'],
+            ['4 · LGPD copy',    'Deleção é IMEDIATA · sem "15 dias úteis". Protocolo guardado 90 dias pra comprovante. Prazo legal de 15 dias se aplica só a pedidos de PII completo (escopo separado).'],
+          ].map(([num, body]) => (
+            <div key={num} style={{
+              display: 'grid', gridTemplateColumns: '180px 1fr', gap: 14,
+              padding: '10px 0', borderBottom: '1px solid #f0eee9',
+              fontSize: 13, color: '#0a0a0a', lineHeight: 1.5, letterSpacing: -0.05,
+            }}>
+              <div style={{
+                fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 600,
+                letterSpacing: 0.5, color: '#0a0a0a',
+              }}>{num}</div>
+              <div>{body}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const Root = () => (
+    <DesignCanvas>
+      <DCSection id="header" title="" subtitle="">
+        <div key="hdr"><HeaderV14 /></div>
+      </DCSection>
+
+      {window.CLIENTE_LLM_SECTIONS_V14.map(sec => (
+        <DCSection key={sec.id} id={sec.id} title={`${sec.id} · ${sec.title}`} subtitle={sec.subtitle}>
+          {sec.frames}
+        </DCSection>
+      ))}
+    </DesignCanvas>
+  );
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+</script>
+</body>
+</html>
