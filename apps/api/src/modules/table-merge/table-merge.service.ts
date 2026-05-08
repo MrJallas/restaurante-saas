@@ -29,7 +29,7 @@ interface CooldownRow {
  * `MergeCooldownDto` from @restaurant/shared-types.
  */
 export interface MergeCooldownPayload {
-  cooldownExpiresAt: string;
+  cooldownEndsAt: string;
   retryAfterSeconds: number;
   reason: string;
   message: string;
@@ -77,7 +77,7 @@ export class TableMergeService {
         Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000),
       );
       const payload: MergeCooldownPayload = {
-        cooldownExpiresAt: expiresAt,
+        cooldownEndsAt: expiresAt,
         retryAfterSeconds: retryAfter,
         reason: c.reason ?? 'rejected',
         message: 'Voce pode tentar de novo em alguns minutos.',
@@ -172,7 +172,7 @@ export class TableMergeService {
         [a, b, cooldownExpires, id],
       );
 
-      return { ...this.mapRow(row), cooldownExpiresAt: cooldownExpires };
+      return { ...this.mapRow(row), cooldownEndsAt: cooldownExpires };
     });
   }
 
@@ -212,7 +212,7 @@ export class TableMergeService {
       status: row.status as string,
       message: (row.message as string | null) ?? null,
       ttlExpiresAt: row.ttl_expires_at as string,
-      cooldownExpiresAt: (row.cooldown_expires_at as string | null) ?? null,
+      cooldownEndsAt: (row.cooldown_expires_at as string | null) ?? null,
       decidedAt: (row.decided_at as string | null) ?? null,
       createdAt: row.created_at as string,
     };
