@@ -1,12 +1,16 @@
-"""Router tool — jumps to ScreenCustomerOrderRating."""
+"""
+DEPRECATED — remove next round.
+
+Legacy alias for `rate_visit`. The canonical name per F2 spec is `rate_visit`;
+existing callers still reference `rate_order`, so this thin wrapper forwards
+to the new module.
+"""
 
 from typing import Any
 from .types import ToolContext, ToolResult
+from .rate_visit import call as _rate_visit_call
 
 
 def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    return ToolResult(
-        message="Te mando pra tela de avaliação — leva 30 segundos.",
-        router_target="ScreenCustomerOrderRating",
-        action_payload={"orderId": args.get("orderId") or args.get("order_id")},
-    )
+    """DEPRECATED — remove next round. Forwards to `rate_visit`."""
+    return _rate_visit_call(args, ctx)

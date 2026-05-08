@@ -59,6 +59,17 @@ class _InMemoryFallback:
         lst.extend(values)
         return len(lst)
 
+    def lpop(self, key: str) -> Optional[str]:
+        self._gc()
+        lst = self._lists.get(key)
+        if not lst:
+            return None
+        return lst.pop(0)
+
+    def llen(self, key: str) -> int:
+        self._gc()
+        return len(self._lists.get(key, []))
+
     def delete(self, key: str) -> int:
         n = 0
         if key in self._kv:
@@ -128,3 +139,51 @@ def pool_seed(key: str, entries: list[dict[str, Any]], ttl_seconds: Optional[int
     if ttl_seconds:
         client.expire(key, ttl_seconds)
     return len(entries)
+
+
+# ─────────────────────────────────────────────────────────────
+# Rotating-pool helpers (LPOP + RPUSH back · for ACK replies, etc.)
+# ─────────────────────────────────────────────────────────────
+
+def pool_seed_strings_if_empty(key: str, values: list[str], ttl_seconds: Optional[int] = None) -> int:
+    """
+    Seed a string-only list ONCE: only pushes if `LLEN key == 0`.
+    Idempotent across restarts; doesn't clobber an existing pool.
+    Returns number of entries pushed (0 if pool already exists).
+    """
+    client = get_client()
+    if client.llen(key) > 0:
+        return 0
+    if not values:
+        return 0
+    client.rpush(key, *values)
+    if ttl_seconds:
+        client.expire(key, ttl_seconds)
+    return len(values)
+
+
+def pool_rotate_lpop(key: str, fallback: list[str]) -> str:
+    """
+    LPOP a value, RPUSH it back to the tail (rotating pool).
+
+    If the pool is empty (Redis was flushed, fresh container, etc.) seeds
+    from `fallback` then LPOPs again. Always returns a non-empty string;
+    caller never has to handle None.
+
+    Race-safe enough for our use case: LPOP+RPUSH are 2 ops, so if N workers
+    contend they may briefly observe duplicates — fine for canned ack replies.
+    """
+    client = get_client()
+    val = client.lpop(key)
+    if val is None:
+        # Pool was empty — re-seed from fallback and try once more.
+        if not fallback:
+            # Last resort: just return the first fallback or empty string.
+            return ""
+        client.rpush(key, *fallback)
+        val = client.lpop(key)
+    if val is not None:
+        # Push the popped value to the tail so the pool rotates.
+        client.rpush(key, val)
+        return val
+    return fallback[0] if fallback else ""

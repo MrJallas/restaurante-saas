@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from config import settings
 from services.blocked_patterns import check_blocked, check_greeting
-from services.classify_ack import detect_ack, ACK_REPLIES
+from services.classify_ack import detect_ack, get_ack_reply, seed_ack_replies
 from services.intent_classifier import classify_message
 from services.response_validator import validate_response
 from services.llm.factory import get_provider
@@ -21,6 +21,24 @@ from services.tools import (
 )
 
 app = FastAPI(title="Restaurant AI Service", version="0.2.0")
+
+
+@app.on_event("startup")
+async def _seed_redis_pools() -> None:
+    """
+    Idempotent Redis seeding at app start.
+
+    `seed_ack_replies` is a no-op when the `ack:replies` list already has
+    entries (LLEN > 0) — first boot of a fresh Redis instance gets the
+    canonical list, subsequent boots leave the rotating pool intact.
+    """
+    try:
+        seed_ack_replies()
+    except Exception:
+        # Don't crash the app on Redis hiccups — `get_ack_reply()` falls
+        # back to the in-memory ACK_REPLIES list anyway.
+        import logging
+        logging.exception("Failed to seed ack:replies pool — using fallback list")
 
 app.add_middleware(
     CORSMiddleware,
@@ -81,12 +99,20 @@ class SmartSuggestionsRequest(BaseModel):
     customerId: str | None = None
     sessionId: str | None = None
     limit: int | None = 3
+    # `surface` = UI placement (required, matches shared-types contract).
+    # `situacao` = trigger context (optional · ex: 'pedido_atrasado',
+    # 'chamado_sem_resposta'). Both can be set independently. See module
+    # docstring in `services/smart_suggestions.py` for the glossary.
     surface: str = "home"
+    situacao: str | None = None
 
 
 class SmartSuggestionsResponse(BaseModel):
     suggestions: list[dict]
     poolExpiresAt: str
+    # Optional alias echoed back when the request set `situacao`. Same
+    # rationale as above — FE may key analytics off this.
+    situacao: str | None = None
 
 
 class ContinuationRequest(BaseModel):
@@ -191,10 +217,10 @@ async def chat(req: ChatRequest):
     # Layer A · ACK short-circuit. No LLM call, no tool dispatch.
     ack = detect_ack(text)
     if ack and not ack.silent:
-        # Pick a deterministic-ish canned reply. Hash the text so identical
-        # acks get the same reply within a session — easier to test.
-        idx = abs(hash(text)) % len(ACK_REPLIES)
-        reply = ACK_REPLIES[idx]
+        # Rotate through the Redis-backed pool — every customer gets a
+        # different reply on consecutive acks instead of the same hash bucket.
+        # Falls back to the in-memory ACK_REPLIES list when Redis is down.
+        reply = get_ack_reply()
         return ChatResponse(
             response=reply,
             tokens_in=0,
@@ -265,6 +291,7 @@ async def smart_suggestions(req: SmartSuggestionsRequest):
         limit=req.limit or 3,
         customer_id=req.customerId,
         session_id=req.sessionId,
+        situacao=req.situacao,
     )
     return SmartSuggestionsResponse(**out)
 
@@ -398,7 +425,18 @@ REGRAS IMPORTANTES:
 5. Se não souber a resposta, diga que vai consultar a equipe
 6. NUNCA invente pratos que não estejam no cardápio
 7. Preços estão em centavos, converta para reais (divida por 100)
-8. SEMPRE escreva em português do Brasil com acentos (ex: "olá", "você", "experiência", "não", "bebida", "função")"""
+8. SEMPRE escreva em português do Brasil com acentos (ex: "olá", "você", "experiência", "não", "bebida", "função")
+
+REGRAS LGPD (privacidade · obrigatório):
+- Quando o cliente puxar assunto de LGPD, exclusão de dados ou direito de
+  esquecimento (ex: "quero apagar meus dados", "vocês guardam minhas
+  informações?", "quais meus direitos LGPD"), SEMPRE chame a tool
+  `show_lgpd_notice` PRIMEIRO. Ela retorna o texto canônico e os 2 chips
+  de consentimento. NUNCA componha o aviso LGPD com suas próprias palavras
+  nem cole o texto inline.
+- Só chame `lgpd_data_request` DEPOIS que o cliente tap no chip "Sim, quero
+  excluir" ou responder afirmativamente em texto livre. Não pule a etapa
+  do notice — ela é obrigatória pra captura de consentimento."""
 
     if categories:
         prompt += f"\n\nCATEGORIAS DO CARDÁPIO:\n{categories}"
