@@ -10,6 +10,8 @@ import { useDraftOrder } from '../../../providers/DraftOrderProvider';
 import { AppShell } from '../../../components/layout/AppShell';
 import { Bubble } from '../../../components/ui/Bubble';
 import { SoftInput } from '../../../components/ui/SoftInput';
+import { ToolCallIndicator } from '../../../components/ui/ToolCallIndicator';
+import { createLgpdRequest } from '../../../lib/api/feedback';
 
 interface LinkedItem {
   id: string;
@@ -28,6 +30,39 @@ interface ChatMessage {
   selectedIds?: string[];
   /** true once the user confirmed the selection from this bubble */
   orderPlaced?: boolean;
+  /**
+   * When set, this message is the result of the `lgpd_erase_chat` /
+   * `show_lgpd_notice` tool. The AI service returns the canonical text
+   * (verbatim from `services/ai-service/services/lgpd_messages.py`) plus
+   * 2 chips. Per the spec, the FE never paraphrases — it renders what
+   * the tool returns. `lgpdConsumed` flips after the user picks a chip
+   * so the chips disappear and the bubble persists in the history.
+   */
+  lgpdNotice?: {
+    chipConfirmLabel: string;
+    chipDismissLabel: string;
+    consumed?: boolean;
+  };
+  /** When set, this message is the LGPD erasure confirmation (post-action). */
+  lgpdProtocol?: {
+    protocolNumber: string;
+  };
+  /** Generic tool-call indicator (silent transient state). */
+  toolCall?: {
+    name: string;
+    category: 'menu' | 'order' | 'session' | 'info' | 'staff' | 'payment' | 'destructive' | 'lgpd';
+  };
+}
+
+interface AssistantToolHint {
+  /**
+   * `lgpd_notice` → render the canonical LGPD bubble + 2 chips inline.
+   * The AI service returns this when it detects "quero apagar meus dados"
+   * style intents and emits the notice. FE responsibility: render verbatim.
+   */
+  type?: 'lgpd_notice';
+  /** Labels to render on the 2 chips (canonical from `lgpd_messages.py`). */
+  chips?: { confirm: string; dismiss: string };
 }
 
 interface SendResponse {
@@ -36,6 +71,8 @@ interface SendResponse {
   blockReason?: string;
   suggestions?: string[];
   linkedItems?: LinkedItem[];
+  /** Optional tool hints from B3's AI service — see `AssistantToolHint`. */
+  toolHint?: AssistantToolHint;
 }
 
 const DEFAULT_SUGGESTIONS = [
@@ -194,6 +231,10 @@ export default function AssistentePage() {
   }, [messages, loading]);
 
   const [placingOrder, setPlacingOrder] = useState(false);
+  // Guard against double-tap on the LGPD confirm chip — the action is
+  // destructive (deletes all chat history) and idempotent, but we still
+  // don't want to fire 2 protocols.
+  const lgpdBusyRef = useRef(false);
 
   /**
    * Core order placement: adiciona itens ao draft, cria o pedido e leva pro
@@ -306,6 +347,19 @@ export default function AssistentePage() {
         content: res.response,
         linkedItems: res.linkedItems && res.linkedItems.length > 0 ? res.linkedItems : undefined,
         selectedIds: [],
+        // LGPD notice flow · the AI service signals this via `toolHint`.
+        // We do NOT paraphrase the canonical text — it lives in
+        // `services/ai-service/services/lgpd_messages.py` and arrives
+        // verbatim in `res.response`. The FE only needs to render the
+        // 2 chips below it (canonical labels from the same module).
+        lgpdNotice:
+          res.toolHint?.type === 'lgpd_notice' && res.toolHint.chips
+            ? {
+                chipConfirmLabel: res.toolHint.chips.confirm,
+                chipDismissLabel: res.toolHint.chips.dismiss,
+                consumed: false,
+              }
+            : undefined,
       };
       setMessages((prev) => [...prev, aiMsg]);
 
@@ -377,6 +431,87 @@ export default function AssistentePage() {
     await placeOrderForItems(picked, messageId);
   };
 
+  /**
+   * LGPD chip handlers · per `chat-history-lgpd.md`.
+   *
+   * Confirm  → POST /lgpd-requests (kind=erasure). The BE wipes the customer's
+   *            NoSQL chat data synchronously and returns the protocol number.
+   *            FE marks the originating bubble's chips as consumed (chips
+   *            disappear, bubble persists in history) and appends a
+   *            confirmation bubble with the protocol.
+   * Dismiss  → marks chips consumed and silently drops the flow. No FE-side
+   *            audit beyond the chip-consumed flag — the AI service will
+   *            generate the next free-text response.
+   */
+  const handleLgpdConfirm = async (messageId: string) => {
+    if (lgpdBusyRef.current) return;
+    lgpdBusyRef.current = true;
+    // Mark chips consumed immediately so the user can't double-tap.
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId && m.lgpdNotice
+          ? { ...m, lgpdNotice: { ...m.lgpdNotice, consumed: true } }
+          : m,
+      ),
+    );
+    // Show the silent tool indicator while the action runs.
+    const indicatorId = `lgpd-indicator-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: indicatorId,
+        role: 'ai',
+        content: '',
+        toolCall: { name: 'lgpd_data_request', category: 'lgpd' },
+      },
+    ]);
+    try {
+      const res = await createLgpdRequest(slug, {
+        kind: 'erasure',
+        customerId: session.customerId ?? undefined,
+        consentMethod: 'chip',
+        consentChipLabel: 'Sim, quero excluir',
+      });
+      // Replace the indicator with the canonical confirmation bubble. The
+      // copy is rendered exactly as the AI service would emit it (canonical
+      // text from `services/ai-service/services/lgpd_messages.py`).
+      setMessages((prev) =>
+        prev
+          .filter((m) => m.id !== indicatorId)
+          .concat({
+            id: `lgpd-protocol-${Date.now()}`,
+            role: 'ai',
+            content:
+              'Suas conversas foram apagadas agora. Protocolo guardado por 90 dias caso você precise de comprovante.',
+            lgpdProtocol: { protocolNumber: res.protocolNumber },
+          }),
+      );
+    } catch {
+      setMessages((prev) =>
+        prev
+          .filter((m) => m.id !== indicatorId)
+          .concat({
+            id: `lgpd-error-${Date.now()}`,
+            role: 'ai',
+            content:
+              'Não consegui registrar a solicitação agora. Tente de novo em instantes.',
+          }),
+      );
+    } finally {
+      lgpdBusyRef.current = false;
+    }
+  };
+
+  const handleLgpdDismiss = (messageId: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId && m.lgpdNotice
+          ? { ...m, lgpdNotice: { ...m.lgpdNotice, consumed: true } }
+          : m,
+      ),
+    );
+  };
+
   return (
     <AppShell
       slug={slug}
@@ -391,9 +526,62 @@ export default function AssistentePage() {
             const selected = msg.selectedIds ?? [];
             const hasCards = !!msg.linkedItems && msg.linkedItems.length > 0;
             const showConfirm = hasCards && selected.length > 0 && !msg.orderPlaced;
+            // Silent tool-call indicator messages render only the
+            // ToolCallIndicator — no bubble, no chips. Used during the
+            // ~300ms window when the LGPD `lgpd_data_request` action is in
+            // flight (same pattern any silent tool would use).
+            if (msg.toolCall && !msg.content) {
+              return (
+                <div key={msg.id} className="flex flex-col gap-2 self-start">
+                  <ToolCallIndicator
+                    name={msg.toolCall.name}
+                    category={msg.toolCall.category}
+                  />
+                </div>
+              );
+            }
+            // LGPD protocol receipt · canonical confirmation card with the
+            // protocol number visible in mono caps. Bubble wraps the
+            // canonical text from `lgpd_messages.py` (rendered verbatim).
+            if (msg.lgpdProtocol) {
+              return (
+                <div
+                  key={msg.id}
+                  className="flex max-w-[86%] flex-col gap-2 self-start rounded-[14px] border border-border-soft bg-bg px-4 py-3.5 text-[14px] leading-[1.5] text-ink shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+                >
+                  <span className="text-[10px] font-semibold uppercase tracking-[1.5px] text-faint">
+                    Solicitação registrada · protocolo
+                  </span>
+                  <span className="font-mono text-[16px] font-bold tracking-[0.5px] text-ink">
+                    {msg.lgpdProtocol.protocolNumber}
+                  </span>
+                  <span style={{ textWrap: 'pretty' as never }}>
+                    {msg.content}
+                  </span>
+                </div>
+              );
+            }
             return (
               <div key={msg.id} className="flex flex-col gap-2">
                 <Bubble role={msg.role}>{msg.content}</Bubble>
+                {msg.lgpdNotice && !msg.lgpdNotice.consumed && (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleLgpdConfirm(msg.id)}
+                      className="inline-flex items-center rounded-full border-[1.2px] border-ink bg-ink px-3.5 py-2 text-[13px] font-medium text-white active:opacity-90"
+                    >
+                      {msg.lgpdNotice.chipConfirmLabel}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleLgpdDismiss(msg.id)}
+                      className="inline-flex items-center rounded-full border-[1.2px] border-border-soft bg-bg px-3.5 py-2 text-[13px] font-medium text-ink active:bg-surface"
+                    >
+                      {msg.lgpdNotice.chipDismissLabel}
+                    </button>
+                  </div>
+                )}
                 {hasCards && (
                   <div className="-mx-[22px] flex gap-2.5 overflow-x-auto px-[22px] pb-1 [&::-webkit-scrollbar]:hidden">
                     {msg.linkedItems!.map((it) => {

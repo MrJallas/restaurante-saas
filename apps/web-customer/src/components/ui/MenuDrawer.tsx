@@ -222,6 +222,18 @@ export function MenuDrawer({
 
           <div className="mx-[22px] my-3.5 h-px bg-border-soft" />
 
+          {/* Chat history entry · per chat-history-lgpd.md "Frontend ·
+              Entry point". Routes to ScreenCustomerChatHistory which lets
+              the customer review and delete their past AI chats. */}
+          <DrawerLink
+            href={`/${slug}/chat-history`}
+            onNavigate={closeDrawer}
+            icon="↻"
+            label="Histórico de chats"
+            sub="30 dias atrás até hoje"
+            active={activeHref?.startsWith(`/${slug}/chat-history`)}
+          />
+
           <DrawerLink
             onNavigate={closeDrawer}
             href={`/${slug}`}
