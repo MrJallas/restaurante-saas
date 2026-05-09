@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ScreenHostTableLiberate } from '../../../../screens/host/ScreenHostTableLiberate';
 
-export default function HostLiberatePage() {
+function HostLiberatePageInner() {
   const router = useRouter();
   const search = useSearchParams();
   const params = useParams<{ tableId: string }>();
@@ -18,5 +18,13 @@ export default function HostLiberatePage() {
       onBack={() => router.back()}
       onDone={() => router.push(`/host?tenant=${tenantSlug}`)}
     />
+  );
+}
+
+export default function HostLiberatePage() {
+  return (
+    <React.Suspense fallback={null}>
+      <HostLiberatePageInner />
+    </React.Suspense>
   );
 }
