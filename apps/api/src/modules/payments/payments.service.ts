@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { RedisService } from '../../infra/redis/redis.service';
 
 /** Pix QR codes expire 10 minutes after generation (design S9b). */
 const PIX_EXPIRY_SECONDS = 600;
@@ -33,7 +34,10 @@ function normalizeStatus(raw: string): string {
 
 @Injectable()
 export class PaymentsService {
-  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+  constructor(
+    private readonly tenantConn: TenantConnectionProvider,
+    private readonly redis: RedisService,
+  ) {}
 
   async requestPayment(
     tableSessionId: string,
@@ -96,25 +100,87 @@ export class PaymentsService {
       splitAllocations = options.allocations ?? null;
     }
 
-    // Reject duplicate pending payments for the same scope. If one exists and
-    // has already expired, mark it expired so the user can retry.
-    const existing = (await this.tenantConn.query(
-      `SELECT id, expires_at FROM payments
-       WHERE table_session_id = $1 AND status = 'pending'
-         ${visitId ? 'AND visit_id = $2' : 'AND visit_id IS NULL'}`,
-      visitId ? [tableSessionId, visitId] : [tableSessionId],
-    )) as { id: string; expires_at: string | null }[];
-
-    for (const row of existing) {
-      if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) {
-        await this.tenantConn.query(
-          `UPDATE payments SET status = 'expired', updated_at = now() WHERE id = $1`,
-          [row.id],
-        );
-      } else {
-        throw new BadRequestException('Ja existe um pagamento pendente.');
-      }
+    // Round 11 (B-NEW-42): SETNX lock por scope antes do SELECT-then-INSERT
+    // pra fechar TOCTOU window. Antes 2 POSTs concorrentes ambos viam
+    // `existing=[]` e ambos INSERTavam → 2 Pix com QRs diferentes,
+    // PSP webhook batia em ambos = double charge.
+    const lockKey = `payment_lock:${tableSessionId}:${visitId ?? 'table'}`;
+    const gotLock = await this.redis.setNX(
+      lockKey,
+      JSON.stringify({ ts: Date.now() }),
+      30,
+    );
+    if (!gotLock) {
+      throw new BadRequestException(
+        'Pagamento sendo processado. Aguarde alguns segundos.',
+      );
     }
+
+    try {
+      // Reject duplicate pending payments for the same scope. If one exists
+      // and has already expired, mark it expired so the user can retry.
+      const existing = (await this.tenantConn.query(
+        `SELECT id, expires_at FROM payments
+         WHERE table_session_id = $1 AND status = 'pending'
+           ${visitId ? 'AND visit_id = $2' : 'AND visit_id IS NULL'}`,
+        visitId ? [tableSessionId, visitId] : [tableSessionId],
+      )) as { id: string; expires_at: string | null }[];
+
+      for (const row of existing) {
+        if (
+          row.expires_at &&
+          new Date(row.expires_at).getTime() <= Date.now()
+        ) {
+          await this.tenantConn.query(
+            `UPDATE payments SET status = 'expired', updated_at = now() WHERE id = $1`,
+            [row.id],
+          );
+        } else {
+          throw new BadRequestException('Ja existe um pagamento pendente.');
+        }
+      }
+      // Continue após dedup limpo.
+      return await this.continueRequestPayment({
+        tableSessionId,
+        visitId,
+        mode,
+        method,
+        amountCents,
+        splitMode,
+        splitAllocations,
+        options,
+      });
+    } finally {
+      // Libera o lock independente do desfecho — request bem-sucedida
+      // grava o INSERT em payments table; subsequente vê via DB.
+      await this.redis.del(lockKey);
+    }
+  }
+
+  /**
+   * Round 11 (B-NEW-42): extracted continuation of `requestPayment` pra
+   * permitir try/finally do SETNX lock acima sem indentar TODO o método.
+   */
+  private async continueRequestPayment(input: {
+    tableSessionId: string;
+    visitId: string | null;
+    mode: 'table' | 'individual';
+    method: string;
+    amountCents: number;
+    splitMode: string | null;
+    splitAllocations: SplitAllocation[] | null;
+    options: RequestPaymentOptions;
+  }) {
+    const {
+      tableSessionId,
+      visitId,
+      mode,
+      method,
+      amountCents,
+      splitMode,
+      splitAllocations,
+      options,
+    } = input;
 
     // Generate PIX payload only when method is `pix`. Antes, gerávamos
     // sempre — então `pixQrCode`/`pixCopyPaste` vazavam no response de um

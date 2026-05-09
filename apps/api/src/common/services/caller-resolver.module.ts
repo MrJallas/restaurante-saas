@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CustomersModule } from '../../modules/customers/customers.module';
+import { TenantModule } from '../../modules/tenant/tenant.module';
 import { CallerResolverService } from './caller-resolver.service';
 
 /**
@@ -9,9 +10,12 @@ import { CallerResolverService } from './caller-resolver.service';
  *
  *   imports: [CallerResolverModule]
  *   constructor(private callerResolver: CallerResolverService) {}
+ *
+ * Round 11 (B-NEW-56b): TenantModule importado pra DI do
+ * TenantConnectionProvider em `requireActiveStaffId`.
  */
 @Module({
-  imports: [CustomersModule],
+  imports: [CustomersModule, TenantModule],
   providers: [CallerResolverService],
   exports: [CallerResolverService],
 })

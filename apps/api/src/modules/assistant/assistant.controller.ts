@@ -1,4 +1,5 @@
-import { Controller, Post, Get, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   IsString,
   IsNotEmpty,
@@ -8,6 +9,7 @@ import {
 } from 'class-validator';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
 import { Session } from '../../common/decorators/session.decorator';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { AssistantService } from './assistant.service';
 
 class SendMessageDto {
@@ -29,41 +31,51 @@ class SendMessageDto {
 
 @Controller(':slug/assistant')
 export class AssistantController {
-  constructor(private readonly assistantService: AssistantService) {}
+  constructor(
+    private readonly assistantService: AssistantService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
+  /**
+   * Round 11 (B-NEW-57): customerId derivado do cookie em vez de aceitar
+   * dto.customerId arbitrário. Antes: customer A passava customerId de
+   * B (vazado via /table/participants) e o assistante gravava as
+   * mensagens em nome de B. Mesma família B-NEW-9 (chat-history).
+   */
   @Post('message')
   @UseGuards(SessionGuard)
   async sendMessage(
     @Body() dto: SendMessageDto,
     @Session() session: SessionData,
+    @Req() req: Request,
   ) {
+    const callerCustomerId = await this.callerResolver.tryGetCustomerId(req);
     return this.assistantService.sendMessage(
       session.sessionId,
-      dto.customerId || null,
+      callerCustomerId,
       dto.message,
       session.schemaName,
     );
   }
 
+  /**
+   * Round 11 (B-NEW-57): customerId derivado do cookie. Antes:
+   * customer A na mesma mesa de B passava B-uuid no query e LIA toda
+   * a conversa de B com o assistant (PII risk em chat). Mesma família
+   * B-NEW-16 (Mongo chat-history) que round 5 cobriu — não havia sido
+   * replicado pra Postgres assistant_messages.
+   */
   @Get('history')
   @UseGuards(SessionGuard)
   async getHistory(
     @Session() session: SessionData,
-    @Query('customerId') customerId?: string,
+    @Query('customerId') _customerId: string | undefined,
+    @Req() req: Request,
   ) {
-    // customerId e obrigatorio na pratica: cliente B na mesma mesa do
-    // cliente A nao pode ver historico de A. Antes vazava (P1-B). Se o
-    // cliente nao mandar (ex.: ainda no welcome), retornamos so as
-    // mensagens anonimas (customer_id IS NULL).
-    //
-    // Usa `getHistoryWithToolCalls` (nao `getHistory`) pra surface as
-    // tool_calls persistidas em `assistant_messages.tool_calls` (migration
-    // 029) — sem isso o `ToolCallIndicator` no FE so renderiza tools
-    // executadas no turno corrente, perdendo o estado quando o usuario
-    // recarrega a tela.
+    const callerCustomerId = await this.callerResolver.tryGetCustomerId(req);
     const history = await this.assistantService.getHistoryWithToolCalls(
       session.sessionId,
-      customerId || null,
+      callerCustomerId,
     );
     return { messages: history };
   }

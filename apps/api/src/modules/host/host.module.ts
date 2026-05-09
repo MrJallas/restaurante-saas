@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TenantModule } from '../tenant/tenant.module';
 import { HostOrManagerGuard } from '../../common/guards/host-only.guard';
+import { CallerResolverModule } from '../../common/services/caller-resolver.module';
 import { HostController } from './host.controller';
 import { HostService } from './host.service';
 
@@ -11,7 +12,8 @@ import { HostService } from './host.service';
  * (FE em `apps/web-staff/src/lib/api/host.ts`).
  */
 @Module({
-  imports: [TenantModule],
+  // Round 11 (B-NEW-56): CallerResolverModule pra requireStaffId.
+  imports: [TenantModule, CallerResolverModule],
   controllers: [HostController],
   // Round 9 (B-NEW-33): HostOrManagerGuard registrado como provider pra
   // que Nest possa injetar TenantConnectionProvider (DI deps do guard).

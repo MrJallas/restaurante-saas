@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { CustomersService } from '../../modules/customers/customers.service';
+import { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
 
 /**
  * Resolve `customerId` do caller a partir do cookie `recognition_token`.
@@ -31,7 +32,10 @@ import { CustomersService } from '../../modules/customers/customers.service';
  */
 @Injectable()
 export class CallerResolverService {
-  constructor(private readonly customers: CustomersService) {}
+  constructor(
+    private readonly customers: CustomersService,
+    private readonly tenantConn: TenantConnectionProvider,
+  ) {}
 
   async requireCustomerId(req: Request): Promise<string> {
     const token = this.extractToken(req);
@@ -99,6 +103,30 @@ export class CallerResolverService {
       throw new HttpException('x-staff-id inválido.', HttpStatus.UNAUTHORIZED);
     }
 
+    return staffId;
+  }
+
+  /**
+   * Round 11 (B-NEW-56b): variante async que cross-checka DB pra confirmar
+   * que `x-staff-id` aponta pra um staff ATIVO (is_active=true). Antes
+   * `requireStaffId` só validava shape — atacante com staff-key passava
+   * UUID de staff fired (is_active=false) ou inexistente, e endpoints
+   * com só StaffOnlyGuard (sem ManagerOnlyGuard que já checava DB)
+   * propagavam o spoof. Use em controllers staff-side com somente
+   * StaffOnlyGuard.
+   */
+  async requireActiveStaffId(req: Request): Promise<string> {
+    const staffId = this.requireStaffId(req);
+    const rows = (await this.tenantConn.query(
+      `SELECT 1 FROM staff WHERE id = $1 AND is_active = true`,
+      [staffId],
+    )) as unknown[];
+    if (!rows.length) {
+      throw new HttpException(
+        'staff não encontrado ou inativo.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
     return staffId;
   }
 

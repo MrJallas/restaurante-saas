@@ -8,11 +8,14 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { IsIn, IsOptional } from 'class-validator';
 import { HostOrManagerGuard } from '../../common/guards/host-only.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import {
   CreateReservationDto,
   CreateSwapDto,
@@ -49,7 +52,10 @@ class SwapListQueryDto {
 @Controller(':slug/host')
 @UseGuards(StaffOnlyGuard, HostOrManagerGuard)
 export class HostController {
-  constructor(private readonly service: HostService) {}
+  constructor(
+    private readonly service: HostService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
   // ─── Mapa / table layout ───
   @Get('tables')
@@ -64,13 +70,21 @@ export class HostController {
   }
 
   // ─── Liberate ───
+  /**
+   * Round 11 (B-NEW-56): staffId derivado do x-staff-id header em todos
+   * endpoints staff-side do host module. Antes: dto.staffId arbitrário
+   * permitia manager M registrar liberateTable como waiter W (audit
+   * spoof). HostOrManagerGuard já valida role+DB no header.
+   */
   @Post('tables/:tableNumber/liberate')
   async liberate(
     @Param('slug') slug: string,
     @Param('tableNumber', ParseIntPipe) tableNumber: number,
     @Body() body: LiberateTableDto,
+    @Req() req: Request,
   ) {
-    return this.service.liberateTable(tableNumber, body, slug);
+    const staffId = this.callerResolver.requireStaffId(req);
+    return this.service.liberateTable(tableNumber, { ...body, staffId }, slug);
   }
 
   // ─── VIP via TableMenu ───
@@ -79,8 +93,10 @@ export class HostController {
     @Param('slug') slug: string,
     @Param('tableNumber', ParseIntPipe) tableNumber: number,
     @Body() body: ToggleVipDto,
+    @Req() req: Request,
   ) {
-    return this.service.toggleVip(tableNumber, body, slug);
+    const staffId = this.callerResolver.requireStaffId(req);
+    return this.service.toggleVip(tableNumber, { ...body, staffId }, slug);
   }
 
   // ─── Swap ───
@@ -93,8 +109,10 @@ export class HostController {
   async createSwap(
     @Param('slug') slug: string,
     @Body() body: CreateSwapDto,
+    @Req() req: Request,
   ) {
-    return this.service.createSwapRequest(body, slug);
+    const staffId = this.callerResolver.requireStaffId(req);
+    return this.service.createSwapRequest({ ...body, staffId }, slug);
   }
 
   @Patch('swap-requests/:id')
@@ -102,8 +120,10 @@ export class HostController {
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Body() body: UpdateSwapDto,
+    @Req() req: Request,
   ) {
-    return this.service.updateSwapRequest(id, body, slug);
+    const staffId = this.callerResolver.requireStaffId(req);
+    return this.service.updateSwapRequest(id, { ...body, staffId }, slug);
   }
 
   /**
@@ -117,11 +137,13 @@ export class HostController {
   async legacySwap(
     @Param('slug') slug: string,
     @Body() body: CreateSwapDto,
+    @Req() req: Request,
   ) {
-    const created = await this.service.createSwapRequest(body, slug);
+    const staffId = this.callerResolver.requireStaffId(req);
+    const created = await this.service.createSwapRequest({ ...body, staffId }, slug);
     const finalized = await this.service.updateSwapRequest(
       created.id,
-      { status: 'completed', staffId: body.staffId },
+      { status: 'completed', staffId },
       slug,
     );
     return { ok: true as const, sessionId: finalized.sessionId };
@@ -153,8 +175,12 @@ export class HostController {
   }
 
   @Post('reservations')
-  async createReservation(@Body() body: CreateReservationDto) {
-    return this.service.createReservation(body);
+  async createReservation(
+    @Body() body: CreateReservationDto,
+    @Req() req: Request,
+  ) {
+    const staffId = this.callerResolver.requireStaffId(req);
+    return this.service.createReservation({ ...body, staffId });
   }
 
   @Patch('reservations/:id')

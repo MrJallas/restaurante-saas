@@ -169,11 +169,15 @@ export class LateArrivalController {
         HttpStatus.UNAUTHORIZED,
       );
     }
+    // Round 11 (B-NEW-58): tableSessionId SEMPRE da session (ignorar
+    // dto.tableSessionId). Antes A em mesa 5 passava dto.tableSessionId
+    // = <mesa-7-id> e gravava late-arrival em mesa 7. Mesma família
+    // B-NEW-50 (table-merge requestingCustomerId).
     return this.service.create(
       {
         customerId: callerCustomerId.customerId,
         visitId: dto.visitId,
-        tableSessionId: dto.tableSessionId ?? session.sessionId,
+        tableSessionId: session.sessionId,
         expectedArrivalAt: dto.expectedArrivalAt,
         message: dto.message,
       },
