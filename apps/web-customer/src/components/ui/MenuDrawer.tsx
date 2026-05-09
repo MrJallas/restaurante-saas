@@ -235,6 +235,15 @@ export function MenuDrawer({
           />
 
           <DrawerLink
+            href={`/${slug}/eu`}
+            onNavigate={closeDrawer}
+            icon="◐"
+            label="Eu"
+            sub="Perfil e privacidade"
+            active={activeHref?.endsWith('/eu')}
+          />
+
+          <DrawerLink
             onNavigate={closeDrawer}
             href={`/${slug}`}
             icon="↺"

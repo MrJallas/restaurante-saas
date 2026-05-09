@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Clock, ChefHat, Bell, Volume2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Clock, ChefHat, Bell, Volume2, User } from 'lucide-react';
 import { staffGet, staffPatch } from '../../lib/api';
 
 interface OrderItem {
@@ -49,6 +50,7 @@ function TimerBadge({ createdAt }: { createdAt: string }) {
 }
 
 export default function CozinhaKDS() {
+  const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -113,15 +115,24 @@ export default function CozinhaKDS() {
           <ChefHat className="mr-2 inline h-7 w-7 text-orange-400" />
           Cozinha — KDS
         </h1>
-        <button
-          onClick={() => setSoundEnabled(!soundEnabled)}
-          className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-            soundEnabled ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'
-          }`}
-        >
-          <Volume2 className="h-4 w-4" />
-          Som {soundEnabled ? 'ON' : 'OFF'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+              soundEnabled ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'
+            }`}
+          >
+            <Volume2 className="h-4 w-4" />
+            Som {soundEnabled ? 'ON' : 'OFF'}
+          </button>
+          <button
+            onClick={() => router.push('/cozinha/eu')}
+            aria-label="Perfil"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-white/5 text-white/80 hover:text-white"
+          >
+            <User className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* 3-column kanban */}
