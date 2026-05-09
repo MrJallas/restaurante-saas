@@ -45,8 +45,12 @@ export function ScreenStaffMessages({ dark, tenantSlug }: ScreenStaffMessagesPro
     refresh();
   }, [tenantSlug]);
 
+  // Refresh on incoming messages and on read-receipts so the unread-count
+  // badge stays in sync when another device marks a thread as read.
   useManagerEvents(tenantSlug, (e) => {
-    if (e.event === 'staff_message.received') refresh();
+    if (e.event === 'staff_message.received' || e.event === 'staff_message.read') {
+      refresh();
+    }
   });
 
   const totalUnread = threads.reduce((s, t) => s + t.unreadCount, 0);

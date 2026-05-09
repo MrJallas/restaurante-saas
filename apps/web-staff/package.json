@@ -9,12 +9,13 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@restaurant/shared-types": "*",
+    "lucide-react": "^0.400.0",
     "next": "^14.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "lucide-react": "^0.400.0",
     "recharts": "^2.12.0",
-    "@restaurant/shared-types": "*"
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
