@@ -16,7 +16,12 @@ export interface WsEscalationCreated {
   event: 'escalation.created';
   payload: {
     escalationId: string;
-    type: 'late_arrival' | 'table_merge' | 'qr_issue';
+    /**
+     * Domain that triggered the escalation. `complaint` covers manager-to-
+     * manager forwards (P1 #29) where the complaint climbs the chain because
+     * the original assignee couldn't or wouldn't resolve it.
+     */
+    type: 'late_arrival' | 'table_merge' | 'qr_issue' | 'complaint';
     tenantId: string;
     /** Free-form context payload (kind-specific). */
     context: Record<string, unknown>;
@@ -167,8 +172,16 @@ export interface WsLgpdRequestFulfilled {
 
 // ─── Complaint ───
 
-export interface WsComplaintCreated {
-  event: 'complaint.created';
+/**
+ * P1 #33 — WS event naming canonicalised to `complaint.received` (was
+ * `complaint.created`). The spec is the contract: the manager's inbox
+ * "receives" a complaint, it doesn't "create" one — the customer creates
+ * it. Aligning the wire name with the spec removes the drift the
+ * consolidated QA report flagged. There is no migration period: every
+ * server emit and every FE listener was renamed in the same change.
+ */
+export interface WsComplaintReceived {
+  event: 'complaint.received';
   payload: {
     complaintId: string;
     tableSessionId: string;
@@ -299,7 +312,7 @@ export type WsEvent =
   | WsMergeCooldownStarted
   | WsMergeCooldownExpired
   | WsLgpdRequestFulfilled
-  | WsComplaintCreated
+  | WsComplaintReceived
   | WsComplaintResponded
   | WsComplaintRead
   | WsComplaintResolved

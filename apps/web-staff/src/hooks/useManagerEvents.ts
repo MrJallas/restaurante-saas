@@ -6,7 +6,7 @@
 //   • table_merge.created / .approved / .rejected
 //   • merge.cooldown_started / .cooldown_expired
 //   • lgpd.request_fulfilled
-//   • complaint.created / .responded / .read / .resolved
+//   • complaint.received / .responded / .read / .resolved
 //   • staff_message.received / .read
 //   • zone_pause.started / .ended
 //   • session.flag_changed
@@ -24,7 +24,7 @@
 //
 // Usage:
 //   useManagerEvents(slug, (e) => {
-//     if (e.event === 'complaint.created') refresh();
+//     if (e.event === 'complaint.received') refresh();
 //   });
 //
 // `useManagerEventsSelective` consumes a record `{ eventName: handler }` so a
@@ -70,7 +70,7 @@ const MANAGER_EVENT_NAMES: WsEventName[] = [
   'merge.cooldown_started',
   'merge.cooldown_expired',
   'lgpd.request_fulfilled',
-  'complaint.created',
+  'complaint.received',
   'complaint.responded',
   'complaint.read',
   'complaint.resolved',

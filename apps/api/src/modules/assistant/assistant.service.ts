@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
-import { AiServiceClient } from '../../infra/ai/ai-service.client';
+import { AiServiceClient, type AiToolCall } from '../../infra/ai/ai-service.client';
 import { RedisService } from '../../infra/redis/redis.service';
 
 const BLOCKED_RESPONSE =
@@ -43,6 +43,47 @@ export interface LinkedItem {
   imageUrl: string | null;
   categoryName: string;
   position: number;
+}
+
+/**
+ * Normalise the AI service's tool_calls into the flat shape FE consumers
+ * expect (`{ name, arguments, result, silent, router, routerTarget,
+ * actionPayload }`). Upstream returns the raw OpenAI shape with the tool
+ * name nested under `function.name` — flattening here keeps the chat page
+ * (`AssistantToolCall`) and the chat-history rehydrate path consistent.
+ *
+ * Returns `null` when the AI service returned no tools (so the FE's
+ * `res.toolCalls && res.toolCalls.length > 0` guard short-circuits cleanly).
+ */
+function normalizeToolCalls(
+  raw: AiToolCall[] | undefined,
+): Array<Record<string, unknown>> {
+  if (!raw || raw.length === 0) return [];
+  return raw.map((tc) => {
+    const fn = (tc as { function?: { name?: string; arguments?: unknown } })
+      .function;
+    const flatName =
+      typeof tc.name === 'string' && tc.name.length > 0
+        ? tc.name
+        : (fn?.name ?? '');
+    const flatArgs = (tc.args ?? fn?.arguments ?? {}) as Record<string, unknown>;
+    const result = (tc.result ?? null) as Record<string, unknown> | null;
+    return {
+      ...tc,
+      name: flatName,
+      arguments: flatArgs,
+      result,
+      // Hoist the most useful FE-side discriminators to top-level so the FE
+      // doesn't have to dig into `tc.result` for the silent/router flags.
+      silent:
+        result && typeof result.silent === 'boolean' ? result.silent : undefined,
+      routerTarget:
+        result && typeof result.routerTarget === 'string'
+          ? result.routerTarget
+          : undefined,
+      actionPayload: result?.actionPayload,
+    };
+  });
 }
 
 function normalizeForMatch(text: string): string {
@@ -200,7 +241,10 @@ export class AssistantService {
         customerContext,
       );
 
-      // Save message
+      // Save message — including the tool_calls audit trail when the LLM
+      // invoked any tool. Migration 029 added the JSONB column; without
+      // persisting it the FE's `ToolCallIndicator` over the chat history
+      // never lit up because chat-history reads NULL for every row.
       await this.saveMessage(tableSessionId, safeCustomerId, message, result.response, {
         tokensIn: result.tokens_in,
         tokensOut: result.tokens_out,
@@ -208,6 +252,7 @@ export class AssistantService {
         providerUsed: result.provider,
         estimatedCostCents: result.estimated_cost_cents,
         latencyMs: result.latency_ms,
+        toolCalls: result.tool_calls ?? null,
       });
 
       const linkedItems = extractLinkedItems(result.response, menuItems);
@@ -217,6 +262,7 @@ export class AssistantService {
         wasBlocked: false,
         suggestions: SUGGESTION_CHIPS.slice(0, 3),
         linkedItems,
+        toolCalls: normalizeToolCalls(result.tool_calls),
       };
     } catch (err) {
       this.logger.error(`AI chat error: ${err}`);
@@ -261,6 +307,55 @@ export class AssistantService {
       ];
       if (row.assistant_response) {
         msgs.push({ role: 'assistant', content: row.assistant_response });
+      }
+      return msgs;
+    });
+  }
+
+  /**
+   * Public-shaped history for the GET /assistant/history endpoint. Includes
+   * `toolCalls` per assistant message so the FE can drive `ToolCallIndicator`
+   * over the rehydrated chat. Differs from `getHistory()` (used internally
+   * to feed the LLM context) which keeps the lean `{role, content}` shape
+   * the upstream AI service expects.
+   *
+   * Migration 029 added the JSONB `tool_calls` column; node-postgres returns
+   * JSONB as an already-parsed value, so no JSON.parse() is needed here.
+   */
+  async getHistoryWithToolCalls(
+    tableSessionId: string,
+    customerId: string | null = null,
+  ) {
+    const rows = (await this.tenantConn.query(
+      `SELECT user_message, assistant_response, tool_calls
+       FROM assistant_messages
+       WHERE table_session_id = $1
+         AND was_blocked = false
+         AND (
+           ($2::uuid IS NOT NULL AND customer_id = $2)
+           OR ($2::uuid IS NULL AND customer_id IS NULL)
+         )
+       ORDER BY created_at DESC
+       LIMIT 10`,
+      [tableSessionId, customerId],
+    )) as {
+      user_message: string;
+      assistant_response: string | null;
+      tool_calls: AiToolCall[] | null;
+    }[];
+
+    return rows.reverse().flatMap((row) => {
+      const msgs: {
+        role: 'user' | 'assistant';
+        content: string;
+        toolCalls?: AiToolCall[] | null;
+      }[] = [{ role: 'user', content: row.user_message }];
+      if (row.assistant_response) {
+        msgs.push({
+          role: 'assistant',
+          content: row.assistant_response,
+          toolCalls: row.tool_calls ?? null,
+        });
       }
       return msgs;
     });
@@ -347,14 +442,29 @@ export class AssistantService {
       latencyMs?: number;
       wasBlocked?: boolean;
       blockReason?: string;
+      /**
+       * Normalised tool_calls list returned by the AI service after
+       * dispatch. Persisted into `assistant_messages.tool_calls` (JSONB,
+       * migration 029) so chat history can drive `ToolCallIndicator`
+       * rendering on the FE.
+       */
+      toolCalls?: AiToolCall[] | null;
     },
   ) {
+    // Pass null when no tools were called — the JSONB column is nullable,
+    // and a NULL keeps the partial GIN index (`WHERE tool_calls IS NOT
+    // NULL`, migration 029) tight.
+    const toolCallsJson =
+      meta.toolCalls && meta.toolCalls.length > 0
+        ? JSON.stringify(meta.toolCalls)
+        : null;
     await this.tenantConn.query(
       `INSERT INTO assistant_messages
        (table_session_id, customer_id, user_message, assistant_response,
         tokens_in, tokens_out, model_used, provider_used,
-        estimated_cost_cents, latency_ms, was_blocked, block_reason)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        estimated_cost_cents, latency_ms, was_blocked, block_reason,
+        tool_calls)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`,
       [
         tableSessionId,
         customerId,
@@ -368,6 +478,7 @@ export class AssistantService {
         meta.latencyMs || 0,
         meta.wasBlocked || false,
         meta.blockReason || null,
+        toolCallsJson,
       ],
     );
   }

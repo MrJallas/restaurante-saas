@@ -55,7 +55,13 @@ export class AssistantController {
     // cliente A nao pode ver historico de A. Antes vazava (P1-B). Se o
     // cliente nao mandar (ex.: ainda no welcome), retornamos so as
     // mensagens anonimas (customer_id IS NULL).
-    const history = await this.assistantService.getHistory(
+    //
+    // Usa `getHistoryWithToolCalls` (nao `getHistory`) pra surface as
+    // tool_calls persistidas em `assistant_messages.tool_calls` (migration
+    // 029) — sem isso o `ToolCallIndicator` no FE so renderiza tools
+    // executadas no turno corrente, perdendo o estado quando o usuario
+    // recarrega a tela.
+    const history = await this.assistantService.getHistoryWithToolCalls(
       session.sessionId,
       customerId || null,
     );

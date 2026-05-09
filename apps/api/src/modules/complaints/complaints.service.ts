@@ -62,7 +62,7 @@ export class ComplaintsService {
       // TODO(payload): tableSessionId / tableNumber / customerName need
       // joins with visits + customers. Defaulting to '' / 0 so the contract
       // is satisfied; FE re-fetches via REST when expanding the card.
-      this.events.emitComplaintCreated(slug, result.assignedManagerId, {
+      this.events.emitComplaintReceived(slug, result.assignedManagerId, {
         complaintId: result.id,
         tableSessionId: '',
         tableNumber: 0,
@@ -194,26 +194,120 @@ export class ComplaintsService {
     return result;
   }
 
-  async forward(id: string, toStaffId: string, notes?: string) {
-    const updated = unwrapRows<Record<string, unknown>>(
-      await this.tenantConn.query(
-        `UPDATE complaints
-           SET assigned_manager_id = $1,
-               status = 'in_progress',
-               response_text = COALESCE($2, response_text),
-               updated_at = now()
-         WHERE id = $3
-         RETURNING *`,
-        [toStaffId, notes ?? null, id],
-      ),
-    );
-    if (!updated.length) {
-      throw new HttpException(
-        'Reclamacao nao encontrada.',
-        HttpStatus.NOT_FOUND,
+  /**
+   * Forward a complaint to a different manager. Per docs/features/
+   * complaint-flow-v12.md the action lives in the MoreSheet ("Encaminhar
+   * pra outro gerente"). The forward IS an escalation — the original
+   * manager couldn't (or wouldn't) resolve it, so it climbs the chain.
+   *
+   * P1 #29 — Until now `emitEscalationCreated` was orphan: declared in the
+   * gateway but never called, so dashboards never showed forwarded
+   * complaints in the "in escalation" lane. We now create (or look up) an
+   * escalation_chains row for the complaint, link it via
+   * `complaints.escalation_chain_id`, then fire the event so the assignee's
+   * inbox lights up immediately.
+   *
+   * The chain is created lazily on first forward (level=1, since level=0
+   * is the original assignee who is being bypassed) and re-used on
+   * subsequent forwards by bumping level.
+   */
+  async forward(id: string, toStaffId: string, notes?: string, slug?: string) {
+    const result = await this.tenantConn.transaction(async (tx) => {
+      const existingRows = (await tx.query(
+        `SELECT id, assigned_manager_id, escalation_chain_id, customer_id
+           FROM complaints WHERE id = $1`,
+        [id],
+      )) as Array<{
+        id: string;
+        assigned_manager_id: string | null;
+        escalation_chain_id: string | null;
+        customer_id: string | null;
+      }>;
+      if (!existingRows.length) {
+        throw new HttpException(
+          'Reclamacao nao encontrada.',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      const existing = existingRows[0];
+
+      let chainId = existing.escalation_chain_id;
+      let chainLevel = 1;
+      const ttlExpiresAt = new Date(
+        Date.now() + 5 * 60 * 1000,
+      ).toISOString();
+      if (!chainId) {
+        const inserted = (await tx.query(
+          `INSERT INTO escalation_chains
+             (kind, source_id, level, current_assignee_role,
+              current_assignee_staff_id, ttl_expires_at)
+           VALUES ('complaint', $1::uuid, 1, 'manager', $2::uuid, $3)
+           RETURNING id`,
+          [id, toStaffId, ttlExpiresAt],
+        )) as Array<{ id: string }>;
+        chainId = inserted[0].id;
+      } else {
+        const bumped = (await tx.query(
+          `UPDATE escalation_chains
+              SET level = level + 1,
+                  current_assignee_role = 'manager',
+                  current_assignee_staff_id = $2,
+                  ttl_expires_at = $3,
+                  updated_at = now()
+            WHERE id = $1
+            RETURNING level`,
+          [chainId, toStaffId, ttlExpiresAt],
+        )) as Array<{ level: number }>;
+        chainLevel = bumped[0]?.level ?? 1;
+      }
+
+      const updated = unwrapRows<Record<string, unknown>>(
+        await tx.query(
+          `UPDATE complaints
+             SET assigned_manager_id = $1,
+                 status = 'in_progress',
+                 response_text = COALESCE($2, response_text),
+                 escalation_chain_id = $4,
+                 updated_at = now()
+           WHERE id = $3
+           RETURNING *`,
+          [toStaffId, notes ?? null, id, chainId],
+        ),
       );
+      if (!updated.length) {
+        throw new HttpException(
+          'Reclamacao nao encontrada.',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      return {
+        row: updated[0],
+        chainId,
+        chainLevel,
+        deadline: ttlExpiresAt,
+        prevAssignee: existing.assigned_manager_id,
+      };
+    });
+
+    const mapped = this.mapRow(result.row);
+    if (slug && this.events && result.chainId) {
+      this.events.emitEscalationCreated(slug, toStaffId, {
+        escalationId: result.chainId,
+        type: 'complaint',
+        tenantId: slug,
+        context: {
+          complaintId: mapped.id,
+          customerId: mapped.customerId,
+          fromManagerId: result.prevAssignee,
+          toManagerId: toStaffId,
+          level: result.chainLevel,
+          notes: notes ?? null,
+        },
+        deadline: result.deadline,
+      });
     }
-    return this.mapRow(updated[0]);
+    return mapped;
   }
 
   async list(filters: { status?: string; assignedManagerId?: string }) {

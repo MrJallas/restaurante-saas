@@ -8,6 +8,7 @@ import {
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
+import { PARTICIPANT_COLORS } from '../table-session/table-session.service';
 
 /**
  * Default TTL for a late-arrival request — host has 60s to approve before the
@@ -136,32 +137,80 @@ export class LateArrivalService {
       );
     }
 
-    const updated = unwrapRows<LateArrivalRow>(
-      await this.tenantConn.query(
-        `UPDATE late_arrival_requests
-           SET status = $1,
-               approved_by_staff_id = COALESCE($2, approved_by_staff_id),
-               approved_by_customer_id = COALESCE($3, approved_by_customer_id),
-               decided_at = now(),
-               message = COALESCE($4, message),
-               updated_at = now()
-         WHERE id = $5
-         RETURNING *`,
-        [
-          status,
-          by.staffId ?? null,
-          by.customerId ?? null,
-          reason ?? null,
-          id,
-        ],
-      ),
-    );
-    if (!updated.length) {
-      throw new HttpException(
-        'Late-arrival request nao encontrado.',
-        HttpStatus.NOT_FOUND,
+    // P1 #26 — single transaction so the request status flip and the
+    // session_participants promotion are atomic. Without this the previous
+    // implementation marked the request approved but never inserted the
+    // participant row, leaving the late-arriver in limbo (the only path that
+    // promoted them was the unrelated `/table/participants/decide` endpoint).
+    const updated = await this.tenantConn.transaction(async (tx) => {
+      const updatedRows = unwrapRows<LateArrivalRow>(
+        await tx.query(
+          `UPDATE late_arrival_requests
+             SET status = $1,
+                 approved_by_staff_id = COALESCE($2, approved_by_staff_id),
+                 approved_by_customer_id = COALESCE($3, approved_by_customer_id),
+                 decided_at = now(),
+                 message = COALESCE($4, message),
+                 updated_at = now()
+           WHERE id = $5
+           RETURNING *`,
+          [
+            status,
+            by.staffId ?? null,
+            by.customerId ?? null,
+            reason ?? null,
+            id,
+          ],
+        ),
       );
-    }
+      if (!updatedRows.length) {
+        throw new HttpException(
+          'Late-arrival request nao encontrado.',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // Only on approval: ensure the requesting customer is a session
+      // participant so they can place orders, see the chat, etc. Idempotent —
+      // if a `pending` row already exists (because they scanned the QR before
+      // the host approved their late-arrival request) we promote it instead
+      // of inserting a duplicate. ON CONFLICT keys on the partial unique
+      // index `session_participants_active_unique` (table_session_id,
+      // customer_id) WHERE left_at IS NULL.
+      if (status === 'approved') {
+        const row = updatedRows[0];
+        const tableSessionId = row.table_session_id;
+        const customerId = row.customer_id;
+        const approver = by.customerId ?? null;
+        if (tableSessionId && customerId) {
+          await tx.query(
+            `INSERT INTO session_participants
+               (table_session_id, customer_id, visit_id, color_index,
+                status, approved_at, approved_by)
+             SELECT $1::uuid, $2::uuid, $3::uuid,
+                    (SELECT COUNT(*)::int FROM session_participants
+                       WHERE table_session_id = $1::uuid) % $5::int,
+                    'approved', now(), $4::uuid
+             ON CONFLICT (table_session_id, customer_id) WHERE left_at IS NULL
+             DO UPDATE SET status = 'approved',
+                           approved_at = now(),
+                           approved_by = COALESCE(EXCLUDED.approved_by,
+                                                  session_participants.approved_by),
+                           left_at = NULL`,
+            [
+              tableSessionId,
+              customerId,
+              row.visit_id,
+              approver,
+              PARTICIPANT_COLORS.length,
+            ],
+          );
+        }
+      }
+
+      return updatedRows;
+    });
+
     const result = this.mapRow(updated[0]);
 
     if (slug && this.events && result.tableSessionId) {

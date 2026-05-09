@@ -9,7 +9,7 @@
 //  - zone_pause.ended         · banner OFF
 //  - staff_message.received   · inbox unread + push
 //  - staff_message.read       · inbox flips to read on counterpart device
-//  - complaint.created        · only when manager forwards to waiter
+//  - complaint.received       · only when manager forwards to waiter
 //  - escalation.advanced      · qr-issue / late-arrival / table-merge fallout
 //
 // The hook is intentionally thin: it manages the Socket.IO connection
@@ -43,7 +43,7 @@ const DEFAULT_WAITER_EVENTS: WsEventName[] = [
   'zone_pause.ended',
   'staff_message.received',
   'staff_message.read',
-  'complaint.created',
+  'complaint.received',
   'complaint.responded',
   'escalation.created',
   'escalation.advanced',
