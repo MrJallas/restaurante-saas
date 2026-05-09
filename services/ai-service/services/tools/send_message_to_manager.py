@@ -1,9 +1,8 @@
 """
 Send a free-text message to the manager (canonical name per F2 spec).
 
-Renamed from `staff_message_send` — same semantics, new name to match the
-canonical registry. The legacy `staff_message_send` module forwards here as
-a deprecated alias.
+Renamed from `staff_message_send` — same semantics. The legacy
+`staff_message_send` forwarding module was removed in P1 #30.
 
 Requires `text` arg (validated by dispatcher via STAFF_TOOLS_REQUIRING_TEXT).
 """

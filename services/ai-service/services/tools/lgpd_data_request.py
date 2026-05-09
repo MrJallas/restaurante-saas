@@ -10,7 +10,7 @@ Note: `show_lgpd_notice` should always be called FIRST when the customer
 expresses LGPD intent; this tool runs only after they confirm via chip tap
 or affirmative free-text reply (consent capture per spec).
 
-The legacy `lgpd_erase_chat` module re-exports from here as a deprecated alias.
+The legacy `lgpd_erase_chat` forwarding module was removed in P1 #30.
 """
 
 from typing import Any

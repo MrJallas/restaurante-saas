@@ -1,9 +1,8 @@
 """
 Suggest dishes from the menu (canonical name per F2 spec).
 
-This is the renamed version of `recommend.py` — same semantics, new name to
-match the canonical tool registry. The legacy `recommend` module re-exports
-from here as a deprecated alias (see `recommend.py`).
+Renamed from `recommend` — same semantics. The legacy `recommend` forwarding
+module was removed in P1 #30.
 
 VIP tone: when session_flags.is_vip is true we bias toward warmer copy.
 """

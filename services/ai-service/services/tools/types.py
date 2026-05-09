@@ -33,7 +33,7 @@ class ToolContext:
     # FastAPI handler. Tools that don't need network calls leave it None.
     api_client: Optional[Callable[..., Any]] = None
     # Original raw user message — useful for tools that want to relay verbatim
-    # text (e.g. complaint_compose passing the customer's words to the host).
+    # text (e.g. send_complaint passing the customer's words to the host).
     raw_message: Optional[str] = None
 
 
@@ -50,7 +50,7 @@ class ToolResult:
     message: Optional[str] = None
     chips: list[dict[str, Any]] = field(default_factory=list)
     # Used by `silent` tools that nonetheless emit a side-effect payload the
-    # FE should react to (e.g. lgpd_erase_chat returning the protocol number).
+    # FE should react to (e.g. lgpd_data_request returning the protocol number).
     silent: bool = False
     # Free-form payload routed to FE for action (e.g. screen navigation,
     # tool-specific result). Opaque to the dispatcher.

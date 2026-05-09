@@ -63,28 +63,33 @@ def test_canonical_count_is_23():
 
 
 # ─────────────────────────────────────────────────────────────
-# Deprecated alias coverage — old names must still dispatch
+# Removed-alias guardrail — old names must NOT be registered
+# (cleaned up in P1 #30 after every caller moved to the canonical name).
 # ─────────────────────────────────────────────────────────────
 
-DEPRECATED_TO_CANONICAL = {
-    "add_to_cart": "add_to_order",
-    "recommend": "recommend_dish",
-    "complaint_compose": "send_complaint",
-    "lgpd_erase_chat": "lgpd_data_request",
-    "table_merge_request": "request_table_merge",
-    "rate_order": "rate_visit",
-    "staff_message_send": "send_message_to_manager",
+REMOVED_ALIASES = {
+    "add_to_cart",
+    "recommend",
+    "complaint_compose",
+    "lgpd_erase_chat",
+    "table_merge_request",
+    "rate_order",
+    "staff_message_send",
 }
 
 
-@pytest.mark.parametrize(
-    "deprecated,canonical",
-    sorted(DEPRECATED_TO_CANONICAL.items()),
-)
-def test_deprecated_alias_still_registered(deprecated: str, canonical: str):
-    """Deprecated names must remain registered so existing callers don't break."""
-    assert deprecated in TOOLS, f"alias {deprecated} unregistered"
-    assert canonical in TOOLS, f"canonical {canonical} unregistered"
+@pytest.mark.parametrize("alias", sorted(REMOVED_ALIASES))
+def test_removed_alias_no_longer_registered(alias: str):
+    """Deprecated aliases were removed in P1 #30 — registry must not expose them."""
+    assert alias not in TOOLS, f"removed alias {alias} resurfaced in TOOLS"
+
+
+def test_removed_aliases_raise_tool_not_found():
+    """Dispatching a removed alias must surface ToolNotFoundError, not silently route."""
+    ctx = ToolContext(tenant_id="t1", customer_id="c1")
+    for alias in REMOVED_ALIASES:
+        with pytest.raises(ToolNotFoundError):
+            dispatch_tool(alias, {}, ctx)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -209,26 +214,12 @@ def test_dispatch_send_message_with_text_succeeds():
     assert result.error is None
 
 
-def test_dispatch_legacy_staff_message_send_alias_still_works():
-    """Backward-compat: deprecated `staff_message_send` still dispatches."""
-    ctx = ToolContext(tenant_id="t1", is_staff=True, waiter_id="w1")
-    result = dispatch_tool("staff_message_send", {"text": "oi"}, ctx)
-    assert result.error is None
-
-
 def test_dispatch_lgpd_data_request_anonymous_returns_login_hint():
     """Anonymous customer asking for LGPD erasure gets a guidance message."""
     ctx = ToolContext(tenant_id="t1", customer_id=None)
     result = dispatch_tool("lgpd_data_request", {}, ctx)
     assert result.silent is True
     assert "login" in (result.message or "").lower() or "identificar" in (result.message or "").lower()
-
-
-def test_dispatch_legacy_lgpd_erase_chat_alias_still_works():
-    """Backward-compat: deprecated `lgpd_erase_chat` forwards to lgpd_data_request."""
-    ctx = ToolContext(tenant_id="t1", customer_id=None)
-    result = dispatch_tool("lgpd_erase_chat", {}, ctx)
-    assert result.silent is True
 
 
 def test_recommend_dish_renders_chips():
@@ -244,28 +235,12 @@ def test_recommend_dish_renders_chips():
     assert result.message is not None
 
 
-def test_legacy_recommend_alias_still_works():
-    """Backward-compat: deprecated `recommend` forwards to recommend_dish."""
-    ctx = ToolContext(tenant_id="t1", customer_id="c1")
-    result = dispatch_tool("recommend", {
-        "items": [{"id": "i1", "name": "Pizza", "priceCents": 5000}],
-    }, ctx)
-    assert len(result.chips) == 1
-
-
 def test_request_table_merge_no_target_returns_error():
     """Canonical request_table_merge needs a targetTable."""
     ctx = ToolContext(tenant_id="t1", customer_id="c1")
     result = dispatch_tool("request_table_merge", {}, ctx)
     assert result.error is not None
     assert result.error["code"] == "missing_target"
-
-
-def test_legacy_table_merge_request_alias_still_works():
-    """Backward-compat: deprecated alias forwards to request_table_merge."""
-    ctx = ToolContext(tenant_id="t1", customer_id="c1")
-    result = dispatch_tool("table_merge_request", {}, ctx)
-    assert result.error is not None  # same missing-target error path
 
 
 # ─────────────────────────────────────────────────────────────
