@@ -53,6 +53,13 @@ interface AuthedSocket extends Socket {
     staffId?: string;
     staffRole?: string;
     tenantSlug?: string;
+    /**
+     * Round 9 (B-NEW-26): tenant slug stamped at handshake from
+     * `x-tenant-slug` header. Used by join:tenant and join:session
+     * to reject cross-tenant room subscriptions even if the staff
+     * key is valid.
+     */
+    staffTenantSlug?: string;
   };
 }
 
@@ -85,18 +92,37 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const b = Buffer.from(staffKey, 'utf8');
       if (a.length === b.length && timingSafeEqual(a, b)) {
         client.data.authType = 'staff';
-        // Optional `staffId` / `staffRole` come from handshake auth so the
-        // gateway can later validate join requests for `staff:<id>` /
-        // `manager:<id>` rooms (only the authenticated staff member can
-        // listen to their own personalized inbox).
+        // Round 9 (B-NEW-36): staffId AGORA é OBRIGATÓRIO no handshake
+        // staff (era opcional). Atacante que não passou x-staff-id
+        // bypassava `client.data.staffId && ...` checks via
+        // curto-circuito — agora rejeitamos a conexão direto.
         const staffId =
           (client.handshake.headers['x-staff-id'] as string) ??
           (client.handshake.auth?.staffId as string);
         const staffRole =
           (client.handshake.headers['x-staff-role'] as string) ??
           (client.handshake.auth?.staffRole as string);
-        if (staffId) client.data.staffId = staffId;
+        // Round 9 (B-NEW-26): tenantSlug carimbado do handshake header
+        // pra cross-check em join:tenant / join:session. Antes a
+        // gateway aceitava slug arbitrário do client em join:tenant.
+        const tenantSlug =
+          (client.handshake.headers['x-tenant-slug'] as string) ??
+          (client.handshake.auth?.tenantSlug as string);
+
+        if (!staffId) {
+          this.logger.warn(
+            `Staff WS connection without x-staff-id rejected: ${client.id}`,
+          );
+          client.emit('error', {
+            message:
+              'Staff WS handshake exige x-staff-id pra join:staff/manager rooms.',
+          });
+          client.disconnect(true);
+          return;
+        }
+        client.data.staffId = staffId;
         if (staffRole) client.data.staffRole = staffRole;
+        if (tenantSlug) client.data.staffTenantSlug = tenantSlug;
         this.logger.log(`Staff client connected: ${client.id}`);
         return;
       }
@@ -128,6 +154,27 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(`Client disconnected: ${client.id}`);
   }
 
+  /**
+   * Round 9 (B-NEW-26 + B-NEW-34 + B-NEW-36): WS auth hardening.
+   *
+   * Staff handshake passa a EXIGIR `x-staff-id` (não apenas
+   * `x-staff-key` shared). `client.data.staffTenantSlug` é stamped
+   * a partir do handshake header `x-tenant-slug` (não do client
+   * via join:tenant body). Antes:
+   *  - join:tenant aceitava slug arbitrário → staff de A entrava em
+   *    `tenant:B` rooms (B-NEW-26).
+   *  - join:session só checava session match pra customer; staff
+   *    passava em qualquer sessionId (B-NEW-34).
+   *  - join:staff/manager checavam `client.data.staffId &&` que era
+   *    falsy quando handshake não passou (B-NEW-36).
+   *
+   * Agora:
+   *  - handshake staff EXIGE `x-staff-id` non-empty E `x-tenant-slug`.
+   *  - join:tenant rejeita se data.slug != client.data.staffTenantSlug.
+   *  - join:session rejeita staff se sessionId não pertence ao tenant.
+   *  - join:staff/manager rejeita se `client.data.staffId` ausente OU
+   *    diferente de data.staffId.
+   */
   @SubscribeMessage('join:tenant')
   handleJoinTenant(
     @ConnectedSocket() client: AuthedSocket,
@@ -135,6 +182,16 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     if (client.data.authType !== 'staff') {
       client.emit('error', { message: 'Staff auth required for tenant rooms' });
+      return;
+    }
+
+    // Round 9 (B-NEW-26): rejeita slug diferente do tenant carimbado
+    // no handshake. Atacante não pode entrar em room de outro tenant.
+    if (
+      client.data.staffTenantSlug &&
+      client.data.staffTenantSlug !== data.slug
+    ) {
+      client.emit('error', { message: 'Tenant slug mismatch' });
       return;
     }
 
@@ -146,16 +203,44 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('join:session')
-  handleJoinSession(
+  async handleJoinSession(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { sessionId: string },
   ) {
+    // Customer: cross-check próprio sessionId.
     if (
       client.data.authType === 'session' &&
       client.data.sessionId !== data.sessionId
     ) {
       client.emit('error', { message: 'Session mismatch' });
       return;
+    }
+
+    // Round 9 (B-NEW-34): staff path agora valida que a session pertence
+    // ao próprio tenant. Antes staff de tenant A entrava em qualquer
+    // session:<UUID> de qualquer tenant e recebia order/host events
+    // alheios. Lookup por session_token Redis tem o sessionId mas não
+    // tenant — usamos cache na chave `session:<sessionId>` que persiste
+    // tableSession data com schema/slug.
+    if (client.data.authType === 'staff') {
+      const sessionData = await this.redis.get(`session:${data.sessionId}`);
+      if (!sessionData) {
+        client.emit('error', { message: 'Session inválida ou expirada.' });
+        return;
+      }
+      try {
+        const parsed = JSON.parse(sessionData) as { schemaName?: string };
+        if (
+          client.data.staffTenantSlug &&
+          parsed.schemaName !== client.data.staffTenantSlug
+        ) {
+          client.emit('error', { message: 'Cross-tenant session join blocked.' });
+          return;
+        }
+      } catch {
+        client.emit('error', { message: 'Session payload corrompido.' });
+        return;
+      }
     }
 
     const room = `session:${data.sessionId}`;
@@ -207,7 +292,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('error', { message: 'Staff auth required' });
       return;
     }
-    if (client.data.staffId && client.data.staffId !== data.staffId) {
+    // Round 9 (B-NEW-36): exige staffId carimbado no handshake.
+    // Antes o check `staffId && ...` curto-circuitava quando handshake
+    // não passou x-staff-id, deixando atacante entrar em qualquer
+    // staff:<id> room (inbox alheio em real-time).
+    if (!client.data.staffId) {
+      client.emit('error', { message: 'WS handshake exige x-staff-id pra join:staff.' });
+      return;
+    }
+    if (client.data.staffId !== data.staffId) {
       client.emit('error', { message: 'Staff id mismatch' });
       return;
     }
@@ -230,7 +323,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('error', { message: 'Staff auth required' });
       return;
     }
-    if (client.data.staffId && client.data.staffId !== data.managerId) {
+    // Round 9 (B-NEW-36): mesmo fix do join:staff — exige staffId
+    // carimbado, rejeita se ausente OU mismatch.
+    if (!client.data.staffId) {
+      client.emit('error', { message: 'WS handshake exige x-staff-id pra join:manager.' });
+      return;
+    }
+    if (client.data.staffId !== data.managerId) {
       client.emit('error', { message: 'Manager id mismatch' });
       return;
     }

@@ -92,10 +92,20 @@ export class StaffController {
    * waiter home screen. Must be declared BEFORE the `:id` handler so
    * Nest's route matcher doesn't fall through to `getById('my-tables')`.
    */
+  /**
+   * Round 9 (B-NEW-44): customer (path session do StaffOrSessionGuard)
+   * só vê a própria mesa, não todas as mesas ativas do tenant. Antes
+   * vazava ticket_total_cents + flags VIP de todo o tenant pra qualquer
+   * customer com session.
+   */
   @Get('my-tables')
   @UseGuards(StaffOrSessionGuard)
-  async myTables() {
-    return this.staffService.listActiveTables();
+  async myTables(
+    @Req() req: { actorType?: 'staff' | 'session'; sessionData?: { sessionId: string } },
+  ) {
+    const sessionId =
+      req.actorType === 'session' ? req.sessionData?.sessionId ?? null : null;
+    return this.staffService.listActiveTables(sessionId);
   }
 
   @Get(':id')

@@ -98,7 +98,14 @@ _PUBLIC_PATHS = {"/health", "/", "/docs", "/openapi.json", "/redoc"}
 
 
 class AiServiceAuthMiddleware(BaseHTTPMiddleware):
-    """Auth via header X-AI-Service-Key contra env AI_SERVICE_API_KEY."""
+    """Auth via header X-AI-Service-Key contra env AI_SERVICE_API_KEY.
+
+    Round 9 (B-NEW-45): fail-CLOSE quando env ausente em prod (NODE_ENV
+    ou ENV=production/staging). Antes era fail-open silencioso — k8s
+    secret faltando ou .env mal carregado deixava todos requests passar
+    sem auth. Em dev local sem docker, fail-open mantido com WARNING
+    explícito no log pra que dev veja na consola.
+    """
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -108,8 +115,29 @@ class AiServiceAuthMiddleware(BaseHTTPMiddleware):
 
         expected = os.environ.get("AI_SERVICE_API_KEY")
         if not expected:
-            # Sem env configurada → fail-open em dev (CI/local sem docker).
-            # Em prod, sempre setar a env via docker-compose / k8s secret.
+            env = (
+                os.environ.get("ENV")
+                or os.environ.get("NODE_ENV")
+                or "development"
+            ).lower()
+            if env in ("production", "prod", "staging"):
+                import logging
+                logging.error(
+                    "AI_SERVICE_API_KEY missing in env=%s — fail-CLOSE blocking %s",
+                    env,
+                    path,
+                )
+                return Response(
+                    content='{"detail":"AI service auth not configured (production)."}',
+                    status_code=503,
+                    media_type="application/json",
+                )
+            # Dev local sem .env — fail-open com warning loud.
+            import logging
+            logging.warning(
+                "AI_SERVICE_API_KEY ausente — middleware desligado (env=%s, dev only).",
+                env,
+            )
             return await call_next(request)
 
         provided = request.headers.get("x-ai-service-key", "")

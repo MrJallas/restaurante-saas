@@ -69,7 +69,19 @@ export class StaffService {
    * currently active tables in the tenant. The filter is enforced by
    * the route guard (StaffOrSession), not by this query.
    */
-  async listActiveTables(): Promise<unknown[]> {
+  /**
+   * Round 9 (B-NEW-44): aceita `callerSessionId` opcional. Quando
+   * presente (path session do StaffOrSessionGuard), filtra rows por
+   * `ts.id = callerSessionId` — customer só vê a própria mesa, não
+   * todas as mesas ativas + tickets + flags VIP do tenant. Path staff
+   * passa `null` e mantém comportamento legacy (waiter precisa do
+   * mapa todo).
+   */
+  async listActiveTables(callerSessionId?: string | null): Promise<unknown[]> {
+    const sessionFilter = callerSessionId
+      ? `AND ts.id = $1`
+      : '';
+    const params = callerSessionId ? [callerSessionId] : [];
     return this.tenantConn.query(
       `
       SELECT
@@ -123,10 +135,11 @@ export class StaffService {
       ) last_event ON last_event.table_session_id = ts.id
       WHERE ts.status = 'active'
         AND ts.closed_at IS NULL
+        ${sessionFilter}
       ORDER BY ts.created_at DESC
       LIMIT 50
       `,
-      [],
+      params,
     );
   }
 

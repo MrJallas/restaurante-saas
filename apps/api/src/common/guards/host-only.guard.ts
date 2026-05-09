@@ -3,29 +3,65 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
 
 /**
- * Host-only guard · second layer on top of `StaffOnlyGuard`.
+ * Host-or-manager guard · second layer on top of `StaffOnlyGuard`.
  *
- * `StaffOnlyGuard` already validates the `x-staff-key` shared secret. This
- * guard adds a per-role check via the `x-staff-role` header, similar to
- * `ManagerOnlyGuard`. Endpoints in the host module accept either `host` or
- * `manager` (managers also tem visibilidade do recepcionista; nao faz sentido
- * bloquear gerente de liberar uma mesa que o recepcionista poderia liberar).
+ * Round 9 (B-NEW-33) hardening — espelha o fix do `ManagerOnlyGuard` no
+ * round 7. Antes confiava em `x-staff-role` header CLIENT-CONTROLLED;
+ * qualquer waiter com `x-staff-key` setava `x-staff-role: host` e
+ * bypassa todo o módulo host (waitlist, reservations, swap, liberate,
+ * VIP via TableMenu).
  *
- * Compose com `@UseGuards(StaffOnlyGuard, HostOrManagerGuard)`.
+ * AGORA: lê `x-staff-id` (UUID v4 sanitized), faz `SELECT role FROM
+ * staff WHERE id = $1 AND is_active = true`, aceita `role IN ('host',
+ * 'manager')`. Manager pode tudo que host pode (canon do projeto).
+ *
+ * Compose com `@UseGuards(StaffOnlyGuard, HostOrManagerGuard)` — o
+ * StaffOnlyGuard valida `x-staff-key` shared secret antes.
  */
 @Injectable()
 export class HostOrManagerGuard implements CanActivate {
-  canActivate(ctx: ExecutionContext): boolean {
+  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<{
       headers: Record<string, string | string[] | undefined>;
     }>();
-    const role = req.headers['x-staff-role'];
-    if (role !== 'host' && role !== 'manager') {
+
+    const staffIdHeader = req.headers['x-staff-id'];
+    const staffId = Array.isArray(staffIdHeader) ? staffIdHeader[0] : staffIdHeader;
+
+    if (!staffId || typeof staffId !== 'string') {
+      throw new UnauthorizedException(
+        'host-or-manager endpoint exige x-staff-id',
+      );
+    }
+
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        staffId,
+      )
+    ) {
+      throw new UnauthorizedException('x-staff-id inválido');
+    }
+
+    const rows = (await this.tenantConn.query(
+      `SELECT role FROM staff WHERE id = $1 AND is_active = true`,
+      [staffId],
+    )) as { role: string }[];
+
+    if (!rows.length) {
+      throw new ForbiddenException('staff não encontrado ou inativo');
+    }
+
+    if (rows[0].role !== 'host' && rows[0].role !== 'manager') {
       throw new ForbiddenException('host- or manager-only endpoint');
     }
+
     return true;
   }
 }

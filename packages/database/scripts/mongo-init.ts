@@ -20,34 +20,27 @@ interface IndexDef {
   options?: CreateIndexesOptions;
 }
 
+// Round 9 (B-NEW-40): TODOS os indexes em camelCase, alinhados com os
+// campos que `chat-history.service.ts` realmente armazena. Antes os
+// indexes em snake_case eram inúteis (Mongo schemaless: campos snake_case
+// não existem nos docs), e LGPD instant erasure caía em collection scan.
+// Agora alinhado com `mongo-init.js` (Docker first-boot).
 const THREAD_INDEXES: IndexDef[] = [
   {
-    name: 'tenant_customer_lastmsg',
-    spec: { tenant_id: 1, customer_id: 1, last_message_at: -1 },
+    // Listing rapido pra historico do cliente: tenant + customer +
+    // ordenacao por lastMessageAt desc.
+    name: 'tenantId_customerId_lastMessageAt',
+    spec: { tenantId: 1, customerId: 1, lastMessageAt: -1 },
   },
   {
-    name: 'tenant_table_session',
-    spec: { tenant_id: 1, table_session_id: 1 },
-  },
-  {
-    // LGPD bulk-delete por customer (cross-tenant fallback).
-    name: 'customer_id',
-    spec: { customer_id: 1 },
-  },
-  {
-    // Listing rapido pra historico do cliente: customer + restaurant +
-    // ordenacao por created_at desc. Per docs/features/chat-history-lgpd.md.
-    name: 'customer_restaurant_created',
-    spec: { customerId: 1, restaurantId: 1, createdAt: -1 },
-  },
-  {
-    name: 'created_at',
-    spec: { created_at: 1 },
+    // LGPD bulk-delete por customer (cross-tenant via service.deleteAllForCustomer).
+    name: 'customerId',
+    spec: { customerId: 1 },
   },
   {
     // TTL — auto-deleta thread quando expiresAt < now() (per LGPD spec
     // Art. 6 III: minimizacao). Mongo roda o sweep a cada 60s.
-    name: 'expires_at_ttl',
+    name: 'expiresAt_ttl',
     spec: { expiresAt: 1 },
     options: { expireAfterSeconds: 0 },
   },
@@ -55,37 +48,41 @@ const THREAD_INDEXES: IndexDef[] = [
 
 const MESSAGE_INDEXES: IndexDef[] = [
   {
-    name: 'thread_created',
-    spec: { thread_id: 1, created_at: 1 },
-  },
-  {
-    // Per docs/features/chat-history-lgpd.md: paginacao pelas msgs da thread.
+    // Paginacao das mensagens dentro da thread (canon mongo-init.js).
     name: 'threadId_createdAt',
     spec: { threadId: 1, createdAt: 1 },
   },
   {
-    // CRITICAL: LGPD instant erasure relies on this index.
-    name: 'tenant_customer',
-    spec: { tenant_id: 1, customer_id: 1 },
-  },
-  {
-    name: 'tenant_customer_recent',
-    spec: { tenant_id: 1, customer_id: 1, created_at: -1 },
-  },
-  {
-    name: 'tenant_blocked_recent',
-    spec: { tenant_id: 1, was_blocked: 1, created_at: -1 },
-  },
-  {
-    name: 'created_at',
-    spec: { created_at: 1 },
+    // LGPD instant erasure: deleteMany({ customerId }) usa este index.
+    name: 'customerId',
+    spec: { customerId: 1 },
   },
   {
     // TTL — mensagem expira junto com a thread (campo herdado).
-    name: 'expires_at_ttl',
+    name: 'expiresAt_ttl',
     spec: { expiresAt: 1 },
     options: { expireAfterSeconds: 0 },
   },
+];
+
+// Indexes legacy (snake_case) que escapam pro Mongo se este script já
+// rodou em uma versão anterior. Drop em start pra cleanup.
+const LEGACY_THREAD_INDEXES = [
+  'tenant_customer_lastmsg',
+  'tenant_table_session',
+  'customer_id',
+  'customer_restaurant_created',
+  'created_at',
+  'expires_at_ttl',
+];
+
+const LEGACY_MESSAGE_INDEXES = [
+  'thread_created',
+  'tenant_customer',
+  'tenant_customer_recent',
+  'tenant_blocked_recent',
+  'created_at',
+  'expires_at_ttl',
 ];
 
 async function ensureCollection(db: ReturnType<MongoClient['db']>, name: string) {
@@ -111,6 +108,22 @@ async function ensureIndexes(
   }
 }
 
+async function dropLegacyIndexes(
+  db: ReturnType<MongoClient['db']>,
+  collection: string,
+  legacyNames: string[],
+) {
+  const coll = db.collection(collection);
+  for (const name of legacyNames) {
+    try {
+      await coll.dropIndex(name);
+      console.log(`    - dropped legacy index ${collection}.${name}`);
+    } catch {
+      // Index não existe — OK.
+    }
+  }
+}
+
 async function main() {
   console.log(`Connecting to MongoDB at ${MONGODB_URI}`);
   const client = new MongoClient(MONGODB_URI);
@@ -121,6 +134,13 @@ async function main() {
 
     await ensureCollection(db, 'chat_threads');
     await ensureCollection(db, 'chat_messages');
+
+    // Round 9 (B-NEW-40): cleanup snake_case legacy indexes before
+    // re-creating camelCase. Idempotente — dropIndex falha gracefully
+    // se index não existe.
+    console.log('Dropping legacy snake_case indexes:');
+    await dropLegacyIndexes(db, 'chat_threads', LEGACY_THREAD_INDEXES);
+    await dropLegacyIndexes(db, 'chat_messages', LEGACY_MESSAGE_INDEXES);
 
     console.log('Ensuring indexes on chat_threads:');
     await ensureIndexes(db, 'chat_threads', THREAD_INDEXES);

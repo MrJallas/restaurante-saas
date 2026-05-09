@@ -130,6 +130,11 @@ export class CustomersController {
 
     res.cookie('recognition_token', result.recognitionToken, {
       httpOnly: true,
+      // Round 9 (B-NEW-37): secure flag em prod com TLS. Antes session_token
+      // tinha mas recognition_token (1 ano TTL) NÃO. Em prod com captive
+      // portal/MITM em wifi público, browser enviava cookie em downgrade
+      // HTTP — atacante capturava identidade permanente do customer.
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
       maxAge: RECOGNITION_COOKIE_MAX_AGE,
@@ -178,6 +183,43 @@ export class CustomersController {
     }
   }
 
+  // Round 9 (B-NEW-35): mesma família do rate-limit de /identify, agora
+  // pra /welcome. Compartilha as constants IDENTIFY_RATE_* (pattern
+  // single-source-of-truth). Key separado pra que rate-limit de /identify
+  // não engargale /welcome do mesmo IP (e vice-versa).
+  private welcomeClientKey(req: {
+    ip?: string;
+    headers: Record<string, string | string[]>;
+  }): string {
+    const xff = req.headers['x-forwarded-for'];
+    const xffStr = Array.isArray(xff) ? xff[0] : xff;
+    const ip = (xffStr ?? req.ip ?? 'unknown').toString().split(',')[0].trim();
+    return `customers:welcome:${ip}`;
+  }
+
+  private async assertWelcomeRateLimit(ipKey: string): Promise<void> {
+    const lockKey = `${ipKey}:lock`;
+    if (await this.redis.get(lockKey)) {
+      throw new HttpException(
+        'Muitas tentativas de boas-vindas. Aguarde alguns minutos.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  private async bumpWelcomeAttempts(ipKey: string): Promise<void> {
+    const lockKey = `${ipKey}:lock`;
+    const attemptsKey = `${ipKey}:attempts`;
+    const attempts = await this.redis.incr(attemptsKey);
+    if (attempts === 1) {
+      await this.redis.expire(attemptsKey, IDENTIFY_RATE_WINDOW_SECONDS);
+    }
+    if (attempts >= IDENTIFY_RATE_MAX) {
+      await this.redis.set(lockKey, '1', IDENTIFY_RATE_LOCK_SECONDS);
+      await this.redis.del(attemptsKey);
+    }
+  }
+
   /** Manager marks a customer as VIP (permanent flag on customers table). */
   @Post(':customerId/vip')
   @UseGuards(StaffOnlyGuard)
@@ -192,24 +234,59 @@ export class CustomersController {
     return this.customersService.setVipFlag(customerId, false);
   }
 
+  /**
+   * Round 9 (B-NEW-35): rate-limit por IP + bumping pro reuso do mesmo
+   * pattern da `/identify`. Antes: customer com session_token loops
+   * CPFs conhecidos pra rotacionar `recognition_token` de qualquer
+   * customer existente — account takeover via brute force CPF.
+   *
+   * Regras:
+   *  - 5 attempts em 15min por IP (mesma janela do /identify).
+   *  - 429 lock 15min após exceder.
+   *  - Falhas (CPF inválido, name ausente) também contam pro limite
+   *    pra impedir bypass via formats inválidos.
+   *
+   * Service.welcome em si ainda rotaciona token quando token-mismatch
+   * — esse é o flow legítimo de "customer reclaim em outro device".
+   * Mas com rate-limit + cookies HttpOnly secure, atacante não escala.
+   */
   @Post('welcome')
   @UseGuards(SessionGuard)
   async welcome(
     @Body() dto: CustomerWelcomeDto,
     @Session() session: SessionData,
-    @Req() req: { cookies?: Record<string, string> },
+    @Req() req: {
+      ip?: string;
+      cookies?: Record<string, string>;
+      headers: Record<string, string | string[]>;
+    },
     @Res({ passthrough: true }) res: Response,
   ) {
+    const ipKey = this.welcomeClientKey(req);
+    await this.assertWelcomeRateLimit(ipKey);
+
     const callerRecognitionToken = req.cookies?.recognition_token ?? null;
-    const result = await this.customersService.welcome(
-      dto.name,
-      dto.cpf,
-      session.sessionId,
-      callerRecognitionToken,
-    );
+    let result;
+    try {
+      result = await this.customersService.welcome(
+        dto.name,
+        dto.cpf,
+        session.sessionId,
+        callerRecognitionToken,
+      );
+    } catch (err) {
+      await this.bumpWelcomeAttempts(ipKey);
+      throw err;
+    }
+    await this.bumpWelcomeAttempts(ipKey);
 
     res.cookie('recognition_token', result.recognitionToken, {
       httpOnly: true,
+      // Round 9 (B-NEW-37): secure flag em prod com TLS. Antes session_token
+      // tinha mas recognition_token (1 ano TTL) NÃO. Em prod com captive
+      // portal/MITM em wifi público, browser enviava cookie em downgrade
+      // HTTP — atacante capturava identidade permanente do customer.
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
       maxAge: RECOGNITION_COOKIE_MAX_AGE,
@@ -251,6 +328,11 @@ export class CustomersController {
 
     res.cookie('recognition_token', result.recognitionToken, {
       httpOnly: true,
+      // Round 9 (B-NEW-37): secure flag em prod com TLS. Antes session_token
+      // tinha mas recognition_token (1 ano TTL) NÃO. Em prod com captive
+      // portal/MITM em wifi público, browser enviava cookie em downgrade
+      // HTTP — atacante capturava identidade permanente do customer.
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
       maxAge: RECOGNITION_COOKIE_MAX_AGE,

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TenantModule } from '../tenant/tenant.module';
+import { HostOrManagerGuard } from '../../common/guards/host-only.guard';
 import { HostController } from './host.controller';
 import { HostService } from './host.service';
 
@@ -12,7 +13,9 @@ import { HostService } from './host.service';
 @Module({
   imports: [TenantModule],
   controllers: [HostController],
-  providers: [HostService],
+  // Round 9 (B-NEW-33): HostOrManagerGuard registrado como provider pra
+  // que Nest possa injetar TenantConnectionProvider (DI deps do guard).
+  providers: [HostService, HostOrManagerGuard],
   exports: [HostService],
 })
 export class HostModule {}
