@@ -59,6 +59,55 @@ _ACK_PHRASES = [
     re.compile(r"^\s*tudo\s+(certo|tranquilo)\s*[.!?]*\s*$", re.IGNORECASE),
 ]
 
+# Allow-list of phrases that should ALWAYS pass through to the LLM, never
+# blocked by the regex/classifier layers (P1 #27). These are legitimate
+# restaurant intents that the regex layer or LLM classifier was bouncing
+# at zero latency. `is_allowed_intent` is consulted from the classify
+# endpoint AFTER ack/greeting layers but BEFORE the regex guardrails.
+#
+# Patterns intentionally permissive — false positives only mean we let a
+# user message reach the LLM, which is the safe direction.
+_ALLOW_LIST_PATTERNS: list[re.Pattern[str]] = [
+    # Modify-order intents · "tira a cebola", "sem queijo", "pode adicionar bacon"
+    re.compile(r"\b(tira|tirar|sem|adiciona|adicionar|coloca|colocar|p[oõ]e|pode|com\s+menos|mais)\s+(a\s+|o\s+|uma?\s+)?\w+", re.IGNORECASE),
+    # Check-request · "quero pedir a conta", "pode trazer a conta", "fechar a conta"
+    re.compile(r"\b(conta|fechar|pagar|pago|pagamento|fechamento)\b", re.IGNORECASE),
+    # Order modification verbs · "trocar pedido", "cancelar item", "mudar a bebida"
+    re.compile(r"\b(trocar|cancelar|mudar|alterar|modificar)\s+(o\s+|a\s+|os\s+|as\s+|um\s+|uma\s+)?(pedido|prato|item|bebida|comida|sobremesa)\b", re.IGNORECASE),
+    # Allergen/restriction questions · "tem glúten?", "é sem lactose?",
+    # "tem opção vegana?". The `vegan[ao]?` covers both gendered Portuguese
+    # forms (vegano/vegana). "vegetarian[ao]?" same idea.
+    re.compile(r"\b(gl[uú]ten|lactose|alerg[ií]a|aler(ge|gi)nico|vegan[ao]?|vegetarian[ao]?|sem\s+(carne|gl[uú]ten|lactose|aç[uú]car))\b", re.IGNORECASE),
+    # Add-to-order phrasings · "quero o X", "me traz Y", "vou querer"
+    re.compile(r"\b(quero|vou\s+querer|me\s+traz|me\s+vê|me\s+ve|trazer)\s+(uma?\s+|o\s+|a\s+|os\s+|as\s+)?\w+", re.IGNORECASE),
+    # Waiter/help requests
+    re.compile(r"\b(garçom|gar[cç]on|chamar|atendente|gerente|ajuda)\b", re.IGNORECASE),
+    # Table merge intent · "junta com a mesa", "juntar mesas"
+    re.compile(r"\bjunta(r)?\b.*\bmesa", re.IGNORECASE),
+    re.compile(r"\bmesa\b.*\bjunta(r)?\b", re.IGNORECASE),
+]
+
+
+def is_allowed_intent(text: str) -> bool:
+    """
+    Returns True when the message matches a known legitimate restaurant intent
+    that should bypass the regex/classifier blockers (P1 #27).
+
+    This is a deliberate over-allow: the regex guardrails were rejecting
+    valid customer messages like "tira a cebola" (mistaken for off-topic
+    via word fragments) and "quero pedir a conta" (mistaken because the
+    classifier round-trip can fail). Returning True here forces the
+    classify endpoint to skip the blocker and either short-circuit to a
+    tool intent or pass through to the LLM.
+    """
+    if not text or not text.strip():
+        return False
+    for pat in _ALLOW_LIST_PATTERNS:
+        if pat.search(text):
+            return True
+    return False
+
+
 # Strip leading/trailing punctuation/whitespace before token comparison.
 _PUNCT_STRIP = re.compile(r"^[\s\.\,\!\?\-’‘\"\'\(\)\[\]]+|[\s\.\,\!\?\-’‘\"\'\(\)\[\]]+$")
 
@@ -172,6 +221,7 @@ def get_ack_reply() -> str:
 __all__ = [
     "AckResult",
     "detect_ack",
+    "is_allowed_intent",
     "ACK_REPLIES",
     "ACK_REPLIES_KEY",
     "get_ack_reply",
