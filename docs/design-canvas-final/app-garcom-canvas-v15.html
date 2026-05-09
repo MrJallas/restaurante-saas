@@ -1,0 +1,114 @@
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>App do Gerente · V15 — Customer-host pattern + QR ilegível (round 8a)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet" />
+<style>
+  html, body, #root {
+    margin: 0; height: 100%;
+    background: #f0eee9;
+    font-family: Inter, system-ui, sans-serif;
+  }
+  @keyframes gPulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  @keyframes gAlertPulse { 0%,100%{box-shadow:0 0 0 0 rgba(217,142,43,.55)} 50%{box-shadow:0 0 0 6px rgba(217,142,43,0)} }
+  @keyframes gNotifPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.012)} }
+  @keyframes gBlink { 50%{opacity:0} }
+  @keyframes gFadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="handoff/garcom/ios-frame.jsx"></script>
+<script type="text/babel" src="handoff/garcom/android-frame.jsx"></script>
+<script type="text/babel" src="handoff/garcom/design-canvas.jsx"></script>
+<script type="text/babel" src="handoff/garcom/garcom-tokens.jsx"></script>
+<script type="text/babel" src="handoff/garcom/garcom-qr-issue.jsx"></script>
+
+<script type="text/babel">
+  const HeaderG = () => (
+    <div style={{
+      padding: '40px 60px 32px', maxWidth: 980,
+      fontFamily: "'Inter', system-ui, sans-serif",
+    }}>
+      <div style={{
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontSize: 11, fontWeight: 500, letterSpacing: 1.5,
+        textTransform: 'uppercase', color: '#6b6b6b', marginBottom: 14,
+      }}>App do Gerente · V15 · round 8a · customer-host + QR ilegível</div>
+
+      <div style={{
+        fontSize: 36, fontWeight: 600, letterSpacing: -0.6,
+        color: '#0a0a0a', lineHeight: 1.1, marginBottom: 12,
+      }}>Customer-host foundation + QR ilegível (staff-only)</div>
+
+      <div style={{
+        fontSize: 15, lineHeight: 1.55, color: '#4d4d4d', maxWidth: 720,
+        letterSpacing: -0.05,
+      }}>
+        Estabelece o princípio arquitetural <b>customer-host model</b> (primeira pessoa
+        que abre comanda vira host da sessão · aprova decisões sociais antes do staff)
+        e implementa o flow mais simples que reusa a infra: <b>QR ilegível</b>.
+        Cascata <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5,
+          padding: '1px 6px', background: '#e8e6e0', borderRadius: 4 }}>escalation_chains</code>{' '}
+        compartilhada entre flows futuros (8b late-arrival · 8c table-merge).
+        QR ilegível pula o customer-host (problema operacional · sem decisão social) e
+        entra na cascata direto pelo manager. <code style={{ fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 12.5, padding: '1px 6px', background: '#e8e6e0', borderRadius: 4 }}>Call.type</code>{' '}
+        ganha <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5,
+          padding: '1px 6px', background: '#e8e6e0', borderRadius: 4 }}>'qr-issue'</code> em
+        tom <b>mostarda</b> (atenção · não crítico, diferente do complaint).
+      </div>
+
+      <div style={{
+        marginTop: 24, display: 'flex', flexWrap: 'wrap', gap: 12,
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase', color: '#6b6b6b',
+      }}>
+        <span style={{ padding: '6px 10px', background: '#fff', border: '1px solid #e5e5e5', borderRadius: 4 }}>2 seções</span>
+        <span style={{ padding: '6px 10px', background: '#fff', border: '1px solid #e5e5e5', borderRadius: 4 }}>10 frames (2 princípio + 8 staff-flow)</span>
+        <span style={{ padding: '6px 10px', background: '#fff', border: '1px solid #e5e5e5', borderRadius: 4 }}>iOS + Android</span>
+        <span style={{ padding: '6px 10px', background: '#fff', border: '1px solid #e5e5e5', borderRadius: 4 }}>handoff em /handoff/garcom/garcom-qr-issue.jsx</span>
+        <span style={{ padding: '6px 10px', background: '#fff', border: '1px solid #e5e5e5', borderRadius: 4 }}>spec · docs/features/customer-host-model.md</span>
+      </div>
+    </div>
+  );
+
+  const Root = () => (
+    <DesignCanvas>
+      <DCSection id="header" title="" subtitle="">
+        <div key="hdr"><HeaderG /></div>
+      </DCSection>
+
+      {/* Princípio · 1 DCSection (2 frames) — vai no topo do canvas v15 do garçom.
+          Cliente NÃO ganha v15 nesse round porque 8a é 90% staff-side · DCSection
+          equivalente vai pro cliente em 8b/8c (late-arrival/table-merge), onde
+          o customer-host realmente desbloqueia frames próprios pro cliente. */}
+      {window.GARCOM_HOST_PATTERN_SECTIONS.map(sec => (
+        <DCSection key={sec.id} id={sec.id} title={`${sec.id} · ${sec.title}`} subtitle={sec.subtitle}>
+          {sec.frames}
+        </DCSection>
+      ))}
+
+      {/* Staff QR-issue flow · 1 DCSection (8 frames) — flow puramente operacional. */}
+      {window.GARCOM_QR_ISSUE_SECTIONS.map(sec => (
+        <DCSection key={sec.id} id={sec.id} title={`${sec.id} · ${sec.title}`} subtitle={sec.subtitle}>
+          {sec.frames}
+        </DCSection>
+      ))}
+    </DesignCanvas>
+  );
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+</script>
+</body>
+</html>

@@ -1,17 +1,24 @@
 'use client';
 
-// Equipe — V6 unified screen.
+// Equipe — V11 layout · faithful port of ScreenManagerStaff em
+// docs/design-canvas/handoff/garcom/garcom-screens-c.jsx:876.
 //
-// Compacted from garcom-screens-c.jsx (the canvas implements 8 sections;
-// here we ship the operational subset that the manager needs day-to-day:
-// 3 KPIs, search, role chips, staff list with status + presence + contact,
-// today's shift list).
+// 8 blocos:
+//   1. Hero (MAppHeader saudação + AO VIVO)
+//   2. 3 KPIs Compact com `?` tooltip · saúde no CARGA MÉDIA
+//   3. Banner sugestão IA (mostarda · CTA "Aplicar sugestão") — oculto quando bannerHidden
+//   4. Busca + 2 rows de chips (status + categoria)
+//   5. Lista unificada · cards com avatar + status pill + 3 metrics + 2 action pills
+//   6. Turnos de hoje · expansível inline
+//   7. Próximos eventos do turno
+//   8. CTA fixa "+ Adicionar funcionário" sobre o bottom-nav
 
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
   G_FONT,
+  MONO_FONT,
   Icon,
   MAppHeader,
   MBottomNav,
@@ -43,8 +50,6 @@ interface StaffMember {
   flag: StaffFlag;
 }
 
-// P1 #32 — no hardcoded names. Empty list until API responds; the
-// empty state UI ("Nenhum funcionário encontrado.") covers the gap.
 const M_TEAM_FALLBACK: StaffMember[] = [];
 
 const ROLE_LABEL: Record<string, StaffMember['role']> = {
@@ -57,20 +62,55 @@ const ROLE_LABEL: Record<string, StaffMember['role']> = {
 
 const ROLE_PALETTE = ['#4F6BFF', '#E37D2F', '#7A4FBE', '#1E8C5A', '#C43A3A', '#0B7A8B'];
 
+type ShiftId = 'manha' | 'tarde' | 'noite' | 'enc';
+type ShiftStatus = 'past' | 'now' | 'soon';
+interface ShiftRow {
+  id: ShiftId;
+  label: string;
+  range: string;
+  status: ShiftStatus;
+  members: StaffMember[];
+}
+
+interface NextEvent {
+  time: string;
+  txt: string;
+  tone: 'success' | 'ink' | 'warn';
+}
+
 export interface ScreenManagerStaffProps {
   dark?: boolean;
   tenantSlug: string;
+  /** Esconde o banner de sugestão IA — passa true quando não há sugestão. */
+  bannerHidden?: boolean;
+  /** Lista turnos do dia além dos derivados do roster (overrides). */
+  shifts?: ShiftRow[];
+  /** Próximos eventos do turno · ex Ricardo P. entra · Garçom às 21:00. */
+  nextEvents?: NextEvent[];
+  /** Sugestão IA dinâmica · texto rich. Se null, banner segue oculto. */
+  iaSuggestion?: { text: ReactNode; cta?: string; onApply?: () => void } | null;
+  /** Data do dia (mostra em "Turnos de hoje · 06 mai"). */
+  shiftDate?: string;
 }
 
-export function ScreenManagerStaff({ dark, tenantSlug }: ScreenManagerStaffProps) {
+export function ScreenManagerStaff({
+  dark,
+  tenantSlug,
+  bannerHidden = false,
+  shifts: shiftsOverride,
+  nextEvents: nextEventsOverride,
+  iaSuggestion = null,
+  shiftDate,
+}: ScreenManagerStaffProps) {
   const C = useG(!!dark);
   const router = useRouter();
   const [team, setTeam] = useState<StaffMember[]>(M_TEAM_FALLBACK);
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'todos' | StaffMember['role']>('todos');
+  const [statusFilter, setStatusFilter] = useState<'todos' | 'em_turno' | 'sobrec' | 'folga' | 'fora'>('todos');
+  const [roleFilter, setRoleFilter] = useState<'todos' | StaffMember['role'] | 'cozinha+bar'>('todos');
+  const [openShift, setOpenShift] = useState<ShiftId | null>(null);
   const [contactTarget, setContactTarget] = useState<ManagerStaffTarget | null>(null);
 
-  // Try to fetch real staff from API; fall back to empty (P1 #14, #32).
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -82,12 +122,7 @@ export function ScreenManagerStaff({ dark, tenantSlug }: ScreenManagerStaffProps
             id: s.id,
             name: s.name,
             role: ROLE_LABEL[s.role] ?? (s.role as StaffMember['role']) ?? 'Garçom',
-            init: s.name
-              .split(' ')
-              .map((p) => p[0])
-              .slice(0, 2)
-              .join('')
-              .toUpperCase(),
+            init: s.name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase(),
             shift: '17:00 — 23:00',
             status: s.is_active ? 'on' : 'off',
             rating: 4.5 + (i % 3) * 0.1,
@@ -108,6 +143,7 @@ export function ScreenManagerStaff({ dark, tenantSlug }: ScreenManagerStaffProps
     };
   }, [tenantSlug]);
 
+  // ─── Stats agregados ────────────────────────────────────────────
   const inField = team.filter((p) => p.status === 'on').length;
   const totalCount = team.length;
   const overloadCount = team.filter((p) => p.tables >= 7).length;
@@ -116,27 +152,55 @@ export function ScreenManagerStaff({ dark, tenantSlug }: ScreenManagerStaffProps
   const avgLoad = inField > 0 ? avgLoadNum.toFixed(1).replace('.', ',') : '—';
 
   const META = 5;
-  const loadHealth = useMemo(
-    () =>
-      avgLoadNum === 0
-        ? { color: C.faint, sub: '—' }
-        : avgLoadNum < META * 0.7
-        ? { color: '#1E8C5A', sub: 'FOLGADO' }
-        : avgLoadNum < META
-        ? { color: C.faint, sub: 'NA META' }
-        : { color: '#A12626', sub: 'ACIMA · REALOCAR' },
-    [avgLoadNum, C.faint],
-  );
+  const loadHealth = useMemo(() => {
+    if (avgLoadNum === 0) return { color: C.faint, sub: '· —', accent: null as string | null };
+    if (avgLoadNum < META * 0.7) return { color: '#1E8C5A', sub: '· FOLGADO', accent: null };
+    if (avgLoadNum < META) return { color: C.faint, sub: '· DENTRO DA META', accent: null };
+    return { color: '#A12626', sub: '· ACIMA DA META · REALOCAR', accent: '#A12626' };
+  }, [avgLoadNum, C.faint]);
 
+  // ─── Filtragem ──────────────────────────────────────────────────
   const filtered = team.filter((p) => {
-    if (roleFilter !== 'todos' && p.role !== roleFilter) return false;
+    if (statusFilter === 'em_turno' && p.status !== 'on') return false;
+    if (statusFilter === 'sobrec' && p.tables < 7) return false;
+    if (statusFilter === 'folga' && p.status !== 'off') return false;
+    if (statusFilter === 'fora' && p.status === 'on') return false;
+    if (roleFilter !== 'todos') {
+      if (roleFilter === 'cozinha+bar') {
+        if (p.role !== 'Cozinheiro' && p.role !== 'Bartender') return false;
+      } else if (p.role !== roleFilter) return false;
+    }
     if (search.trim() && !p.name.toLowerCase().includes(search.trim().toLowerCase())) return false;
     return true;
   });
+  const isEmptyResult = filtered.length === 0 && (search.trim() !== '' || statusFilter !== 'todos' || roleFilter !== 'todos');
 
+  // ─── Turnos do dia ──────────────────────────────────────────────
+  const derivedShifts: ShiftRow[] = [
+    {
+      id: 'tarde',
+      label: 'TARDE',
+      range: '12H – 17H',
+      status: 'past',
+      members: team.filter((p) => p.shift.startsWith('12:00')),
+    },
+    {
+      id: 'noite',
+      label: 'NOITE',
+      range: '17H – 23H',
+      status: 'now',
+      members: team.filter((p) => p.shift.startsWith('17:00')),
+    },
+    { id: 'enc', label: 'ENCERRAMENTO', range: '23H – 02H', status: 'soon', members: [] },
+  ];
+  const shifts = shiftsOverride ?? derivedShifts;
+  const nextEvents = nextEventsOverride ?? [];
+
+  // ─── Render ─────────────────────────────────────────────────────
   return (
     <div
       style={{
+        position: 'relative',
         minHeight: '100vh',
         display: 'flex',
         flexDirection: 'column',
@@ -145,9 +209,10 @@ export function ScreenManagerStaff({ dark, tenantSlug }: ScreenManagerStaffProps
         color: C.ink,
       }}
     >
-      <div style={{ flex: 1, overflow: 'auto', paddingBottom: 80 }}>
+      <div style={{ flex: 1, overflow: 'auto', paddingBottom: 124 }}>
         <MAppHeader dark={dark} title="Equipe" />
 
+        {/* 2 · 3 KPIs Compact */}
         <div style={{ padding: '14px 16px 0', display: 'flex', gap: 8 }}>
           <MStat
             dark={dark}
@@ -160,7 +225,7 @@ export function ScreenManagerStaff({ dark, tenantSlug }: ScreenManagerStaffProps
               </span>
             }
             sub={totalCount - inField > 0 ? `${totalCount - inField} fora` : 'todos OK'}
-            help="Funcionários logados com status 'em turno' agora."
+            help="Funcionários logados com status 'em turno' agora · não inclui pausados ou fora."
           />
           <MStat
             dark={dark}
@@ -169,19 +234,81 @@ export function ScreenManagerStaff({ dark, tenantSlug }: ScreenManagerStaffProps
             value={String(overloadCount)}
             sub={overloadCount > 0 ? '↓ realocar' : 'tudo certo'}
             accent={overloadCount > 0 ? '#A12626' : null}
-            help="Funcionários com 7+ mesas atendendo simultaneamente."
+            subColor={overloadCount > 0 ? '#A12626' : undefined}
+            help="Funcionários com 7+ mesas atendendo simultaneamente · ajuste o limiar em Operação."
           />
           <MStat
             dark={dark}
             compact
             label="Carga média"
             value={avgLoad}
+            accent={loadHealth.accent}
             sub={loadHealth.sub}
             subColor={loadHealth.color}
-            help="Mesas abertas por funcionário em campo · meta < 5."
+            help="Mesas abertas dividido por funcionários em campo · meta menor que 5 por garçom."
           />
         </div>
 
+        {/* 3 · Banner sugestão IA · oculto quando bannerHidden ou null */}
+        {!bannerHidden && iaSuggestion?.text && (
+          <div style={{ padding: '12px 16px 0' }}>
+            <div
+              style={{
+                background: '#FFF7E6',
+                border: '1px solid #F0DCB6',
+                borderRadius: 12,
+                padding: 12,
+                display: 'flex',
+                gap: 10,
+                alignItems: 'flex-start',
+              }}
+            >
+              <div
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 7,
+                  background: '#9A7212',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                {Icon.flame(14)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: '#1d1c19', lineHeight: 1.4, fontWeight: 500 }}>
+                  {iaSuggestion.text}
+                </div>
+                <button
+                  type="button"
+                  onClick={iaSuggestion.onApply}
+                  style={{
+                    all: 'unset',
+                    cursor: 'pointer',
+                    marginTop: 8,
+                    padding: '7px 12px',
+                    borderRadius: 8,
+                    background: C.ink,
+                    color: C.bg,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    letterSpacing: -0.1,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  {iaSuggestion.cta ?? 'Aplicar sugestão'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 4 · Busca + 2 rows de chips (status + categoria) */}
         <div style={{ padding: '14px 16px 0' }}>
           <label
             style={{
@@ -200,62 +327,117 @@ export function ScreenManagerStaff({ dark, tenantSlug }: ScreenManagerStaffProps
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nome"
+              placeholder="Buscar por nome ou CPF"
               aria-label="Buscar funcionário"
-              style={{
-                all: 'unset',
-                flex: 1,
-                fontFamily: G_FONT,
-                fontSize: 13,
-                color: C.ink,
-              }}
+              style={{ all: 'unset', flex: 1, fontFamily: G_FONT, fontSize: 13, color: C.ink }}
             />
-          </label>
-        </div>
-
-        <div
-          style={{
-            padding: '8px 16px 0',
-            display: 'flex',
-            gap: 6,
-            overflowX: 'auto',
-          }}
-        >
-          {(['todos', 'Garçom', 'Cozinheiro', 'Bartender', 'Caixa'] as const).map((r) => {
-            const active = roleFilter === r;
-            return (
+            {search && (
               <button
-                key={r}
-                onClick={() => setRoleFilter(r)}
+                type="button"
+                onClick={() => setSearch('')}
+                aria-label="Limpar busca"
                 style={{
                   all: 'unset',
                   cursor: 'pointer',
-                  padding: '6px 12px',
-                  borderRadius: 999,
-                  border: `1px solid ${active ? C.ink : C.borderSoft}`,
-                  background: active ? C.ink : 'transparent',
-                  color: active ? C.bg : C.ink,
-                  fontSize: 12,
+                  fontSize: 11,
+                  color: C.faint,
                   fontWeight: 600,
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
+                  padding: '0 4px',
                 }}
               >
-                {r === 'todos' ? 'Todos' : r}
+                ×
               </button>
-            );
-          })}
+            )}
+          </label>
         </div>
 
-        <div
-          style={{
-            padding: '14px 16px 0',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}
-        >
-          {filtered.length === 0 ? (
+        <div style={{ padding: '8px 16px 0' }}>
+          <ChipRow
+            dark={dark}
+            items={[
+              { id: 'todos', label: 'Todos', count: totalCount, active: statusFilter === 'todos' },
+              { id: 'em_turno', label: 'Em turno', count: inField, active: statusFilter === 'em_turno' },
+              { id: 'sobrec', label: 'Sobrecarregados', count: overloadCount, active: statusFilter === 'sobrec' },
+              { id: 'folga', label: 'Folga', count: team.filter((p) => p.status === 'off').length, active: statusFilter === 'folga' },
+              { id: 'fora', label: 'Fora', count: totalCount - inField, active: statusFilter === 'fora' },
+            ]}
+            onClick={(id) => setStatusFilter(id as 'todos' | 'em_turno' | 'sobrec' | 'folga' | 'fora')}
+          />
+          <div style={{ height: 6 }} />
+          <ChipRow
+            dark={dark}
+            items={[
+              { id: 'todos', label: 'Todos', active: roleFilter === 'todos' },
+              {
+                id: 'Garçom',
+                label: 'Garçons',
+                count: team.filter((p) => p.role === 'Garçom').length,
+                active: roleFilter === 'Garçom',
+              },
+              {
+                id: 'cozinha+bar',
+                label: 'Cozinha+Bar',
+                count: team.filter((p) => p.role === 'Cozinheiro' || p.role === 'Bartender').length,
+                active: roleFilter === 'cozinha+bar',
+              },
+              {
+                id: 'Caixa',
+                label: 'Caixa',
+                count: team.filter((p) => p.role === 'Caixa').length,
+                active: roleFilter === 'Caixa',
+              },
+            ]}
+            onClick={(id) => setRoleFilter(id as 'todos' | StaffMember['role'] | 'cozinha+bar')}
+          />
+        </div>
+
+        {/* 5 · Lista de funcionários (ou empty state) */}
+        <div style={{ padding: '14px 16px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {isEmptyResult ? (
+            <div
+              style={{
+                padding: '28px 20px',
+                textAlign: 'center',
+                background: C.bg,
+                border: `1.5px dashed ${C.borderSoft}`,
+                borderRadius: 14,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  color: C.faint,
+                  fontWeight: 700,
+                  letterSpacing: 0.6,
+                  textTransform: 'uppercase',
+                  fontFamily: MONO_FONT,
+                }}
+              >
+                Nenhum funcionário encontrado
+              </div>
+              <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, marginTop: 6 }}>
+                Tente outro nome ou{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch('');
+                    setStatusFilter('todos');
+                    setRoleFilter('todos');
+                  }}
+                  style={{
+                    all: 'unset',
+                    cursor: 'pointer',
+                    color: C.ink,
+                    textDecoration: 'underline',
+                    fontWeight: 700,
+                  }}
+                >
+                  limpar busca
+                </button>
+                .
+              </div>
+            </div>
+          ) : filtered.length === 0 ? (
             <div
               style={{
                 padding: '28px 20px',
@@ -268,200 +450,195 @@ export function ScreenManagerStaff({ dark, tenantSlug }: ScreenManagerStaffProps
                 fontWeight: 500,
               }}
             >
-              Nenhum funcionário encontrado.
+              Nenhum funcionário cadastrado.
             </div>
           ) : (
-            filtered.map((p) => {
-              const status =
-                p.status === 'off'
-                  ? { tone: 'mute' as const, label: 'Folga' }
-                  : p.tables >= 7
-                  ? { tone: 'danger' as const, label: 'Sobrecarregado' }
-                  : p.tables >= 5
-                  ? { tone: 'warn' as const, label: 'Carga média' }
-                  : { tone: 'success' as const, label: 'Em turno' };
-              return (
-                <div
-                  key={p.id}
-                  style={{
-                    padding: 12,
-                    borderRadius: 12,
-                    border: `1px solid ${C.borderSoft}`,
-                    background: p.status === 'off' ? C.surface : C.bg,
-                    opacity: p.status === 'off' ? 0.78 : 1,
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <MAvatar name={p.name} init={p.init} color={p.color} size={40} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: C.ink, letterSpacing: -0.15 }}>
-                        {p.name}
-                      </div>
-                      <div style={{ fontSize: 12, color: C.faint, fontWeight: 500, marginTop: 2 }}>
-                        {p.role} · {p.shift}
-                      </div>
-                    </div>
-                    <MPill tone={status.tone} dark={dark}>
-                      {status.label}
-                    </MPill>
-                  </div>
+            filtered.map((p) => <StaffCard key={p.id} dark={dark} p={p} onContact={(t) => setContactTarget(t)} />)
+          )}
+        </div>
 
-                  {p.status === 'on' && (
+        {/* 6 · Turnos de hoje · expansível inline */}
+        <MSection
+          dark={dark}
+          title={`Turnos de hoje${shiftDate ? ` · ${shiftDate}` : ''}`}
+          action="Editar turnos →"
+          onAction={() => router.push('/manager/equipe/turnos')}
+        >
+          <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {shifts.map((sh) => {
+              const isOpen = openShift === sh.id;
+              return (
+                <div key={sh.id}>
+                  <button
+                    type="button"
+                    onClick={() => setOpenShift(isOpen ? null : sh.id)}
+                    style={{
+                      all: 'unset',
+                      cursor: 'pointer',
+                      boxSizing: 'border-box',
+                      width: '100%',
+                      padding: '10px 12px',
+                      border: `1px solid ${C.borderSoft}`,
+                      borderRadius: isOpen ? '12px 12px 0 0' : 12,
+                      borderBottom: isOpen ? `1px dashed ${C.borderSoft}` : `1px solid ${C.borderSoft}`,
+                      background: C.bg,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                    }}
+                  >
                     <div
                       style={{
-                        marginTop: 10,
-                        paddingTop: 10,
-                        borderTop: `1px dashed ${C.borderSoft}`,
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(3, 1fr)',
-                        gap: 0,
+                        fontSize: 10,
+                        fontWeight: 800,
+                        color: C.ink,
+                        letterSpacing: 0.6,
+                        fontFamily: MONO_FONT,
+                        whiteSpace: 'nowrap',
                       }}
                     >
-                      {[
-                        { lbl: 'MESAS', val: p.tables || '—' },
-                        { lbl: 'RESPOSTA', val: p.callsAvg ? `${p.callsAvg}m` : '—' },
-                        { lbl: 'VENDIDO', val: p.sales ? `R$ ${p.sales}` : '—' },
-                      ].map((m, i) => (
-                        <div
-                          key={m.lbl}
-                          style={{
-                            paddingLeft: i === 0 ? 0 : 12,
-                            borderLeft: i === 0 ? 'none' : `1px solid ${C.borderFaint}`,
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: 9.5,
-                              color: C.faint,
-                              fontWeight: 700,
-                              letterSpacing: 0.6,
-                              textTransform: 'uppercase',
-                            }}
-                          >
-                            {m.lbl}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 16,
-                              fontWeight: 800,
-                              color: C.ink,
-                              marginTop: 2,
-                              letterSpacing: -0.3,
-                              fontVariantNumeric: 'tabular-nums',
-                            }}
-                          >
-                            {m.val}
-                          </div>
-                        </div>
-                      ))}
+                      {sh.label} · {sh.range}
                     </div>
-                  )}
-
-                  {p.status === 'on' && (
-                    <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
-                      <button
-                        onClick={() =>
-                          setContactTarget({
-                            staffId: p.id,
-                            name: p.name,
-                            init: p.init,
-                            color: p.color,
-                            role: p.role,
-                            contextHint: `${p.tables} mesas`,
-                          })
-                        }
-                        style={{
-                          all: 'unset',
-                          cursor: 'pointer',
-                          flex: 1,
-                          height: 36,
-                          padding: '0 12px',
-                          borderRadius: 9,
-                          background: C.ink,
-                          color: C.bg,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          letterSpacing: -0.1,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 6,
-                        }}
-                      >
-                        Mensagem
-                      </button>
-                      <button
-                        style={{
-                          all: 'unset',
-                          cursor: 'pointer',
-                          flex: 1,
-                          height: 36,
-                          padding: '0 12px',
-                          borderRadius: 9,
-                          border: `1px solid ${C.borderSoft}`,
-                          background: 'transparent',
-                          color: C.ink,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          letterSpacing: -0.1,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 6,
-                        }}
-                      >
-                        Ver mesas
-                      </button>
+                    <div style={{ flex: 1, fontSize: 12, color: C.mute, fontWeight: 600 }}>
+                      {sh.members.length} {sh.members.length === 1 ? 'funcionário' : 'funcionários'}
+                    </div>
+                    {sh.status === 'now' && (
+                      <MPill tone="success" dot dark={dark}>
+                        Atual
+                      </MPill>
+                    )}
+                    <span
+                      style={{
+                        color: C.faint,
+                        opacity: 0.7,
+                        transform: isOpen ? 'rotate(90deg)' : 'none',
+                        transition: 'transform 120ms ease',
+                      }}
+                    >
+                      {Icon.arrow(14)}
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div
+                      style={{
+                        padding: '10px 12px',
+                        border: `1px solid ${C.borderSoft}`,
+                        borderTop: 'none',
+                        borderRadius: '0 0 12px 12px',
+                        background: C.bg,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                      }}
+                    >
+                      {sh.members.length === 0 ? (
+                        <div style={{ fontSize: 12, color: C.faint, fontWeight: 500 }}>
+                          Ninguém escalado pra esse turno.
+                        </div>
+                      ) : (
+                        sh.members.map((m) => (
+                          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <MAvatar name={m.name} init={m.init} color={m.color} size={28} />
+                            <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.ink }}>{m.name}</div>
+                            <div
+                              style={{
+                                fontSize: 10,
+                                color: C.faint,
+                                fontWeight: 700,
+                                letterSpacing: 0.5,
+                                textTransform: 'uppercase',
+                                fontFamily: MONO_FONT,
+                              }}
+                            >
+                              {m.role}
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   )}
                 </div>
               );
-            })
-          )}
-        </div>
-
-        <MSection dark={dark} title="Turnos de hoje">
-          <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {[
-              { id: 'tarde', label: 'TARDE', range: '12H – 17H', count: team.filter((p) => p.shift.startsWith('12:00')).length, status: 'past' as const },
-              { id: 'noite', label: 'NOITE', range: '17H – 23H', count: team.filter((p) => p.shift.startsWith('17:00')).length, status: 'now' as const },
-              { id: 'enc', label: 'ENCERRAMENTO', range: '23H – 02H', count: 0, status: 'soon' as const },
-            ].map((sh) => (
-              <div
-                key={sh.id}
-                style={{
-                  padding: '10px 12px',
-                  border: `1px solid ${C.borderSoft}`,
-                  borderRadius: 12,
-                  background: C.bg,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 800,
-                    color: C.ink,
-                    letterSpacing: 0.6,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {sh.label} · {sh.range}
-                </div>
-                <div style={{ flex: 1, fontSize: 12, color: C.mute, fontWeight: 600 }}>
-                  {sh.count} {sh.count === 1 ? 'funcionário' : 'funcionários'}
-                </div>
-                {sh.status === 'now' && (
-                  <MPill tone="success" dot dark={dark}>
-                    Atual
-                  </MPill>
-                )}
-              </div>
-            ))}
+            })}
           </div>
         </MSection>
+
+        {/* 7 · Próximos eventos do turno (oculto quando vazio) */}
+        {nextEvents.length > 0 && (
+          <MSection dark={dark} title="Próximos eventos do turno">
+            <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {nextEvents.map((e, i) => (
+                <div
+                  key={i}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    border: `1px solid ${C.borderSoft}`,
+                    background: C.bg,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: e.tone === 'success' ? '#1E8C5A' : e.tone === 'warn' ? '#9A7212' : C.ink,
+                      fontVariantNumeric: 'tabular-nums',
+                      letterSpacing: 0.2,
+                      minWidth: 44,
+                      fontFamily: MONO_FONT,
+                    }}
+                  >
+                    {e.time}
+                  </div>
+                  <div style={{ flex: 1, fontSize: 13, color: C.ink, fontWeight: 600, letterSpacing: -0.1 }}>
+                    {e.txt}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </MSection>
+        )}
+      </div>
+
+      {/* 8 · CTA fixa "+ Adicionar funcionário" — sobre o bottom-nav */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 60,
+          padding: '12px 16px',
+          pointerEvents: 'none',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => router.push('/manager/equipe/novo')}
+          style={{
+            all: 'unset',
+            cursor: 'pointer',
+            pointerEvents: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '14px 16px',
+            background: C.ink,
+            color: C.bg,
+            borderRadius: 14,
+            fontSize: 14,
+            fontWeight: 700,
+            letterSpacing: -0.1,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.16)',
+          }}
+        >
+          {Icon.plus(18)} Adicionar funcionário
+        </button>
       </div>
 
       <MBottomNav active="staff" dark={dark} onTo={(r) => router.push(r)} />
@@ -474,5 +651,248 @@ export function ScreenManagerStaff({ dark, tenantSlug }: ScreenManagerStaffProps
         onClose={() => setContactTarget(null)}
       />
     </div>
+  );
+}
+
+// ─── ChipRow — 2 rows usadas pra status + categoria ──────────────
+function ChipRow({
+  items,
+  onClick,
+  dark,
+}: {
+  items: { id: string; label: string; count?: number; active?: boolean }[];
+  onClick?: (id: string) => void;
+  dark?: boolean;
+}) {
+  const C = useG(!!dark);
+  return (
+    <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+      {items.map((it) => (
+        <button
+          key={it.id}
+          type="button"
+          onClick={() => onClick?.(it.id)}
+          style={{
+            all: 'unset',
+            cursor: onClick ? 'pointer' : 'default',
+            padding: '6px 12px',
+            borderRadius: 999,
+            border: `1px solid ${it.active ? C.ink : C.borderSoft}`,
+            background: it.active ? C.ink : 'transparent',
+            color: it.active ? C.bg : C.ink,
+            fontSize: 12,
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          {it.label}
+          {it.count != null && (
+            <span
+              style={{
+                fontSize: 10.5,
+                fontWeight: 800,
+                color: it.active ? C.bg : C.faint,
+                fontVariantNumeric: 'tabular-nums',
+                letterSpacing: 0.2,
+              }}
+            >
+              · {it.count}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── StaffCard — header + métricas + 2 actions condicionais ──────
+function StaffCard({
+  p,
+  onContact,
+  dark,
+}: {
+  p: StaffMember;
+  onContact: (t: ManagerStaffTarget) => void;
+  dark?: boolean;
+}) {
+  const C = useG(!!dark);
+  const status =
+    p.status === 'off'
+      ? { id: 'folga' as const, tone: 'mute' as const, label: 'Folga' }
+      : p.tables >= 7
+      ? { id: 'sobre' as const, tone: 'danger' as const, label: 'Sobrecarregado' }
+      : p.tables >= 5
+      ? { id: 'media' as const, tone: 'warn' as const, label: 'Carga média' }
+      : { id: 'ok' as const, tone: 'success' as const, label: 'Em turno' };
+  const showOverloadActions = status.id === 'sobre' || status.id === 'media';
+
+  return (
+    <div
+      style={{
+        padding: 12,
+        borderRadius: 12,
+        border: `1px solid ${C.borderSoft}`,
+        background: status.id === 'folga' ? C.surface : C.bg,
+        opacity: status.id === 'folga' ? 0.78 : 1,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <MAvatar name={p.name} init={p.init} color={p.color} size={40} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 16,
+              fontWeight: 700,
+              color: C.ink,
+              letterSpacing: -0.15,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {p.name}
+          </div>
+          <div style={{ fontSize: 12, color: C.faint, fontWeight: 500, marginTop: 2 }}>
+            {p.role} · {p.shift}
+          </div>
+        </div>
+        <MPill tone={status.tone} dark={dark}>
+          {status.label}
+        </MPill>
+      </div>
+
+      {p.status === 'on' && (
+        <div
+          style={{
+            marginTop: 10,
+            paddingTop: 10,
+            borderTop: `1px dashed ${C.borderSoft}`,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: 0,
+          }}
+        >
+          {[
+            { lbl: 'MESAS', val: p.tables || '—' },
+            { lbl: 'RESPOSTA', val: p.callsAvg ? `${p.callsAvg.toFixed(1).replace('.', ',')}m` : '—' },
+            { lbl: 'VENDIDO', val: p.sales ? `R$ ${p.sales.toLocaleString('pt-BR')}` : '—' },
+          ].map((m, i) => (
+            <div
+              key={m.lbl}
+              style={{
+                paddingLeft: i === 0 ? 0 : 12,
+                borderLeft: i === 0 ? 'none' : `1px solid ${C.borderFaint}`,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 9.5,
+                  color: C.faint,
+                  fontWeight: 700,
+                  letterSpacing: 0.6,
+                  textTransform: 'uppercase',
+                  fontFamily: MONO_FONT,
+                }}
+              >
+                {m.lbl}
+              </div>
+              <div
+                style={{
+                  fontSize: 16,
+                  fontWeight: 800,
+                  color: C.ink,
+                  marginTop: 2,
+                  letterSpacing: -0.3,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {m.val}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {p.status === 'on' && (
+        <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+          {showOverloadActions ? (
+            <>
+              <ActionPill filled dark={dark}>
+                Realocar mesas
+              </ActionPill>
+              <ActionPill
+                dark={dark}
+                onClick={() =>
+                  onContact({
+                    staffId: p.id,
+                    name: p.name,
+                    init: p.init,
+                    color: p.color,
+                    role: p.role,
+                    contextHint: `${p.tables} mesas`,
+                  })
+                }
+              >
+                Mensagem direta
+              </ActionPill>
+            </>
+          ) : (
+            <>
+              <ActionPill dark={dark}>Ver mesas</ActionPill>
+              <ActionPill dark={dark}>Mover mesa</ActionPill>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ActionPill — 36px full-width usado nas 2 actions de cada card.
+function ActionPill({
+  filled,
+  children,
+  onClick,
+  dark,
+}: {
+  filled?: boolean;
+  children: ReactNode;
+  onClick?: () => void;
+  dark?: boolean;
+}) {
+  const C = useG(!!dark);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.();
+      }}
+      style={{
+        all: 'unset',
+        cursor: 'pointer',
+        boxSizing: 'border-box',
+        flex: 1,
+        height: 36,
+        padding: '0 12px',
+        borderRadius: 9,
+        border: filled ? 'none' : `1px solid ${C.borderSoft}`,
+        background: filled ? C.ink : 'transparent',
+        color: filled ? C.bg : C.ink,
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: -0.1,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+      }}
+    >
+      {children}
+    </button>
   );
 }

@@ -332,9 +332,10 @@ export function ScreenManagerHomeA({
         />
 
         <div style={{ marginTop: 4 }}>
+          {/* V11 · Cozinha · Reordenar fila / Pausa · Pedidos novos
+              (não é mais "Pausar Zona / Mensagem Equipe" do V3). */}
           <MQuickActionsBar
             dark={dark}
-            slim
             onTo={(r) => router.push(r)}
             pauseActive={
               pauseOp && pauseOp.zonePauseRemaining != null
@@ -568,7 +569,7 @@ export function ScreenManagerHomeA({
                     <div style={{ fontSize: 11.5, color: C.faint, fontWeight: 500, marginTop: 1 }}>
                       {p.role}
                       {p.tables > 0 && ` · ${p.tables} mesas`}
-                      {p.callsAvg > 0 && ` · ${p.callsAvg}m resposta`}
+                      {p.callsAvg > 0 && ` · ${p.callsAvg.toFixed(1).replace('.', ',')}m resposta`}
                     </div>
                   </div>
                   {flag && (

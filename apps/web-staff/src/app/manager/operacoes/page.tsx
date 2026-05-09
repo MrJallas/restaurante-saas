@@ -7,7 +7,7 @@ import { ScreenManagerOps, type OpsTab } from '../../../screens/manager';
 function OpsInner() {
   const params = useSearchParams();
   const slug = params.get('slug') || process.env.NEXT_PUBLIC_TENANT_SLUG || 'demo';
-  const tab = (params.get('tab') as OpsTab | null) ?? 'calls';
+  const tab = (params.get('tab') as OpsTab | null) ?? 'alerts';
   return <ScreenManagerOps tenantSlug={slug} tab={tab} />;
 }
 

@@ -1,0 +1,143 @@
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>App do Cliente · V15 — round 8b · late-arrival via customer-host</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  html, body, #root { margin: 0; height: 100%; background: #f0eee9; font-family: Inter, system-ui, sans-serif; }
+  .dc-card *::-webkit-scrollbar { display: none; }
+  .dc-card * { scrollbar-width: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="handoff/cliente/cliente-tokens.jsx"></script>
+<script type="text/babel" src="handoff/cliente/cliente-late-arrival.jsx"></script>
+
+<script type="text/babel">
+  const mono = {
+    fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5,
+    padding: '1px 6px', background: '#e8e6e0', borderRadius: 4,
+  };
+
+  const Tag = ({ children, tone = 'neutral' }) => {
+    const tones = {
+      neutral: { bg: '#fff', border: '#e5e5e5', color: '#0a0a0a' },
+      new:     { bg: '#fbf1d8', border: '#b88a1a', color: '#7a5b0d' },
+      ink:     { bg: '#0a0a0a', border: '#0a0a0a', color: '#fff' },
+    };
+    const t = tones[tone];
+    return (
+      <span style={{
+        padding: '6px 10px', background: t.bg, border: `1px solid ${t.border}`,
+        color: t.color, borderRadius: 4,
+      }}>{children}</span>
+    );
+  };
+
+  const HeaderV15 = () => (
+    <div style={{
+      padding: '40px 60px 32px', maxWidth: 980,
+      fontFamily: "'Inter', system-ui, sans-serif",
+    }}>
+      <div style={{
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontSize: 11, fontWeight: 500, letterSpacing: 1.5,
+        textTransform: 'uppercase', color: '#6b6b6b', marginBottom: 14,
+      }}>App do Cliente · V15 · round 8b · late-arrival via customer-host</div>
+
+      <div style={{
+        fontSize: 36, fontWeight: 600, letterSpacing: -0.6,
+        color: '#0a0a0a', lineHeight: 1.1, marginBottom: 12,
+      }}>Cliente novo entra na mesa via aprovação do host</div>
+
+      <div style={{
+        fontSize: 15, lineHeight: 1.55, color: '#4d4d4d', maxWidth: 760,
+        letterSpacing: -0.05,
+      }}>
+        Primeiro flow customer-side a usar o <b>customer-host model</b> estabelecido
+        em V15 garçom (round 8a). Cliente B escaneia QR de mesa ocupada · se cliente B
+        ainda for anônimo (1ª visita, sem nome no DB), <b>bloqueio obrigatório</b>{' '}
+        <i>"Quem é você?"</i> ANTES da request ser criada — host SEMPRE vê o nome real
+        do solicitante, nunca um <code style={mono}>?</code> anônimo. Cliente A (host)
+        recebe push e aprova · backend cria <code style={mono}>late_arrival_requests</code>{' '}
+        com TTL de 60 s · <b>sem cascata pro staff</b>. Se host não responde, cliente B
+        vê escape-valve <i>"chamar recepcionista"</i> que cai no waiter-call existente
+        (humano resolve com humano). Staff só recebe <b>notificação passiva</b> depois
+        que host aprovou — ver canvas garçom V16, seção <code style={mono}>staff-late-arrival-info</code>.
+      </div>
+
+      <div style={{
+        marginTop: 24, display: 'flex', flexWrap: 'wrap', gap: 12,
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase', color: '#6b6b6b',
+      }}>
+        <Tag>1 seção</Tag>
+        <Tag>8 frames iOS</Tag>
+        <Tag tone="new">★ ScreenCustomerIdentifyBeforeJoin</Tag>
+        <Tag tone="new">★ ScreenCustomerHostApproveJoin</Tag>
+        <Tag tone="new">★ ScreenCustomerWaitingApproval</Tag>
+        <Tag>handoff em /handoff/cliente/cliente-late-arrival.jsx</Tag>
+        <Tag>spec · /docs/features/customer-host-model.md</Tag>
+      </div>
+
+      <div style={{
+        marginTop: 28, padding: '16px 18px', background: '#fff',
+        border: '1px solid #e5e5e5', borderRadius: 12, maxWidth: 760,
+      }}>
+        <div style={{
+          fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 500,
+          letterSpacing: 1.4, textTransform: 'uppercase', color: '#0a0a0a',
+          marginBottom: 12,
+        }}>4 decisões deste round</div>
+        {[
+          ['1 · Single approver', 'Sem cascata staff. host_customer_id é único aprovador. Se NULL (walk-in) ou timeout 60 s → cliente vê "Chamar recepcionista" e cai no waiter-call existente.'],
+          ['2 · Push ink neutro', 'Customer-host recebe push em ink/neutro · não mostarda. Mostarda fica reservada pro vocabulário staff. Cliente recebendo pergunta social = tom calmo, não-urgente.'],
+          ['3 · IdentifyBeforeJoin obrigatório', 'Cliente novo (sem name no DB) é forçado a se identificar ANTES de criar a late_arrival_request · mini-form "Quem é você?" com input "Seu primeiro nome". Host SEMPRE vê o nome real do solicitante · zero "?" anônimo · pergunta social só funciona quando o host pode reconhecer ("ah, é a Maria, irmã do João"). Returning customers pulam · vão direto pro waiting.'],
+          ['4 · 3 estados Waiting', 'AGUARDANDO HOST · 47S (countdown) → APROVADO (success) OU SEM RESPOSTA (escape valve). Recusa explícita e timeout caem no MESMO frame · copy neutra · sem cor de erro.'],
+        ].map(([num, body]) => (
+          <div key={num} style={{
+            display: 'grid', gridTemplateColumns: '180px 1fr', gap: 14,
+            padding: '10px 0', borderBottom: '1px solid #f0eee9',
+            fontSize: 13, color: '#0a0a0a', lineHeight: 1.5, letterSpacing: -0.05,
+          }}>
+            <div style={{
+              fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 600,
+              letterSpacing: 0.5, color: '#0a0a0a',
+            }}>{num}</div>
+            <div>{body}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const Root = () => (
+    <DesignCanvas>
+      <DCSection id="header" title="" subtitle="">
+        <div key="hdr"><HeaderV15 /></div>
+      </DCSection>
+
+      {window.CLIENTE_LATE_ARRIVAL_SECTIONS.map(sec => (
+        <DCSection key={sec.id} id={sec.id} title={`${sec.id} · ${sec.title}`} subtitle={sec.subtitle}>
+          {sec.frames}
+        </DCSection>
+      ))}
+    </DesignCanvas>
+  );
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+</script>
+</body>
+</html>

@@ -41,7 +41,7 @@ function WaiterProfilePageInner() {
       }}
       onNewEntry={() => router.push(`/waiter/new-entry?tenant=${tenantSlug}`)}
       onOpenMessages={() => router.push(`/waiter/mensagens?tenant=${tenantSlug}&waiterId=${waiterId}`)}
-      onOpenShift={() => router.push(`/waiter?tenant=${tenantSlug}&waiterId=${waiterId}&view=shift`)}
+      onEndShift={() => router.push(`/waiter?tenant=${tenantSlug}&waiterId=${waiterId}&view=shift`)}
     />
   );
 }
