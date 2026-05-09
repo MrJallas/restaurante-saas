@@ -6,6 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
 
 /**
@@ -135,24 +136,32 @@ export class LateArrivalService {
       );
     }
 
-    const updated = (await this.tenantConn.query(
-      `UPDATE late_arrival_requests
-         SET status = $1,
-             approved_by_staff_id = COALESCE($2, approved_by_staff_id),
-             approved_by_customer_id = COALESCE($3, approved_by_customer_id),
-             decided_at = now(),
-             message = COALESCE($4, message),
-             updated_at = now()
-       WHERE id = $5
-       RETURNING *`,
-      [
-        status,
-        by.staffId ?? null,
-        by.customerId ?? null,
-        reason ?? null,
-        id,
-      ],
-    )) as LateArrivalRow[];
+    const updated = unwrapRows<LateArrivalRow>(
+      await this.tenantConn.query(
+        `UPDATE late_arrival_requests
+           SET status = $1,
+               approved_by_staff_id = COALESCE($2, approved_by_staff_id),
+               approved_by_customer_id = COALESCE($3, approved_by_customer_id),
+               decided_at = now(),
+               message = COALESCE($4, message),
+               updated_at = now()
+         WHERE id = $5
+         RETURNING *`,
+        [
+          status,
+          by.staffId ?? null,
+          by.customerId ?? null,
+          reason ?? null,
+          id,
+        ],
+      ),
+    );
+    if (!updated.length) {
+      throw new HttpException(
+        'Late-arrival request nao encontrado.',
+        HttpStatus.NOT_FOUND,
+      );
+    }
     const result = this.mapRow(updated[0]);
 
     if (slug && this.events && result.tableSessionId) {

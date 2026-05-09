@@ -6,6 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
 
 /**
@@ -80,15 +81,17 @@ export class ZonePauseService {
     by: { endedBy?: string; reason?: string },
     slug?: string,
   ) {
-    const updated = (await this.tenantConn.query(
-      `UPDATE zone_pauses
-         SET ended_at = now(),
-             ended_by = COALESCE($1, ended_by),
-             reason = COALESCE($2, reason)
-       WHERE id = $3 AND ended_at IS NULL
-       RETURNING *`,
-      [by.endedBy ?? null, by.reason ?? null, id],
-    )) as Array<Record<string, unknown>>;
+    const updated = unwrapRows<Record<string, unknown>>(
+      await this.tenantConn.query(
+        `UPDATE zone_pauses
+           SET ended_at = now(),
+               ended_by = COALESCE($1, ended_by),
+               reason = COALESCE($2, reason)
+         WHERE id = $3 AND ended_at IS NULL
+         RETURNING *`,
+        [by.endedBy ?? null, by.reason ?? null, id],
+      ),
+    );
     if (!updated.length) {
       throw new HttpException(
         'Zone pause nao encontrada ou ja encerrada.',

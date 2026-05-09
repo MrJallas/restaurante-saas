@@ -1,6 +1,7 @@
 import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { unwrapRows } from '../tenant/query-utils';
 import { TableSessionService } from '../table-session/table-session.service';
 import { validateCpf } from './cpf.util';
 
@@ -81,12 +82,13 @@ export class CustomersService {
         );
       }
 
-      const updatedRows = await this.tenantConn.query(
-        `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
-        [customerId],
+      const updatedRows = unwrapRows<{ total_visits: number }>(
+        await this.tenantConn.query(
+          `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
+          [customerId],
+        ),
       );
-      const rows = (updatedRows as unknown as [Array<Record<string, unknown>>, number])[0];
-      totalVisits = rows[0].total_visits as number;
+      totalVisits = updatedRows[0].total_visits;
     } else {
       recognitionToken = uuidv4();
       const result = await this.tenantConn.query(
@@ -231,12 +233,14 @@ export class CustomersService {
    * VIP marking lives on the `vip` module / session-flags endpoint.
    */
   async setVipFlag(customerId: string, isVip: boolean) {
-    const updated = (await this.tenantConn.query(
-      `UPDATE customers SET is_vip = $1, updated_at = now()
-       WHERE id = $2
-       RETURNING id, is_vip`,
-      [isVip, customerId],
-    )) as Array<Record<string, unknown>>;
+    const updated = unwrapRows<Record<string, unknown>>(
+      await this.tenantConn.query(
+        `UPDATE customers SET is_vip = $1, updated_at = now()
+         WHERE id = $2
+         RETURNING id, is_vip`,
+        [isVip, customerId],
+      ),
+    );
     if (!updated.length) {
       throw new HttpException(
         'Cliente nao encontrado.',
@@ -265,12 +269,13 @@ export class CustomersService {
     const customer = (customers as Record<string, unknown>[])[0];
     const customerId = customer.id as string;
 
-    const updatedRows = await this.tenantConn.query(
-      `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
-      [customerId],
+    const updatedRows = unwrapRows<{ total_visits: number }>(
+      await this.tenantConn.query(
+        `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
+        [customerId],
+      ),
     );
-    const rows = (updatedRows as unknown as [Array<Record<string, unknown>>, number])[0];
-    const totalVisits = rows[0].total_visits as number;
+    const totalVisits = updatedRows[0].total_visits;
 
     await this.tenantConn.query(
       `INSERT INTO visits (customer_id, table_session_id) VALUES ($1, $2)

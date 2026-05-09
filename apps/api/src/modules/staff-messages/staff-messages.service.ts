@@ -6,6 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
 
 @Injectable()
@@ -146,15 +147,17 @@ export class StaffMessagesService {
   }
 
   async markRead(messageId: string, by: { staffId: string }) {
-    const updated = (await this.tenantConn.query(
-      `UPDATE staff_messages
-         SET read_at = now()
-       WHERE id = $1
-         AND (recipient_staff_id = $2 OR recipient_staff_id IS NULL)
-         AND read_at IS NULL
-       RETURNING id, thread_id, read_at`,
-      [messageId, by.staffId],
-    )) as Array<Record<string, unknown>>;
+    const updated = unwrapRows<Record<string, unknown>>(
+      await this.tenantConn.query(
+        `UPDATE staff_messages
+           SET read_at = now()
+         WHERE id = $1
+           AND (recipient_staff_id = $2 OR recipient_staff_id IS NULL)
+           AND read_at IS NULL
+         RETURNING id, thread_id, read_at`,
+        [messageId, by.staffId],
+      ),
+    );
     if (!updated.length) {
       throw new HttpException(
         'Mensagem nao encontrada ou ja lida.',

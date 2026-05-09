@@ -6,6 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
 import { EventsGateway } from '../websocket/events.gateway';
 import { OrderRatingsService } from '../order-ratings/order-ratings.service';
@@ -314,13 +315,15 @@ export class OrdersService {
     // outro client/sweep confirmar primeiro, rowCount = 0 e tratamos
     // como ja-confirmado. Resolve race read-modify-write sem precisar
     // de SELECT FOR UPDATE explicito.
-    const updated = (await this.tenantConn.query(
-      `UPDATE orders
-       SET status = 'received', auto_confirm_at = NULL, updated_at = now()
-       WHERE id = $1 AND status = $2
-       RETURNING id`,
-      [orderId, order.status],
-    )) as { id: string }[];
+    const updated = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `UPDATE orders
+         SET status = 'received', auto_confirm_at = NULL, updated_at = now()
+         WHERE id = $1 AND status = $2
+         RETURNING id`,
+        [orderId, order.status],
+      ),
+    );
 
     if (!updated.length) {
       // Outra request ja transicionou — re-le e retorna o status atual.
@@ -384,13 +387,15 @@ export class OrdersService {
       );
     }
 
-    const updated = (await this.tenantConn.query(
-      `UPDATE orders
-       SET status = 'cancelled', auto_confirm_at = NULL, updated_at = now()
-       WHERE id = $1 AND status = $2
-       RETURNING id`,
-      [orderId, order.status],
-    )) as { id: string }[];
+    const updated = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `UPDATE orders
+         SET status = 'cancelled', auto_confirm_at = NULL, updated_at = now()
+         WHERE id = $1 AND status = $2
+         RETURNING id`,
+        [orderId, order.status],
+      ),
+    );
 
     if (!updated.length) {
       const refresh = (await this.tenantConn.query(

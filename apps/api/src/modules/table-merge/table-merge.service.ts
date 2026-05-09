@@ -6,6 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
 
 /** Default merge request TTL: 60s (host has to react). */
@@ -144,16 +145,18 @@ export class TableMergeService {
   }
 
   async approve(id: string, decidedByCustomerId?: string, slug?: string) {
-    const updated = (await this.tenantConn.query(
-      `UPDATE table_merge_requests
-         SET status = 'approved',
-             decided_at = now(),
-             decided_by_customer_id = COALESCE($1, decided_by_customer_id),
-             updated_at = now()
-       WHERE id = $2 AND status = 'pending'
-       RETURNING *`,
-      [decidedByCustomerId ?? null, id],
-    )) as Array<Record<string, unknown>>;
+    const updated = unwrapRows<Record<string, unknown>>(
+      await this.tenantConn.query(
+        `UPDATE table_merge_requests
+           SET status = 'approved',
+               decided_at = now(),
+               decided_by_customer_id = COALESCE($1, decided_by_customer_id),
+               updated_at = now()
+         WHERE id = $2 AND status = 'pending'
+         RETURNING *`,
+        [decidedByCustomerId ?? null, id],
+      ),
+    );
     if (!updated.length) {
       throw new HttpException(
         'Pedido de juncao nao encontrado ou ja decidido.',
@@ -187,17 +190,19 @@ export class TableMergeService {
     slug?: string,
   ) {
     const result = await this.tenantConn.transaction(async (tx) => {
-      const updated = (await tx.query(
-        `UPDATE table_merge_requests
-           SET status = 'rejected',
-               decided_at = now(),
-               decided_by_customer_id = COALESCE($1, decided_by_customer_id),
-               message = COALESCE($2, message),
-               updated_at = now()
-         WHERE id = $3 AND status = 'pending'
-         RETURNING *`,
-        [decidedByCustomerId ?? null, reason ?? null, id],
-      )) as Array<Record<string, unknown>>;
+      const updated = unwrapRows<Record<string, unknown>>(
+        await tx.query(
+          `UPDATE table_merge_requests
+             SET status = 'rejected',
+                 decided_at = now(),
+                 decided_by_customer_id = COALESCE($1, decided_by_customer_id),
+                 message = COALESCE($2, message),
+                 updated_at = now()
+           WHERE id = $3 AND status = 'pending'
+           RETURNING *`,
+          [decidedByCustomerId ?? null, reason ?? null, id],
+        ),
+      );
       if (!updated.length) {
         throw new HttpException(
           'Pedido de juncao nao encontrado ou ja decidido.',
