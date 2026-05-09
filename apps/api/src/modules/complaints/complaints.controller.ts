@@ -153,8 +153,12 @@ export class ComplaintsController {
 
   @Post(':id/forward')
   @UseGuards(StaffOnlyGuard)
-  async forward(@Param('id') id: string, @Body() dto: ForwardDto) {
-    return this.service.forward(id, dto.toStaffId, dto.notes);
+  async forward(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: ForwardDto,
+  ) {
+    return this.service.forward(id, dto.toStaffId, dto.notes, slug);
   }
 
   @Get()

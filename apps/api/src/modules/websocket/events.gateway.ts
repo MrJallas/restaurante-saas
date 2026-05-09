@@ -25,7 +25,7 @@ import type {
   WsMergeCooldownStarted,
   WsMergeCooldownExpired,
   WsLgpdRequestFulfilled,
-  WsComplaintCreated,
+  WsComplaintReceived,
   WsComplaintResponded,
   WsComplaintRead,
   WsComplaintResolved,
@@ -572,17 +572,22 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   /**
    * Routing: tenant dashboards (managers see new card) + the manager assigned
    * to the complaint (`manager:<id>`) so their inbox lights up.
+   *
+   * P1 #33 — Wire name is `complaint.received` (was `complaint.created`).
+   * The manager INBOX RECEIVES — the customer creates. Aligning event name
+   * with the spec, no deprecation period (server emit + FE listeners were
+   * renamed in the same change).
    */
-  emitComplaintCreated(
+  emitComplaintReceived(
     slug: string,
     assignedManagerId: string | null,
-    payload: WsComplaintCreated['payload'],
+    payload: WsComplaintReceived['payload'],
   ) {
-    this.server.to(`tenant:${slug}`).emit('complaint.created', payload);
+    this.server.to(`tenant:${slug}`).emit('complaint.received', payload);
     if (assignedManagerId) {
       this.server
         .to(`manager:${assignedManagerId}`)
-        .emit('complaint.created', payload);
+        .emit('complaint.received', payload);
     }
   }
 

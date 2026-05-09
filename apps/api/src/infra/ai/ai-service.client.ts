@@ -7,6 +7,24 @@ interface ClassifyResponse {
   confidence: number;
 }
 
+/**
+ * Tool invocation surfaced by the LLM (OpenAI tool_calls shape, normalised
+ * by `services/ai-service` regardless of upstream provider). Each entry
+ * carries the dispatch result so apps/api can persist a complete audit
+ * trail in `assistant_messages.tool_calls` (migration 029).
+ */
+export interface AiToolCall {
+  id?: string;
+  name: string;
+  args?: Record<string, unknown>;
+  result?: unknown;
+  /** Status set by the AI service after dispatch. */
+  status?: 'ok' | 'error';
+  error?: string | null;
+  /** Free-form pass-through fields (router target, requiresText, etc.). */
+  [key: string]: unknown;
+}
+
 interface ChatResponse {
   response: string;
   tokens_in: number;
@@ -15,6 +33,13 @@ interface ChatResponse {
   provider: string;
   latency_ms: number;
   estimated_cost_cents: number;
+  /**
+   * Set when the LLM emitted tool_calls and the AI service dispatched them
+   * before returning. Empty list (or absent) when the model didn't invoke
+   * any tool. apps/api MUST persist this into `assistant_messages.tool_calls`
+   * so the FE can render `ToolCallIndicator` over the history.
+   */
+  tool_calls?: AiToolCall[];
 }
 
 interface ChatMessage {

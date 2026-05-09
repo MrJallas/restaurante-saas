@@ -144,17 +144,96 @@ export class TableMergeService {
     return result;
   }
 
+  /**
+   * P1 #28 — Dual-consent state machine. A merge is a social decision and
+   * only rolls when BOTH hosts approve (per
+   * docs/features/customer-host-model.md V16: "Junção só rola se ambos
+   * aprovarem · consent duplo"). The previous implementation flipped
+   * `status = 'approved'` on the first /respond hit, ignoring the other
+   * side — single-consent bug.
+   *
+   * Behaviour now:
+   *  - Caller is identified to side A or side B by joining the session's
+   *    `host_customer_id`. Origin = source session, target = target session.
+   *  - A `pending` row stamps `approved_by_a_at` / `approved_by_b_at` on the
+   *    side the approver belongs to. If only one side is stamped, status
+   *    stays `pending` (waiting for counterpart). If both are stamped, the
+   *    row transitions to `approved`.
+   *  - Idempotent: re-approving from the same side is a no-op (we COALESCE
+   *    the timestamp instead of overwriting). Cross-side races are resolved
+   *    by the UPDATE … RETURNING contract (the row's final state reflects
+   *    the last writer; both writers see `pending` → `approved` exactly
+   *    once via the WHERE-guard).
+   */
   async approve(id: string, decidedByCustomerId?: string, slug?: string) {
+    if (!decidedByCustomerId) {
+      throw new HttpException(
+        'decidedByCustomerId obrigatorio para identificar o lado da junçao.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // Resolve which side this approver belongs to. We trust the session ↔
+    // host_customer_id wiring set by `table-session.service.upsertParticipant`.
+    const sideRows = (await this.tenantConn.query(
+      `SELECT mr.id, mr.source_table_session_id, mr.target_table_session_id,
+              src.host_customer_id AS src_host,
+              tgt.host_customer_id AS tgt_host
+         FROM table_merge_requests mr
+         JOIN table_sessions src ON src.id = mr.source_table_session_id
+         JOIN table_sessions tgt ON tgt.id = mr.target_table_session_id
+        WHERE mr.id = $1`,
+      [id],
+    )) as Array<{
+      src_host: string | null;
+      tgt_host: string | null;
+    }>;
+    if (!sideRows.length) {
+      throw new HttpException(
+        'Pedido de juncao nao encontrado ou ja decidido.',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const { src_host, tgt_host } = sideRows[0];
+    let side: 'a' | 'b';
+    if (src_host && src_host === decidedByCustomerId) {
+      side = 'a';
+    } else if (tgt_host && tgt_host === decidedByCustomerId) {
+      side = 'b';
+    } else {
+      throw new HttpException(
+        'Apenas o host de cada mesa pode aprovar a juncao.',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    // Conditional stamp: COALESCE preserves the existing timestamp if the
+    // same side approves twice (no double-counting). Status only flips to
+    // 'approved' when BOTH timestamps end up non-NULL after this UPDATE.
+    const aStamp = side === 'a' ? 'now()' : 'approved_by_a_at';
+    const bStamp = side === 'b' ? 'now()' : 'approved_by_b_at';
     const updated = unwrapRows<Record<string, unknown>>(
       await this.tenantConn.query(
         `UPDATE table_merge_requests
-           SET status = 'approved',
-               decided_at = now(),
-               decided_by_customer_id = COALESCE($1, decided_by_customer_id),
+           SET approved_by_a_at = COALESCE(approved_by_a_at, ${aStamp}),
+               approved_by_b_at = COALESCE(approved_by_b_at, ${bStamp}),
+               decided_by_customer_id = COALESCE(decided_by_customer_id, $1),
+               status = CASE
+                          WHEN COALESCE(approved_by_a_at, ${aStamp}) IS NOT NULL
+                           AND COALESCE(approved_by_b_at, ${bStamp}) IS NOT NULL
+                          THEN 'approved'
+                          ELSE status
+                        END,
+               decided_at = CASE
+                              WHEN COALESCE(approved_by_a_at, ${aStamp}) IS NOT NULL
+                               AND COALESCE(approved_by_b_at, ${bStamp}) IS NOT NULL
+                              THEN now()
+                              ELSE decided_at
+                            END,
                updated_at = now()
          WHERE id = $2 AND status = 'pending'
          RETURNING *`,
-        [decidedByCustomerId ?? null, id],
+        [decidedByCustomerId, id],
       ),
     );
     if (!updated.length) {
@@ -163,19 +242,21 @@ export class TableMergeService {
         HttpStatus.NOT_FOUND,
       );
     }
-    const result = this.mapRow(updated[0]);
+    const row = updated[0];
+    const result = this.mapRow(row);
+    const fullyApproved = row.status === 'approved';
 
     if (slug && this.events) {
-      // `side: 'both'` because the V1 service accepts either side via the
-      // same endpoint without distinguishing — FE infers the originator.
       this.events.emitTableMergeApproved(
         slug,
         result.sourceTableSessionId,
         result.targetTableSessionId,
         {
           requestId: result.id,
-          side: 'both',
-          status: 'approved',
+          // Surface the actual side that just approved so subscribers can
+          // distinguish "still waiting on counterpart" from "consummated".
+          side: fullyApproved ? 'both' : side,
+          status: fullyApproved ? 'approved' : 'pending',
         },
       );
     }
@@ -309,6 +390,10 @@ export class TableMergeService {
       ttlExpiresAt: row.ttl_expires_at as string,
       cooldownEndsAt: (row.cooldown_expires_at as string | null) ?? null,
       decidedAt: (row.decided_at as string | null) ?? null,
+      // P1 #28 — surface dual-consent timestamps so FE can show "esperando
+      // resposta da Mesa X" prose on the side that already answered.
+      approvedByAAt: (row.approved_by_a_at as string | null) ?? null,
+      approvedByBAt: (row.approved_by_b_at as string | null) ?? null,
       createdAt: row.created_at as string,
     };
   }

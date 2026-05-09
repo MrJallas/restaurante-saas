@@ -284,7 +284,7 @@ export function ScreenManagerHomeA({
   // Live updates
   useManagerEvents(tenantSlug, (event) => {
     switch (event.event) {
-      case 'complaint.created':
+      case 'complaint.received':
       case 'complaint.responded':
       case 'complaint.resolved':
       case 'late_arrival.created':
