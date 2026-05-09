@@ -75,9 +75,10 @@ export class StaffMessagesController {
 
   @Post(':messageId/read')
   async markRead(
+    @Param('slug') slug: string,
     @Param('messageId') messageId: string,
     @Body() dto: ReadDto,
   ) {
-    return this.service.markRead(messageId, { staffId: dto.staffId });
+    return this.service.markRead(messageId, { staffId: dto.staffId }, slug);
   }
 }

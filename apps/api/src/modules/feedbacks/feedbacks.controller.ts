@@ -1,4 +1,5 @@
-import { Controller, Post, Get, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   IsString,
   IsOptional,
@@ -12,6 +13,7 @@ import {
 } from 'class-validator';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
 import { Session } from '../../common/decorators/session.decorator';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { FeedbacksService } from './feedbacks.service';
 
 class SubmitFeedbackDto {
@@ -73,14 +75,23 @@ class SubmitFeedbackDto {
 
 @Controller(':slug/feedbacks')
 export class FeedbacksController {
-  constructor(private readonly feedbacksService: FeedbacksService) {}
+  constructor(
+    private readonly feedbacksService: FeedbacksService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
+  /**
+   * Round 8 (B-NEW-27): customerId derivado do cookie (opt-in — feedback
+   * pode ser anônimo). Antes customer A passava `customerId: <vítima>`
+   * e o feedback ficava em nome dela no audit.
+   */
   @Post()
   @UseGuards(SessionGuard)
-  async submitFeedback(@Body() dto: SubmitFeedbackDto) {
+  async submitFeedback(@Body() dto: SubmitFeedbackDto, @Req() req: Request) {
+    const callerCustomerId = await this.callerResolver.tryGetCustomerId(req);
     return this.feedbacksService.submitFeedback({
       visitId: dto.visitId ?? null,
-      customerId: dto.customerId ?? null,
+      customerId: callerCustomerId,
       overallRating: dto.overallRating,
       foodRating: dto.foodRating,
       serviceRating: dto.serviceRating,

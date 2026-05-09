@@ -5,8 +5,10 @@ import {
   Patch,
   Body,
   Param,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   IsIn,
   IsInt,
@@ -20,6 +22,7 @@ import {
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { WaiterCallsService } from './waiter-calls.service';
 
 class CreateWaiterCallDto {
@@ -52,18 +55,29 @@ class AcknowledgeCallDto {
 
 @Controller(':slug/waiter-calls')
 export class WaiterCallsController {
-  constructor(private readonly waiterCallsService: WaiterCallsService) {}
+  constructor(
+    private readonly waiterCallsService: WaiterCallsService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
+  /**
+   * Round 8 (B-NEW-27): customerId derivado do cookie (opt-in — anonymous
+   * sessions ainda podem chamar garçom sem identificação prévia). Antes:
+   * customer A passava `customerId: <vítima>` e o chamado ficava
+   * registrado em nome dela no audit log.
+   */
   @Post()
   @UseGuards(SessionGuard)
   async createCall(
     @Session() session: SessionData,
     @Param('slug') slug: string,
     @Body() dto: CreateWaiterCallDto = {},
+    @Req() req: Request,
   ) {
+    const callerCustomerId = await this.callerResolver.tryGetCustomerId(req);
     return this.waiterCallsService.createCall(session.sessionId, slug, {
       reason: dto.reason,
-      customerId: dto.customerId ?? null,
+      customerId: callerCustomerId,
       visitId: dto.visitId ?? null,
     });
   }

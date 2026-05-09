@@ -1,4 +1,18 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  Req,
+  HttpCode,
+  HttpException,
+  HttpStatus,
+  UseGuards,
+} from '@nestjs/common';
 import {
   IsString,
   IsNotEmpty,
@@ -10,7 +24,17 @@ import {
 } from 'class-validator';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
+import { RedisService } from '../../infra/redis/redis.service';
 import { StaffService } from './staff.service';
+
+// Round 8 (B-NEW-30) — throttle GLOBAL por IP em verify-pin. Antes só
+// throttle por staffId (5/5min individual): atacante com lista de N
+// staffIds (vaza via GET /staff publico) tinha N*5 tentativas antes
+// de qualquer lockout. Pra restaurante com 10 staff e PIN 4-digit,
+// 50 tentativas = 0.5% chance/round, cumulativo eventually acerta.
+const PIN_IP_RATE_MAX = 20;
+const PIN_IP_RATE_WINDOW_SECONDS = 15 * 60;
+const PIN_IP_LOCK_SECONDS = 15 * 60;
 
 class CreateStaffDto {
   @IsString() @IsNotEmpty() @MaxLength(80) name!: string;
@@ -52,7 +76,10 @@ class VerifyPinDto {
  */
 @Controller(':slug/staff')
 export class StaffController {
-  constructor(private readonly staffService: StaffService) {}
+  constructor(
+    private readonly staffService: StaffService,
+    private readonly redis: RedisService,
+  ) {}
 
   @Get()
   async list(@Query('role') role?: string, @Query('activeOnly') activeOnly?: string) {
@@ -96,8 +123,54 @@ export class StaffController {
 
   @Post(':id/verify-pin')
   @HttpCode(200)
-  async verifyPin(@Param('id') id: string, @Body() dto: VerifyPinDto) {
+  async verifyPin(
+    @Param('id') id: string,
+    @Body() dto: VerifyPinDto,
+    @Req() req: { ip?: string; headers: Record<string, string | string[]> },
+  ) {
+    // Round 8 (B-NEW-30): throttle global por IP ALÉM do throttle por
+    // staffId que já existe no service. Bloqueia atacante distribuindo
+    // attempts entre N staff IDs.
+    const ipKey = this.pinIpKey(req);
+    if (await this.redis.get(`${ipKey}:lock`)) {
+      throw new HttpException(
+        'Muitas tentativas deste IP. Aguarde alguns minutos.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     const valid = await this.staffService.verifyPin(id, dto.pin);
+
+    // Sucesso reseta global counter; falha incrementa.
+    if (valid) {
+      await this.redis.del(`${ipKey}:attempts`);
+    } else {
+      const attempts = await this.redis.incr(`${ipKey}:attempts`);
+      if (attempts === 1) {
+        await this.redis.expire(
+          `${ipKey}:attempts`,
+          PIN_IP_RATE_WINDOW_SECONDS,
+        );
+      }
+      if (attempts >= PIN_IP_RATE_MAX) {
+        await this.redis.set(`${ipKey}:lock`, '1', PIN_IP_LOCK_SECONDS);
+        await this.redis.del(`${ipKey}:attempts`);
+      }
+    }
+
     return { valid };
+  }
+
+  private pinIpKey(req: {
+    ip?: string;
+    headers: Record<string, string | string[]>;
+  }): string {
+    const xff = req.headers['x-forwarded-for'];
+    const xffStr = Array.isArray(xff) ? xff[0] : xff;
+    const ip = (xffStr ?? req.ip ?? 'unknown')
+      .toString()
+      .split(',')[0]
+      .trim();
+    return `staff:pin_ip:${ip}`;
   }
 }

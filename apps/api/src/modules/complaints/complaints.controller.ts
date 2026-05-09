@@ -5,8 +5,10 @@ import {
   Param,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   IsIn,
   IsInt,
@@ -20,6 +22,7 @@ import {
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { SessionGuard } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { ComplaintsService } from './complaints.service';
 
 class CreateComplaintDto {
@@ -111,14 +114,29 @@ class ListQueryDto {
 
 @Controller(':slug/complaints')
 export class ComplaintsController {
-  constructor(private readonly service: ComplaintsService) {}
+  constructor(
+    private readonly service: ComplaintsService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
+  /**
+   * Round 8 (B-NEW-27): customerId derivado do cookie em vez de aceitar
+   * via body. Antes: customer A passava `customerId: <vítima>` e
+   * complaint era criado em nome dela — manager via complaint atribuído
+   * a B falsamente, audit log mostrava B reclamando, reputação dela
+   * impactada se manager bloqueia/marca como reincidente.
+   */
   @Post()
   @UseGuards(SessionGuard)
-  async create(@Param('slug') slug: string, @Body() dto: CreateComplaintDto) {
+  async create(
+    @Param('slug') slug: string,
+    @Body() dto: CreateComplaintDto,
+    @Req() req: Request,
+  ) {
+    const callerCustomerId = await this.callerResolver.requireCustomerId(req);
     return this.service.create(
       {
-        customerId: dto.customerId,
+        customerId: callerCustomerId,
         visitId: dto.visitId,
         orderId: dto.orderId,
         orderRatingId: dto.orderRatingId,

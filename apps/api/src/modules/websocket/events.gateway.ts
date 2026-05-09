@@ -652,13 +652,16 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
-   * Read receipt for a previously delivered staff message. Broadcast on the
-   * global namespace so any subscriber holding the thread can flip the UI.
-   * Mirrors the simple `complaint.read` pattern — narrower routing can be
-   * layered on later if the fan-out becomes noisy.
+   * Read receipt for a previously delivered staff message.
+   *
+   * Round 8 (B-NEW-3 round 3 fix): antes era `this.server.emit(...)` global
+   * — broadcast pra TODOS sockets (cross-tenant em deploy multi-tenant +
+   * customers ouvindo outros eventos recebiam metadata da staff). Agora
+   * scopado pra room `tenant:${slug}`. O slug é passado pelo caller
+   * (`StaffMessagesService.markRead`) via parâmetro novo.
    */
-  emitStaffMessageRead(payload: WsStaffMessageRead['payload']) {
-    this.server.emit('staff_message.read', payload);
+  emitStaffMessageRead(slug: string, payload: WsStaffMessageRead['payload']) {
+    this.server.to(`tenant:${slug}`).emit('staff_message.read', payload);
   }
 
   /**

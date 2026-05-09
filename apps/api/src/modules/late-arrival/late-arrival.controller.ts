@@ -144,16 +144,34 @@ export class LateArrivalController {
     return { customerId: caller.customerId };
   }
 
+  /**
+   * Round 8 (B-NEW-27): customerId derivado do cookie. O fluxo de
+   * late-arrival passa pelo /customer/identify ANTES, que seta o
+   * recognition_token cookie + persiste customer no DB. Aqui o
+   * cookie já está disponível. dto.customerId é IGNORADO (atacante
+   * não pode criar request fake atribuído a customer alheio).
+   */
   @Post()
   @UseGuards(SessionGuard)
   async create(
     @Param('slug') slug: string,
     @Body() dto: CreateLateArrivalDto,
     @Session() session: SessionData,
+    @Req() req: Request,
   ) {
+    const callerCustomerId = await this.customers.resolveByRecognitionToken(
+      ((req as Request & { cookies?: Record<string, string> }).cookies
+        ?.recognition_token ?? ''),
+    );
+    if (!callerCustomerId) {
+      throw new HttpException(
+        'Identifique-se primeiro (POST /customer/identify).',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
     return this.service.create(
       {
-        customerId: dto.customerId,
+        customerId: callerCustomerId.customerId,
         visitId: dto.visitId,
         tableSessionId: dto.tableSessionId ?? session.sessionId,
         expectedArrivalAt: dto.expectedArrivalAt,

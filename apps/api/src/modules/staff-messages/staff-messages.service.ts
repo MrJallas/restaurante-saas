@@ -146,7 +146,7 @@ export class StaffMessagesService {
     return rows.map((r) => this.mapMessageRow(r, threadId));
   }
 
-  async markRead(messageId: string, by: { staffId: string }) {
+  async markRead(messageId: string, by: { staffId: string }, slug: string) {
     const updated = unwrapRows<Record<string, unknown>>(
       await this.tenantConn.query(
         `UPDATE staff_messages
@@ -170,7 +170,7 @@ export class StaffMessagesService {
     };
 
     if (this.events) {
-      this.events.emitStaffMessageRead({
+      this.events.emitStaffMessageRead(slug, {
         messageId: result.messageId,
         threadId: updated[0].thread_id as string,
         readAt: result.readAt,

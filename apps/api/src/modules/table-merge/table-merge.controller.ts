@@ -5,8 +5,10 @@ import {
   Body,
   Param,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   IsString,
   IsOptional,
@@ -17,6 +19,7 @@ import {
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { TableMergeService } from './table-merge.service';
 
 class CreateMergeDto {
@@ -66,7 +69,10 @@ class ListQueryDto {
  */
 @Controller(':slug/table-merge-requests')
 export class TableMergeController {
-  constructor(private readonly service: TableMergeService) {}
+  constructor(
+    private readonly service: TableMergeService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
   @Post()
   @UseGuards(SessionGuard)
@@ -78,14 +84,23 @@ export class TableMergeController {
     return this.service.createRequest(dto, slug);
   }
 
+  /**
+   * Round 8 (B-NEW-27): decidedByCustomerId derivado do cookie.
+   * Antes customer A passava `decidedByCustomerId: <host-de-Y>` e o
+   * service só validava que o UUID casava com `tgt_host`, não que o
+   * caller realmente era o tgt_host. Service.approve já valida ownership,
+   * mas trustar o body permitia spoof do caller no audit.
+   */
   @Post(':id/approve')
   @UseGuards(SessionGuard)
   async approve(
     @Param('slug') slug: string,
     @Param('id') id: string,
-    @Body() dto: DecisionDto = {},
+    @Body() _dto: DecisionDto = {},
+    @Req() req: Request,
   ) {
-    return this.service.approve(id, dto.decidedByCustomerId, slug);
+    const callerCustomerId = await this.callerResolver.requireCustomerId(req);
+    return this.service.approve(id, callerCustomerId, slug);
   }
 
   @Post(':id/reject')
@@ -94,8 +109,10 @@ export class TableMergeController {
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Body() dto: DecisionDto = {},
+    @Req() req: Request,
   ) {
-    return this.service.reject(id, dto.decidedByCustomerId, dto.reason, slug);
+    const callerCustomerId = await this.callerResolver.requireCustomerId(req);
+    return this.service.reject(id, callerCustomerId, dto.reason, slug);
   }
 
   /**
