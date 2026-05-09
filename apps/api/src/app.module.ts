@@ -32,6 +32,7 @@ import { ZonePauseModule } from './modules/zone-pause/zone-pause.module';
 import { VipModule } from './modules/vip/vip.module';
 import { ChatHistoryModule } from './modules/chat-history/chat-history.module';
 import { JobsModule } from './modules/jobs/jobs.module';
+import { QrIssuesModule } from './modules/qr-issues/qr-issues.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { JobsModule } from './modules/jobs/jobs.module';
     ZonePauseModule,
     VipModule,
     JobsModule,
+    QrIssuesModule,
   ],
   controllers: [AppController],
 })

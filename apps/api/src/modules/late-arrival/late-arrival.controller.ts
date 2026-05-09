@@ -159,4 +159,17 @@ export class LateArrivalController {
       tableSessionId: q.tableSessionId,
     });
   }
+
+  /**
+   * P1 #23 — single-resource read. Deep-links from manager/host stat
+   * detail pages (`/manager/stat/late-arrival/:id`,
+   * `/host/late-arrival/[id]`) hit this. Same guard as `list` —
+   * staff-only so customer sessions can't enumerate other tables'
+   * requests.
+   */
+  @Get(':id')
+  @UseGuards(StaffOnlyGuard)
+  async getById(@Param('id') id: string) {
+    return this.service.getById(id);
+  }
 }

@@ -50,6 +50,17 @@ export class StaffController {
     return { staff };
   }
 
+  /**
+   * P1 #16 — `/staff/my-tables`. Returns ActiveTableSummary[] for the
+   * waiter home screen. Must be declared BEFORE the `:id` handler so
+   * Nest's route matcher doesn't fall through to `getById('my-tables')`.
+   */
+  @Get('my-tables')
+  @UseGuards(StaffOrSessionGuard)
+  async myTables() {
+    return this.staffService.listActiveTables();
+  }
+
   @Get(':id')
   async getById(@Param('id') id: string) {
     return this.staffService.getById(id);
