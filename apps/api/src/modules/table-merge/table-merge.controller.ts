@@ -7,6 +7,8 @@ import {
   Query,
   Req,
   UseGuards,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import {
@@ -80,15 +82,26 @@ export class TableMergeController {
    * conhecendo UUID — audit log mostrava B como requester, manager DM
    * ia pra B, FE de B mostrava modal de junção que ele não pediu.
    * Round 8 cobriu approve/reject mas o create ficou esquecido.
+   *
+   * Round 12 (B-NEW-61): sourceTableSessionId pinned no session.sessionId.
+   * Antes customer A em mesa 5 criava merge "entre mesa 7 e 9" passando
+   * sourceTableSessionId arbitrário — WS broadcast disparava modal pra
+   * cliente alheio em outra mesa, cooldown grief.
    */
   @Post()
   @UseGuards(SessionGuard)
   async create(
     @Param('slug') slug: string,
     @Body() dto: CreateMergeDto,
-    @Session() _s: SessionData,
+    @Session() session: SessionData,
     @Req() req: Request,
   ) {
+    if (dto.sourceTableSessionId !== session.sessionId) {
+      throw new HttpException(
+        'sourceTableSessionId precisa ser sua própria mesa.',
+        HttpStatus.FORBIDDEN,
+      );
+    }
     const callerCustomerId = await this.callerResolver.requireCustomerId(req);
     return this.service.createRequest(
       { ...dto, requestingCustomerId: callerCustomerId },

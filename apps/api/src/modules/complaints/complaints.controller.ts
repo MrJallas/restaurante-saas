@@ -167,6 +167,12 @@ export class ComplaintsController {
     return this.service.respond(id, { staffId }, dto, slug);
   }
 
+  /**
+   * Round 12 (B-NEW-60): trocado requireStaffId por requireActiveStaffId
+   * (cross-check em DB que staff existe + is_active=true). StaffOnlyGuard
+   * só valida x-staff-key (env), não o x-staff-id — antes audit gravava
+   * UUID arbitrário se atacante tinha a key.
+   */
   @Post(':id/resolve')
   @UseGuards(StaffOnlyGuard)
   async resolve(
@@ -175,7 +181,7 @@ export class ComplaintsController {
     @Body() _dto: ResolveDto = {},
     @Req() req: Request,
   ) {
-    const staffId = this.callerResolver.requireStaffId(req);
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
     return this.service.resolve(id, { staffId }, slug);
   }
 

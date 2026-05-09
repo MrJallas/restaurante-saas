@@ -1,15 +1,20 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
-import { IsUUID, IsIn } from 'class-validator';
+import { Controller, Get, Post, Body, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
+import { IsUUID, IsIn, IsOptional } from 'class-validator';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
 import { Session } from '../../common/decorators/session.decorator';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { TableSessionService } from './table-session.service';
 
 class JoinDecisionDto {
-  // O host envia esses 2 campos pra aprovar/rejeitar quem pediu pra
-  // entrar. Quem fez o request e quem decide vem do session token do
-  // caller (host) — service valida que ele e mesmo o host.
+  /**
+   * Round 12 (B-NEW-62): hostCustomerId agora é derivado do cookie pelo
+   * callerResolver. Mantido como optional só pra compat com clientes legacy
+   * que ainda mandam — service ignora o valor do body.
+   */
+  @IsOptional()
   @IsUUID()
-  hostCustomerId!: string;
+  hostCustomerId?: string;
 
   @IsUUID()
   targetCustomerId!: string;
@@ -25,7 +30,10 @@ class JoinDecisionDto {
  */
 @Controller(':slug/table')
 export class TableController {
-  constructor(private readonly tableSessionService: TableSessionService) {}
+  constructor(
+    private readonly tableSessionService: TableSessionService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
   @Get('participants')
   @UseGuards(SessionGuard)
@@ -38,19 +46,26 @@ export class TableController {
 
   /**
    * Host-only: aprova ou rejeita um pedido de entrada de outro
-   * customer na mesa. Service valida que `hostCustomerId` e mesmo o
-   * host gravado em `table_sessions.host_customer_id` — atacante que
-   * tenta forjar nao consegue.
+   * customer na mesa.
+   *
+   * Round 12 (B-NEW-62): hostCustomerId derivado do cookie. Antes vinha
+   * do body — qualquer customer na mesma session conseguia passar o UUID
+   * do host real, e service só validava `host_customer_id === input` (que
+   * trivialmente bate). Audit registrava decisão como sendo do host
+   * mesmo quando outro participante chamou. Agora o service compara o
+   * host em DB contra o customerId do cookie (caller real).
    */
   @Post('participants/decide')
   @UseGuards(SessionGuard)
   async decideJoinRequest(
     @Session() session: SessionData,
     @Body() dto: JoinDecisionDto,
+    @Req() req: Request,
   ) {
+    const callerCustomerId = await this.callerResolver.requireCustomerId(req);
     return this.tableSessionService.decideJoinRequest(
       session.sessionId,
-      dto.hostCustomerId,
+      callerCustomerId,
       dto.targetCustomerId,
       dto.decision,
     );

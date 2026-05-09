@@ -68,6 +68,10 @@ export class StaffMessagesController {
    * Round 10 (B-NEW-49): senderStaffId/staffId derivados do x-staff-id
    * header em vez do body. Antes staff A enviava em nome de B
    * (impersonation no inbox).
+   *
+   * Round 12 (B-NEW-60): trocado requireStaffId → requireActiveStaffId
+   * (DB cross-check). StaffOnlyGuard só valida x-staff-key; antes UUID
+   * arbitrário no x-staff-id passava como sender/listener.
    */
   @Post()
   async send(
@@ -75,13 +79,13 @@ export class StaffMessagesController {
     @Body() dto: SendMessageDto,
     @Req() req: Request,
   ) {
-    const senderStaffId = this.callerResolver.requireStaffId(req);
+    const senderStaffId = await this.callerResolver.requireActiveStaffId(req);
     return this.service.send({ ...dto, senderStaffId }, slug);
   }
 
   @Get('threads')
   async listThreads(@Query() _q: StaffQueryDto, @Req() req: Request) {
-    const staffId = this.callerResolver.requireStaffId(req);
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
     return this.service.listThreadsForStaff(staffId);
   }
 
@@ -97,7 +101,7 @@ export class StaffMessagesController {
     @Body() _dto: ReadDto,
     @Req() req: Request,
   ) {
-    const staffId = this.callerResolver.requireStaffId(req);
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
     return this.service.markRead(messageId, { staffId }, slug);
   }
 }
