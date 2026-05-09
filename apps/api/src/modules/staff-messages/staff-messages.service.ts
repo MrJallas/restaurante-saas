@@ -136,7 +136,28 @@ export class StaffMessagesService {
     }));
   }
 
-  async listMessagesInThread(threadId: string) {
+  /**
+   * Round 13 (B-NEW-64): adicionado callerStaffId + JOIN com
+   * staff_message_thread_participants. Antes qualquer staff com
+   * `x-staff-key` válida lia DMs entre managers/colegas em qualquer
+   * threadId vazado (ex.: threadId aparece em `staff_message.received`
+   * broadcast pra `tenant:${slug}`). Pattern alinhado com
+   * chat-history.service.ts (B-NEW-9 / B-NEW-16 customer-side).
+   */
+  async listMessagesInThread(threadId: string, callerStaffId: string) {
+    const memberRows = (await this.tenantConn.query(
+      `SELECT 1 FROM staff_message_thread_participants
+        WHERE thread_id = $1 AND staff_id = $2 AND left_at IS NULL
+        LIMIT 1`,
+      [threadId, callerStaffId],
+    )) as unknown[];
+    if (!memberRows.length) {
+      throw new HttpException(
+        'Thread não encontrada ou acesso negado.',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
     const rows = (await this.tenantConn.query(
       `SELECT * FROM staff_messages
         WHERE thread_id = $1 AND deleted_at IS NULL

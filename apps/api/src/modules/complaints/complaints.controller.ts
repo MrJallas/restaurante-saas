@@ -185,13 +185,21 @@ export class ComplaintsController {
     return this.service.resolve(id, { staffId }, slug);
   }
 
+  /**
+   * Round 13 (B-NEW-66): adicionado ManagerOnlyGuard + requireActiveStaffId
+   * pra alinhar com respond/resolve. Antes qualquer staff com x-staff-key
+   * reassinava complaint pra qualquer manager (audit-light, mas
+   * inconsistente com os irmãos do mesmo controller).
+   */
   @Post(':id/forward')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async forward(
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Body() dto: ForwardDto,
+    @Req() req: Request,
   ) {
+    await this.callerResolver.requireActiveStaffId(req);
     return this.service.forward(id, dto.toStaffId, dto.notes, slug);
   }
 

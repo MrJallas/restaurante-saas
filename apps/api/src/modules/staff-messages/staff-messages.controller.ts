@@ -89,9 +89,19 @@ export class StaffMessagesController {
     return this.service.listThreadsForStaff(staffId);
   }
 
+  /**
+   * Round 13 (B-NEW-64): callerStaffId derivado do header e validado
+   * em DB; service exige membership em staff_message_thread_participants
+   * pra retornar mensagens. Antes era IDOR aberto (qualquer staff com a
+   * x-staff-key lia DMs alheias se vazasse o threadId).
+   */
   @Get('threads/:threadId')
-  async listMessages(@Param('threadId') threadId: string) {
-    return this.service.listMessagesInThread(threadId);
+  async listMessages(
+    @Param('threadId') threadId: string,
+    @Req() req: Request,
+  ) {
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
+    return this.service.listMessagesInThread(threadId, staffId);
   }
 
   @Post(':messageId/read')
