@@ -6,6 +6,7 @@ import {
   Body,
   Param,
   Query,
+  Req,
   UseGuards,
   NotFoundException,
 } from '@nestjs/common';
@@ -24,7 +25,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { SessionGuard, SessionData } from '../../common/guards/session.guard';
+import { SessionGuard, SessionData, SessionRequest } from '../../common/guards/session.guard';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { OrdersService } from './orders.service';
@@ -149,16 +150,38 @@ export class OrdersController {
     );
   }
 
+  /**
+   * GET /:slug/orders — dual-mode list endpoint.
+   *
+   *  - **Customer mode** (cookie `session_token` / header `x-session-token`):
+   *    returns orders scoped to the caller's table session, with the same
+   *    `billingMode`/`visitId`/`scope` filters as before.
+   *  - **Staff mode** (header `x-staff-key`): returns the tenant-wide
+   *    active-orders feed used by the cozinha (KDS). No session is required
+   *    because the kitchen has no `table_session_id` of its own.
+   *
+   * The route was previously guarded by `SessionGuard` only, so KDS
+   * requests holding a valid `x-staff-key` got a 401 — this was P0 #12 in
+   * the consolidated E2E report. `StaffOrSessionGuard` accepts either
+   * credential; the branch below picks the right service method based on
+   * which one authenticated.
+   */
   @Get()
-  @UseGuards(SessionGuard)
+  @UseGuards(StaffOrSessionGuard)
   async getOrders(
-    @Session() session: SessionData,
+    @Req() req: SessionRequest,
     @Query('billingMode') billingMode?: string,
     @Query('visitId') visitId?: string,
     @Query('scope') scope?: string,
   ) {
+    if (!req.sessionData) {
+      // Staff path — `StaffOrSessionGuard` already verified `x-staff-key`.
+      const orders = await this.ordersService.getActiveOrdersForTenant();
+      return { orders };
+    }
+
     const orders = await this.ordersService.getOrdersBySession(
-      session.sessionId,
+      req.sessionData.sessionId,
       billingMode,
       visitId,
       scope,

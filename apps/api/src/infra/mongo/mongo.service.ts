@@ -8,9 +8,19 @@ import { Db, MongoClient } from 'mongodb';
 
 /**
  * Thin singleton wrapper over the official mongo driver. We keep one client
- * for the entire API process — reconnects are handled by the driver. The
- * connection URI defaults to the docker-compose mongo service; production
- * overrides via `MONGO_URL` env.
+ * for the entire API process — reconnects are handled by the driver.
+ *
+ * Env precedence for the connection URI:
+ *   1. `MONGODB_URI` — canonical name, matches root `.env.example` and what
+ *      `docker-compose.yml` injects into the api container.
+ *   2. `MONGO_URL` — legacy fallback for setups still using the old name.
+ *   3. `mongodb://localhost:27017` — local dev default.
+ *
+ * Same precedence for the database name (`MONGODB_DB` → `MONGO_DB` →
+ * `'restaurant_chat'`). Reading both names was a P0 LGPD-compliance bug:
+ * compose injects `MONGODB_URI`/`MONGODB_DB` but the service was reading
+ * `MONGO_URL`/`MONGO_DB`, so chat-history endpoints all 503'd in dev and
+ * the customer's "delete my chats" flow was unreachable.
  */
 @Injectable()
 export class MongoService implements OnModuleInit, OnModuleDestroy {
@@ -19,8 +29,12 @@ export class MongoService implements OnModuleInit, OnModuleDestroy {
   private database?: Db;
 
   async onModuleInit() {
-    const url = process.env.MONGO_URL ?? 'mongodb://localhost:27017';
-    const dbName = process.env.MONGO_DB ?? 'restaurant_chat';
+    const url =
+      process.env.MONGODB_URI ??
+      process.env.MONGO_URL ??
+      'mongodb://localhost:27017';
+    const dbName =
+      process.env.MONGODB_DB ?? process.env.MONGO_DB ?? 'restaurant_chat';
     try {
       this.client = new MongoClient(url, {
         connectTimeoutMS: 5_000,

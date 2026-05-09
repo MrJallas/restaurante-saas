@@ -561,6 +561,47 @@ export class OrdersService {
     return this.tenantConn.query(sql, params);
   }
 
+  /**
+   * Tenant-wide active-orders feed for the KDS (cozinha) screen. The
+   * customer-facing `getOrdersBySession` is scoped to a single
+   * `table_session_id`, which is fine for the customer's own bill view but
+   * useless for the kitchen — they need every active order in the tenant.
+   *
+   * "Active" here means anything past `pending_confirmation` and short of
+   * `delivered`/`cancelled`. The KDS UI applies its own status filter on
+   * top, so we keep the SQL simple. Same lazy auto-confirm sweep as the
+   * session view so the kitchen never sees a stale `pending_confirmation`.
+   */
+  async getActiveOrdersForTenant() {
+    await this.sweepAutoConfirm().catch(() => undefined);
+
+    return this.tenantConn.query(
+      `
+      SELECT o.id, o.status, o.billing_mode, o.total_cents, o.notes, o.visit_id,
+             o.table_session_id, o.created_at, o.updated_at,
+             json_agg(
+               json_build_object(
+                 'id', oi.id,
+                 'menuItemId', oi.menu_item_id,
+                 'name', mi.name,
+                 'quantity', oi.quantity,
+                 'unitPriceCents', oi.unit_price_cents,
+                 'subtotalCents', oi.subtotal_cents,
+                 'notes', oi.notes,
+                 'customerId', oi.customer_id,
+                 'createdAt', oi.created_at
+               )
+             ) as items
+      FROM orders o
+      JOIN order_items oi ON oi.order_id = o.id
+      JOIN menu_items mi ON mi.id = oi.menu_item_id
+      WHERE o.status NOT IN ('delivered', 'cancelled', 'pending_confirmation')
+      GROUP BY o.id
+      ORDER BY o.created_at ASC
+      `,
+    );
+  }
+
   async getBill(tableSessionId: string, mode: 'table' | 'individual', visitId?: string) {
     if (mode === 'individual' && !visitId) {
       throw new BadRequestException('visitId necessario para comanda individual.');
