@@ -199,7 +199,9 @@ export const GBottomNav: React.FC<BottomNavProps> = ({
       style={{
         borderTop: `1px solid ${C.borderFaint}`, background: C.bg,
         display: 'flex', justifyContent: 'space-around',
-        padding: '8px 4px 14px',
+        // P1 #20: iOS Safari home-indicator (~34px) escondia os icones.
+        // env() respeita o notch · 14px e o baseline em devices sem.
+        padding: '8px 4px max(env(safe-area-inset-bottom), 14px)',
       }}
     >
       {items.map((it) => {
@@ -282,7 +284,9 @@ export const HBottomNav: React.FC<HostBottomNavProps> = ({
       style={{
         borderTop: `1px solid ${C.borderFaint}`, background: C.bg,
         display: 'flex', justifyContent: 'space-around',
-        padding: '8px 4px 14px',
+        // P1 #20: iOS Safari home-indicator (~34px) escondia os icones.
+        // env() respeita o notch · 14px e o baseline em devices sem.
+        padding: '8px 4px max(env(safe-area-inset-bottom), 14px)',
       }}
     >
       {items.map((it) => {

@@ -270,7 +270,11 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
           onClick={onNewEntry}
           aria-label="Nova interação"
           style={{
-            position: 'fixed', right: 16, bottom: 76,
+            // P1 #20: o FAB tinha `bottom: 76` cru — ficava sobre o tab
+            // bar em iOS Safari (que agora tem padding safe-area). O
+            // calc + env mantem 76px acima da tab bar em qualquer device.
+            position: 'fixed', right: 16,
+            bottom: 'calc(76px + env(safe-area-inset-bottom))',
             width: 56, height: 56, borderRadius: 28,
             background: C.ink, color: C.bg,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
