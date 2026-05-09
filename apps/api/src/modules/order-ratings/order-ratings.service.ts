@@ -118,6 +118,34 @@ export class OrderRatingsService {
   }
 
   /**
+   * Round 10 (B-NEW-47): IDOR fix — JOIN com orders.table_session_id
+   * filtra por mesa do caller. 404 sem distinguir "não existe" de
+   * "não é seu" (não vaza ownership info).
+   */
+  async getByOrderIdForSession(orderId: string, tableSessionId: string) {
+    const rows = (await this.tenantConn.query(
+      `SELECT or2.*
+         FROM order_ratings or2
+         JOIN orders o ON o.id = or2.order_id
+        WHERE or2.order_id = $1
+          AND o.table_session_id = $2`,
+      [orderId, tableSessionId],
+    )) as Array<Record<string, unknown>>;
+    if (!rows.length) {
+      throw new HttpException('Rating nao encontrado.', HttpStatus.NOT_FOUND);
+    }
+    const r = rows[0];
+    return {
+      id: r.id as string,
+      orderId: r.order_id as string,
+      rating: r.rating as number,
+      comment: (r.comment as string | null) ?? null,
+      promptedAt: r.prompted_at as string,
+      submittedAt: (r.submitted_at as string | null) ?? null,
+    };
+  }
+
+  /**
    * Called by the orders module when an order transitions to `delivered`.
    * Inserts a `prompted_at` row so B2's job runner can later push the rating
    * prompt at ~13min. Idempotent (UNIQUE on order_id).

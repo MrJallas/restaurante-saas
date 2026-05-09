@@ -78,33 +78,62 @@ export class OrdersService {
     // Idempotencia: dois POSTs com mesma idempotencyKey dentro do TTL
     // retornam o orderId ja criado. Resolve double-tap do botao
     // "Confirmar" virando 2 pedidos com items duplicados (bug-hunter
-    // race condition). Usa Redis SET NX EX como guarda atomica;
-    // sucesso = primeira request, ja cuida da criacao. Falha = ja
-    // existe; busca o orderId previamente armazenado.
+    // race condition). Round 10 (B-NEW-46): agora REALMENTE atomico
+    // via Redis SET NX EX — o primeiro POST ganha o lock com payload
+    // sentinela `{inflight:true}`, processa o INSERT, sobrescreve com
+    // `{orderId}`. POSTs concorrentes com mesma key veem `false` no
+    // setNX, fazem polling do GET até ver o orderId final ou timeout.
+    //
+    // Antes (round 5 fix incompleto): GET-then-INSERT-then-SET plain.
+    // Concurrent: ambos GET=null, ambos INSERT, ambos SET (último vence)
+    // → 2 orders idênticos no DB, customer cobrado 2x.
     const idemKey = idempotencyKey
       ? `order_idem:${tableSessionId}:${idempotencyKey}`
       : null;
+    let idemLockOwner = false;
     if (idemKey) {
-      const existing = await this.redis.get(idemKey);
-      if (existing) {
-        const cached = JSON.parse(existing) as { orderId: string };
-        const existingOrder = await this.getOrderById(
-          tableSessionId,
-          cached.orderId,
-        );
-        if (existingOrder) {
-          return {
-            id: existingOrder.id,
-            orderId: existingOrder.id,
-            status: existingOrder.status,
-            billingMode: existingOrder.billingMode,
-            totalCents: existingOrder.totalCents,
-            itemCount: items.length,
-            createdAt: existingOrder.createdAt,
-            autoConfirmAt: existingOrder.autoConfirmAt,
-            idempotent: true,
-          };
+      // Tenta ganhar o lock atomicamente. Se já existe, faz fallback
+      // pro GET/poll. Sentinela `inflight` distingue "ainda processando"
+      // de "pronto" (orderId presente).
+      idemLockOwner = await this.redis.setNX(
+        idemKey,
+        JSON.stringify({ inflight: true }),
+        IDEMPOTENCY_TTL_SECONDS,
+      );
+
+      if (!idemLockOwner) {
+        // Outro caller ganhou. Poll até ver orderId ou timeout (~3s).
+        const pollDeadline = Date.now() + 3000;
+        while (Date.now() < pollDeadline) {
+          const existing = await this.redis.get(idemKey);
+          if (existing) {
+            const cached = JSON.parse(existing) as {
+              orderId?: string;
+              inflight?: boolean;
+            };
+            if (cached.orderId) {
+              const existingOrder = await this.getOrderById(
+                tableSessionId,
+                cached.orderId,
+              );
+              if (existingOrder) {
+                return {
+                  id: existingOrder.id,
+                  orderId: existingOrder.id,
+                  status: existingOrder.status,
+                  billingMode: existingOrder.billingMode,
+                  totalCents: existingOrder.totalCents,
+                  itemCount: items.length,
+                  createdAt: existingOrder.createdAt,
+                  autoConfirmAt: existingOrder.autoConfirmAt,
+                  idempotent: true,
+                };
+              }
+            }
+          }
+          await new Promise((r) => setTimeout(r, 100));
         }
+        // Timeout — assumir que o outro caller falhou. Tentar como nova request.
       }
     }
 

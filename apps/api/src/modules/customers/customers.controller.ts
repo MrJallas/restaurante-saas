@@ -23,6 +23,7 @@ import { Transform } from 'class-transformer';
 import { Response } from 'express';
 import { SessionGuard } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { SessionData } from '../../common/guards/session.guard';
 import { RedisService } from '../../infra/redis/redis.service';
@@ -220,16 +221,23 @@ export class CustomersController {
     }
   }
 
-  /** Manager marks a customer as VIP (permanent flag on customers table). */
+  /**
+   * Manager marks a customer as VIP (permanent flag on customers table).
+   *
+   * Round 10 (B-NEW-48): adicionado ManagerOnlyGuard. Antes: qualquer
+   * staff (waiter/cook) com `x-staff-key` flagava/desflagava VIP de
+   * qualquer customer. customers.is_vip é flag PERMANENTE cross-session
+   * (migration 020) — diferente de table_sessions.flags['vip'] que tem
+   * ManagerOnlyGuard em vip.controller.ts:51. Agora consistente.
+   */
   @Post(':customerId/vip')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async markVip(@Param('customerId') customerId: string) {
     return this.customersService.setVipFlag(customerId, true);
   }
 
-  /** Manager unmarks a customer as VIP. */
   @Delete(':customerId/vip')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async unmarkVip(@Param('customerId') customerId: string) {
     return this.customersService.setVipFlag(customerId, false);
   }

@@ -5,8 +5,10 @@ import {
   Param,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   IsBoolean,
   IsOptional,
@@ -15,6 +17,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { StaffMessagesService } from './staff-messages.service';
 
 class SendMessageDto {
@@ -56,16 +59,30 @@ class StaffQueryDto {
 @Controller(':slug/staff-messages')
 @UseGuards(StaffOnlyGuard)
 export class StaffMessagesController {
-  constructor(private readonly service: StaffMessagesService) {}
+  constructor(
+    private readonly service: StaffMessagesService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
+  /**
+   * Round 10 (B-NEW-49): senderStaffId/staffId derivados do x-staff-id
+   * header em vez do body. Antes staff A enviava em nome de B
+   * (impersonation no inbox).
+   */
   @Post()
-  async send(@Param('slug') slug: string, @Body() dto: SendMessageDto) {
-    return this.service.send(dto, slug);
+  async send(
+    @Param('slug') slug: string,
+    @Body() dto: SendMessageDto,
+    @Req() req: Request,
+  ) {
+    const senderStaffId = this.callerResolver.requireStaffId(req);
+    return this.service.send({ ...dto, senderStaffId }, slug);
   }
 
   @Get('threads')
-  async listThreads(@Query() q: StaffQueryDto) {
-    return this.service.listThreadsForStaff(q.staffId);
+  async listThreads(@Query() _q: StaffQueryDto, @Req() req: Request) {
+    const staffId = this.callerResolver.requireStaffId(req);
+    return this.service.listThreadsForStaff(staffId);
   }
 
   @Get('threads/:threadId')
@@ -77,8 +94,10 @@ export class StaffMessagesController {
   async markRead(
     @Param('slug') slug: string,
     @Param('messageId') messageId: string,
-    @Body() dto: ReadDto,
+    @Body() _dto: ReadDto,
+    @Req() req: Request,
   ) {
-    return this.service.markRead(messageId, { staffId: dto.staffId }, slug);
+    const staffId = this.callerResolver.requireStaffId(req);
+    return this.service.markRead(messageId, { staffId }, slug);
   }
 }

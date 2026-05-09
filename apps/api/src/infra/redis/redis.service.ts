@@ -20,6 +20,24 @@ export class RedisService implements OnModuleDestroy {
     }
   }
 
+  /**
+   * Round 10 (B-NEW-46): atomic `SET key value EX ttl NX` — só seta se a
+   * key NÃO existe (lock pattern). Retorna `true` quando ganhou o lock,
+   * `false` quando outro caller já estava lá.
+   *
+   * Usado por idempotency keys (orders.create, payments.request, etc.):
+   * o primeiro POST com idempotencyKey ganha SETNX, processa o INSERT,
+   * sobrescreve com o resultado. POSTs concorrentes com mesma key veem
+   * `false`, fazem GET pra recuperar o resultado em loop curto.
+   *
+   * Antes: `redis.set` plain após INSERT permitia 2 INSERTs concorrentes
+   * passarem (GET → GET → INSERT → INSERT → SET → SET overwrite).
+   */
+  async setNX(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    const result = await this.client.set(key, value, 'EX', ttlSeconds, 'NX');
+    return result === 'OK';
+  }
+
   async get(key: string): Promise<string | null> {
     return this.client.get(key);
   }

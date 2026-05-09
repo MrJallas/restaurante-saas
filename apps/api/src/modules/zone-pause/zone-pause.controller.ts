@@ -22,7 +22,10 @@ import { Transform } from 'class-transformer';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { ZonePauseService } from './zone-pause.service';
+import { Req } from '@nestjs/common';
+import type { Request } from 'express';
 
 /**
  * `StartZonePauseDto` — body of `POST /:slug/zone-pauses`.
@@ -95,17 +98,30 @@ class ListQueryDto {
  */
 @Controller(':slug/zone-pauses')
 export class ZonePauseController {
-  constructor(private readonly service: ZonePauseService) {}
+  constructor(
+    private readonly service: ZonePauseService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
+  /**
+   * Round 10 (B-NEW-49): startedBy/endedBy derivados do x-staff-id header
+   * em vez do body. Antes: manager M pausava em nome de outro manager
+   * (audit log spoof).
+   */
   @Post()
   @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
-  async create(@Param('slug') slug: string, @Body() dto: CreateZonePauseDto) {
+  async create(
+    @Param('slug') slug: string,
+    @Body() dto: CreateZonePauseDto,
+    @Req() req: Request,
+  ) {
+    const staffId = this.callerResolver.requireStaffId(req);
     return this.service.create(
       {
         waiterId: dto.waiterId,
         durationMinutes: dto.durationMinutes,
         reason: dto.reason,
-        startedBy: dto.startedBy,
+        startedBy: staffId,
       },
       slug,
     );
@@ -117,11 +133,15 @@ export class ZonePauseController {
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Body() dto: EndZonePauseDto = {},
+    @Req() req?: Request,
   ) {
+    const staffId = req
+      ? this.callerResolver.requireStaffId(req)
+      : (dto.endedBy ?? '');
     return this.service.endEarly(
       id,
       {
-        endedBy: dto.endedBy,
+        endedBy: staffId,
         reason: dto.reason,
       },
       slug,
@@ -139,8 +159,9 @@ export class ZonePauseController {
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Body() dto: EndZonePauseDto = {},
+    @Req() req?: Request,
   ) {
-    return this.end(slug, id, dto);
+    return this.end(slug, id, dto, req);
   }
 
   @Get()

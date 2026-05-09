@@ -65,7 +65,13 @@ interface AuthedSocket extends Socket {
 
 @WebSocketGateway({
   cors: {
-    origin: ['http://localhost:3003', 'http://localhost:3002'],
+    // Round 10 (B-NEW-54): CORS_ORIGINS env honrada (igual main.ts:11-14).
+    // Antes hardcoded localhost — em prod com domínio real, WS handshake
+    // falhava em browsers que verificam Origin. Inconsistência interna
+    // entre HTTP (env-driven) e WS (hardcoded) corrigida.
+    origin: process.env.CORS_ORIGINS
+      ? process.env.CORS_ORIGINS.split(',').map((s) => s.trim())
+      : ['http://localhost:3003', 'http://localhost:3002'],
     credentials: true,
   },
   namespace: '/',

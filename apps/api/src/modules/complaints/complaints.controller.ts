@@ -149,14 +149,22 @@ export class ComplaintsController {
     );
   }
 
+  /**
+   * Round 10 (B-NEW-49): staffId derivado do `x-staff-id` header em vez
+   * de aceitar via body. ManagerOnlyGuard já valida role+DB; aqui só
+   * extraímos o ID confiável. Antes: dto.staffId arbitrário gravava
+   * audit como qualquer staff (audit log spoof).
+   */
   @Post(':id/respond')
   @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async respond(
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Body() dto: RespondDto,
+    @Req() req: Request,
   ) {
-    return this.service.respond(id, { staffId: dto.staffId }, dto, slug);
+    const staffId = this.callerResolver.requireStaffId(req);
+    return this.service.respond(id, { staffId }, dto, slug);
   }
 
   @Post(':id/resolve')
@@ -164,9 +172,11 @@ export class ComplaintsController {
   async resolve(
     @Param('slug') slug: string,
     @Param('id') id: string,
-    @Body() dto: ResolveDto = {},
+    @Body() _dto: ResolveDto = {},
+    @Req() req: Request,
   ) {
-    return this.service.resolve(id, { staffId: dto.staffId }, slug);
+    const staffId = this.callerResolver.requireStaffId(req);
+    return this.service.resolve(id, { staffId }, slug);
   }
 
   @Post(':id/forward')

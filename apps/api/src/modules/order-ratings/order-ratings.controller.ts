@@ -17,7 +17,8 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { SessionGuard } from '../../common/guards/session.guard';
+import { SessionGuard, SessionData } from '../../common/guards/session.guard';
+import { Session } from '../../common/decorators/session.decorator';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { OrderRatingsService } from './order-ratings.service';
 
@@ -69,9 +70,20 @@ export class OrderRatingsController {
     });
   }
 
+  /**
+   * Round 10 (B-NEW-47): exige tableSessionId via SessionGuard +
+   * JOIN orders → table_session_id no service. Antes: customer A em
+   * mesa X conhecendo orderId de mesa Y lia review + comment (até
+   * 2000 chars) — PII risk se customer escreveu CPF/telefone no
+   * comment. Mesma família B-NEW-17 (feedbacks) que foi fixada em
+   * round 5; order-ratings ficou.
+   */
   @Get(':orderId')
   @UseGuards(SessionGuard)
-  async getByOrderId(@Param('orderId') orderId: string) {
-    return this.service.getByOrderId(orderId);
+  async getByOrderId(
+    @Param('orderId') orderId: string,
+    @Session() session: SessionData,
+  ) {
+    return this.service.getByOrderIdForSession(orderId, session.sessionId);
   }
 }

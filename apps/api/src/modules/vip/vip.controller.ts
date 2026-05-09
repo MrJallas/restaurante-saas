@@ -15,7 +15,10 @@ import {
 } from 'class-validator';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { VipService } from './vip.service';
+import { Req } from '@nestjs/common';
+import type { Request } from 'express';
 
 class ToggleFlagDto {
   @IsIn(['vip', 'allergy', 'reincidente'])
@@ -46,21 +49,31 @@ class ToggleFlagDto {
  */
 @Controller(':slug/staff/sessions')
 export class VipController {
-  constructor(private readonly service: VipService) {}
+  constructor(
+    private readonly service: VipService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
+  /**
+   * Round 10 (B-NEW-49): staffId derivado do x-staff-id header.
+   * customerId NÃO é mais aceito do body (não fazia sentido — flag
+   * é por session, não por customer).
+   */
   @Post(':tableSessionId/flags')
   @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async toggle(
     @Param('slug') slug: string,
     @Param('tableSessionId') tableSessionId: string,
     @Body() dto: ToggleFlagDto,
+    @Req() req: Request,
   ) {
+    const staffId = this.callerResolver.requireStaffId(req);
     return this.service.toggle(
       tableSessionId,
       dto.flag,
       dto.action,
       {
-        staffId: dto.staffId,
+        staffId,
         customerId: dto.customerId,
         reason: dto.reason,
       },

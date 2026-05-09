@@ -64,4 +64,50 @@ export class CallerResolverService {
       .cookies;
     return cookies?.recognition_token ?? null;
   }
+
+  /**
+   * Round 10 (B-NEW-49): resolve staffId a partir do header `x-staff-id`
+   * (UUID v4 sanitized). Substitui o pattern duplicado de `dto.staffId`
+   * mass-assignment em ≥8 endpoints staff-side. Audit log fica baseado
+   * em quem AUTENTICOU (header pós-StaffOnlyGuard/ManagerOnlyGuard),
+   * não em UUID arbitrário do body.
+   *
+   * Use em controllers staff-side via DI:
+   *   const staffId = this.callerResolver.requireStaffId(req);
+   *   service.action(..., { staffId });   // ignora dto.staffId
+   *
+   * Throw 401 quando header ausente OU shape inválido. ManagerOnlyGuard
+   * já valida role no DB; aqui só extraímos o ID confiável.
+   */
+  requireStaffId(req: Request): string {
+    const headers = req.headers as Record<string, string | string[] | undefined>;
+    const headerVal = headers['x-staff-id'];
+    const staffId = Array.isArray(headerVal) ? headerVal[0] : headerVal;
+
+    if (!staffId || typeof staffId !== 'string') {
+      throw new HttpException(
+        'x-staff-id header obrigatório.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        staffId,
+      )
+    ) {
+      throw new HttpException('x-staff-id inválido.', HttpStatus.UNAUTHORIZED);
+    }
+
+    return staffId;
+  }
+
+  /** Variante non-throw — retorna null se header ausente/inválido. */
+  tryGetStaffId(req: Request): string | null {
+    try {
+      return this.requireStaffId(req);
+    } catch {
+      return null;
+    }
+  }
 }

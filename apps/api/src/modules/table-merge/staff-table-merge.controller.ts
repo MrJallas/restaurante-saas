@@ -3,8 +3,10 @@ import {
   Post,
   Body,
   Param,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   IsString,
   IsUUID,
@@ -13,6 +15,7 @@ import {
 } from 'class-validator';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { TableMergeService } from './table-merge.service';
 
 class StaffForceMergeDto {
@@ -21,9 +24,6 @@ class StaffForceMergeDto {
 
   @IsUUID()
   targetTableSessionId!: string;
-
-  @IsUUID()
-  staffId!: string;
 
   @IsString()
   @MinLength(3)
@@ -48,15 +48,29 @@ class StaffForceMergeDto {
 @Controller(':slug/staff/table-merges')
 @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
 export class StaffTableMergeController {
-  constructor(private readonly service: TableMergeService) {}
+  constructor(
+    private readonly service: TableMergeService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
+  /**
+   * Round 10 (B-NEW-49): staffId derivado do `x-staff-id` header.
+   * Antes manager M com rixa fazia force-merge mas registrava
+   * `staff_id = colega-W`. Audit log spoof. ManagerOnlyGuard já
+   * validou role+DB no header, aqui só usamos.
+   */
   @Post('force')
-  async force(@Param('slug') slug: string, @Body() dto: StaffForceMergeDto) {
+  async force(
+    @Param('slug') slug: string,
+    @Body() dto: StaffForceMergeDto,
+    @Req() req: Request,
+  ) {
+    const staffId = this.callerResolver.requireStaffId(req);
     return this.service.forceMerge(
       {
         sourceTableSessionId: dto.sourceTableSessionId,
         targetTableSessionId: dto.targetTableSessionId,
-        staffId: dto.staffId,
+        staffId,
         reason: dto.reason,
       },
       slug,

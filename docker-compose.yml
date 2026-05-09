@@ -1,13 +1,21 @@
 services:
+  # Round 10 (B-NEW-43): postgres/redis/mongo NÃO publicam portas no host.
+  # `expose:` declara a porta na network interna do compose; serviços
+  # peer (api, ai-service, web-customer) acessam via nome de container.
+  # Antes `ports: 5434:5434` etc vazava as 3 DBs pra internet em VPS sem
+  # firewall — CPFs + tokens + chat history expostos. Para acesso dev:
+  #   docker exec -it restaurant-postgres psql -U postgres -p 5434
+  #   docker exec -it restaurant-redis redis-cli
+  #   docker exec -it restaurant-mongodb mongosh
   postgres:
     image: postgres:16
     container_name: restaurant-postgres
-    ports:
-      - "5434:5434"
+    expose:
+      - "5434"
     command: -p 5434
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: restaurant_saas
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -20,8 +28,8 @@ services:
   redis:
     image: redis:7
     container_name: restaurant-redis
-    ports:
-      - "6380:6379"
+    expose:
+      - "6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -33,8 +41,8 @@ services:
   mongodb:
     image: mongo:7
     container_name: restaurant-mongodb
-    ports:
-      - "27017:27017"
+    expose:
+      - "27017"
     volumes:
       - mongodb_data:/data/db
       # Init script (TTL + lookup indexes pro chat history). Mongo executa

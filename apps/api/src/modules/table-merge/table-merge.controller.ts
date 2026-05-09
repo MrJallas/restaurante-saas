@@ -74,14 +74,26 @@ export class TableMergeController {
     private readonly callerResolver: CallerResolverService,
   ) {}
 
+  /**
+   * Round 10 (B-NEW-50): requestingCustomerId derivado do cookie.
+   * Antes: customer A criava merge request "em nome de" customer Y
+   * conhecendo UUID — audit log mostrava B como requester, manager DM
+   * ia pra B, FE de B mostrava modal de junção que ele não pediu.
+   * Round 8 cobriu approve/reject mas o create ficou esquecido.
+   */
   @Post()
   @UseGuards(SessionGuard)
   async create(
     @Param('slug') slug: string,
     @Body() dto: CreateMergeDto,
     @Session() _s: SessionData,
+    @Req() req: Request,
   ) {
-    return this.service.createRequest(dto, slug);
+    const callerCustomerId = await this.callerResolver.requireCustomerId(req);
+    return this.service.createRequest(
+      { ...dto, requestingCustomerId: callerCustomerId },
+      slug,
+    );
   }
 
   /**
