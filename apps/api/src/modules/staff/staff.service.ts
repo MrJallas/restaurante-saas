@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
 
 const VALID_ROLES = ['waiter', 'cook', 'manager'];
@@ -115,11 +116,13 @@ export class StaffService {
     setClauses.push(`updated_at = now()`);
     params.push(id);
 
-    const rows = (await this.tenantConn.query(
-      `UPDATE staff SET ${setClauses.join(', ')} WHERE id = $${idx}
-       RETURNING id, name, role, is_active, created_at, updated_at`,
-      params,
-    )) as unknown[];
+    const rows = unwrapRows<Record<string, unknown>>(
+      await this.tenantConn.query(
+        `UPDATE staff SET ${setClauses.join(', ')} WHERE id = $${idx}
+         RETURNING id, name, role, is_active, created_at, updated_at`,
+        params,
+      ),
+    );
 
     if (!rows.length) throw new NotFoundException('Funcionario nao encontrado.');
     return rows[0];

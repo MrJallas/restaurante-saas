@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { EventsGateway } from '../websocket/events.gateway';
+import { unwrapRows } from '../tenant/query-utils';
 
 /**
  * Recurring sweeper for time-based domain transitions. Runs every 10s and,
@@ -111,20 +112,24 @@ export class TtlTickService {
   private async sweepLateArrivals(slug: string, schemaName: string) {
     const expired = await this.withTenant(schemaName, async (qr) => {
       // Atomically flip pending→expired so concurrent ticks don't double-fire.
-      const rows = (await qr.query(
-        `UPDATE late_arrival_requests
-            SET status = 'expired',
-                decided_at = now(),
-                updated_at = now()
-          WHERE status = 'pending'
-            AND ttl_expires_at < now()
-        RETURNING id, table_session_id, customer_id, escalation_chain_id`,
-      )) as Array<{
+      // UPDATE…RETURNING under pg returns `[rows[], rowCount]`; unwrapRows
+      // normalises that tuple back to the row array.
+      const rows = unwrapRows<{
         id: string;
         table_session_id: string;
         customer_id: string;
         escalation_chain_id: string | null;
-      }>;
+      }>(
+        await qr.query(
+          `UPDATE late_arrival_requests
+              SET status = 'expired',
+                  decided_at = now(),
+                  updated_at = now()
+            WHERE status = 'pending'
+              AND ttl_expires_at < now()
+          RETURNING id, table_session_id, customer_id, escalation_chain_id`,
+        ),
+      );
       return rows;
     });
 
@@ -286,18 +291,20 @@ export class TtlTickService {
       //   ended_at IS NULL  -> still active
       //   ends_at < now()   -> TTL elapsed
       // Auto-end populates ended_at (system close — ended_by stays NULL).
-      const rows = (await qr.query(
-        `UPDATE zone_pauses
-            SET ended_at = now()
-          WHERE ended_at IS NULL
-            AND ends_at < now()
-        RETURNING id, waiter_id, ends_at, started_by`,
-      )) as Array<{
+      const rows = unwrapRows<{
         id: string;
         waiter_id: string;
         ends_at: string;
         started_by: string;
-      }>;
+      }>(
+        await qr.query(
+          `UPDATE zone_pauses
+              SET ended_at = now()
+            WHERE ended_at IS NULL
+              AND ends_at < now()
+          RETURNING id, waiter_id, ends_at, started_by`,
+        ),
+      );
       return rows;
     });
 
@@ -319,18 +326,21 @@ export class TtlTickService {
       // The migration doesn't have a `notified_expired` column. To avoid
       // re-firing the same event every 10s for an expired cooldown, we
       // delete the row once it has expired (the cooldown row exists only
-      // to gate retries; once expired its job is done).
-      const rows = (await qr.query(
-        `DELETE FROM table_merge_cooldowns
-          WHERE cooldown_expires_at < now()
-        RETURNING id,
-                  table_session_a_id,
-                  table_session_b_id`,
-      )) as Array<{
+      // to gate retries; once expired its job is done). DELETE…RETURNING
+      // returns `[rows[], rowCount]` under pg; unwrapRows normalises.
+      const rows = unwrapRows<{
         id: string;
         table_session_a_id: string;
         table_session_b_id: string;
-      }>;
+      }>(
+        await qr.query(
+          `DELETE FROM table_merge_cooldowns
+            WHERE cooldown_expires_at < now()
+          RETURNING id,
+                    table_session_a_id,
+                    table_session_b_id`,
+        ),
+      );
       return rows;
     });
 

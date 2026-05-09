@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { unwrapRows } from '../tenant/query-utils';
 
 @Injectable()
 export class PromotionsService {
@@ -75,10 +76,12 @@ export class PromotionsService {
     setClauses.push(`updated_at = now()`);
     params.push(id);
 
-    const rows = (await this.tenantConn.query(
-      `UPDATE promotions SET ${setClauses.join(', ')} WHERE id = $${paramIdx} RETURNING *`,
-      params,
-    )) as unknown[];
+    const rows = unwrapRows<Record<string, unknown>>(
+      await this.tenantConn.query(
+        `UPDATE promotions SET ${setClauses.join(', ')} WHERE id = $${paramIdx} RETURNING *`,
+        params,
+      ),
+    );
 
     if (!rows.length) throw new NotFoundException('Promocao nao encontrada.');
     return rows[0];

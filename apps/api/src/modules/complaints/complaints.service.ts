@@ -6,6 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
 import type { ComplaintProblemType } from '@restaurant/shared-types';
 
@@ -115,17 +116,19 @@ export class ComplaintsService {
     body: { content: string; chipAction?: string },
     slug?: string,
   ) {
-    const updated = (await this.tenantConn.query(
-      `UPDATE complaints
-         SET status = 'responded',
-             response_text = $1,
-             response_at = now(),
-             assigned_manager_id = COALESCE($2, assigned_manager_id),
-             updated_at = now()
-       WHERE id = $3 AND status IN ('pending_review','in_progress')
-       RETURNING *`,
-      [body.content, by.staffId ?? null, id],
-    )) as Array<Record<string, unknown>>;
+    const updated = unwrapRows<Record<string, unknown>>(
+      await this.tenantConn.query(
+        `UPDATE complaints
+           SET status = 'responded',
+               response_text = $1,
+               response_at = now(),
+               assigned_manager_id = COALESCE($2, assigned_manager_id),
+               updated_at = now()
+         WHERE id = $3 AND status IN ('pending_review','in_progress')
+         RETURNING *`,
+        [body.content, by.staffId ?? null, id],
+      ),
+    );
     if (!updated.length) {
       throw new HttpException(
         'Reclamacao nao encontrada ou ja respondida.',
@@ -159,17 +162,19 @@ export class ComplaintsService {
   }
 
   async resolve(id: string, by: { staffId?: string }, slug?: string) {
-    const updated = (await this.tenantConn.query(
-      `UPDATE complaints
-         SET status = 'closed',
-             closed_at = now(),
-             resolved_at = now(),
-             assigned_manager_id = COALESCE($1, assigned_manager_id),
-             updated_at = now()
-       WHERE id = $2
-       RETURNING *`,
-      [by.staffId ?? null, id],
-    )) as Array<Record<string, unknown>>;
+    const updated = unwrapRows<Record<string, unknown>>(
+      await this.tenantConn.query(
+        `UPDATE complaints
+           SET status = 'closed',
+               closed_at = now(),
+               resolved_at = now(),
+               assigned_manager_id = COALESCE($1, assigned_manager_id),
+               updated_at = now()
+         WHERE id = $2
+         RETURNING *`,
+        [by.staffId ?? null, id],
+      ),
+    );
     if (!updated.length) {
       throw new HttpException(
         'Reclamacao nao encontrada.',
@@ -190,16 +195,18 @@ export class ComplaintsService {
   }
 
   async forward(id: string, toStaffId: string, notes?: string) {
-    const updated = (await this.tenantConn.query(
-      `UPDATE complaints
-         SET assigned_manager_id = $1,
-             status = 'in_progress',
-             response_text = COALESCE($2, response_text),
-             updated_at = now()
-       WHERE id = $3
-       RETURNING *`,
-      [toStaffId, notes ?? null, id],
-    )) as Array<Record<string, unknown>>;
+    const updated = unwrapRows<Record<string, unknown>>(
+      await this.tenantConn.query(
+        `UPDATE complaints
+           SET assigned_manager_id = $1,
+               status = 'in_progress',
+               response_text = COALESCE($2, response_text),
+               updated_at = now()
+         WHERE id = $3
+         RETURNING *`,
+        [toStaffId, notes ?? null, id],
+      ),
+    );
     if (!updated.length) {
       throw new HttpException(
         'Reclamacao nao encontrada.',
