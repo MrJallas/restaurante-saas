@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Users, X } from 'lucide-react';
-import { staffGet, staffPost, staffPatch, staffDelete } from '../../../lib/api';
+import { staffPost, staffPatch, staffDelete } from '../../../lib/api';
+import { staffRosterApi } from '../../../lib/api/manager';
 
 const TENANT_SLUG = process.env.NEXT_PUBLIC_TENANT_SLUG || 'restaurant_dev';
 
@@ -40,8 +41,8 @@ export default function FuncionariosPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await staffGet<{ staff: StaffMember[] }>(`/${TENANT_SLUG}/staff`);
-      setStaff(res.staff || []);
+      const list = (await staffRosterApi(TENANT_SLUG).list()) as StaffMember[];
+      setStaff(list);
     } catch {
       setStaff([]);
     } finally {

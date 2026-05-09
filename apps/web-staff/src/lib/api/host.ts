@@ -90,9 +90,12 @@ export function createReservation(
 
 // ─── Late-arrival approvals (host fallback when host_customer_id is null
 // or didn't respond in 60s — per docs/features/customer-host-model.md) ───
+// P1 #22 — backend `ListQueryDto` whitelists ['pending','approved','rejected',
+// 'expired']. The old `staff_pending` value silently filtered to nothing.
+// `pending` matches the actual DB enum on `late_arrival_requests.status`.
 export function listPendingLateArrivals(tenantSlug: string): Promise<LateArrivalRequestDto[]> {
   return staffGet<LateArrivalRequestDto[]>(
-    `/${tenantSlug}/late-arrival-requests?status=staff_pending`,
+    `/${tenantSlug}/late-arrival-requests?status=pending`,
   );
 }
 

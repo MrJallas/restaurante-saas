@@ -78,8 +78,14 @@ export function listMyZonePauses(tenantSlug: string, waiterId: string): Promise<
 }
 
 // ─── Staff messages (waiter-scoped — backend filters by viewer) ───
-export function listMyThreads(tenantSlug: string): Promise<StaffMessageThreadDto[]> {
-  return staffGet<StaffMessageThreadDto[]>(`/${tenantSlug}/staff-messages/threads`);
+// P1 #18 — backend requires `?staffId=<uuid>` per StaffQueryDto.
+export function listMyThreads(
+  tenantSlug: string,
+  staffId: string,
+): Promise<StaffMessageThreadDto[]> {
+  return staffGet<StaffMessageThreadDto[]>(
+    `/${tenantSlug}/staff-messages/threads?staffId=${encodeURIComponent(staffId)}`,
+  );
 }
 
 export function getThread(
@@ -98,6 +104,14 @@ export function sendStaffMessage(
   return staffPost<StaffMessageDto>(`/${tenantSlug}/staff-messages`, body);
 }
 
-export function markMessageRead(tenantSlug: string, messageId: string): Promise<{ ok: true }> {
-  return staffPost<{ ok: true }>(`/${tenantSlug}/staff-messages/${messageId}/read`, {});
+export function markMessageRead(
+  tenantSlug: string,
+  messageId: string,
+  staffId: string,
+): Promise<{ ok: true }> {
+  // P1 #18 — backend requires `staffId` in the body per ReadDto.
+  return staffPost<{ ok: true }>(
+    `/${tenantSlug}/staff-messages/${messageId}/read`,
+    { staffId },
+  );
 }

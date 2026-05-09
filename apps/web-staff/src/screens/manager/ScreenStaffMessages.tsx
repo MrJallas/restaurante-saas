@@ -22,9 +22,13 @@ import { useManagerEvents } from '../../hooks/useManagerEvents';
 export interface ScreenStaffMessagesProps {
   dark?: boolean;
   tenantSlug: string;
+  /** P1 #18 — backend `?staffId=<uuid>` is required. Caller threads it
+   * from URL/profile (see `app/manager/mensagens/page.tsx`). When absent
+   * the inbox shows the empty state and skips the fetch. */
+  managerId?: string;
 }
 
-export function ScreenStaffMessages({ dark, tenantSlug }: ScreenStaffMessagesProps) {
+export function ScreenStaffMessages({ dark, tenantSlug, managerId }: ScreenStaffMessagesProps) {
   const C = useG(!!dark);
   const router = useRouter();
   const api = manager(tenantSlug);
@@ -32,9 +36,14 @@ export function ScreenStaffMessages({ dark, tenantSlug }: ScreenStaffMessagesPro
   const [loading, setLoading] = useState(true);
 
   const refresh = async () => {
+    if (!managerId) {
+      setThreads([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const r = await api.staffMessages.listThreads();
+      const r = await api.staffMessages.listThreads({ staffId: managerId });
       setThreads(r);
     } finally {
       setLoading(false);
@@ -43,7 +52,7 @@ export function ScreenStaffMessages({ dark, tenantSlug }: ScreenStaffMessagesPro
 
   useEffect(() => {
     refresh();
-  }, [tenantSlug]);
+  }, [tenantSlug, managerId]);
 
   useManagerEvents(tenantSlug, (e) => {
     if (e.event === 'staff_message.received') refresh();
