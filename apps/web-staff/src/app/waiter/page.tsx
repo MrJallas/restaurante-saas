@@ -18,7 +18,7 @@ function WaiterHomePageInner() {
       onOpenCall={(callId) => router.push(`/waiter?call=${callId}&tenant=${tenantSlug}`)}
       onOpenTable={(t) => router.push(`/waiter?table=${t}&tenant=${tenantSlug}`)}
       onTabChange={(tab) => {
-        if (tab === 'me') router.push(`/waiter/mensagens?tenant=${tenantSlug}`);
+        if (tab === 'me') router.push(`/waiter/eu?tenant=${tenantSlug}&waiterId=${waiterId}`);
       }}
       fab
     />
