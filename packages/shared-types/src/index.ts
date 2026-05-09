@@ -101,5 +101,6 @@ export * from './complaint';
 export * from './staff-message';
 export * from './vip';
 export * from './zone-pause';
+export * from './host';
 export * from './ai';
 export * from './ws-events';

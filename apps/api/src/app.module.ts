@@ -33,6 +33,7 @@ import { VipModule } from './modules/vip/vip.module';
 import { ChatHistoryModule } from './modules/chat-history/chat-history.module';
 import { JobsModule } from './modules/jobs/jobs.module';
 import { QrIssuesModule } from './modules/qr-issues/qr-issues.module';
+import { HostModule } from './modules/host/host.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { QrIssuesModule } from './modules/qr-issues/qr-issues.module';
     VipModule,
     JobsModule,
     QrIssuesModule,
+    HostModule,
   ],
   controllers: [AppController],
 })
