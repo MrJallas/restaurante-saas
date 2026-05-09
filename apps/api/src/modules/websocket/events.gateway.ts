@@ -8,6 +8,7 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { Server, Socket } from 'socket.io';
 import { timingSafeEqual } from 'crypto';
 import { RedisService } from '../../infra/redis/redis.service';
@@ -82,7 +83,57 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly logger = new Logger(EventsGateway.name);
 
-  constructor(private readonly redis: RedisService) {}
+  constructor(
+    private readonly redis: RedisService,
+    private readonly dataSource: DataSource,
+  ) {}
+
+  /**
+   * Round 15 (P1-NEW-1 round14): valida que `customerId` pertence ao
+   * tenant do staff. Antes `join:customer` staff-path entrava na room
+   * sem checar — staff de tenant A com customerId de tenant B (UUID
+   * vazado em logs/Mongo dump) recebia complaint.responded /
+   * lgpd.request_fulfilled / late_arrival.* / staff_message.received
+   * com PII alheia. Cache na chave `customer_tenant:<customerId>` (TTL
+   * 5min) pra evitar lookup em DB a cada join.
+   */
+  private async validateCustomerInTenant(
+    customerId: string,
+    staffTenantSlug: string,
+  ): Promise<boolean> {
+    if (!/^[0-9a-f-]{36}$/i.test(customerId)) {
+      return false;
+    }
+
+    const cached = await this.redis.get(`customer_tenant:${customerId}`);
+    if (cached) {
+      return cached === staffTenantSlug;
+    }
+
+    const restaurantRows = (await this.dataSource.query(
+      `SELECT schema_name FROM public.restaurants
+        WHERE slug = $1 AND is_active = true`,
+      [staffTenantSlug],
+    )) as Array<{ schema_name: string }>;
+    if (!restaurantRows.length) return false;
+    const schemaName = restaurantRows[0].schema_name;
+    if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schemaName)) return false;
+
+    const customerRows = (await this.dataSource.query(
+      `SELECT 1 FROM "${schemaName}".customers WHERE id = $1 LIMIT 1`,
+      [customerId],
+    )) as unknown[];
+
+    if (customerRows.length) {
+      await this.redis.set(
+        `customer_tenant:${customerId}`,
+        staffTenantSlug,
+        300,
+      );
+      return true;
+    }
+    return false;
+  }
 
   async handleConnection(client: AuthedSocket) {
     const staffKey =
@@ -286,11 +337,31 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * a particular guest's timeline).
    */
   @SubscribeMessage('join:customer')
-  handleJoinCustomer(
+  async handleJoinCustomer(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { customerId: string },
   ) {
     if (client.data.authType === 'staff') {
+      // Round 15 (P1-NEW-1 round14): staff só entra em customer room
+      // se o customer pertence ao tenant carimbado no handshake. Antes
+      // staff de tenant A com UUID alheio (vazado em logs / Mongo dump
+      // / migração) recebia complaint.responded / lgpd.request_fulfilled
+      // / late_arrival.* / staff_message.received com PII de cliente
+      // de outro tenant.
+      if (!client.data.staffTenantSlug) {
+        client.emit('error', { message: 'Tenant slug missing in handshake.' });
+        return;
+      }
+      const ok = await this.validateCustomerInTenant(
+        data.customerId,
+        client.data.staffTenantSlug,
+      );
+      if (!ok) {
+        client.emit('error', {
+          message: 'Cross-tenant customer join blocked.',
+        });
+        return;
+      }
       client.join(`customer:${data.customerId}`);
       this.logger.log(
         `Staff ${client.id} joined customer room ${data.customerId}`,
