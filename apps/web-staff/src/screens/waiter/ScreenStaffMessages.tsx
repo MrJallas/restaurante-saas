@@ -59,10 +59,14 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
     };
   }, [tenantSlug]);
 
-  // Live refresh on staff_message.received
+  // Live refresh on staff_message.received + staff_message.read so the
+  // unread badge follows the counterpart's read receipts (P1 #19).
   useEffect(() => {
     const handler = (event: WsEvent) => {
-      if (event.event !== 'staff_message.received') return;
+      if (
+        event.event !== 'staff_message.received'
+        && event.event !== 'staff_message.read'
+      ) return;
       // simple strategy: refetch the list
       listMyThreads(tenantSlug)
         .then(setThreads)
