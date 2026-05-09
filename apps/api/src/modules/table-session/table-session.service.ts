@@ -7,7 +7,6 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { RedisService } from '../../infra/redis/redis.service';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -117,12 +116,13 @@ export class TableSessionService {
       sessionId = activeRows[0].id;
       isNewSession = false;
     } else {
-      const sessionToken = uuidv4();
+      // Round 6 (B-NEW-18): session_token coluna dropped na migration
+      // 039 — nunca foi lida (cookie+header carregam table_sessions.id).
       const result = (await this.tenantConn.query(
-        `INSERT INTO table_sessions (table_id, session_token, status)
-         VALUES ($1, $2, 'active')
+        `INSERT INTO table_sessions (table_id, status)
+         VALUES ($1, 'active')
          RETURNING id`,
-        [table.id, sessionToken],
+        [table.id],
       )) as { id: string }[];
       sessionId = result[0].id;
       isNewSession = true;

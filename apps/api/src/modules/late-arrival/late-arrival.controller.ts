@@ -5,8 +5,12 @@ import {
   Body,
   Param,
   Query,
+  Req,
   UseGuards,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   IsString,
   IsOptional,
@@ -18,6 +22,7 @@ import {
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { CustomersService } from '../customers/customers.service';
 import { LateArrivalService } from './late-arrival.service';
 
 class CreateLateArrivalDto {
@@ -97,7 +102,47 @@ class ListQueryDto {
  */
 @Controller(':slug/late-arrival-requests')
 export class LateArrivalController {
-  constructor(private readonly service: LateArrivalService) {}
+  constructor(
+    private readonly service: LateArrivalService,
+    private readonly customers: CustomersService,
+  ) {}
+
+  /**
+   * Round 6 (B-NEW-12): valida que o caller é o host da mesa do request
+   * (ou tem x-staff-key, mas neste endpoint só SessionGuard, então
+   * obrigatório customer host). Antes: dto.customerId/staffId vinham do
+   * body, atacante em outra mesa do mesmo tenant podia approve/reject
+   * pedido alheio passando o UUID do host real.
+   */
+  private async assertHostOrThrow(
+    req: Request,
+    requestId: string,
+  ): Promise<{ customerId: string }> {
+    const token =
+      (req as Request & { cookies?: Record<string, string> }).cookies
+        ?.recognition_token ?? null;
+    if (!token) {
+      throw new HttpException(
+        'Identificação ausente.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    const caller = await this.customers.resolveByRecognitionToken(token);
+    if (!caller) {
+      throw new HttpException('Identificação inválida.', HttpStatus.UNAUTHORIZED);
+    }
+    const isHost = await this.service.isCallerHostOfRequest(
+      requestId,
+      caller.customerId,
+    );
+    if (!isHost) {
+      throw new HttpException(
+        'Apenas o host da mesa pode aprovar ou rejeitar.',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    return { customerId: caller.customerId };
+  }
 
   @Post()
   @UseGuards(SessionGuard)
@@ -123,14 +168,17 @@ export class LateArrivalController {
   async approve(
     @Param('slug') slug: string,
     @Param('id') id: string,
-    @Body() dto: ApproveDto = {},
+    @Body() _dto: ApproveDto = {},
+    @Req() req: Request,
   ) {
+    // Round 6 (B-NEW-12): customerId derivado do cookie via host check;
+    // dto.customerId/staffId IGNORADOS (atacante não pode passar UUID
+    // alheio pra creditar audit). staffId só via x-staff-key flow num
+    // endpoint separado (não exposto aqui — staff usa /staff/late-arrival).
+    const caller = await this.assertHostOrThrow(req, id);
     return this.service.approve(
       id,
-      {
-        staffId: dto.staffId,
-        customerId: dto.customerId,
-      },
+      { customerId: caller.customerId },
       slug,
     );
   }
@@ -141,10 +189,12 @@ export class LateArrivalController {
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Body() dto: RejectDto = {},
+    @Req() req: Request,
   ) {
+    const caller = await this.assertHostOrThrow(req, id);
     return this.service.reject(
       id,
-      { staffId: dto.staffId, customerId: dto.customerId },
+      { customerId: caller.customerId },
       dto.reason,
       slug,
     );

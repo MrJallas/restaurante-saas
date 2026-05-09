@@ -96,6 +96,32 @@ export class LateArrivalService {
     return result;
   }
 
+  /**
+   * Round 6 (B-NEW-12): valida se o `callerCustomerId` é host da
+   * `table_session` referida no `requestId`. Usado pelo controller
+   * pra impedir que customer em outra mesa approve/reject pedido
+   * alheio passando `dto.customerId` arbitrário.
+   *
+   * Retorna `false` quando: (a) request não existe; (b) table_session
+   * sem host carimbado; (c) host_customer_id != callerCustomerId.
+   * Distinção 404/403 fica a cargo do controller.
+   */
+  async isCallerHostOfRequest(
+    requestId: string,
+    callerCustomerId: string,
+  ): Promise<boolean> {
+    const rows = (await this.tenantConn.query(
+      `SELECT ts.host_customer_id
+         FROM late_arrival_requests lar
+         JOIN table_sessions ts ON ts.id = lar.table_session_id
+        WHERE lar.id = $1`,
+      [requestId],
+    )) as { host_customer_id: string | null }[];
+    if (!rows.length) return false;
+    const hostId = rows[0].host_customer_id;
+    return !!hostId && hostId === callerCustomerId;
+  }
+
   async approve(
     id: string,
     by: { staffId?: string; customerId?: string },
