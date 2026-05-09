@@ -10,7 +10,7 @@ import {
   Max,
   MaxLength,
 } from 'class-validator';
-import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
+import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { PromotionsService } from './promotions.service';
 
 class CreatePromotionDto {
@@ -39,8 +39,14 @@ class UpdatePromotionDto {
 /**
  * Promotions: GET e endpoint publico (clientes precisam ver descontos
  * disponiveis). Mutacoes (POST/PATCH/DELETE) eram publicas — qualquer
- * pessoa criava promoção 100% off em qualquer tenant. Agora exigem
- * `x-staff-key`. P0 do bug-hunt round 3.
+ * pessoa criava promoção 100% off em qualquer tenant.
+ *
+ * Round 5 (B-NEW-8): trocado StaffOrSessionGuard → StaffOnlyGuard. O
+ * guard anterior aceitava `x-session-token` válido (qualquer customer
+ * com mesa ativa) — comentário do round 3 alegava "agora exigem
+ * x-staff-key" mas era falso. Customer fazia PATCH/DELETE de promotion
+ * via session token e ganhava 100% off. Agora exclusivamente staff
+ * (`x-staff-key`).
  */
 @Controller(':slug/promotions')
 export class PromotionsController {
@@ -58,19 +64,19 @@ export class PromotionsController {
   }
 
   @Post()
-  @UseGuards(StaffOrSessionGuard)
+  @UseGuards(StaffOnlyGuard)
   async create(@Body() dto: CreatePromotionDto) {
     return this.promotionsService.create(dto);
   }
 
   @Patch(':id')
-  @UseGuards(StaffOrSessionGuard)
+  @UseGuards(StaffOnlyGuard)
   async update(@Param('id') id: string, @Body() dto: UpdatePromotionDto) {
     return this.promotionsService.update(id, dto);
   }
 
   @Delete(':id')
-  @UseGuards(StaffOrSessionGuard)
+  @UseGuards(StaffOnlyGuard)
   async delete(@Param('id') id: string) {
     return this.promotionsService.delete(id);
   }

@@ -53,10 +53,21 @@ export class FeedbacksService {
     };
   }
 
-  async getFeedbackByVisit(visitId: string) {
+  /**
+   * Round 5 (B-NEW-17): IDOR fix — antes retornava feedback de qualquer
+   * visitId conhecendo só o UUID. Agora exige `tableSessionId` do caller
+   * (vem do SessionGuard) e JOIN com visits filtra por mesa atual. Se
+   * a visit não pertence à sessão de mesa atual, retorna null (não vaza
+   * existência).
+   */
+  async getFeedbackByVisit(visitId: string, tableSessionId: string) {
     const rows = (await this.tenantConn.query(
-      `SELECT * FROM feedbacks WHERE visit_id = $1`,
-      [visitId],
+      `SELECT f.*
+         FROM feedbacks f
+         JOIN visits v ON v.id = f.visit_id
+        WHERE f.visit_id = $1
+          AND v.table_session_id = $2`,
+      [visitId, tableSessionId],
     )) as unknown[];
 
     return rows[0] || null;

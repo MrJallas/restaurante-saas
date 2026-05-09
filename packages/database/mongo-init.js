@@ -11,19 +11,25 @@
 //   - docs/features/chat-history-lgpd.md
 //   - packages/database/mongodb/chat-threads.md
 
-db = db.getSiblingDB('chat_history');
+// Round 5 (B-NEW-10) fix: era `chat_history`, mas a API conecta em
+// `restaurant_chat` (env MONGODB_DB do docker-compose:74). Init rodava
+// em DB errado em fresh boot → API escrevia em `restaurant_chat.*` que
+// nunca tinha TTL/indexes aplicados. chat_messages crescia infinitamente,
+// violando LGPD 30d (B-NEW-15). Field names também alinhados pro padrão
+// camelCase usado pelo backend Node (tenantId, customerId, threadId).
+db = db.getSiblingDB('restaurant_chat');
 
 // TTL indexes: docs auto-deletam quando expiresAt < now(). Mongo roda o
 // sweep a cada 60s (config interna). Per LGPD Art. 6 III (minimizacao).
 db.chat_threads.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 db.chat_messages.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
-// Listing rapido pra historico do cliente: customerId + restaurantId
-// (multi-tenant cross-restaurant) + ordenacao por createdAt desc.
-db.chat_threads.createIndex({ customerId: 1, restaurantId: 1, createdAt: -1 });
+// Listing rapido pra historico do cliente: tenantId + customerId
+// + ordenacao por lastMessageAt desc (campo usado pelo service).
+db.chat_threads.createIndex({ tenantId: 1, customerId: 1, lastMessageAt: -1 });
 
 // Paginacao das mensagens dentro da thread.
 db.chat_messages.createIndex({ threadId: 1, createdAt: 1 });
 
 // Init log pra container output.
-print('mongo-init.js: chat_history TTL + lookup indexes ensured.');
+print('mongo-init.js: restaurant_chat TTL + lookup indexes ensured.');

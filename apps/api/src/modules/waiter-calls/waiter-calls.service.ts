@@ -197,33 +197,43 @@ export class WaiterCallsService {
     staffName?: string,
     etaMinutes?: number,
   ) {
-    const rows = (await this.tenantConn.query(
-      `SELECT id, status, table_session_id FROM waiter_calls WHERE id = $1`,
-      [callId],
-    )) as { id: string; status: string; table_session_id: string }[];
-
-    if (!rows.length) {
-      throw new NotFoundException('Chamado nao encontrado.');
-    }
-
-    if (rows[0].status !== 'pending') {
-      throw new BadRequestException('Chamado ja foi atendido.');
-    }
-
-    await this.tenantConn.query(
+    // Round 5 (B-NEW-14): UPDATE atômico em vez de SELECT-then-UPDATE.
+    // Antes: 2 garçons clicando "atender" simultaneamente passavam pelo
+    // SELECT (status=pending), ambos UPDATE — segundo sobrescrevia
+    // assigned_waiter_name do primeiro, e o WS event acknowledged disparava
+    // 2x (mesmo padrão errado de B-NEW-1 round 3 em complaints).
+    //
+    // Agora: WHERE id=$1 AND status='pending' garante que só 1 UPDATE
+    // efetivamente flipa o status. RETURNING expõe se a row foi tocada.
+    // 0 rows = "ja foi atendido" (segundo garçom no race) ou "callId
+    // inexistente" (NotFoundException distinta).
+    const updated = (await this.tenantConn.query(
       `UPDATE waiter_calls
        SET status = 'acknowledged',
            acknowledged_at = now(),
            assigned_waiter_name = COALESCE($2, assigned_waiter_name),
            eta_minutes = COALESCE($3, eta_minutes)
-       WHERE id = $1`,
+       WHERE id = $1 AND status = 'pending'
+       RETURNING id, table_session_id`,
       [callId, staffName ?? null, etaMinutes ?? null],
-    );
+    )) as { id: string; table_session_id: string }[];
+
+    if (!updated.length) {
+      // Distinguir "não existe" de "já atendido" pra UX correta.
+      const probe = (await this.tenantConn.query(
+        `SELECT status FROM waiter_calls WHERE id = $1`,
+        [callId],
+      )) as { status: string }[];
+      if (!probe.length) {
+        throw new NotFoundException('Chamado nao encontrado.');
+      }
+      throw new BadRequestException('Chamado ja foi atendido.');
+    }
 
     this.eventsGateway.emitWaiterCallAcknowledged(
       slug,
       callId,
-      rows[0].table_session_id,
+      updated[0].table_session_id,
     );
 
     return {

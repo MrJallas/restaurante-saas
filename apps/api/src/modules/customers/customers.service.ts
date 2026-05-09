@@ -316,4 +316,30 @@ export class CustomersService {
       wasReclaim: false,
     };
   }
+
+  /**
+   * Lookup-only helper: resolve `recognition_token` cookie → customerId.
+   * Round 5 (B-NEW-9): chat-history controllers precisam validar ownership
+   * dos endpoints DELETE/list sem trustar `query.customerId`. Retorna null
+   * se token não bate em nenhum customer (possivel caso reclaim em outra
+   * mesa rotacionou o token); chamador trata 401/403.
+   *
+   * Diferente de `recognize()`: NÃO cria visit nem upsert participant.
+   * Só leitura.
+   */
+  async resolveByRecognitionToken(
+    recognitionToken: string,
+  ): Promise<{ customerId: string; name: string } | null> {
+    if (!recognitionToken) return null;
+    const rows = await this.tenantConn.query(
+      'SELECT id, name FROM customers WHERE recognition_token = $1',
+      [recognitionToken],
+    );
+    if (!(rows as unknown[]).length) return null;
+    const r = (rows as Record<string, unknown>[])[0];
+    return {
+      customerId: r.id as string,
+      name: r.name as string,
+    };
+  }
 }

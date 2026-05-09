@@ -10,7 +10,8 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
-import { SessionGuard } from '../../common/guards/session.guard';
+import { SessionGuard, SessionData } from '../../common/guards/session.guard';
+import { Session } from '../../common/decorators/session.decorator';
 import { FeedbacksService } from './feedbacks.service';
 
 class SubmitFeedbackDto {
@@ -91,7 +92,10 @@ export class FeedbacksController {
 
   @Get()
   @UseGuards(SessionGuard)
-  async getFeedback(@Query('visitId') visitId: string) {
-    return this.feedbacksService.getFeedbackByVisit(visitId);
+  async getFeedback(
+    @Query('visitId') visitId: string,
+    @Session() session: SessionData,
+  ) {
+    return this.feedbacksService.getFeedbackByVisit(visitId, session.sessionId);
   }
 }

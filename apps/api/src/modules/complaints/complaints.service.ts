@@ -116,6 +116,13 @@ export class ComplaintsService {
     body: { content: string; chipAction?: string },
     slug?: string,
   ) {
+    // Round 5 (B-NEW-1 round 3): hardened CAS — só pode responder quem
+     // não foi assigned ainda OU é o próprio assignee. Evita o caso onde
+     // 2 managers clicam "Responder" em janela ms-distance: o segundo
+     // pega assigned_manager_id != null e diferente do seu staffId, a
+     // WHERE rejeita, throw "ja respondida". Antes só `status IN (...)`
+     // protegia, mas se ambos managers iniciassem antes do commit do
+     // primeiro, ambos passavam.
     const updated = unwrapRows<Record<string, unknown>>(
       await this.tenantConn.query(
         `UPDATE complaints
@@ -124,7 +131,9 @@ export class ComplaintsService {
                response_at = now(),
                assigned_manager_id = COALESCE($2, assigned_manager_id),
                updated_at = now()
-         WHERE id = $3 AND status IN ('pending_review','in_progress')
+         WHERE id = $3
+           AND status IN ('pending_review','in_progress')
+           AND ($2::uuid IS NULL OR assigned_manager_id IS NULL OR assigned_manager_id = $2)
          RETURNING *`,
         [body.content, by.staffId ?? null, id],
       ),
@@ -162,6 +171,10 @@ export class ComplaintsService {
   }
 
   async resolve(id: string, by: { staffId?: string }, slug?: string) {
+    // Round 5 (B-NEW-1 round 3 cont.): CAS guard pra evitar double-resolve
+    // em race entre 2 managers. WHERE excluindo closed/resolved garante
+    // idempotência — segundo writer 0 rows, throw 404 (cliente não recebe
+    // duplo emitComplaintResolved nem audit log dupe).
     const updated = unwrapRows<Record<string, unknown>>(
       await this.tenantConn.query(
         `UPDATE complaints
@@ -171,13 +184,14 @@ export class ComplaintsService {
                assigned_manager_id = COALESCE($1, assigned_manager_id),
                updated_at = now()
          WHERE id = $2
+           AND status NOT IN ('closed', 'resolved')
          RETURNING *`,
         [by.staffId ?? null, id],
       ),
     );
     if (!updated.length) {
       throw new HttpException(
-        'Reclamacao nao encontrada.',
+        'Reclamacao nao encontrada ou ja resolvida.',
         HttpStatus.NOT_FOUND,
       );
     }

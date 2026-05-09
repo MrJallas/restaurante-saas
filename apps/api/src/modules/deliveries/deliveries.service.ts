@@ -28,23 +28,26 @@ export class DeliveriesService {
       throw new BadRequestException('Pedido nao esta pronto para entrega.');
     }
 
-    // Check if already claimed
-    const existingClaim = (await this.tenantConn.query(
-      `SELECT id FROM order_deliveries WHERE order_id = $1 AND status != 'cancelled'`,
-      [orderId],
-    )) as { id: string }[];
-
-    if (existingClaim.length > 0) {
-      throw new BadRequestException('Pedido ja foi reivindicado por outro garcom.');
+    // Round 5 (B-NEW-13): claim atômico via INSERT + tratamento de
+    // unique-violation (23505). Antes: SELECT existingClaim → INSERT criava
+    // race entre 2 garçons (ambos viam vazio, ambos inseriam). Migration
+    // 038 adiciona UNIQUE INDEX em (order_id) WHERE status != 'cancelled',
+    // PG rejeita o segundo INSERT.
+    let deliveryRows: { id: string; status: string; claimed_at: string }[];
+    try {
+      deliveryRows = (await this.tenantConn.query(
+        `INSERT INTO order_deliveries (order_id, claimed_at, status)
+         VALUES ($1, now(), 'claimed')
+         RETURNING id, status, claimed_at`,
+        [orderId],
+      )) as { id: string; status: string; claimed_at: string }[];
+    } catch (err) {
+      // 23505 unique_violation = outro garçom claimou no race window.
+      if (err && typeof err === 'object' && (err as { code?: string }).code === '23505') {
+        throw new BadRequestException('Pedido ja foi reivindicado por outro garcom.');
+      }
+      throw err;
     }
-
-    // Create delivery claim
-    const deliveryRows = (await this.tenantConn.query(
-      `INSERT INTO order_deliveries (order_id, claimed_at, status)
-       VALUES ($1, now(), 'claimed')
-       RETURNING id, status, claimed_at`,
-      [orderId],
-    )) as { id: string; status: string; claimed_at: string }[];
 
     // Emit claimed event to remove from other waiters
     this.eventsGateway.emitOrderClaimed(slug, orderId, 'garcom');

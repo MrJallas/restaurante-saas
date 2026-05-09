@@ -11,10 +11,13 @@ const THREADS_COLLECTION = 'chat_threads';
 const MESSAGES_COLLECTION = 'chat_messages';
 
 /**
- * Default TTL for chat docs · 90 days. Per docs/features/chat-history-lgpd.md
- * the customer can erase earlier via tool, otherwise Mongo TTL index drops it.
+ * Default TTL for chat docs · 30 days. Per docs/features/chat-history-lgpd.md
+ * (lines 4, 38, 228, 290, 299, 314) o canon LGPD é 30d — antes estava 90d
+ * (round 5 B-NEW-15 fix). Discrepância violava transparência ANPD: UI
+ * promete "30 dias" mas guardava 90. Customer pode erase earlier via tool;
+ * caso contrário Mongo TTL index dropa o doc após 30d.
  */
-const DEFAULT_TTL_DAYS = 90;
+const DEFAULT_TTL_DAYS = 30;
 
 interface ThreadDoc {
   threadId: string;
@@ -177,6 +180,24 @@ export class ChatHistoryService {
       linkedItems: m.linkedItems ?? null,
       createdAt: m.createdAt.toISOString(),
     }));
+  }
+
+  /**
+   * Round 5 (B-NEW-16): ownership-checked variant. Antes
+   * `listMessages(threadId)` retornava mensagens de qualquer thread
+   * conhecendo só o id (que é determinístico `tenantId:customerId:date`).
+   * Agora valida que `thread.customerId === customerId`. 404 sem vazar
+   * existência (não distingue "thread não existe" de "thread não é sua").
+   */
+  async listMessagesForCustomer(threadId: string, customerId: string) {
+    const db = this.requireDb();
+    const thread = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .findOne({ threadId });
+    if (!thread || thread.customerId !== customerId) {
+      throw new HttpException('Thread nao encontrada.', HttpStatus.NOT_FOUND);
+    }
+    return this.listMessages(threadId);
   }
 
   /**
