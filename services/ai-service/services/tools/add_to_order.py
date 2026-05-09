@@ -1,9 +1,8 @@
 """
 Add an item to the customer's pending order (canonical name per F2 spec).
 
-Renamed from `add_to_cart` — same semantics, new name to match the canonical
-registry. The legacy `add_to_cart` module re-exports from here as a deprecated
-alias.
+Renamed from `add_to_cart` — same semantics. The legacy `add_to_cart`
+forwarding module was removed in P1 #30.
 """
 
 from typing import Any

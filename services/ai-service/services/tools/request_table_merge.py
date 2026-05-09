@@ -1,8 +1,8 @@
 """
 Request table merge — "junta minha mesa com a mesa N" (canonical name per F2).
 
-Renamed from `table_merge_request` (also kept registered as a deprecated
-alias). Per `customer-host-model.md` lines 178+. Handles 429 cooldown
+Renamed from `table_merge_request`; the legacy forwarding module was removed
+in P1 #30. Per `customer-host-model.md` lines 178+. Handles 429 cooldown
 gracefully: when origin × target was recently rejected/timed-out, backend
 returns 429 and the LLM renders a friendly cooldown message instead of
 retrying.

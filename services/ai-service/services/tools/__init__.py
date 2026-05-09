@@ -17,11 +17,10 @@ Adding a tool:
 
 Naming convention (F2 round):
   - Canonical names (e.g. `recommend_dish`, `add_to_order`) are the names the
-    LLM is told about in the system prompt.
-  - Legacy names (e.g. `recommend`, `add_to_cart`) remain registered as
-    deprecated aliases — they forward to the same call() — so existing
-    callers (apps/api dispatcher, older clients) don't break this round.
-    Marked with `# DEPRECATED — remove next round` below.
+    LLM is told about in the system prompt. Earlier rounds also registered
+    legacy names (`recommend`, `add_to_cart`, etc.) as deprecated forwarding
+    aliases; those have since been removed (P1 #30) — every caller is on the
+    canonical name.
 """
 
 from typing import Any
@@ -72,16 +71,6 @@ from .ask_about_restaurant import call as _ask_about_restaurant
 from .rate_visit import call as _rate_visit
 
 # ─────────────────────────────────────────────────────────────
-# Legacy customer-facing aliases (DEPRECATED — remove next round)
-# ─────────────────────────────────────────────────────────────
-from .add_to_cart import call as _add_to_cart_alias  # → add_to_order
-from .recommend import call as _recommend_alias  # → recommend_dish
-from .complaint_compose import call as _complaint_compose_alias  # → send_complaint
-from .lgpd_erase_chat import call as _lgpd_erase_chat_alias  # → lgpd_data_request
-from .table_merge_request import call as _table_merge_request_alias  # → request_table_merge
-from .rate_order import call as _rate_order_alias  # → rate_visit
-
-# ─────────────────────────────────────────────────────────────
 # Legacy customer tools (NOT in F2 canonical list but still in use)
 # ─────────────────────────────────────────────────────────────
 from .request_check import call as _request_check
@@ -93,10 +82,9 @@ from .view_chat_history import call as _view_chat_history
 from .explain_dish import call as _explain_dish
 
 # ─────────────────────────────────────────────────────────────
-# Staff-facing tools (10) — `staff_message_send` is now a deprecated alias
-# pointing at the canonical `send_message_to_manager`.
+# Staff-facing tools (9) — staff_message_send was a deprecated alias for
+# send_message_to_manager and was removed in P1 #30.
 # ─────────────────────────────────────────────────────────────
-from .staff_message_send import call as _staff_message_send_alias  # → send_message_to_manager
 from .staff_broadcast import call as _staff_broadcast
 from .staff_assign_call import call as _staff_assign_call
 from .staff_resolve_call import call as _staff_resolve_call
@@ -236,40 +224,6 @@ TOOLS: dict[str, ToolMeta] = {
     ),
 
     # ──────────────────────────────────────────────
-    # DEPRECATED aliases — remove next round
-    # ──────────────────────────────────────────────
-    # add_to_cart → add_to_order
-    "add_to_cart": ToolMeta(
-        name="add_to_cart", call=_add_to_cart_alias,
-        silent=False, requires_text=False, router=False, audience="customer",
-    ),
-    # recommend → recommend_dish
-    "recommend": ToolMeta(
-        name="recommend", call=_recommend_alias,
-        silent=False, requires_text=False, router=False, audience="customer",
-    ),
-    # complaint_compose → send_complaint
-    "complaint_compose": ToolMeta(
-        name="complaint_compose", call=_complaint_compose_alias,
-        silent=False, requires_text=False, router=True, audience="customer",
-    ),
-    # lgpd_erase_chat → lgpd_data_request
-    "lgpd_erase_chat": ToolMeta(
-        name="lgpd_erase_chat", call=_lgpd_erase_chat_alias,
-        silent=True, requires_text=False, router=False, audience="customer",
-    ),
-    # table_merge_request → request_table_merge
-    "table_merge_request": ToolMeta(
-        name="table_merge_request", call=_table_merge_request_alias,
-        silent=False, requires_text=False, router=False, audience="customer",
-    ),
-    # rate_order → rate_visit
-    "rate_order": ToolMeta(
-        name="rate_order", call=_rate_order_alias,
-        silent=False, requires_text=False, router=True, audience="customer",
-    ),
-
-    # ──────────────────────────────────────────────
     # Legacy customer tools (still in use, not in canonical list)
     # ──────────────────────────────────────────────
     "request_check": ToolMeta(
@@ -307,15 +261,10 @@ TOOLS: dict[str, ToolMeta] = {
     ),
 
     # ──────────────────────────────────────────────
-    # Staff-facing tools (10)
-    # `staff_message_send` is now a deprecated alias (forwards to
-    # send_message_to_manager). Other staff tools keep their names.
+    # Staff-facing tools (9)
+    # Note: staff_message_send was a deprecated alias for
+    # send_message_to_manager; removed in P1 #30.
     # ──────────────────────────────────────────────
-    # DEPRECATED — remove next round (staff_message_send → send_message_to_manager)
-    "staff_message_send": ToolMeta(
-        name="staff_message_send", call=_staff_message_send_alias,
-        silent=False, requires_text=True, router=False, audience="staff",
-    ),
     "staff_broadcast": ToolMeta(
         name="staff_broadcast", call=_staff_broadcast,
         silent=False, requires_text=True, router=False, audience="staff",

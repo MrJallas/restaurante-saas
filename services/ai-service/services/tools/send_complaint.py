@@ -1,13 +1,10 @@
 """
 Open the formal complaint composer (canonical name per F2 spec).
 
-Renamed from `complaint_compose` — same semantics, new name to match the
-canonical registry. Per `complaint-flow-v12.md`, complaint composition lives
-in `ScreenCustomerComplaintCompose`; this is a routing tool that takes the
-customer to that screen.
-
-The legacy `complaint_compose` module re-exports from here as a deprecated
-alias.
+Renamed from `complaint_compose` — same semantics. Per `complaint-flow-v12.md`,
+complaint composition lives in `ScreenCustomerComplaintCompose`; this is a
+routing tool that takes the customer to that screen. The legacy
+`complaint_compose` forwarding module was removed in P1 #30.
 """
 
 from typing import Any
