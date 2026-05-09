@@ -36,6 +36,13 @@ class ToggleFlagDto {
   @IsUUID()
   staffId?: string;
 
+  /**
+   * Round 17 (B-NEW-67): kept on the DTO for backwards-compat (FE can
+   * still send it without 400) but **IGNORED** server-side. Audit field
+   * `session_flags.set_by_customer_id` is no longer stamped from this
+   * value — flag is a manager action, not a customer action. See the
+   * controller comment on `toggle` for the audit-spoof this closes.
+   */
   @IsOptional()
   @IsUUID()
   customerId?: string;
@@ -56,8 +63,14 @@ export class VipController {
 
   /**
    * Round 10 (B-NEW-49): staffId derivado do x-staff-id header.
-   * customerId NÃO é mais aceito do body (não fazia sentido — flag
-   * é por session, não por customer).
+   * Round 17 (B-NEW-67): `dto.customerId` agora é IGNORADO. O comentário
+   * antigo dizia "customerId NÃO é mais aceito do body" mas o código
+   * AINDA passava `dto.customerId` pro service, que stampava
+   * `session_flags.set_by_customer_id` com UUID arbitrário do body —
+   * audit log spoof. Manager M flagava mesa 5 como VIP e atribuía a
+   * ação ao customer X (UUID conhecido), corrompendo trail de
+   * accountability. Flag é ação de manager por design (já protegido
+   * por ManagerOnlyGuard); nunca deveria ter set_by_customer_id.
    */
   @Post(':tableSessionId/flags')
   @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
@@ -74,7 +87,6 @@ export class VipController {
       dto.action,
       {
         staffId,
-        customerId: dto.customerId,
         reason: dto.reason,
       },
       slug,

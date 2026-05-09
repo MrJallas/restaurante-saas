@@ -56,6 +56,15 @@ class CreateZonePauseDto {
 }
 
 class EndZonePauseDto {
+  /**
+   * Round 17 (B-NEW-68): kept for backwards-compat with FE that still
+   * sends it; the value is **IGNORED**. Audit attribution comes from
+   * `requireStaffId(req)` (header `x-staff-id`, validated by
+   * ManagerOnlyGuard). Antes a fallback `dto.endedBy ?? ''` em
+   * zone-pause.controller.ts:140 podia disparar quando o `req?: Request`
+   * fosse undefined (path interno / teste / refactor) e gravava o body
+   * UUID em `zone_pauses.ended_by` — audit spoof.
+   */
   @IsOptional()
   @IsUUID()
   endedBy?: string;
@@ -127,17 +136,25 @@ export class ZonePauseController {
     );
   }
 
+  /**
+   * Round 17 (B-NEW-68): `req` agora é REQUIRED. O fallback anterior
+   * (`req ? requireStaffId(req) : dto.endedBy ?? ''`) podia disparar
+   * silenciosamente quando o request fosse undefined em path interno
+   * (test direto, refactor que chame o método sem injetar Request) e
+   * gravava `zone_pauses.ended_by` com UUID arbitrário do body — audit
+   * spoof. Round 10 fix do `staffId` ficou parcial: criou o derive-
+   * from-header mas não removeu o fallback. Agora staffId vem só do
+   * header validado por ManagerOnlyGuard.
+   */
   @Post(':id/end')
   @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async end(
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Body() dto: EndZonePauseDto = {},
-    @Req() req?: Request,
+    @Req() req: Request,
   ) {
-    const staffId = req
-      ? this.callerResolver.requireStaffId(req)
-      : (dto.endedBy ?? '');
+    const staffId = this.callerResolver.requireStaffId(req);
     return this.service.endEarly(
       id,
       {
@@ -159,7 +176,7 @@ export class ZonePauseController {
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Body() dto: EndZonePauseDto = {},
-    @Req() req?: Request,
+    @Req() req: Request,
   ) {
     return this.end(slug, id, dto, req);
   }

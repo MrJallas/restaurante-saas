@@ -25,9 +25,11 @@ import {
   MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import type { Request } from 'express';
 import { SessionGuard, SessionData, SessionRequest } from '../../common/guards/session.guard';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { Session } from '../../common/decorators/session.decorator';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { OrdersService } from './orders.service';
 
 class CreateOrderItemDto {
@@ -73,6 +75,14 @@ class CreateOrderDto {
   @IsString()
   visitId?: string;
 
+  /**
+   * Round 17: kept in the DTO for backwards-compat with FE that still
+   * sends `session.customerId` in the body (apps/web-customer/src/app/
+   * [slug]/assistente/page.tsx:460). The value is **IGNORED** server-side
+   * — the controller now derives the order-level customer from the
+   * `recognition_token` cookie via `callerResolver.tryGetCustomerId`. See
+   * the comment on `createOrder` below for the IDOR this closes.
+   */
   @IsOptional()
   @IsUUID()
   customerId?: string | null;
@@ -129,15 +139,38 @@ class UpdateStatusDto {
 
 @Controller(':slug/orders')
 export class OrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
+  /**
+   * Round 17 (B-NEW-66): customerId derivado do cookie `recognition_token`
+   * em vez de aceitar `dto.customerId` arbitrário. Antes: customer A na
+   * mesma mesa de B passava `customerId = B-uuid` em billingMode=individual
+   * → todos os items eram atribuídos a B em `order_items.customer_id`. A
+   * validação de session_participants em `orders.service.ts:198-217` SÓ
+   * confirma "B está na mesa" — não confirma "A é o B". B fica responsável
+   * pela conta de A; o split-by-customer no `/pagamento` cobra B; A paga 0.
+   * Mesma família dos round-7-9 fixes (assistant, complaints, table-merge):
+   * customer-side actions devem derivar caller do cookie.
+   *
+   * Comportamento: `dto.customerId` é IGNORADO. Se o caller não tem cookie
+   * `recognition_token` válido, individual billing falha em
+   * `orders.service` (visitId requirement já barra anônimos). Per-item
+   * `customerId` continua aceito (UX legítimo de "split por item entre
+   * participantes da mesma mesa", policy: trust intra-table, validado em
+   * `orders.service.ts:198-217`).
+   */
   @Post()
   @UseGuards(SessionGuard)
   async createOrder(
     @Body() dto: CreateOrderDto,
     @Session() session: SessionData,
     @Param('slug') slug: string,
+    @Req() req: Request,
   ) {
+    const callerCustomerId = await this.callerResolver.tryGetCustomerId(req);
     return this.ordersService.createOrder(
       session.sessionId,
       dto.visitId || null,
@@ -145,7 +178,7 @@ export class OrdersController {
       dto.items,
       dto.notes,
       slug,
-      dto.customerId ?? null,
+      callerCustomerId,
       dto.idempotencyKey,
     );
   }
