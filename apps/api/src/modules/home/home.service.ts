@@ -158,7 +158,13 @@ export class HomeService {
         isVip: 'false',
         customerName: nome,
       });
+      // Round 7 (B-NEW-25): X-AI-Service-Key header obrigatório.
+      const aiHeaders: Record<string, string> = {};
+      if (process.env.AI_SERVICE_API_KEY) {
+        aiHeaders['x-ai-service-key'] = process.env.AI_SERVICE_API_KEY;
+      }
       const res = await fetch(`${aiUrl}/continuation?${params.toString()}`, {
+        headers: aiHeaders,
         signal: AbortSignal.timeout(800),
       });
       if (res.ok) {

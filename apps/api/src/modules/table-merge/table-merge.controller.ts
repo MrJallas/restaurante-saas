@@ -15,6 +15,7 @@ import {
   IsIn,
 } from 'class-validator';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
+import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { TableMergeService } from './table-merge.service';
 
@@ -97,7 +98,14 @@ export class TableMergeController {
     return this.service.reject(id, dto.decidedByCustomerId, dto.reason, slug);
   }
 
+  /**
+   * Round 7 (B-NEW-31): adicionado StaffOnlyGuard. Antes era público —
+   * qualquer um listava todos pedidos de junção do tenant + IDs internos
+   * (sourceTableSessionId, targetTableSessionId, requestingCustomerId).
+   * Útil pra reconnaissance pré-ataque (B-NEW-23, B-NEW-27).
+   */
   @Get()
+  @UseGuards(StaffOnlyGuard)
   async list(@Query() q: ListQueryDto) {
     return this.service.list({
       status: q.status,

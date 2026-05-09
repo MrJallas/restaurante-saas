@@ -26,12 +26,23 @@ import type { SessionData, SessionRequest } from './session.guard';
  * /:slug/orders/:id/status` era publico — qualquer um podia avancar
  * status (delivered) ou cancelar pedido alheio em qualquer tenant.
  */
+/**
+ * Round 7 (B-NEW-24): guard agora carimba `request.actorType` pra que
+ * controllers possam diferenciar staff vs session no service layer (e.g.
+ * orders.updateStatus precisa validar table_session_id ownership só
+ * quando o caller é session, sem bloquear staff que tem direito a
+ * mover qualquer pedido).
+ */
+export type ActorType = 'staff' | 'session';
+
 @Injectable()
 export class StaffOrSessionGuard implements CanActivate {
   constructor(private readonly redis: RedisService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<SessionRequest>();
+    const request = context.switchToHttp().getRequest<
+      SessionRequest & { actorType?: ActorType }
+    >();
 
     const staffKeyHeader = request.headers['x-staff-key'];
     const expected = process.env.STAFF_API_KEY;
@@ -39,6 +50,7 @@ export class StaffOrSessionGuard implements CanActivate {
       const a = Buffer.from(expected, 'utf8');
       const b = Buffer.from(staffKeyHeader, 'utf8');
       if (a.length === b.length && timingSafeEqual(a, b)) {
+        request.actorType = 'staff';
         return true;
       }
     }
@@ -62,6 +74,7 @@ export class StaffOrSessionGuard implements CanActivate {
     }
 
     request.sessionData = JSON.parse(data) as SessionData;
+    request.actorType = 'session';
     return true;
   }
 }

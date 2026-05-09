@@ -8,6 +8,7 @@ import {
   Matches,
   MaxLength,
 } from 'class-validator';
+import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { StaffService } from './staff.service';
 
@@ -33,12 +34,21 @@ class VerifyPinDto {
 
 /**
  * Endpoints de staff. List/getById ainda publicos pra que o login
- * inicial possa listar staffs antes de digitar PIN. Mutacoes (criar/
- * editar/deletar) exigem `x-staff-key`. Antes era TUDO publico (P0
- * round 3).
+ * inicial possa listar staffs antes de digitar PIN.
+ *
+ * Round 7 (B-NEW-19): mutações (POST/PATCH/DELETE) trocadas
+ * StaffOrSessionGuard → StaffOnlyGuard. Antes (round 3) virou public→
+ * StaffOrSessionGuard, mas o "Or Session" path aceita customer com
+ * session ativa — customer criava staff fantasma com role manager
+ * + PIN conhecido, ou rotacionava PIN de manager existente. Agora
+ * exclusivamente staff (`x-staff-key`).
  *
  * verifyPin nao tem guard porque e o proprio mecanismo de login —
  * a defesa la e o throttle Redis no service (5 tentativas/5min lock).
+ *
+ * `my-tables` mantém StaffOrSessionGuard porque é a única rota onde
+ * customer-side use case existe (cliente pode listar mesas ativas
+ * pra contexto de UI).
  */
 @Controller(':slug/staff')
 export class StaffController {
@@ -67,19 +77,19 @@ export class StaffController {
   }
 
   @Post()
-  @UseGuards(StaffOrSessionGuard)
+  @UseGuards(StaffOnlyGuard)
   async create(@Body() dto: CreateStaffDto) {
     return this.staffService.create(dto);
   }
 
   @Patch(':id')
-  @UseGuards(StaffOrSessionGuard)
+  @UseGuards(StaffOnlyGuard)
   async update(@Param('id') id: string, @Body() dto: UpdateStaffDto) {
     return this.staffService.update(id, dto);
   }
 
   @Delete(':id')
-  @UseGuards(StaffOrSessionGuard)
+  @UseGuards(StaffOnlyGuard)
   async delete(@Param('id') id: string) {
     return this.staffService.delete(id);
   }

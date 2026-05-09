@@ -1,6 +1,10 @@
+import os
 import time
-from fastapi import FastAPI, HTTPException
+from hmac import compare_digest
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from pydantic import BaseModel
 
 from config import settings
@@ -81,6 +85,44 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Round 7 (B-NEW-25): API key middleware — exige `X-AI-Service-Key`
+# em todas as rotas exceto health checks. apps/api passa o header com
+# valor de `AI_SERVICE_API_KEY` env. Antes: ai-service estava sem auth
+# alguma + porta exposta no host = DoS gratuito + LLM bill ilimitado.
+#
+# Health endpoints (`/health`, `/`) e docs (`/docs`, `/openapi.json`)
+# permanecem públicos pra liveness probes do Docker e troubleshooting.
+_PUBLIC_PATHS = {"/health", "/", "/docs", "/openapi.json", "/redoc"}
+
+
+class AiServiceAuthMiddleware(BaseHTTPMiddleware):
+    """Auth via header X-AI-Service-Key contra env AI_SERVICE_API_KEY."""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        # Skip auth pra rotas de saúde / docs.
+        if path in _PUBLIC_PATHS or path.startswith("/static"):
+            return await call_next(request)
+
+        expected = os.environ.get("AI_SERVICE_API_KEY")
+        if not expected:
+            # Sem env configurada → fail-open em dev (CI/local sem docker).
+            # Em prod, sempre setar a env via docker-compose / k8s secret.
+            return await call_next(request)
+
+        provided = request.headers.get("x-ai-service-key", "")
+        if not provided or not compare_digest(provided, expected):
+            return Response(
+                content='{"detail":"Acesso negado. X-AI-Service-Key inválida ou ausente."}',
+                status_code=401,
+                media_type="application/json",
+            )
+        return await call_next(request)
+
+
+app.add_middleware(AiServiceAuthMiddleware)
 
 
 # --- DTOs ---

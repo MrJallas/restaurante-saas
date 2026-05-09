@@ -215,17 +215,20 @@ export class CustomersController {
       maxAge: RECOGNITION_COOKIE_MAX_AGE,
     });
 
-    return {
-      customerId: result.customerId,
-      name: result.name,
-      recognitionToken: result.recognitionToken,
-      isReturning: result.isReturning,
-      totalVisits: result.totalVisits,
-      lastVisitSummary: result.lastVisitSummary,
-      visitId: result.visitId,
-      wasReclaim: result.wasReclaim,
-    };
-  }
+    // Round 7 (B-NEW-28): recognitionToken NÃO retornado no body —
+     // só vai pelo cookie HttpOnly. Antes: XSS no customer-side App
+     // lia `result.recognitionToken` e abria conta dele em qualquer
+     // mesa do tenant. Mesma fix do /identify (round 6).
+     return {
+       customerId: result.customerId,
+       name: result.name,
+       isReturning: result.isReturning,
+       totalVisits: result.totalVisits,
+       lastVisitSummary: result.lastVisitSummary,
+       visitId: result.visitId,
+       wasReclaim: result.wasReclaim,
+     };
+   }
 
   @Post('recognize')
   @UseGuards(SessionGuard)
@@ -253,6 +256,10 @@ export class CustomersController {
       maxAge: RECOGNITION_COOKIE_MAX_AGE,
     });
 
-    return result;
+    // Round 7 (B-NEW-28): recognitionToken NÃO retornado no body —
+    // só via cookie HttpOnly. Mesmo fix do welcome/identify.
+    const { recognitionToken: _omit, ...safeResult } = result;
+    void _omit;
+    return safeResult;
   }
 }

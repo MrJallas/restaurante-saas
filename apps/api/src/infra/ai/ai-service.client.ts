@@ -53,6 +53,22 @@ export class AiServiceClient {
   private readonly baseUrl = aiConfig.serviceUrl;
   private readonly timeout = aiConfig.timeoutMs;
 
+  /**
+   * Round 7 (B-NEW-25): header `X-AI-Service-Key` em todas chamadas.
+   * ai-service exige autenticação via env `AI_SERVICE_API_KEY` shared.
+   * Health endpoint não precisa, mas mandar não quebra.
+   */
+  private buildHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    const apiKey = process.env.AI_SERVICE_API_KEY;
+    if (apiKey) {
+      headers['x-ai-service-key'] = apiKey;
+    }
+    return headers;
+  }
+
   async classify(
     message: string,
     history: ChatMessage[] = [],
@@ -60,7 +76,7 @@ export class AiServiceClient {
     try {
       const res = await fetch(`${this.baseUrl}/classify`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.buildHeaders(),
         body: JSON.stringify({ message, history }),
         signal: AbortSignal.timeout(10000),
       });
@@ -86,7 +102,7 @@ export class AiServiceClient {
   ): Promise<ChatResponse> {
     const res = await fetch(`${this.baseUrl}/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.buildHeaders(),
       body: JSON.stringify({
         message,
         history,

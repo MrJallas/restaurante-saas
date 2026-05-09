@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
   Optional,
   Logger,
@@ -672,7 +673,13 @@ export class OrdersService {
     };
   }
 
-  async updateStatus(orderId: string, newStatus: string, changedBy: string, slug?: string) {
+  async updateStatus(
+    orderId: string,
+    newStatus: string,
+    changedBy: string,
+    slug?: string,
+    actor?: { actorType: 'staff' | 'session'; sessionTableId: string | null },
+  ) {
     const orderRows = (await this.tenantConn.query(
       `SELECT id, status, table_session_id FROM orders WHERE id = $1`,
       [orderId],
@@ -684,6 +691,27 @@ export class OrdersService {
 
     const tableSessionId = orderRows[0].table_session_id;
     const currentStatus = orderRows[0].status;
+
+    // Round 7 (B-NEW-24): branch session vs staff. Customer só pode
+    // transicionar pra `cancelled` E só em ordens da sua própria mesa.
+    // Staff continua livre. Sem este check: customer cancelava/marcava
+    // delivered qualquer order do tenant.
+    if (actor?.actorType === 'session') {
+      if (newStatus !== 'cancelled') {
+        throw new ForbiddenException(
+          'Customer só pode cancelar pedido. Mude de status só permitido pra staff.',
+        );
+      }
+      if (
+        !actor.sessionTableId ||
+        actor.sessionTableId !== tableSessionId
+      ) {
+        throw new ForbiddenException(
+          'Pedido não pertence à sua mesa.',
+        );
+      }
+    }
+
     const allowed = VALID_TRANSITIONS[currentStatus] || [];
 
     if (!allowed.includes(newStatus)) {

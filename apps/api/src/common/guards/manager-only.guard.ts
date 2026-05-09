@@ -3,30 +3,74 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
 
 /**
  * Manager-only guard · second layer on top of `StaffOnlyGuard`.
  *
- * `StaffOnlyGuard` already validates the `x-staff-key` shared secret. This
- * guard adds a per-role check via the `x-staff-role` header, which the staff
- * apps must send when calling endpoints reserved to managers (start/end zone
- * pause, respond to a complaint, toggle session VIP/allergy flags).
+ * Round 7 (B-NEW-22) hardening: ANTES o guard confiava em `x-staff-role`
+ * header CLIENT-CONTROLLED — qualquer waiter/cook com `x-staff-key`
+ * setava `x-staff-role: manager` no curl e bypassa zone-pause, VIP
+ * flags, complaint respond, escalation. **Toda a hierarquia de roles
+ * colapsava.**
  *
- * Compose with `@UseGuards(StaffOnlyGuard, ManagerOnlyGuard)` so the request
- * is rejected before reaching the role check when the shared secret is
- * missing or invalid.
+ * AGORA: o guard pega `x-staff-id` (UUID do staff que se autentica
+ * via PIN antes) e faz query no DB `SELECT role FROM staff WHERE id =
+ * $1 AND is_active = true`. Só passa se `role === 'manager'`. Atacante
+ * com staff-key mas sem manager-id real é bloqueado.
+ *
+ * Compose com `@UseGuards(StaffOnlyGuard, ManagerOnlyGuard)` — o
+ * StaffOnlyGuard valida `x-staff-key` shared secret antes (round 4
+ * STAFF_API_KEY env). Sem ele, este nem roda.
+ *
+ * **Pendente médio-prazo**: substituir `x-staff-key` shared + `x-staff-id`
+ * por JWT per-staff assinado server-side com role embutida (eliminaria
+ * o lookup DB e impediria spoofing de staff-id mesmo conhecendo o
+ * shared key). Vide deferred para round 8+.
  */
 @Injectable()
 export class ManagerOnlyGuard implements CanActivate {
-  canActivate(ctx: ExecutionContext): boolean {
+  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<{
       headers: Record<string, string | string[] | undefined>;
     }>();
-    const role = req.headers['x-staff-role'];
-    if (role !== 'manager') {
+
+    const staffIdHeader = req.headers['x-staff-id'];
+    const staffId = Array.isArray(staffIdHeader) ? staffIdHeader[0] : staffIdHeader;
+
+    if (!staffId || typeof staffId !== 'string') {
+      throw new UnauthorizedException(
+        'manager-only endpoint exige x-staff-id',
+      );
+    }
+
+    // UUID-shape sanity check pra evitar SQL malformado mesmo passando
+    // por parametro. UUID v4: 36 chars com dashes.
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        staffId,
+      )
+    ) {
+      throw new UnauthorizedException('x-staff-id inválido');
+    }
+
+    const rows = (await this.tenantConn.query(
+      `SELECT role FROM staff WHERE id = $1 AND is_active = true`,
+      [staffId],
+    )) as { role: string }[];
+
+    if (!rows.length) {
+      throw new ForbiddenException('staff não encontrado ou inativo');
+    }
+
+    if (rows[0].role !== 'manager') {
       throw new ForbiddenException('manager-only endpoint');
     }
+
     return true;
   }
 }

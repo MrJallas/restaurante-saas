@@ -251,12 +251,17 @@ export class OrdersController {
   }
 
   /**
-   * Staff-driven status transitions (kitchen/waiter). Protegido pelo
-   * StaffOrSessionGuard — antes era PUBLICO (qualquer um com o orderId
-   * cancelava ou marcava delivered em qualquer tenant). Staff manda
-   * `x-staff-key`; customer manda session token; sem nenhum dos dois,
-   * 401. Customer confirm/cancel do pending window seguem nos endpoints
-   * dedicados acima.
+   * Staff-driven status transitions (kitchen/waiter). Round 7 (B-NEW-24):
+   * branch session vs staff — quando session, valida ownership de
+   * `table_session_id` E restringe transição apenas pra `cancelled`
+   * (customer não tem direito de marcar `delivered`/`ready`/etc).
+   * Staff continua livre.
+   *
+   * Antes (round 3 fix): StaffOrSessionGuard só impedia callers anônimos.
+   * Service.updateStatus não validava ownership quando session — customer
+   * cancelava/marcava delivered qualquer order do tenant inteiro.
+   * `cancelOrder` JÁ FAZIA o check certo; updateStatus replicava o bug
+   * de ownership. Agora ambos consistentes.
    */
   @Patch(':orderId/status')
   @UseGuards(StaffOrSessionGuard)
@@ -264,12 +269,17 @@ export class OrdersController {
     @Param('orderId') orderId: string,
     @Param('slug') slug: string,
     @Body() dto: UpdateStatusDto,
+    @Req() req: SessionRequest & { actorType?: 'staff' | 'session' },
   ) {
     return this.ordersService.updateStatus(
       orderId,
       dto.status,
       dto.changedBy || 'system',
       slug,
+      {
+        actorType: req.actorType ?? 'staff',
+        sessionTableId: req.sessionData?.sessionId ?? null,
+      },
     );
   }
 

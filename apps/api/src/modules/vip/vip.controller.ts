@@ -68,7 +68,13 @@ export class VipController {
     );
   }
 
+  /**
+   * Round 7 (B-NEW-32): adicionado StaffOnlyGuard. Antes era público —
+   * atacante iterava tableSessionIds (vazam via B-NEW-31 antes do fix)
+   * e mapeava clientes VIP do tenant pra phishing/social engineering.
+   */
   @Get(':tableSessionId/flags')
+  @UseGuards(StaffOnlyGuard)
   async list(@Param('tableSessionId') tableSessionId: string) {
     return this.service.getActiveFlags(tableSessionId);
   }
