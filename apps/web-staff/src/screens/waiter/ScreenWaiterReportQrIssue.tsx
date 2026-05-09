@@ -290,7 +290,10 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
 
       <div
         style={{
-          padding: '14px 22px 18px', display: 'flex', flexDirection: 'column', gap: 8,
+          // P1 #20: safe-area no rodape do CTA; antes a action bar
+          // ficava parcialmente embaixo do home-indicator do iOS.
+          padding: '14px 22px max(env(safe-area-inset-bottom), 18px)',
+          display: 'flex', flexDirection: 'column', gap: 8,
           borderTop: `1px solid ${C.borderFaint}`, background: C.bg,
           position: 'sticky', bottom: 0,
         }}

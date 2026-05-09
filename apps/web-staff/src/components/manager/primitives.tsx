@@ -542,7 +542,11 @@ export function MBottomNav({
         background: C.bg,
         display: 'flex',
         justifyContent: 'space-around',
-        padding: '8px 4px 14px',
+        // P1 #20: iOS Safari tem `safe-area-inset-bottom` >= 34px no
+        // home-indicator. Sem env(), o nav ficava embaixo da home bar e
+        // o usuario nao via os icones. `max(env, 14px)` mantem o
+        // baseline em devices sem notch.
+        padding: '8px 4px max(env(safe-area-inset-bottom), 14px)',
         position: 'sticky',
         bottom: 0,
         zIndex: 4,

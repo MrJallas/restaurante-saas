@@ -127,7 +127,9 @@ export const ScreenWaiterDeliveryConfirm: React.FC<ScreenWaiterDeliveryConfirmPr
 
       <div
         style={{
-          display: 'flex', gap: 10, padding: '12px 16px 18px',
+          display: 'flex', gap: 10,
+          // P1 #20: bottom: 0 sticky sem safe-area sumia em iOS Safari.
+          padding: '12px 16px max(env(safe-area-inset-bottom), 18px)',
           borderTop: `1px solid ${C.borderFaint}`, background: C.bg,
           position: 'sticky', bottom: 0,
         }}

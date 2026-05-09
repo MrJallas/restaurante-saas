@@ -6,6 +6,7 @@ import { apiPost, apiGet } from '../../../../lib/api';
 import { setSessionToken } from '../../../../lib/storage';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
+import { useZonePause } from '../../../../hooks/useZonePause';
 import { WelcomeModal } from '../../../../components/welcome/WelcomeModal';
 import { AppShell } from '../../../../components/layout/AppShell';
 import { HomeHero } from '../../../../components/home/HomeHero';
@@ -87,6 +88,14 @@ export default function MesaPage() {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [reclaimBanner, setReclaimBanner] = useState(false);
+
+  // P1 #21: zone-pause active no DB ja era invisivel no customer side
+  // (sem WS scoped ao session room nem polling). Ativamos polling de
+  // 30s so depois que tem sessao + customer (i.e., pageState === 'home')
+  // pra nao bater no endpoint enquanto o welcome modal nao fechou.
+  const activePause = useZonePause(slug, {
+    enabled: pageState === 'home',
+  });
 
   // Bug recorrente: usuario cancela um chamado de garcom (ou fecha o
   // bottom sheet) → `router.back()` traz pra ca → isValid ja e true
@@ -453,6 +462,15 @@ export default function MesaPage() {
           onChange={setInputValue}
           onSubmit={handleAssistantSubmit}
         />
+        {activePause && (
+          // Hint sub-banner discreto (mono caps tiny) — alinhado ao
+          // contrato do spec (silent ETA inflation; sem badge ou banner
+          // chamativo) mas garante que QA pode observar a feature
+          // funcionando ao inves de "nada renderiza" como antes.
+          <div className="mt-3 text-center text-[9.5px] font-semibold uppercase tracking-[1.5px] text-faint">
+            Pedidos com tempo de preparo um pouco maior agora
+          </div>
+        )}
       </div>
     </AppShell>
   );

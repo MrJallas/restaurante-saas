@@ -21,6 +21,7 @@ import {
 import { Transform } from 'class-transformer';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { ZonePauseService } from './zone-pause.service';
 
 /**
@@ -82,15 +83,22 @@ class ListQueryDto {
  *   - `DELETE /:slug/zone-pauses/:id`     · alias of the `end` route
  *                                            (REST-style equivalent for
  *                                            clients that prefer DELETE)
- *   - `GET    /:slug/zone-pauses`        · list (any authenticated staff)
+ *   - `GET    /:slug/zone-pauses`        · list (staff OR session — customer
+ *                                            polls this for silent ETA
+ *                                            adjustment per docs/features/
+ *                                            zone-pause.md; no PII exposed)
+ *
+ * Guard escolhido por metodo: as mutacoes seguem manager-only / staff-only
+ * (nao foram afrouxadas), enquanto o GET aceita session-token pra que o
+ * customer-side polling em mesa/cardapio possa avaliar pausa ativa sem
+ * expor x-staff-key no browser do cliente.
  */
 @Controller(':slug/zone-pauses')
-@UseGuards(StaffOnlyGuard)
 export class ZonePauseController {
   constructor(private readonly service: ZonePauseService) {}
 
   @Post()
-  @UseGuards(ManagerOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async create(@Param('slug') slug: string, @Body() dto: CreateZonePauseDto) {
     return this.service.create(
       {
@@ -104,7 +112,7 @@ export class ZonePauseController {
   }
 
   @Post(':id/end')
-  @UseGuards(ManagerOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async end(
     @Param('slug') slug: string,
     @Param('id') id: string,
@@ -126,7 +134,7 @@ export class ZonePauseController {
    * `POST :id/end` clients.
    */
   @Delete(':id')
-  @UseGuards(ManagerOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async deleteAlias(
     @Param('slug') slug: string,
     @Param('id') id: string,
@@ -136,6 +144,7 @@ export class ZonePauseController {
   }
 
   @Get()
+  @UseGuards(StaffOrSessionGuard)
   async list(@Query() q: ListQueryDto) {
     return this.service.list({ active: q.active, waiterId: q.waiterId });
   }

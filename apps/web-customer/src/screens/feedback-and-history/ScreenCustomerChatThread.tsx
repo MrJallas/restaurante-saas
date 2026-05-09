@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ApiRequestError } from '../../lib/api';
 import { listMessages, deleteThread } from '../../lib/api/chat-history';
 import { useSession } from '../../hooks/useSession';
+import { useRequireCustomerId } from '../../hooks/useRequireCustomerId';
 import { AppShell } from '../../components/layout/AppShell';
 import { PillButton } from '../../components/ui/PillButton';
 import { BottomSheet } from '../../components/ui/BottomSheet';
@@ -43,6 +44,9 @@ export function ScreenCustomerChatThread({
 }: ScreenCustomerChatThreadProps) {
   const session = useSession();
   const router = useRouter();
+  // P0: delete depende de customerId; o thread visualizado tambem so faz
+  // sentido com customer identificado.
+  const ready = useRequireCustomerId(slug);
   const [messages, setMessages] = useState<ChatMessageDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +100,8 @@ export function ScreenCustomerChatThread({
   const headerDate = messages.length > 0
     ? formatThreadHeaderDate(messages[0].createdAt)
     : '';
+
+  if (!ready) return null;
 
   return (
     <AppShell
