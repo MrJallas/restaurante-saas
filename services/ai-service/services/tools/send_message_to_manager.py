@@ -19,10 +19,18 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     if ctx.api_client:
         try:
-            ctx.api_client("POST", "/staff/messages", {
-                "fromStaffId": ctx.waiter_id,
-                "toSessionId": target_session_id,
-                "text": text,
+            # Path canonicalised against `apps/api/.../staff-messages.controller.ts`:
+            # @Controller(':slug/staff-messages') · @Post(). Body matches
+            # `SendMessageDto` (senderStaffId, body, optional recipientStaffId,
+            # threadId, subject, isBroadcast). Was hitting `POST /staff/messages`
+            # which 404's.
+            ctx.api_client("POST", f"/{ctx.tenant_id}/staff-messages", {
+                "senderStaffId": ctx.waiter_id,
+                "body": text,
+                # `target_session_id` is the customer session — backend may use
+                # this for routing context (subject/thread mapping). Kept as
+                # subject for now until the staff↔customer thread model lands.
+                "subject": target_session_id,
             })
         except Exception as e:
             return ToolResult(error={"code": "api_error", "message": str(e)})

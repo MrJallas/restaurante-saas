@@ -1,3 +1,4 @@
+from typing import Any, Optional
 from ..base import LLMProvider
 
 
@@ -13,7 +14,11 @@ class GoogleProvider(LLMProvider):
         model: str,
         max_tokens: int = 500,
         temperature: float = 0.7,
+        tools: Optional[list[dict[str, Any]]] = None,
     ) -> dict:
+        # Gemini has its own tool format (FunctionDeclaration); the OpenAI-style
+        # schema isn't directly compatible. F2 round only wires the OpenAI path.
+        _ = tools  # noqa: F841 — explicit intent
         gen_model = self.genai.GenerativeModel(model)
 
         # Convert messages to Gemini format
@@ -51,6 +56,7 @@ class GoogleProvider(LLMProvider):
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
             "model": model,
+            "tool_calls": None,
         }
 
     async def classify(

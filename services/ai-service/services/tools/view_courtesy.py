@@ -4,6 +4,14 @@ Show courtesy items the customer has on the table (compensations / brindes).
 Per `complaint-flow-v12.md` the manager can send a courtesy compensation
 after a complaint; this tool surfaces those items so the customer sees
 them as part of the order without confusing them with paid items.
+
+NOTE (P0 #6): there is no dedicated `/courtesy` endpoint on `apps/api`
+yet. Courtesy items live as line items on the `complaints` flow (see
+`apps/api/src/modules/complaints/complaints.controller.ts` line 73 —
+`'courtesy'` is one of the resolution kinds). Until the dedicated
+endpoint is wired, this tool is a SILENT navigation hint: it returns a
+graceful message and an action_payload telling the FE to surface a
+"chamar garçom" CTA instead of issuing a 404 backend call.
 """
 
 from typing import Any
@@ -11,24 +19,14 @@ from .types import ToolContext, ToolResult
 
 
 def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    if not ctx.api_client:
-        return ToolResult(
-            message="Não consegui consultar agora. Posso chamar o garçom?",
-            action_payload={"status": "not_implemented", "tool": "view_courtesy"},
-        )
-
-    courtesies: list[dict] = []
-    try:
-        res = ctx.api_client("GET", "/customer/courtesy", None) or {}
-        courtesies = res.get("items") or []
-    except Exception as e:
-        return ToolResult(error={"code": "api_error", "message": str(e)})
-
-    if not courtesies:
-        return ToolResult(message="Não tem cortesia na sua mesa agora.")
-
-    lines = [f"- {c.get('name')}" for c in courtesies]
+    # Intentionally no api_client call here — endpoint doesn't exist yet.
+    # Returning a friendly fallback keeps the LLM from looping on 404s.
     return ToolResult(
-        message="Cortesias que tão pra você:\n" + "\n".join(lines),
-        action_payload={"items": courtesies},
+        message="Não consegui consultar suas cortesias agora. Quer que eu chame o garçom pra confirmar?",
+        action_payload={
+            "status": "not_implemented",
+            "tool": "view_courtesy",
+            # Hint to FE: render a single chip routing to call_waiter.
+            "fallbackChip": "chamar garçom",
+        },
     )

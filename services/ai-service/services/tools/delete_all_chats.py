@@ -24,7 +24,18 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     deleted_count = 0
     if ctx.api_client:
         try:
-            res = ctx.api_client("DELETE", "/customer/chats", None) or {}
+            # Path canonicalised against `apps/api/.../chat-history.controller.ts`:
+            # @Controller(':slug/chat-history') · bulk @Delete() · reads
+            # customerId from the query string. Was hitting `DELETE /customer/chats`
+            # which 404's.
+            res = (
+                ctx.api_client(
+                    "DELETE",
+                    f"/{ctx.tenant_id}/chat-history?customerId={ctx.customer_id}",
+                    None,
+                )
+                or {}
+            )
             deleted_count = res.get("deletedCount", 0)
         except Exception as e:
             return ToolResult(error={"code": "api_error", "message": str(e)})

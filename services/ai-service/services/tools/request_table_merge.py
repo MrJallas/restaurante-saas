@@ -24,10 +24,19 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return ToolResult(error={"code": "no_api_client"})
 
     try:
-        # api_client may raise an HTTPError-like exception with `.status_code`
-        res = ctx.api_client("POST", "/customer/table-merges", {
-            "originTable": ctx.session_flags.get("table_label"),
-            "targetTable": target_table,
+        # Path canonicalised against `apps/api/.../table-merge.controller.ts`:
+        # @Controller(':slug/table-merge-requests'). The `tenant_id` on
+        # ToolContext is the slug; api_client prepends the API base URL.
+        # Body shape mirrors `CreateMergeDto` (sourceTableSessionId +
+        # targetTableSessionId + requestingCustomerId). The LLM only knows
+        # a table label — backend resolves it to a session id; until that
+        # mapping is done client-side we send the label as `targetLabel`
+        # for backend lookup. The original request_table_merge call here
+        # was hitting `POST /customer/table-merges` which 404's.
+        res = ctx.api_client("POST", f"/{ctx.tenant_id}/table-merge-requests", {
+            "originTableSessionId": ctx.session_id,
+            "targetTableLabel": target_table,
+            "requestingCustomerId": ctx.customer_id,
         })
     except Exception as e:
         # Cooldown path: spec mandates a friendly response, not an error bubble

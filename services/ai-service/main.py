@@ -5,7 +5,12 @@ from pydantic import BaseModel
 
 from config import settings
 from services.blocked_patterns import check_blocked, check_greeting
-from services.classify_ack import detect_ack, get_ack_reply, seed_ack_replies
+from services.classify_ack import (
+    detect_ack,
+    get_ack_reply,
+    is_allowed_intent,
+    seed_ack_replies,
+)
 from services.intent_classifier import classify_message
 from services.response_validator import validate_response
 from services.llm.factory import get_provider
@@ -19,8 +24,33 @@ from services.tools import (
     ToolNotFoundError,
     ToolValidationError,
 )
+from services.tools.schemas import get_tool_schemas
+from services.api_client import make_http_api_client
 
 app = FastAPI(title="Restaurant AI Service", version="0.2.0")
+
+
+# Shared HTTP client for tool dispatch. We instantiate ONE per process and
+# inject it into every `ToolContext` (P0 #7) — without this, every tool
+# that calls `ctx.api_client(...)` saw `None` and short-circuited their
+# backend calls. Returns None when API_BASE_URL is empty (test/offline).
+def _build_api_client():
+    if not settings.API_BASE_URL:
+        return None
+    try:
+        return make_http_api_client(
+            settings.API_BASE_URL,
+            timeout=settings.API_REQUEST_TIMEOUT,
+        )
+    except Exception:
+        # Don't crash the AI service if httpx fails to import; tools have
+        # graceful fallbacks when api_client is None.
+        import logging
+        logging.exception("Failed to build api_client — tools will see None")
+        return None
+
+
+_api_client = _build_api_client()
 
 
 @app.on_event("startup")
@@ -92,6 +122,12 @@ class ChatResponse(BaseModel):
     # Set when the ack layer matched — FE can decide to suppress the bubble
     # (silent path) or render it as a tiny acknowledgment.
     layer: str | None = None
+    # Tool calls emitted by the LLM (OpenAI tool_calls shape, normalised by
+    # `OpenAIProvider.chat`). When non-empty, the AI service has already
+    # dispatched the tools and the caller (apps/api) MUST persist this list
+    # into `assistant_messages.tool_calls` for audit/debug. Empty list when
+    # the LLM didn't invoke any tool.
+    tool_calls: list[dict] = []
 
 
 class SmartSuggestionsRequest(BaseModel):
@@ -180,6 +216,15 @@ async def classify(req: ClassifyRequest):
     if ack:
         return ClassifyResponse(allowed=True, reason="ack", confidence=ack.confidence)
 
+    # Layer 1.5 (P1 #27): allow-list of legitimate restaurant intents that
+    # the regex guardrails / LLM classifier was incorrectly bouncing
+    # ("tira a cebola", "quero pedir a conta", "junta com a mesa 5", ...).
+    # We let these through with confidence=0.95 so they never hit the
+    # `block_reason='classifier'` 0-latency path. Order: BEFORE the regex
+    # blocker because that's where the false rejections were happening.
+    if is_allowed_intent(req.message):
+        return ClassifyResponse(allowed=True, reason="allow_list", confidence=0.95)
+
     # Layer 2: Regex guardrails (zero cost)
     is_blocked, reason = check_blocked(req.message)
     if is_blocked:
@@ -252,11 +297,17 @@ async def chat(req: ChatRequest):
     messages.append({"role": "user", "content": text})
 
     try:
+        # P0 #5 root cause: `tools=[...]` was never being forwarded to the
+        # LM Studio OpenAI-compat call, so qwen2.5-7b never had a chance
+        # to emit tool_calls — the model didn't know about any tools at
+        # all. Passing the canonical schema set fixes this; the provider
+        # parses tool_calls back from the response.
         result = await provider.chat(
             messages=messages,
             model=settings.LLM_MODEL_MAIN,
             max_tokens=500,
             temperature=0.7,
+            tools=get_tool_schemas(),
         )
     except Exception as e:
         import logging
@@ -266,7 +317,55 @@ async def chat(req: ChatRequest):
             detail="Desculpe, estou com dificuldade no momento. Posso ajudar em breve.",
         )
 
-    validated_response, was_replaced = validate_response(result["response"])
+    # When the LLM emits tool_calls, dispatch each through the tool registry
+    # so backend side-effects happen + we can surface ToolResult.message in
+    # the bubble even when the LLM returned no plain text. We append the
+    # dispatched result + error info onto each tool_call dict so apps/api
+    # can persist a complete audit trail in `assistant_messages.tool_calls`
+    # (P0 #5 acceptance criterion).
+    raw_tool_calls = result.get("tool_calls") or []
+    dispatched_tool_calls: list[dict] = []
+    fallback_messages: list[str] = []
+    for tc in raw_tool_calls:
+        fn = (tc.get("function") or {})
+        name = fn.get("name") or ""
+        args = fn.get("arguments") or {}
+        if not isinstance(args, dict):
+            args = {}
+        ctx = ToolContext(
+            tenant_id=req.tenantId or "",
+            customer_id=req.customerId,
+            session_id=req.sessionId,
+            api_client=_api_client,
+            raw_message=text,
+        )
+        try:
+            tool_result = dispatch_tool(name, args, ctx)
+            tc_record = dict(tc)
+            tc_record["result"] = {
+                "message": tool_result.message,
+                "chips": tool_result.chips,
+                "silent": tool_result.silent,
+                "actionPayload": tool_result.action_payload,
+                "routerTarget": tool_result.router_target,
+                "error": tool_result.error,
+            }
+            dispatched_tool_calls.append(tc_record)
+            if tool_result.message and not tool_result.silent:
+                fallback_messages.append(tool_result.message)
+        except (ToolNotFoundError, ToolValidationError) as e:
+            tc_record = dict(tc)
+            tc_record["result"] = {"error": {"code": type(e).__name__, "message": str(e)}}
+            dispatched_tool_calls.append(tc_record)
+
+    # If the model returned tool_calls but no text, surface the tool messages
+    # as the bubble — qwen2.5-7b often omits the assistant text turn when it
+    # decides a tool is enough.
+    response_text = result["response"] or ""
+    if not response_text.strip() and fallback_messages:
+        response_text = "\n".join(fallback_messages)
+
+    validated_response, was_replaced = validate_response(response_text)
     latency_ms = int((time.time() - start_time) * 1000)
     cost = provider.estimate_cost_cents(result["tokens_in"], result["tokens_out"], settings.LLM_MODEL_MAIN)
 
@@ -279,6 +378,7 @@ async def chat(req: ChatRequest):
         latency_ms=latency_ms,
         estimated_cost_cents=cost,
         layer="llm",
+        tool_calls=dispatched_tool_calls,
     )
 
 
@@ -354,6 +454,10 @@ async def tools_dispatch(req: ToolDispatchRequest):
         is_staff=req.isStaff,
         is_manager=req.isManager,
         session_flags=req.sessionFlags or {},
+        # P0 #7: inject the singleton api_client so tools that hit apps/api
+        # (send_message_to_manager, request_table_merge, delete_chat, ...)
+        # actually issue HTTP calls instead of seeing `None`.
+        api_client=_api_client,
         raw_message=req.rawMessage,
     )
 
@@ -436,7 +540,25 @@ REGRAS LGPD (privacidade · obrigatório):
   nem cole o texto inline.
 - Só chame `lgpd_data_request` DEPOIS que o cliente tap no chip "Sim, quero
   excluir" ou responder afirmativamente em texto livre. Não pule a etapa
-  do notice — ela é obrigatória pra captura de consentimento."""
+  do notice — ela é obrigatória pra captura de consentimento.
+
+USO DE FERRAMENTAS (function calling · obrigatório quando aplicável):
+- Você TEM ferramentas disponíveis (function calls). USE-AS sempre que o
+  cliente expressar uma intenção concreta, em vez de só responder em texto.
+- Mapeamento de gatilhos comuns:
+  · "quero o X" / "me traz X" / "vou querer Y" → `add_to_order` com itemId.
+  · "ver cardápio" / "abre o menu" → `view_menu`.
+  · "vê meu pedido" / "o que tá no carrinho" → `view_order`.
+  · "fechar a conta" / "pagar" / "trazer a conta" → `request_check` ou
+    `open_payment_screen` (dependendo do contexto).
+  · "chama o garçom" / "preciso de ajuda" → `call_waiter`.
+  · "junta com a mesa N" → `request_table_merge` com targetTable.
+  · "tem glúten?" / "é sem lactose?" → `check_allergens` com itemIds.
+  · "quero comparar X e Y" → `compare_dishes`.
+  · "mensagem pro gerente" → `send_message_to_manager` com text.
+  · "quero apagar dados" → `show_lgpd_notice` PRIMEIRO.
+- Quando chamar uma tool, NÃO repita o resultado em texto — o sistema renderiza
+  a mensagem da tool. Responda em texto APENAS quando nenhuma tool se aplica."""
 
     if categories:
         prompt += f"\n\nCATEGORIAS DO CARDÁPIO:\n{categories}"

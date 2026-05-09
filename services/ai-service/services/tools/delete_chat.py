@@ -27,7 +27,15 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     if ctx.api_client:
         try:
-            ctx.api_client("DELETE", f"/customer/chats/{thread_id}", None)
+            # Path canonicalised against `apps/api/.../chat-history.controller.ts`:
+            # @Controller(':slug/chat-history') · @Delete('threads/:threadId').
+            # Was hitting `DELETE /customer/chats/{thread_id}` which 404's.
+            # Backend reads customerId from the query string for ownership check.
+            ctx.api_client(
+                "DELETE",
+                f"/{ctx.tenant_id}/chat-history/threads/{thread_id}?customerId={ctx.customer_id}",
+                None,
+            )
         except Exception as e:
             return ToolResult(error={"code": "api_error", "message": str(e)})
 

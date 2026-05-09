@@ -1,3 +1,4 @@
+from typing import Any, Optional
 from ..base import LLMProvider
 
 
@@ -12,7 +13,13 @@ class AnthropicProvider(LLMProvider):
         model: str,
         max_tokens: int = 500,
         temperature: float = 0.7,
+        tools: Optional[list[dict[str, Any]]] = None,
     ) -> dict:
+        # Anthropic has its own tool-use format; the OpenAI-style schemas we
+        # generate aren't directly compatible. F2 round only wires tools for
+        # the OpenAI-compat path (LM Studio + GPT). Drop silently for now —
+        # no tool_calls returned to caller.
+        _ = tools  # noqa: F841 — explicit intent
         # Extract system message if present
         system = ""
         chat_messages = []
@@ -38,6 +45,7 @@ class AnthropicProvider(LLMProvider):
             "tokens_in": response.usage.input_tokens,
             "tokens_out": response.usage.output_tokens,
             "model": model,
+            "tool_calls": None,
         }
 
     async def classify(
