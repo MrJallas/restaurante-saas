@@ -23,7 +23,7 @@ function HostProfilePageInner() {
         if (tab === 'waitlist') router.push(`/host/waitlist?tenant=${tenantSlug}`);
         if (tab === 'reserva') router.push(`/host/reservations?tenant=${tenantSlug}`);
       }}
-      onOpenMessages={() => router.push(`/waiter/mensagens?tenant=${tenantSlug}&waiterId=${hostId}`)}
+      onOpenMessages={() => router.push(`/host/mensagens?tenant=${tenantSlug}&hostId=${hostId}`)}
     />
   );
 }

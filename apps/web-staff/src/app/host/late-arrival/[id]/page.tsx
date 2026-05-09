@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ScreenHostLateArrival } from '../../../../screens/host/ScreenHostLateArrival';
 
-export default function HostLateArrivalPage() {
+function HostLateArrivalPageInner() {
   const router = useRouter();
   const search = useSearchParams();
   const params = useParams<{ id: string }>();
@@ -18,5 +18,13 @@ export default function HostLateArrivalPage() {
       onBack={() => router.back()}
       onResolved={() => router.push(`/host?tenant=${tenantSlug}`)}
     />
+  );
+}
+
+export default function HostLateArrivalPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <HostLateArrivalPageInner />
+    </React.Suspense>
   );
 }

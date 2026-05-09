@@ -22,6 +22,7 @@ import {
   MContactStaffSheet,
   type ManagerStaffTarget,
 } from '../../components/manager';
+import { staffRosterApi } from '../../lib/api/manager';
 
 type StaffStatus = 'on' | 'off';
 type StaffFlag = 'overload' | 'in-call' | null;
@@ -42,14 +43,19 @@ interface StaffMember {
   flag: StaffFlag;
 }
 
-const M_TEAM_FALLBACK: StaffMember[] = [
-  { id: '1', name: 'Caleb Souza', role: 'Garçom', init: 'CS', shift: '17:00 — 23:00', status: 'on', rating: 4.8, callsAvg: 1.2, tables: 7, sales: 1840, scaled: 0, color: '#4F6BFF', flag: null },
-  { id: '2', name: 'Olivia Martins', role: 'Garçom', init: 'OM', shift: '17:00 — 23:00', status: 'on', rating: 4.6, callsAvg: 1.8, tables: 6, sales: 1520, scaled: 1, color: '#E37D2F', flag: 'in-call' },
-  { id: '3', name: 'Henrique Lima', role: 'Garçom', init: 'HL', shift: '17:00 — 23:00', status: 'on', rating: 4.4, callsAvg: 2.4, tables: 5, sales: 1180, scaled: 2, color: '#7A4FBE', flag: 'overload' },
-  { id: '4', name: 'Marina Reis', role: 'Garçom', init: 'MR', shift: '12:00 — 17:00', status: 'off', rating: 4.7, callsAvg: 1.4, tables: 0, sales: 0, scaled: 0, color: '#1E8C5A', flag: null },
-  { id: '5', name: 'Bruno Pacheco', role: 'Cozinheiro', init: 'BP', shift: '17:00 — 23:00', status: 'on', rating: 4.5, callsAvg: 0, tables: 0, sales: 0, scaled: 0, color: '#C43A3A', flag: null },
-  { id: '6', name: 'Júlia Andrade', role: 'Bartender', init: 'JA', shift: '17:00 — 23:00', status: 'on', rating: 4.9, callsAvg: 0.8, tables: 0, sales: 0, scaled: 0, color: '#0B7A8B', flag: null },
-];
+// P1 #32 — no hardcoded names. Empty list until API responds; the
+// empty state UI ("Nenhum funcionário encontrado.") covers the gap.
+const M_TEAM_FALLBACK: StaffMember[] = [];
+
+const ROLE_LABEL: Record<string, StaffMember['role']> = {
+  waiter: 'Garçom',
+  cook: 'Cozinheiro',
+  bartender: 'Bartender',
+  caixa: 'Caixa',
+  recepcao: 'Recepção',
+};
+
+const ROLE_PALETTE = ['#4F6BFF', '#E37D2F', '#7A4FBE', '#1E8C5A', '#C43A3A', '#0B7A8B'];
 
 export interface ScreenManagerStaffProps {
   dark?: boolean;
@@ -64,43 +70,32 @@ export function ScreenManagerStaff({ dark, tenantSlug }: ScreenManagerStaffProps
   const [roleFilter, setRoleFilter] = useState<'todos' | StaffMember['role']>('todos');
   const [contactTarget, setContactTarget] = useState<ManagerStaffTarget | null>(null);
 
-  // Try to fetch real staff from API; fall back to mocks.
+  // Try to fetch real staff from API; fall back to empty (P1 #14, #32).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/${tenantSlug}/staff`,
-          { credentials: 'include' },
-        );
-        if (!r.ok) return;
-        const data = (await r.json()) as Array<{
-          id: string;
-          name: string;
-          role: string;
-          color?: string;
-          shift?: string;
-        }>;
-        if (cancelled || !Array.isArray(data) || !data.length) return;
+        const data = await staffRosterApi(tenantSlug).list();
+        if (cancelled || !data.length) return;
         setTeam(
           data.map((s, i) => ({
             id: s.id,
             name: s.name,
-            role: (s.role as StaffMember['role']) ?? 'Garçom',
+            role: ROLE_LABEL[s.role] ?? (s.role as StaffMember['role']) ?? 'Garçom',
             init: s.name
               .split(' ')
               .map((p) => p[0])
               .slice(0, 2)
               .join('')
               .toUpperCase(),
-            shift: s.shift ?? '17:00 — 23:00',
-            status: 'on',
+            shift: '17:00 — 23:00',
+            status: s.is_active ? 'on' : 'off',
             rating: 4.5 + (i % 3) * 0.1,
             callsAvg: 1.2 + (i % 4) * 0.3,
             tables: Math.max(0, 7 - i),
             sales: 1000 + i * 200,
             scaled: i === 2 ? 2 : 0,
-            color: s.color ?? ['#4F6BFF', '#E37D2F', '#7A4FBE', '#1E8C5A', '#C43A3A', '#0B7A8B'][i % 6],
+            color: ROLE_PALETTE[i % ROLE_PALETTE.length],
             flag: null,
           })),
         );

@@ -191,6 +191,26 @@ export class LateArrivalService {
     return result;
   }
 
+  /**
+   * P1 #23 — single-resource read used by deep-links such as
+   * `/manager/stat/late-arrival/:id` and `/host/late-arrival/[id]`.
+   * Uses the same row → DTO mapper as `list()` so the synthesized
+   * `expired` status remains consistent.
+   */
+  async getById(id: string) {
+    const rows = (await this.tenantConn.query(
+      `SELECT * FROM late_arrival_requests WHERE id = $1`,
+      [id],
+    )) as LateArrivalRow[];
+    if (!rows.length) {
+      throw new HttpException(
+        'Late-arrival request nao encontrado.',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return this.mapRow(rows[0]);
+  }
+
   async list(filters: { status?: string; visitId?: string; tableSessionId?: string }) {
     const where: string[] = [];
     const params: unknown[] = [];

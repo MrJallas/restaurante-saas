@@ -47,7 +47,12 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
 
   useEffect(() => {
     let alive = true;
-    listMyThreads(tenantSlug)
+    if (!userId) {
+      // Backend rejects ?staffId='' — bail until URL provides one.
+      setThreads([]);
+      return;
+    }
+    listMyThreads(tenantSlug, userId)
       .then((t) => {
         if (alive) setThreads(t);
       })
@@ -57,18 +62,19 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
     return () => {
       alive = false;
     };
-  }, [tenantSlug]);
+  }, [tenantSlug, userId]);
 
   // Live refresh on staff_message.received + staff_message.read so the
   // unread badge follows the counterpart's read receipts (P1 #19).
   useEffect(() => {
+    if (!userId) return;
     const handler = (event: WsEvent) => {
       if (
         event.event !== 'staff_message.received'
         && event.event !== 'staff_message.read'
       ) return;
       // simple strategy: refetch the list
-      listMyThreads(tenantSlug)
+      listMyThreads(tenantSlug, userId)
         .then(setThreads)
         .catch(() => {
           /* noop */
@@ -80,7 +86,7 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
       off1();
       off2();
     };
-  }, [tenantSlug, waiterEvents, hostEvents]);
+  }, [tenantSlug, userId, waiterEvents, hostEvents]);
 
   const visible = filter === 'unread' ? threads.filter((t) => t.unreadCount > 0) : threads;
   const unreadCount = threads.reduce((s, t) => s + (t.unreadCount > 0 ? 1 : 0), 0);

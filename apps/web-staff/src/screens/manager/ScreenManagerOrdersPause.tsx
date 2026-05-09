@@ -23,7 +23,7 @@ import {
   MAvatar,
   MOpSummary,
 } from '../../components/manager';
-import { manager } from '../../lib/api/manager';
+import { manager, staffRosterApi } from '../../lib/api/manager';
 import type { ZonePauseDto, ZonePauseDurationMinutes } from '@restaurant/shared-types';
 import { useManagerEvents } from '../../hooks/useManagerEvents';
 
@@ -45,11 +45,10 @@ interface WaiterOpt {
   color: string;
 }
 
-const WAITERS_FALLBACK: WaiterOpt[] = [
-  { id: '1', name: 'Caleb Souza', init: 'CS', color: '#4F6BFF' },
-  { id: '2', name: 'Olivia Martins', init: 'OM', color: '#E37D2F' },
-  { id: '3', name: 'Henrique Lima', init: 'HL', color: '#7A4FBE' },
-];
+// P1 #32 — empty until /staff loads. Picker shows "no waiters" until then.
+const WAITERS_FALLBACK: WaiterOpt[] = [];
+
+const PAUSE_ROLE_PALETTE = ['#4F6BFF', '#E37D2F', '#7A4FBE', '#1E8C5A', '#C43A3A', '#0B7A8B'];
 
 export function ScreenManagerOrdersPause({
   dark,
@@ -83,26 +82,19 @@ export function ScreenManagerOrdersPause({
     };
   }, [tenantSlug]);
 
-  // Try fetching staff for the picker
+  // Try fetching staff for the picker (P1 #14, #32)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/${tenantSlug}/staff`,
-          { credentials: 'include' },
-        );
-        if (!r.ok) return;
-        const data = (await r.json()) as Array<{ id: string; name: string; color?: string; role?: string }>;
-        if (cancelled || !Array.isArray(data) || !data.length) return;
-        const list = data
-          .filter((s) => !s.role || s.role.toLowerCase().includes('garç') || s.role.toLowerCase() === 'garcom')
-          .map((s) => ({
-            id: s.id,
-            name: s.name,
-            init: s.name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase(),
-            color: s.color ?? '#4F6BFF',
-          }));
+        const data = await staffRosterApi(tenantSlug).list({ role: 'waiter', activeOnly: true });
+        if (cancelled || !data.length) return;
+        const list = data.map((s, i) => ({
+          id: s.id,
+          name: s.name,
+          init: s.name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase(),
+          color: PAUSE_ROLE_PALETTE[i % PAUSE_ROLE_PALETTE.length],
+        }));
         if (list.length) setWaiters(list);
       } catch {
         // keep fallback

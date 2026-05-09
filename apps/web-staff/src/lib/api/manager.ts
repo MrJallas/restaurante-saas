@@ -84,11 +84,16 @@ export interface ThreadWithMessagesDto {
 export const staffMessagesApi = (slug: string) => ({
   send: (body: StaffMessageSendDto) =>
     staffPost<StaffMessageDto>(`/${slug}/staff-messages`, body),
-  listThreads: () => staffGet<StaffMessageThreadDto[]>(`/${slug}/staff-messages/threads`),
+  // P1 #18 — backend `StaffQueryDto` requires `staffId` UUID; without it
+  // we used to get a 400. Caller must thread the current viewer's staffId.
+  listThreads: (params: { staffId: string }) =>
+    staffGet<StaffMessageThreadDto[]>(
+      `/${slug}/staff-messages/threads?staffId=${encodeURIComponent(params.staffId)}`,
+    ),
   getThread: (threadId: string) =>
     staffGet<ThreadWithMessagesDto>(`/${slug}/staff-messages/threads/${threadId}`),
-  markRead: (messageId: string) =>
-    staffPost<{ ok: true }>(`/${slug}/staff-messages/${messageId}/read`, {}),
+  markRead: (messageId: string, body: { staffId: string }) =>
+    staffPost<{ ok: true }>(`/${slug}/staff-messages/${messageId}/read`, body),
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -255,6 +260,35 @@ export const managerMe = (slug: string) => ({
 });
 
 // ─────────────────────────────────────────────────────────────
+// Staff roster — wraps the `{ staff: [...] }` envelope from the
+// API so callers receive a flat array. Centralised here so every
+// screen (Staff, Home, OrdersPause, Funcionarios) gets the same
+// shape regardless of how the controller envelope evolves.
+// P1 #14 — backend returns `{ staff }`; FE used to assume `[]`.
+// ─────────────────────────────────────────────────────────────
+
+export interface StaffRosterEntry {
+  id: string;
+  name: string;
+  role: 'waiter' | 'cook' | 'manager' | string;
+  is_active: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+export const staffRosterApi = (slug: string) => ({
+  list: (params?: { role?: string; activeOnly?: boolean }) => {
+    const search = new URLSearchParams();
+    if (params?.role) search.set('role', params.role);
+    if (params?.activeOnly) search.set('activeOnly', 'true');
+    const query = search.toString();
+    return staffGet<{ staff: StaffRosterEntry[] }>(
+      `/${slug}/staff${query ? `?${query}` : ''}`,
+    ).then((r) => r.staff ?? []);
+  },
+});
+
+// ─────────────────────────────────────────────────────────────
 // Single tagged catch-all so screens can do `manager(slug).complaints.list()`
 // ─────────────────────────────────────────────────────────────
 
@@ -270,6 +304,7 @@ export function manager(slug: string) {
     customerVip: customerVipApi(slug),
     lgpd: lgpdApi(slug),
     chatHistory: chatHistoryApi(slug),
+    staffRoster: staffRosterApi(slug),
     me: managerMe(slug),
   };
 }

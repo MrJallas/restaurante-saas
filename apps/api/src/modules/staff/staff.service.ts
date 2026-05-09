@@ -56,6 +56,80 @@ export class StaffService {
     );
   }
 
+  /**
+   * P1 #16 — `/staff/my-tables`. Returns the active tables the waiter
+   * sees on their home screen (the FE reads `ActiveTableSummary[]`).
+   *
+   * Background: the previous route returned 500 because it didn't exist
+   * — Nest fell through to the `:id` handler, hit `getById('my-tables')`
+   * and threw on the UUID validator. This service method backs a real
+   * controller route now.
+   *
+   * Until per-waiter zone assignments land, every staff caller sees all
+   * currently active tables in the tenant. The filter is enforced by
+   * the route guard (StaffOrSession), not by this query.
+   */
+  async listActiveTables(): Promise<unknown[]> {
+    return this.tenantConn.query(
+      `
+      SELECT
+        ts.id                                         AS id,
+        t.label                                       AS label,
+        t.code                                        AS table_code,
+        COALESCE(participant_count.cnt, 0)::int       AS party_size,
+        t.capacity                                    AS capacity,
+        CASE
+          WHEN open_orders.cnt > 0 THEN 'em-andamento'
+          WHEN ready_orders.cnt   > 0 THEN 'aguardando-prato'
+          WHEN ts.created_at > now() - interval '5 min' THEN 'novo'
+          ELSE 'em-andamento'
+        END                                           AS status,
+        COALESCE(orders_total.total_cents, 0)::int    AS ticket_total_cents,
+        EXTRACT(EPOCH FROM (now() - ts.created_at))::int / 60 AS opened_min,
+        last_event.last_event                         AS last_event,
+        ('vip' = ANY(COALESCE(ts.flags, '{}'::text[])))  AS is_vip
+      FROM table_sessions ts
+      JOIN tables t ON t.id = ts.table_id
+      LEFT JOIN (
+        SELECT table_session_id, COUNT(*)::int AS cnt
+        FROM session_participants
+        WHERE left_at IS NULL
+        GROUP BY table_session_id
+      ) participant_count ON participant_count.table_session_id = ts.id
+      LEFT JOIN (
+        SELECT table_session_id, COUNT(*)::int AS cnt
+        FROM orders
+        WHERE status IN ('open', 'preparing')
+        GROUP BY table_session_id
+      ) open_orders ON open_orders.table_session_id = ts.id
+      LEFT JOIN (
+        SELECT table_session_id, COUNT(*)::int AS cnt
+        FROM orders
+        WHERE status = 'ready'
+        GROUP BY table_session_id
+      ) ready_orders ON ready_orders.table_session_id = ts.id
+      LEFT JOIN (
+        SELECT table_session_id, SUM(total_cents)::int AS total_cents
+        FROM orders
+        WHERE status NOT IN ('canceled', 'cancelled')
+        GROUP BY table_session_id
+      ) orders_total ON orders_total.table_session_id = ts.id
+      LEFT JOIN (
+        SELECT DISTINCT ON (table_session_id) table_session_id,
+               to_status AS last_event
+        FROM order_status_history osh
+        JOIN orders o ON o.id = osh.order_id
+        ORDER BY table_session_id, osh.created_at DESC
+      ) last_event ON last_event.table_session_id = ts.id
+      WHERE ts.status = 'active'
+        AND ts.closed_at IS NULL
+      ORDER BY ts.created_at DESC
+      LIMIT 50
+      `,
+      [],
+    );
+  }
+
   async getById(id: string) {
     const rows = (await this.tenantConn.query(
       `SELECT id, name, role, is_active, created_at, updated_at FROM staff WHERE id = $1`,

@@ -31,12 +31,17 @@ import {
   type InProgressKind,
   type InProgressState,
 } from '../../components/manager';
-import { manager } from '../../lib/api/manager';
+import { manager, staffRosterApi } from '../../lib/api/manager';
 import { useManagerEvents } from '../../hooks/useManagerEvents';
 
 // ─── Mock data — bottlenecks + reservations ────────────────────
 // Will be wired to /alerts and /host/reservations once those endpoints land.
 
+// P1 #34 — DEFAULT_ALERTS removed of name-bound copy. The /alerts
+// endpoint will populate this with real data; until then we render
+// a structurally identical but generic message set so QA can still
+// see the alert shape without polluting screenshots with hardcoded
+// staff names.
 const DEFAULT_ALERTS = [
   {
     id: 1,
@@ -49,10 +54,10 @@ const DEFAULT_ALERTS = [
   {
     id: 2,
     sev: 'high' as const,
-    msg: 'Henrique · 3 chamados sem resposta há > 4 min',
+    msg: 'Garçom · 3 chamados sem resposta há > 4 min',
     sub: 'Mesas 7, 9, 12',
     ts: '2 min',
-    actions: ['Realocar mesa', 'Chamar Henrique'] as const,
+    actions: ['Realocar mesa', 'Chamar garçom'] as const,
   },
   {
     id: 3,
@@ -60,23 +65,40 @@ const DEFAULT_ALERTS = [
     msg: 'Mesa 14 · pedido pronto há 9 min, ainda na pass',
     sub: '2 pratos esperando',
     ts: '5 min',
-    actions: ['Entregar agora', 'Avisar Caleb'] as const,
+    actions: ['Entregar agora', 'Avisar garçom'] as const,
   },
 ];
 
-const M_TEAM_FALLBACK = [
-  { id: 1, name: 'Caleb Souza', role: 'Garçom', init: 'CS', shift: 'on', rating: 4.8, callsAvg: 1.2, tables: 7, scaled: 0, color: '#4F6BFF', flag: null },
-  { id: 2, name: 'Olivia Martins', role: 'Garçom', init: 'OM', shift: 'on', rating: 4.6, callsAvg: 1.8, tables: 6, scaled: 1, color: '#E37D2F', flag: 'in-call' as const },
-  { id: 3, name: 'Henrique Lima', role: 'Garçom', init: 'HL', shift: 'on', rating: 4.4, callsAvg: 2.4, tables: 5, scaled: 2, color: '#7A4FBE', flag: 'overload' as const },
-  { id: 5, name: 'Bruno Pacheco', role: 'Cozinheiro', init: 'BP', shift: 'on', rating: 4.5, callsAvg: 0, tables: 0, scaled: 0, color: '#C43A3A', flag: null },
-  { id: 6, name: 'Júlia Andrade', role: 'Bartender', init: 'JA', shift: 'on', rating: 4.9, callsAvg: 0.8, tables: 0, scaled: 0, color: '#0B7A8B', flag: null },
-];
+// P1 #32 — empty until /staff loads. Empty-state copy below covers gap.
+const M_TEAM_FALLBACK: Array<{
+  id: number;
+  name: string;
+  role: string;
+  init: string;
+  shift: string;
+  rating: number;
+  callsAvg: number;
+  tables: number;
+  scaled: number;
+  color: string;
+  flag: 'in-call' | 'overload' | null;
+}> = [];
 
-const NEXT_RESERVATIONS = [
-  { id: 1, time: '20:00', name: 'Família Costa', party: 4, in: '18 min', table: 'Mesa 9', tag: 'aniversário', tagTone: 'warn' as const },
-  { id: 2, time: '20:30', name: 'Ana Pereira', party: 2, in: '48 min', table: 'Mesa 3', tag: 'varanda', tagTone: 'success' as const },
-  { id: 3, time: '21:00', name: 'Grupo João', party: 6, in: '78 min', table: 'Mesa 7', tag: null, tagTone: null },
-];
+const HOME_ROLE_PALETTE = ['#4F6BFF', '#E37D2F', '#7A4FBE', '#1E8C5A', '#C43A3A', '#0B7A8B'];
+
+// P1 #34 — empty until /host/reservations endpoint is wired. Empty-state
+// copy below covers the gap so the panel doesn't pollute screenshots with
+// invented Ana/Bruno/Costa names.
+const NEXT_RESERVATIONS: Array<{
+  id: number;
+  time: string;
+  name: string;
+  party: number;
+  in: string;
+  table: string;
+  tag: string | null;
+  tagTone: 'warn' | 'success' | null;
+}> = [];
 
 interface InProgressItem {
   id: string;
@@ -223,23 +245,13 @@ export function ScreenManagerHomeA({
     };
   }, [refreshAll]);
 
-  // Fetch staff list for shift section
+  // Fetch staff list for shift section (P1 #14, #32)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/${tenantSlug}/staff`,
-          { credentials: 'include' },
-        );
-        if (!r.ok) return;
-        const data = (await r.json()) as Array<{
-          id: string;
-          name: string;
-          role: string;
-          color?: string;
-        }>;
-        if (cancelled || !Array.isArray(data) || !data.length) return;
+        const data = await staffRosterApi(tenantSlug).list();
+        if (cancelled || !data.length) return;
         setTeam(
           data.map((s, i) => ({
             id: i + 1,
@@ -251,12 +263,12 @@ export function ScreenManagerHomeA({
               .slice(0, 2)
               .join('')
               .toUpperCase(),
-            shift: 'on',
+            shift: s.is_active ? 'on' : 'off',
             rating: 4.5 + (i % 3) * 0.1,
             callsAvg: 1.2 + (i % 4) * 0.3,
             tables: Math.max(0, 7 - i),
             scaled: i === 2 ? 2 : 0,
-            color: s.color || ['#4F6BFF', '#E37D2F', '#7A4FBE', '#1E8C5A', '#C43A3A', '#0B7A8B'][i % 6],
+            color: HOME_ROLE_PALETTE[i % HOME_ROLE_PALETTE.length],
             flag: null,
           })),
         );
