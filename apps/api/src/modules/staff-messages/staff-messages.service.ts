@@ -53,6 +53,24 @@ export class StaffMessagesService {
             [threadId, input.recipientStaffId],
           );
         }
+      } else {
+        // Round 14 (P1-NEW-2): se o caller fornece um threadId, exigimos
+        // que ele seja participante da thread. Antes era IDOR aberto:
+        // threadId vaza no `staff_message.received` broadcast pra
+        // `tenant:${slug}` e qualquer staff captava + injetava mensagem
+        // em thread privada de managers (audit log spoof + impersonation).
+        const memberRows = (await tx.query(
+          `SELECT 1 FROM staff_message_thread_participants
+            WHERE thread_id = $1 AND staff_id = $2 AND left_at IS NULL
+            LIMIT 1`,
+          [threadId, input.senderStaffId],
+        )) as unknown[];
+        if (!memberRows.length) {
+          throw new HttpException(
+            'Thread não encontrada ou acesso negado.',
+            HttpStatus.NOT_FOUND,
+          );
+        }
       }
 
       const msgRows = (await tx.query(
@@ -168,12 +186,29 @@ export class StaffMessagesService {
   }
 
   async markRead(messageId: string, by: { staffId: string }, slug: string) {
+    // Round 14 (P2-NEW-1): broadcasts (recipient_staff_id IS NULL) só
+    // podem ser marcados como lidos por participants reais da thread.
+    // O check via SELECT EXISTS na subquery limita o UPDATE; antes,
+    // qualquer staff com x-staff-key marcava qualquer broadcast como
+    // lido (read receipt fake). Mantido o WHERE original pra DMs onde
+    // recipient_staff_id é o caller.
     const updated = unwrapRows<Record<string, unknown>>(
       await this.tenantConn.query(
         `UPDATE staff_messages
            SET read_at = now()
          WHERE id = $1
-           AND (recipient_staff_id = $2 OR recipient_staff_id IS NULL)
+           AND (
+             recipient_staff_id = $2
+             OR (
+               recipient_staff_id IS NULL
+               AND EXISTS (
+                 SELECT 1 FROM staff_message_thread_participants p
+                  WHERE p.thread_id = staff_messages.thread_id
+                    AND p.staff_id = $2
+                    AND p.left_at IS NULL
+               )
+             )
+           )
            AND read_at IS NULL
          RETURNING id, thread_id, read_at`,
         [messageId, by.staffId],

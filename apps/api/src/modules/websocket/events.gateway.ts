@@ -126,9 +126,25 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           client.disconnect(true);
           return;
         }
+        // Round 14 (P1-NEW-1): x-tenant-slug agora é OBRIGATÓRIO no handshake
+        // staff (era opcional, stamped só `if (tenantSlug)`). Como STAFF_API_KEY
+        // é shared global, staff omitindo o slug curto-circuitava
+        // `client.data.staffTenantSlug && ...` em join:tenant/session e
+        // entrava em rooms de outros tenants recebendo eventos cross-tenant.
+        if (!tenantSlug) {
+          this.logger.warn(
+            `Staff WS connection without x-tenant-slug rejected: ${client.id}`,
+          );
+          client.emit('error', {
+            message:
+              'Staff WS handshake exige x-tenant-slug pra cross-tenant isolation.',
+          });
+          client.disconnect(true);
+          return;
+        }
         client.data.staffId = staffId;
         if (staffRole) client.data.staffRole = staffRole;
-        if (tenantSlug) client.data.staffTenantSlug = tenantSlug;
+        client.data.staffTenantSlug = tenantSlug;
         this.logger.log(`Staff client connected: ${client.id}`);
         return;
       }
@@ -193,8 +209,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // Round 9 (B-NEW-26): rejeita slug diferente do tenant carimbado
     // no handshake. Atacante não pode entrar em room de outro tenant.
+    //
+    // Round 14 (P1-NEW-1): handshake agora EXIGE x-tenant-slug, então
+    // staffTenantSlug está sempre presente. O check anterior `&& ...`
+    // curto-circuitava se faltasse — agora exigimos explicitamente.
     if (
-      client.data.staffTenantSlug &&
+      !client.data.staffTenantSlug ||
       client.data.staffTenantSlug !== data.slug
     ) {
       client.emit('error', { message: 'Tenant slug mismatch' });
@@ -236,8 +256,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
       try {
         const parsed = JSON.parse(sessionData) as { schemaName?: string };
+        // Round 14 (P1-NEW-1): handshake garante staffTenantSlug presente,
+        // então o check anterior `&& ...` virou `!staffTenantSlug ||` pra
+        // não curto-circuitar caso futura regressão volte a stamping
+        // condicional.
         if (
-          client.data.staffTenantSlug &&
+          !client.data.staffTenantSlug ||
           parsed.schemaName !== client.data.staffTenantSlug
         ) {
           client.emit('error', { message: 'Cross-tenant session join blocked.' });

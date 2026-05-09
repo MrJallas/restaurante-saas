@@ -277,6 +277,43 @@ export class TableMergeService {
     reason?: string,
     slug?: string,
   ) {
+    // Round 14 (P1-NEW-3): host check espelhando approve. Antes
+    // qualquer customer (mesmo non-host de uma das mesas) rejeitava o
+    // request unilateralmente, instalando cooldown de 10min que
+    // bloqueava o host real de retentar. approve já tinha o check;
+    // reject ficou esquecido.
+    if (!decidedByCustomerId) {
+      throw new HttpException(
+        'decidedByCustomerId obrigatorio para identificar o host.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const sideRows = (await this.tenantConn.query(
+      `SELECT src.host_customer_id AS src_host,
+              tgt.host_customer_id AS tgt_host
+         FROM table_merge_requests mr
+         JOIN table_sessions src ON src.id = mr.source_table_session_id
+         JOIN table_sessions tgt ON tgt.id = mr.target_table_session_id
+        WHERE mr.id = $1`,
+      [id],
+    )) as Array<{ src_host: string | null; tgt_host: string | null }>;
+    if (!sideRows.length) {
+      throw new HttpException(
+        'Pedido de juncao nao encontrado ou ja decidido.',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const { src_host, tgt_host } = sideRows[0];
+    if (
+      decidedByCustomerId !== src_host &&
+      decidedByCustomerId !== tgt_host
+    ) {
+      throw new HttpException(
+        'Apenas o host de cada mesa pode rejeitar a juncao.',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
     const result = await this.tenantConn.transaction(async (tx) => {
       const updated = unwrapRows<Record<string, unknown>>(
         await tx.query(
