@@ -279,6 +279,97 @@ export interface WsSessionFlagChanged {
   };
 }
 
+// ─── Host module (recepcionista) ───
+//
+// Eventos emitidos pelo modulo `host` (apps/api/src/modules/host). Foco em
+// operacoes de "gestao do salao": liberar mesa, swap entre mesas, flag de
+// VIP via menu da mesa. Sao consumidos pelos hooks `useHostEvents` (host) e
+// `useWaiterEvents` (garcom) — staff dashboards subscrevem via room
+// `tenant:<slug>`.
+
+/**
+ * Mesa foi liberada pelo host (close da `table_session`).
+ *
+ * Modos:
+ *  - `auto`         : sessao fechou normal (ex.: pagamento confirmado)
+ *  - `manual_paid`  : recepcionista forcou close apos confirmar pagamento
+ *  - `manual_force` : recepcionista forcou close mesmo sem pagar (motivo
+ *                     livre — comp, no-show, mesa abandonada, etc).
+ */
+export interface WsHostTableLiberated {
+  event: 'host.table_liberated';
+  payload: {
+    tableId: string;
+    tableNumber: number;
+    sessionId: string;
+    mode: 'auto' | 'manual_paid' | 'manual_force';
+    by: {
+      staffId: string | null;
+      name?: string;
+    };
+    reason?: string | null;
+    liberatedAt: string;
+  };
+}
+
+/**
+ * Pedido de swap criado (mover sessao da mesa A pra mesa B). Emite assim
+ * que o host abre o request — antes de in_progress / completed.
+ */
+export interface WsHostSwapRequested {
+  event: 'host.swap_requested';
+  payload: {
+    swapId: string;
+    sessionId: string;
+    fromTableId: string;
+    fromTableNumber: number;
+    toTableId: string;
+    toTableNumber: number;
+    requestedBy: string | null;
+    createdAt: string;
+  };
+}
+
+/**
+ * Estado do swap mudou (in_progress | completed | cancelled). Estados
+ * intermediarios entre o create e o completed final ficam aqui pra UIs que
+ * pre-visualizam "trocando agora..." ou "cancelado".
+ */
+export interface WsHostSwapStateChanged {
+  event: 'host.swap_state_changed';
+  payload: {
+    swapId: string;
+    sessionId: string;
+    fromTableNumber: number;
+    toTableNumber: number;
+    status: 'in_progress' | 'completed' | 'cancelled';
+    /** ISO timestamp da transicao. */
+    at: string;
+    reason?: string | null;
+  };
+}
+
+/**
+ * VIP flag toggled via TableMenu da recepcionista. Diferente do WS event
+ * `session.flag_changed` (vip-customer.md): este foca apenas em VIP e e
+ * emitido pelo modulo host. O FE pode subscrever em ambos.
+ */
+export interface WsHostVipFlagged {
+  event: 'host.vip_flagged';
+  payload: {
+    sessionId: string;
+    tableId: string;
+    tableNumber: number;
+    flag: boolean;
+    reason?: string | null;
+    by: {
+      staffId: string | null;
+      name?: string;
+    };
+    at: string;
+  };
+}
+
 // ─── Discriminated union ───
 
 /**
@@ -307,7 +398,11 @@ export type WsEvent =
   | WsStaffMessageRead
   | WsZonePauseStarted
   | WsZonePauseEnded
-  | WsSessionFlagChanged;
+  | WsSessionFlagChanged
+  | WsHostTableLiberated
+  | WsHostSwapRequested
+  | WsHostSwapStateChanged
+  | WsHostVipFlagged;
 
 /** String-literal name of each `WsEvent` variant — useful for room-routing. */
 export type WsEventName = WsEvent['event'];

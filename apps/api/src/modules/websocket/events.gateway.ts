@@ -34,6 +34,10 @@ import type {
   WsZonePauseStarted,
   WsZonePauseEnded,
   WsSessionFlagChanged,
+  WsHostTableLiberated,
+  WsHostSwapRequested,
+  WsHostSwapStateChanged,
+  WsHostVipFlagged,
 } from '@restaurant/shared-types';
 
 /**
@@ -687,5 +691,71 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server
       .to(`session:${payload.sessionId}`)
       .emit('session.flag_changed', payload);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Host module emit helpers — staff-host (recepcionista) operations.
+  // Routing: tenant dashboards (`tenant:<slug>`) so todos os apps de staff
+  // (host home, manager dashboard, garcom map) recebem; quando aplicavel,
+  // tambem pra `session:<id>` pra que o cliente na mesa veja a transicao.
+  // ───────────────────────────────────────────────────────────────────────
+
+  /**
+   * Routing: tenant dashboards (host home limpa o card, manager dashboard
+   * decrementa contador) + sala da sessao fechada (clientes recebem o close
+   * em tempo real, sem polling).
+   */
+  emitHostTableLiberated(
+    slug: string,
+    payload: WsHostTableLiberated['payload'],
+  ) {
+    this.server.to(`tenant:${slug}`).emit('host.table_liberated', payload);
+    this.server
+      .to(`session:${payload.sessionId}`)
+      .emit('host.table_liberated', payload);
+  }
+
+  /**
+   * Routing: tenant dashboards + ambas as salas das sessoes envolvidas
+   * (origem ja tem comanda aberta — recebe pra atualizar UI pra "movendo
+   * pra mesa X"; destino pode estar livre, ainda assim emite pra uniformizar).
+   */
+  emitHostSwapRequested(
+    slug: string,
+    payload: WsHostSwapRequested['payload'],
+  ) {
+    this.server.to(`tenant:${slug}`).emit('host.swap_requested', payload);
+    this.server
+      .to(`session:${payload.sessionId}`)
+      .emit('host.swap_requested', payload);
+  }
+
+  /**
+   * Routing: tenant dashboards + sessao envolvida (cliente ve "concluido"
+   * ou "cancelado" sem polling). Estados intermediarios (in_progress)
+   * ainda sao broadcast pra que UIs de monitoria vejam o progresso.
+   */
+  emitHostSwapStateChanged(
+    slug: string,
+    payload: WsHostSwapStateChanged['payload'],
+  ) {
+    this.server.to(`tenant:${slug}`).emit('host.swap_state_changed', payload);
+    this.server
+      .to(`session:${payload.sessionId}`)
+      .emit('host.swap_state_changed', payload);
+  }
+
+  /**
+   * Routing: tenant dashboards (manager + waiter map flag VIP) + sala da
+   * sessao (banner VIP no overlay do menu).
+   */
+  emitHostVipFlagged(
+    slug: string,
+    payload: WsHostVipFlagged['payload'],
+  ) {
+    this.server.to(`tenant:${slug}`).emit('host.vip_flagged', payload);
+    this.server
+      .to(`session:${payload.sessionId}`)
+      .emit('host.vip_flagged', payload);
   }
 }
