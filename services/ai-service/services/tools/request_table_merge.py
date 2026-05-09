@@ -47,6 +47,10 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
                     "Essa junção foi tentada há pouco e não rolou. "
                     "Dá uns minutos e eu tento de novo, beleza?"
                 ),
+                chips=[
+                    {"id": "call_waiter", "label": "Chamar garçom", "action": "send", "payload": "chamar o garçom"},
+                    {"id": "view_menu", "label": "Ver cardápio", "action": "navigate", "payload": "cardapio"},
+                ],
                 action_payload={"cooldown": True, "targetTable": target_table},
             )
         return ToolResult(error={"code": "api_error", "message": str(e)})
@@ -56,5 +60,10 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             f"Mandei pedido pra juntar com a mesa {target_table}. "
             "Tô esperando a galera de lá confirmar."
         ),
+        chips=[
+            {"id": "view_menu", "label": "Ver cardápio", "action": "navigate", "payload": "cardapio"},
+            {"id": "call_waiter", "label": "Chamar garçom", "action": "send", "payload": "chamar o garçom"},
+            {"id": "view_order", "label": "Ver pedido", "action": "send", "payload": "ver meu pedido"},
+        ],
         action_payload={"tableMergeRequest": res},
     )

@@ -27,7 +27,15 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if allergens:
         parts.append("Alérgenos: " + ", ".join(allergens))
 
+    # Round 4 §C-NEW-3 — chips: ações naturais pós-explicação.
+    chips = [
+        {"id": "explain-add", "label": f"Quero {name}", "action": "send", "payload": f"quero o {name}"},
+        {"id": "explain-allergens", "label": "Tem alérgenos", "action": "send", "payload": f"quais alérgenos tem em {name}?"},
+        {"id": "explain-compare", "label": "Comparar", "action": "send", "payload": f"compara {name} com outro prato"},
+    ]
+
     return ToolResult(
         message=" ".join(parts),
+        chips=chips,
         action_payload={"item": details},
     )

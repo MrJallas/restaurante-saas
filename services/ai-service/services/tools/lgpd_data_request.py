@@ -57,9 +57,14 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         protocol_number = _make_protocol()
 
     # Canonical text — DO NOT paraphrase. Tests assert byte-equality.
+    # Round 4 §C-NEW-3 — chips: continuar conversando ou voltar.
     return ToolResult(
         message=LGPD_ERASURE_CONFIRMATION,
         silent=True,  # FE doesn't show ToolCallIndicator for LGPD
+        chips=[
+            {"id": "back_to_chat", "label": "Voltar ao chat", "action": "navigate", "payload": "assistente"},
+            {"id": "view_menu", "label": "Ver cardápio", "action": "navigate", "payload": "cardapio"},
+        ],
         action_payload={
             "lgpdErasure": {
                 "protocolNumber": protocol_number,

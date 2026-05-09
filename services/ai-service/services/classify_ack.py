@@ -82,6 +82,18 @@ _ALLOW_LIST_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b(quero|vou\s+querer|me\s+traz|me\s+vê|me\s+ve|trazer)\s+(uma?\s+|o\s+|a\s+|os\s+|as\s+)?\w+", re.IGNORECASE),
     # Waiter/help requests
     re.compile(r"\b(garçom|gar[cç]on|chamar|atendente|gerente|ajuda)\b", re.IGNORECASE),
+    # Round 4 §C-NEW-2 — pedidos comuns ao garçom: "preciso de mais água",
+    # "pode trazer talheres", "queria mais um guardanapo", "me ajuda com a
+    # conta". Antes o LLM classifier marcava como off-topic. Allow-list
+    # bypassa pra que `call_waiter` possa ser invocado direto.
+    re.compile(
+        r"\b(preciso|posso\s+ter|pode\s+trazer|queria|me\s+ajuda|me\s+ajude|tem\s+como\s+(trazer|me\s+dar))\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(água|agua|talher|guardanapo|sal|pimenta|aç[uú]car|aceite|azeite|gelo|canudo|copo|prato|tigela)\b",
+        re.IGNORECASE,
+    ),
     # Table merge intent · "junta com a mesa", "juntar mesas"
     re.compile(r"\bjunta(r)?\b.*\bmesa", re.IGNORECASE),
     re.compile(r"\bmesa\b.*\bjunta(r)?\b", re.IGNORECASE),

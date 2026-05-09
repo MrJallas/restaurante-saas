@@ -32,10 +32,15 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     else:
         res = {"requestId": None}
 
+    # Round 4 §C-NEW-3 — chips: enquanto espera, pode ver cardápio ou cancelar.
     return ToolResult(
         message=(
             f"Avisei a galera da mesa {target_table} que você chegou. "
             "Tô esperando a confirmação deles."
         ),
+        chips=[
+            {"id": "view_menu", "label": "Ver cardápio", "action": "navigate", "payload": "cardapio"},
+            {"id": "cancel_late_arrival", "label": "Cancelar", "action": "send", "payload": "cancela o pedido de junção"},
+        ],
         action_payload={"lateArrivalRequest": res},
     )

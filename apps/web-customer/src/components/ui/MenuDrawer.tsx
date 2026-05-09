@@ -29,7 +29,7 @@ export function MenuDrawer({
   activeHref,
   participantsCount,
 }: MenuDrawerProps) {
-  const { drawerOpen, closeDrawer } = useUIState();
+  const { drawerOpen, closeDrawer, openCallWaiterSheet } = useUIState();
   const { customerName } = useContext(SessionContext);
   const { push } = useNav();
 
@@ -204,9 +204,11 @@ export function MenuDrawer({
             sub="Sugestões e dúvidas"
             active={activeHref?.endsWith('/assistente')}
           />
-          <DrawerLink
-            href={`/${slug}/garcom/chamar`}
-            onNavigate={closeDrawer}
+          <DrawerAction
+            onClick={() => {
+              closeDrawer();
+              openCallWaiterSheet();
+            }}
             icon="◔"
             label="Chamar garçom"
             sub="Pedir atendimento"
@@ -326,5 +328,32 @@ function DrawerLink({ href, onNavigate, icon, label, sub, active, badge, small }
       )}
       {!badge && !small && <span className="text-[14px] text-faint">›</span>}
     </Link>
+  );
+}
+
+interface DrawerActionProps {
+  onClick: () => void;
+  icon: ReactNode;
+  label: string;
+  sub?: string;
+}
+
+/** Drawer entry that triggers an action (sheet, modal) instead of navigating. */
+function DrawerAction({ onClick, icon, label, sub }: DrawerActionProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3.5 border-l-[3px] border-transparent px-[22px] py-3.5 text-left transition-colors duration-100 active:bg-surface"
+    >
+      <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full border-[1.2px] border-ink text-[14px] text-ink">
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[15px] font-medium tracking-[-0.008em]">{label}</span>
+        {sub && <span className="mt-px block text-[11px] text-mute">{sub}</span>}
+      </span>
+      <span className="text-[14px] text-faint">›</span>
+    </button>
   );
 }

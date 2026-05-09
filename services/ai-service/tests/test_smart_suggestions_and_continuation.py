@@ -68,3 +68,21 @@ def test_render_continuation_missing_slot_is_empty():
     msg = {"template": "Quer o {favoriteItem}?", "slots": ["favoriteItem"]}
     out = render_continuation(msg, {})
     assert out == "Quer o ?"
+
+
+def test_render_continuation_voltou_sem_acao_without_last_item_fallback():
+    """Round 4 C-NEW-4 — sem last_item, frase neutra (sem `{...}` literal)."""
+    msg = get_continuation(tenant_id="restaurant_dev", customer_ctx={}, kind="voltou_sem_acao")
+    assert msg is not None
+    rendered = render_continuation(msg, {})
+    assert "{last_item}" not in rendered
+    assert "{" not in rendered  # nenhum slot literal vazado
+    assert "novidade" in rendered.lower() or "cardápio" in rendered.lower()
+
+
+def test_render_continuation_voltou_sem_acao_with_last_item_keeps_canon():
+    """Quando o slot está disponível, a template canônica é mantida."""
+    msg = get_continuation(tenant_id="restaurant_dev", customer_ctx={}, kind="voltou_sem_acao")
+    assert msg is not None
+    rendered = render_continuation(msg, {"last_item": "risoto de funghi"})
+    assert "risoto de funghi" in rendered

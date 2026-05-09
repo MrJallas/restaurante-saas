@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
+import { useUIState } from '../../../../providers/UIStateProvider';
 import { AppShell } from '../../../../components/layout/AppShell';
 import { PillButton } from '../../../../components/ui/PillButton';
 import { Row } from '../../../../components/ui/Row';
@@ -39,12 +40,15 @@ interface AltOption {
   label: string;
   sub: string;
   href?: string;
+  /** Round 4 §C16: ações que abrem sheet em vez de navegar. */
+  onTap?: () => void;
 }
 
 export default function PagamentoErroPage() {
   const params = useParams();
   const router = useRouter();
   const { push } = useNav();
+  const { openCallWaiterSheet } = useUIState();
   const searchParams = useSearchParams();
   const { tableLabel } = useSession();
   const slug = params.slug as string;
@@ -61,7 +65,7 @@ export default function PagamentoErroPage() {
   const alternatives: AltOption[] = [
     { label: 'Cartão de crédito', sub: 'Visa, Master, Elo' },
     { label: 'Cartão de débito', sub: 'Débito em conta' },
-    { label: 'Pedir ajuda ao garçom', sub: 'Pagamento presencial', href: `/${slug}/garcom/chamar` },
+    { label: 'Pedir ajuda ao garçom', sub: 'Pagamento presencial', onTap: openCallWaiterSheet },
   ];
 
   return (
@@ -113,7 +117,10 @@ export default function PagamentoErroPage() {
             <button
               key={o.label}
               type="button"
-              onClick={() => o.href && push(o.href)}
+              onClick={() => {
+                if (o.onTap) o.onTap();
+                else if (o.href) push(o.href);
+              }}
               className="flex items-center gap-2.5 rounded-[12px] border-[1.2px] border-border-soft px-3.5 py-3 text-left"
             >
               <div className="flex-1">

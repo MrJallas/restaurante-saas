@@ -102,15 +102,6 @@ body {
   50%      { opacity: 1;    transform: scale(1); }
 }
 
-/* `liquid-morph` é o chip→input expand inspirado em Apple Music card transition
-   (canvas v14): 580ms cubic-bezier ease-out, abre clip-path do meio pra fora
-   + fade. Usado por ContextualInputExpand. */
-@keyframes liquid-morph {
-  0%   { opacity: 0; clip-path: inset(50% 0 50% 0 round 14px); }
-  60%  { opacity: 1; clip-path: inset(0 0 0 0 round 14px); }
-  100% { opacity: 1; clip-path: inset(0 0 0 0 round 14px); }
-}
-
 /* `slide-up-overlay` para overlays full-screen (OverlaySalonMap) — slide do
    bottom + fade do backdrop, 220ms ease-out (alinha cOverlayFade do canvas). */
 @keyframes slide-up-overlay {
@@ -133,7 +124,6 @@ body {
 .animate-ripple { animation: ripple 1.6s ease-out infinite; }
 .animate-pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
 .animate-dot-pulse-stagger { animation: dot-pulse-stagger 1.4s ease-in-out infinite; }
-.animate-liquid-morph { animation: liquid-morph 580ms cubic-bezier(0.4, 0, 0.2, 1) both; }
 .animate-slide-up-overlay { animation: slide-up-overlay 220ms ease-out both; }
 .animate-manager-arrive { animation: managerArrive 360ms cubic-bezier(.2,.8,.2,1) both; }
 

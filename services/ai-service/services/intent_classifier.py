@@ -22,6 +22,11 @@ Responda "sim" se a mensagem é sobre:
 - Fome, sede, vontade de comer/beber, estado do apetite ("estou com fome", "tô com sede", "bateu a fome")
 - Pedidos de sugestão geral ("o que você recomenda", "o que tem de bom", "me indica algo")
 - Pedir para chamar garçom ou ajuda no atendimento
+- PEDIDOS COMUNS DE GARÇOM (sempre permitir): "preciso de mais água", "pode
+  trazer um talher", "queria mais guardanapo", "me ajuda com a conta", "tem
+  como trazer sal/azeite/pimenta/gelo/copo". Estas mensagens NUNCA são
+  off-topic — são exatamente o caso de uso da tool `call_waiter`. Se o
+  classifier bloquear "preciso de mais água", é regression do round 4.
 - Follow-ups curtos ou ambíguos QUANDO o contexto anterior é do restaurante ("os dois", "quero esse", "quanto?", "pode ser", "esse mesmo", "sim", "pode trazer")
 - Pedidos sociais relacionados à mesa: juntar mesas, late-arrival, mensagem pro gerente, reclamação, LGPD/exclusão de dados
 
@@ -35,6 +40,14 @@ EXEMPLOS DE PERGUNTAS QUE DEVEM RETORNAR "sim" (regression do round 3):
 - "aceitam cartão?" → sim
 - "tem estacionamento?" → sim
 - "qual a política de cancelamento?" → sim
+
+EXEMPLOS DE PEDIDOS DE GARÇOM QUE DEVEM RETORNAR "sim" (round 4 #C-NEW-2):
+- "preciso de mais água" → sim
+- "pode trazer um talher?" → sim
+- "queria mais um guardanapo" → sim
+- "me ajuda com a conta" → sim
+- "tem como trazer sal?" → sim
+- "preciso de gelo" → sim
 
 {history_block}Mensagem atual do cliente: "{message}"
 

@@ -28,8 +28,14 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     if not items:
         # No matches OR no api_client wired — graceful fallback.
+        # Round 4 §C-NEW-3 — chips guiam quando search não retornou nada.
         return ToolResult(
             message=f"Não achei nada com '{query}' no cardápio. Quer ver o cardápio inteiro?",
+            chips=[
+                {"id": "view_menu", "label": "Ver cardápio", "action": "navigate", "payload": "cardapio"},
+                {"id": "recommend", "label": "Me recomenda", "action": "send", "payload": "o que você recomenda?"},
+                {"id": "call_waiter", "label": "Chamar garçom", "action": "send", "payload": "chamar o garçom"},
+            ],
             action_payload={"status": "not_implemented", "tool": "search_dish", "query": query},
         )
 

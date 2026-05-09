@@ -22,7 +22,15 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             "Pra você, separei umas pedidas especiais:" if is_vip
             else "Olha o que tá saindo bem hoje:"
         )
-        return ToolResult(message=f"{prefix} (peça mais detalhes que eu busco)")
+        # Round 4 §C-NEW-3 — categorias canônicas guiam o próximo turn.
+        return ToolResult(
+            message=f"{prefix} (peça mais detalhes que eu busco)",
+            chips=[
+                {"id": "rec-entrada", "label": "Entrada", "action": "send", "payload": "me indica uma entrada"},
+                {"id": "rec-principal", "label": "Prato principal", "action": "send", "payload": "me indica um prato principal"},
+                {"id": "rec-sobremesa", "label": "Sobremesa", "action": "send", "payload": "me indica uma sobremesa"},
+            ],
+        )
 
     chips = [
         {

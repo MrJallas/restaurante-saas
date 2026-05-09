@@ -6,6 +6,9 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["next", "dev", "-H", "0.0.0.0", "-p", "3003"],
       "cwd": "apps/web-customer",
+      "env": {
+        "API_UPSTREAM": "http://localhost:3001"
+      },
       "port": 3003,
       "autoPort": false
     }

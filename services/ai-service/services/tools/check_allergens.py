@@ -52,7 +52,15 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         else:
             lines.append(f"- {name}: sem alérgenos comuns")
 
+    # Round 4 §C-NEW-3 — chips de follow-up típicos pós-allergen check.
+    chips = [
+        {"id": "allergen-vegan", "label": "Tem opção vegana?", "action": "send", "payload": "tem opção vegana?"},
+        {"id": "allergen-gluten", "label": "Sem glúten", "action": "send", "payload": "tem prato sem glúten?"},
+        {"id": "allergen-call-waiter", "label": "Chamar garçom", "action": "send", "payload": "chamar o garçom"},
+    ]
+
     return ToolResult(
         message="Alérgenos:\n" + "\n".join(lines),
+        chips=chips,
         action_payload={"items": findings},
     )

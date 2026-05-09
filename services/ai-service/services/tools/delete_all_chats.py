@@ -40,6 +40,7 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         except Exception as e:
             return ToolResult(error={"code": "api_error", "message": str(e)})
 
+    # Round 4 §C-NEW-3 — após mass delete, oferecer LGPD formal + back-to-chat.
     return ToolResult(
         message=(
             f"Apaguei suas {deleted_count} conversa(s). "
@@ -47,5 +48,9 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             if deleted_count
             else "Apaguei todo o histórico de conversas."
         ),
+        chips=[
+            {"id": "lgpd_request", "label": "Pedido LGPD formal", "action": "send", "payload": "quero fazer um pedido formal de exclusão LGPD"},
+            {"id": "back_to_chat", "label": "Voltar ao chat", "action": "navigate", "payload": "assistente"},
+        ],
         action_payload={"deletedCount": deleted_count},
     )

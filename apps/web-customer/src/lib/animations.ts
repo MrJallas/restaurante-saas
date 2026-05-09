@@ -6,14 +6,13 @@
  * `apps/web-customer/src/app/globals.css` (Tailwind + iOS Safari pegam
  * as @keyframes globais sem custo de runtime), e aqui exportamos:
  *
- *   1. Constantes de duração / easing — `DOT_PULSE_MS`, `LIQUID_MORPH_MS`,
- *      `LIQUID_EASING`, etc. — pra que setTimeout/JS possa esperar pelo
- *      mesmo tempo da animação CSS sem duplicar magic numbers.
+ *   1. Constantes de duração / easing — `DOT_PULSE_MS`, etc. — pra que
+ *      setTimeout/JS possa esperar pelo mesmo tempo da animação CSS sem
+ *      duplicar magic numbers.
  *
- *   2. Classes Tailwind utilitárias — `animationClass.dotPulse`,
- *      `animationClass.liquidMorph`, etc. — pra que callsites façam
- *      `<div className={animationClass.liquidMorph}>` em vez de copiar a
- *      string `animate-liquid-morph` em N lugares.
+ *   2. Classes Tailwind utilitárias — `animationClass.dotPulse`, etc. —
+ *      pra que callsites façam `<div className={animationClass.dotPulse}>`
+ *      em vez de copiar a string `animate-dot-pulse-stagger` em N lugares.
  *
  *   3. `useReducedMotion()` — hook pra desligar animações quando o usuário
  *      pediu via SO. Os primitivos consultam e devolvem string vazia em
@@ -36,16 +35,11 @@ import { useEffect, useState } from 'react';
 export const DOT_PULSE_MS = 1400;
 export const DOT_PULSE_STAGGER_MS = 160;
 
-/** Liquid morph chip→input — Apple Music card transition replicada no canvas.
- * 580ms total: clip-path do meio pra fora 380ms + CTA fade 200ms (overlap).
- * Usado por ContextualInputExpand. */
-export const LIQUID_MORPH_MS = 580;
-export const LIQUID_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
-
 /** Bubble fade-in (re-uso do `fade-up` existente — 420ms é o canônico do app). */
 export const FADE_IN_UP_MS = 420;
 
-/** Slide-up overlay (OverlaySalonMap, BottomSheet variants). */
+/** Slide-up overlay (OverlaySalonMap, BottomSheet variants — também usado
+ * pelo CallWaiterSheet 220ms ease-out). */
 export const SLIDE_UP_OVERLAY_MS = 220;
 
 /**
@@ -83,14 +77,10 @@ export const animationClass = {
    * (com style.animationDelay para o stagger entre os 3). */
   dotPulse: 'animate-dot-pulse-stagger',
 
-  /** Chip→input morph — para o container do ContextualInputExpand quando
-   * acabou de expandir. */
-  liquidMorph: 'animate-liquid-morph',
-
   /** Bubble appearance (alias do fade-up existente). */
   fadeInUp: 'animate-fade-up',
 
-  /** Slide-up overlay (OverlaySalonMap inteiro entrando do bottom). */
+  /** Slide-up overlay (OverlaySalonMap, CallWaiterSheet — entram do bottom). */
   slideUpOverlay: 'animate-slide-up-overlay',
 } as const;
 

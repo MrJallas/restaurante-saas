@@ -6,6 +6,7 @@ import { apiPost, apiGet } from '../../../../lib/api';
 import { setSessionToken } from '../../../../lib/storage';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
+import { useUIState } from '../../../../providers/UIStateProvider';
 import { useZonePause } from '../../../../hooks/useZonePause';
 import { WelcomeModal } from '../../../../components/welcome/WelcomeModal';
 import { AppShell } from '../../../../components/layout/AppShell';
@@ -70,6 +71,7 @@ function getInitials(name: string | null | undefined, fallback = 'TL'): string {
 export default function MesaPage() {
   const params = useParams<{ slug: string; tableCode: string }>();
   const { push, prefetch } = useNav();
+  const { openCallWaiterSheet } = useUIState();
   const slug = params.slug;
   const tableCode = params.tableCode;
 
@@ -81,6 +83,7 @@ export default function MesaPage() {
     customerName,
     customerId,
     tableCode: sessionTableCode,
+    tableLabel: sessionTableLabel,
   } = useSession();
   const [pageState, setPageState] = useState<PageState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
@@ -393,6 +396,7 @@ export default function MesaPage() {
         <WelcomeModal
           slug={slug}
           restaurantName={settings?.restaurantName || 'Restaurante'}
+          tableLabel={sessionTableLabel || undefined}
           onComplete={handleWelcomeComplete}
         />
       </main>
@@ -427,13 +431,35 @@ export default function MesaPage() {
           ninguem pendente. */}
       {isHost && <HostApprovalModal slug={slug} />}
       {reclaimBanner && (
-        <div className="mx-4 mt-3 rounded-[12px] border border-amber-300/50 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
-          Bem-vindo de volta! Se você não fez login agora, avise o garçom.
+        // Round 4: amber/yellow do V13 trocado pelo discreet hint canon V20
+        // (border-soft + surface + mono eyebrow). Mantém a mesma intenção
+        // — alertar customer caso reclaim do CPF não foi ele — sem o tom
+        // de error que o amber dava.
+        <div
+          role="status"
+          data-testid="reclaim-banner"
+          className="mx-[22px] mt-3 flex items-start gap-2.5 rounded-[12px] border border-border-soft bg-surface px-3.5 py-3 text-[12px] leading-[1.5] text-ink text-pretty"
+        >
+          <span
+            aria-hidden
+            className="mt-[2px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border-[1.2px] border-ink/60 text-[11px] font-semibold leading-none text-ink/70"
+          >
+            !
+          </span>
+          <span className="flex-1">
+            <span className="block font-mono text-[10px] uppercase tracking-[1.5px] text-mute">
+              Conta reconhecida
+            </span>
+            <span className="mt-1 block">
+              Bem-vindo de volta. Se não foi você quem fez login agora, é só
+              avisar o garçom.
+            </span>
+          </span>
         </div>
       )}
       <div className="flex flex-1 flex-col justify-center gap-3.5 px-6 pb-8">
         <div className="flex flex-col items-center gap-3">
-          <PillButton onClick={() => push(`/${slug}/garcom/chamar`)}>
+          <PillButton onClick={openCallWaiterSheet}>
             Chamar garçom
           </PillButton>
           <PillButton onClick={() => push(`/${slug}/cardapio`)}>

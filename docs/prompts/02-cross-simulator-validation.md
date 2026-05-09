@@ -1,13 +1,14 @@
 # Prompt 2 · Validação cross-simulator · Jornada completa + bug-hunt
 
-> **Versão**: v3.0 (2026-05-09 · pós round 3 fixes do Cat 1-15).
-> **Como usar:** rodar **DEPOIS** que o Prompt 1 mergou os 6 PRs de fix
-> *e* o PR consolidado da round 3 (este). Pré-condição absoluta: stack
+> **Versão**: v3.1 (2026-05-09 · pós round 4 fixes C16/C17/C-NEW-1..5 +
+> Subagentes S/T novos + O/K updates).
+> **Como usar:** rodar **DEPOIS** que o Prompt 1 mergou os PRs de fix
+> *e* o PR consolidado da round 4 (este). Pré-condição absoluta: stack
 > inteira viva e estável. Cola num chat novo de Claude Code dentro do
-> repo. O orquestrador dispara **18 subagentes** (14 originais A-N + 4
-> novos O/P/Q/R) em paralelo via Agent tool (`run_in_background=true`),
-> cada um operando 1-4 simuladores ao mesmo tempo via xcodebuildmcp +
-> Playwright + queries DB.
+> repo. O orquestrador dispara **20 subagentes** (14 originais A-N +
+> 6 novos O/P/Q/R/S/T) em paralelo via Agent tool
+> (`run_in_background=true`), cada um operando 1-4 simuladores ao mesmo
+> tempo via xcodebuildmcp + Playwright + queries DB.
 
 ---
 
@@ -1153,3 +1154,118 @@ regression. Tools cobertas com chips: `view_menu`, `add_to_order`,
 `view_order`, `pay_full`, `pay_individual`, `split_bill`, `request_check`,
 `call_waiter`, `send_complaint`, `recommend_dish` (já tinha),
 `show_lgpd_notice` (já tinha).
+
+---
+
+### Subagent K · update (round 4 §C-NEW-3)
+
+Cobertura de chips agora é **transversal** — toda tool customer-side
+de mutação retorna `chips` non-empty. Tools adicionadas em round 4:
+`add_to_order` (canon "Ver pedido · Pedir mais · Pedir conta"),
+`change_order`, `remove_from_cart`, `cancel_order`, `confirm_order`,
+`request_table_merge`, `late_arrival_request`, `send_message_to_manager`,
+`ask_about_restaurant` (chips de follow-up "Como chego aí · Tem
+estacionamento · Vocês têm wifi"), `view_chat_history`, `view_courtesy`,
+`delete_chat`, `delete_all_chats`, `lgpd_data_request`, `compare_dishes`,
+`check_allergens`, `explain_dish`, `recommend_dish` (path no-items),
+`search_dish` (path no-results).
+
+**Acceptance round 4 §C-NEW-3**: rodar 10 mutações distintas
+sequencialmente — ≥ 9/10 com `assistant_messages.contextual_chips IS NOT NULL`.
+
+Tabela de chips canon esperados:
+
+| Tool | Chips esperados |
+|---|---|
+| `add_to_order` | Ver pedido · Pedir mais · Pedir conta |
+| `change_order` | Ver pedido · Pedir mais · Pedir conta |
+| `remove_from_cart` | Ver pedido · Pedir mais · Pedir conta |
+| `cancel_order` (success) | Ver cardápio · Me recomenda algo · Chamar garçom |
+| `cancel_order` (409) | Chamar garçom · Ver pedido |
+| `confirm_order` | Acompanhar pedido · Pedir mais · Pedir conta |
+| `request_table_merge` (success) | Ver cardápio · Chamar garçom · Ver pedido |
+| `request_table_merge` (429) | Chamar garçom · Ver cardápio |
+| `late_arrival_request` | Ver cardápio · Cancelar |
+| `send_message_to_manager` | Ver cardápio · Ver pedido · Chamar garçom |
+| `ask_about_restaurant` | Como chego aí · Tem estacionamento · Vocês têm wifi |
+| `view_chat_history` | Apagar todas · Pedido LGPD · Voltar ao chat |
+| `view_courtesy` | Chamar garçom · Ver pedido |
+| `delete_chat` | Ver histórico · Apagar todas · Voltar ao chat |
+| `delete_all_chats` | Pedido LGPD formal · Voltar ao chat |
+| `lgpd_data_request` | Voltar ao chat · Ver cardápio |
+
+---
+
+### Subagent S · Sheet vaul-style cliente · validação visual
+
+> **Sims**: 1 (Customer iOS qualquer). Foco em validar overlays cliente
+> após Round 4 C16 (`/garcom/chamar` virou bottom-sheet sobre Home).
+
+**Aceitação**:
+
+| Estado | Esperado | Como validar |
+|---|---|---|
+| Home com botão "Chamar garçom" tap | Sheet desliza de baixo, Home blurred ao fundo, backdrop preto 32% | Playwright screenshot 393×852 + DOM `[data-testid=call-waiter-sheet][role=dialog]` visível |
+| Drag handle visível no topo da sheet | Pílula 40×4px cinza claro (`bg-border-soft`) | snapshot `.sheet > div:first-child` |
+| 5 motivos com icon+label+sub | Trazer cardápio · Fazer pedido · Servir bebida · Pedir conta · Outro motivo | snapshot · cada `<button>` tem ícone SVG + label `text-[14.5px]` + sub `text-[12px] text-mute` |
+| CTA disabled até seleção | `bg-faint` cinza inicial → `bg-ink` preto após tap em motivo | `preview_inspect [data-testid=call-waiter-confirm]` antes/depois |
+| Swipe-down dismiss | Sheet some, Home volta opaca, backdrop fade-out | Playwright drag-down 60%+ da altura da sheet |
+| Tap "Confirmar chamado" → `/garcom/chamando?callId=…&reason=…` | navigate, sheet fecha automaticamente | `window.location.pathname` muda |
+| Rota fullscreen `/[slug]/garcom/chamar` | DELETED — não existe mais | `find apps/web-customer/src/app -path '*garcom/chamar*'` retorna 0 hits |
+| Drawer "Chamar garçom" entry | Trigger via `useUIState.openCallWaiterSheet()` em vez de Link href | inspecionar `MenuDrawer` → "Chamar garçom" é `<button>`, não `<Link>` |
+| Pagamento erro · "Pedir ajuda ao garçom" | Abre sheet em vez de navegar | `apps/web-customer/src/app/[slug]/pagamento/erro/page.tsx` usa `onTap` em vez de `href` |
+| Late-arrival rejected · "Chamar recepcionista" CTA | Abre sheet em vez de navegar | `ScreenCustomerWaitingApproval.tsx` usa `openCallWaiterSheet` |
+
+**Report**: `qa-reports/e2e-cross-S-sheet-vaul.md`
+
+**Bugs a procurar**:
+- Sheet abre mas Home não fica blurred (z-index errado)
+- Tap fora do sheet não fecha (backdrop quebrado)
+- Swipe-down não funciona (touch handlers ausentes)
+- CTA fica enabled sem seleção (initial state quebrado)
+- Drawer link "Chamar garçom" navega em vez de abrir sheet (regression)
+
+---
+
+### Subagent T · Copy audit transversal
+
+> **Sims**: 1. Validar copy "fale com gerente / recepcionista" só
+> dispara em estados corretos. Round 4 §C17.
+
+**Casos**:
+
+| # | Cenário | Copy esperado | Copy proibido |
+|---|---|---|---|
+| T.1 | Customer SEM session abre `/restaurant_dev/` | "Escaneie o QR da mesa" | "fale com gerente", "fazer login" |
+| T.2 | Customer escaneia QR inválido (HMAC errado) | "QR Code inválido. Escaneie novamente" | "fale com gerente" |
+| T.3 | Late-arrival rejected | "O host não autorizou. Tente outra mesa ou peça ao garçom" | OK (esse é o canon — `peça ao garçom` é spec V16) |
+| T.4 | LM Studio offline | "Estou com dificuldade no momento. Tente novamente." | "fale com gerente" (não aplicável aqui) |
+| T.5 | LGPD anônimo (`customer_id == None`) | "Pra apagar suas conversas, preciso te identificar primeiro. Faça login na próxima visita…" | "gerente" |
+| T.6 | Late-arrival expired (modo identify) | "Era engano? Confere se escaneou o QR certo. Ou chama a recepcionista pra te ajudar." | "fale com gerente" (recepcionista é canon) |
+
+**Report**: `qa-reports/e2e-cross-T-copy-audit.md`
+
+**Spec sources**:
+- `customer-host-model.md` — copy canon de late-arrival
+- `chat-history-lgpd.md` — copy canon de LGPD
+- `services/ai-service/services/lgpd_messages.py` — strings imutáveis
+
+**Bugs a procurar**:
+- Copy LGPD anônimo aparece em fluxo NÃO-LGPD (regression do filtro)
+- "fale com gerente" surge em qualquer estado em que o spec diz "garçom" ou "recepcionista"
+- Mensagens humanizadas via `humanizeInitError` vazam exception text técnico
+
+---
+
+### Subagent O · update (round 4)
+
+Adicionar 3 casos novos à tabela de regression:
+
+| # | Categoria | Caso | Aceitação |
+|---|---|---|---|
+| O.16 | C16 (sheet vaul) | tap "Chamar garçom" na Home → sheet aparece sobre Home blurred | DOM `[data-testid=call-waiter-sheet][role=dialog]` visível por cima de `[role=banner]` da Home (z-index 60+) |
+| O.17 | C-NEW-1 (migration runner) | `docker-compose stop api && docker-compose up -d api` → `\d+ table_merge_cooldowns` mostra UNIQUE direcional sem aplicação manual | runner aplica 037 automaticamente. `__migrations__` table tem 37 linhas. Re-run idempotente: `applied=0 skipped=37`. |
+| O.18 | C-NEW-3 (chips full coverage) | rodar 10 mutações distintas customer-side em sequência | ≥ 9/10 com `assistant_messages.contextual_chips IS NOT NULL`. Tools cobertas: ver tabela do K update round 4. |
+| O.19 | C-NEW-2 (classifier) | 5 turnos consecutivos de pedidos comuns ao garçom ("preciso de mais água", "pode trazer um talher", "queria mais um guardanapo", "me ajuda com a conta", "tem como trazer sal") | 5/5 com `was_blocked=false` E `block_reason != 'classifier'` |
+| O.20 | C-NEW-4 (continuation fallback) | `GET /continuation?kind=voltou_sem_acao` SEM passar `last_item` slot | `rendered` não contém `{` literal (sem `{last_item}` vazado) |
+| O.21 | C-NEW-5 (dead code clean) | `grep -rE "ContextualInputExpand\|liquid-morph\|LIQUID_MORPH_MS" apps/web-customer/src` | 0 hits |

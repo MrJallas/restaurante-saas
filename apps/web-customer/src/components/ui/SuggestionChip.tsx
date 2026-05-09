@@ -15,7 +15,7 @@ interface SuggestionChipProps {
    * `chip.action`:
    *  - 'send'     → injetar `chip.payload` como mensagem do usuário
    *  - 'navigate' → router.push(chip.payload)
-   *  - 'expand'   → renderizar ContextualInputExpand inline
+   *  - 'expand'   → cai no fallback `send` (sem primitivo dedicado)
    *
    * Mantemos a prop callback única (não 3 callbacks separadas) pra que
    * a integração no AssistantBlock seja `<SuggestionChip onTap={dispatch} />`

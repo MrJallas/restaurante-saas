@@ -39,7 +39,13 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         except Exception as e:
             return ToolResult(error={"code": "api_error", "message": str(e)})
 
+    # Round 4 §C-NEW-3 — após apagar 1 thread, próximas ações típicas.
     return ToolResult(
         message="Conversa apagada. Não tem volta.",
+        chips=[
+            {"id": "view_history", "label": "Ver histórico", "action": "send", "payload": "ver histórico de conversas"},
+            {"id": "delete_all", "label": "Apagar todas", "action": "send", "payload": "apagar todas as minhas conversas"},
+            {"id": "back_to_chat", "label": "Voltar ao chat", "action": "navigate", "payload": "assistente"},
+        ],
         action_payload={"deletedThreadId": thread_id},
     )

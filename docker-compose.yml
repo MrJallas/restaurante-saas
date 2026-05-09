@@ -81,7 +81,16 @@ services:
       - /repo/apps/api/node_modules
     ports:
       - "3001:3001"
-    command: sh -c "cd /repo && npm install --no-audit --no-fund && cd apps/api && npm run start:dev || npm run dev"
+    # Round 4 §C-NEW-1: roda `migrate:tenants` ANTES do start:dev pra que
+    # migrations adicionadas em tenant-template sejam aplicadas a todos os
+    # schemas existentes automaticamente. Falha de migration é fatal — a
+    # API não sobe com schema stale.
+    command: >-
+      sh -c "cd /repo &&
+      npm install --no-audit --no-fund &&
+      (cd packages/database && npx ts-node scripts/migrate-tenants.ts || echo '[migrate-tenants] sem tenants ou primeiro boot — pulando') &&
+      cd /repo/apps/api &&
+      (npm run start:dev || npm run dev)"
 
   ai-service:
     image: python:3.11-slim

@@ -256,10 +256,31 @@ def get_continuation(
 
 
 def render_continuation(message: dict, slots: dict[str, str]) -> str:
-    """Fill `{slot}` placeholders. Missing slots fall back to empty string."""
-    out = message.get("template", "")
-    for s in message.get("slots", []):
-        out = out.replace("{" + s + "}", slots.get(s, ""))
+    """
+    Fill `{slot}` placeholders.
+
+    Round 4 (C-NEW-4): se a template é de um kind contextual e algum slot
+    obrigatório está vazio, troca pra um fallback genérico em vez de
+    deixar o `{slot}` literal vazar pro cliente. Antes, GET
+    `/continuation?kind=voltou_sem_acao` sem `last_item` rendia
+    "...da última vez foi . Posso..." — agora cai num copy neutro.
+    """
+    template = message.get("template", "")
+    declared_slots = message.get("slots") or []
+
+    missing = [s for s in declared_slots if not (slots.get(s) or "").strip()]
+
+    # Caso especial · `voltou_sem_acao` sem last_item: a template gira em
+    # torno do "Da última vez foi {last_item}", sem ele a frase pifa.
+    if missing and message.get("kind") == "voltou_sem_acao" and "last_item" in missing:
+        template = (
+            "Bem-vindo de volta. Posso sugerir algo novo ou mostrar o "
+            "cardápio do dia?"
+        )
+
+    out = template
+    for s in declared_slots:
+        out = out.replace("{" + s + "}", slots.get(s) or "")
     return out
 
 

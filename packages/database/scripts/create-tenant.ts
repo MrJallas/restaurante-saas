@@ -30,11 +30,25 @@ async function createTenant(schemaName: string) {
     const migrationsDir = path.join(__dirname, '..', 'migrations', 'tenant-template');
     const migrationFiles = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
 
+    // Round 4 §C-NEW-1: criar tabela `__migrations__` ANTES de rodar pra
+    // que cada migration seja registrada. Sem isso, migrate-tenants.ts
+    // (boot da API) re-aplica todas em tenants frescos.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS __migrations__ (
+        filename TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+
     console.log(`Rodando ${migrationFiles.length} migrations...`);
     for (const file of migrationFiles) {
       const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
       console.log(`  -> ${file}`);
       await client.query(sql);
+      await client.query(
+        `INSERT INTO __migrations__(filename) VALUES ($1) ON CONFLICT DO NOTHING`,
+        [file],
+      );
     }
 
     // 3. Rodar seeds

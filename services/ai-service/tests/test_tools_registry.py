@@ -293,3 +293,67 @@ def test_delete_all_chats_anonymous_returns_login_hint():
     # Anonymous → silent guidance message, no error.
     assert result.silent is True
     assert "identificar" in (result.message or "").lower()
+
+
+# ─────────────────────────────────────────────────────────────
+# Round 4 §C-NEW-3 — chips canônicos pós-mutação
+# Cada tool customer-side de mutação deve retornar `chips` não-vazio
+# pra que o FE renderize follow-ups contextuais (em vez do trio estático).
+# ─────────────────────────────────────────────────────────────
+
+CUSTOMER_TOOLS_WITH_CHIPS = [
+    # mutation tools — happy paths sem api_client retornam chips canon
+    ("change_order", {"orderId": "abc", "changes": {"notes": "sem cebola"}}),
+    ("remove_from_cart", {"itemId": "abc"}),
+    ("cancel_order", {"orderId": "abc"}),
+    ("confirm_order", {}),
+    ("ask_about_restaurant", {"topic": "horário"}),
+    ("view_chat_history", {}),
+    ("view_courtesy", {}),
+]
+
+
+@pytest.mark.parametrize("tool_name,args", CUSTOMER_TOOLS_WITH_CHIPS)
+def test_customer_mutation_tool_returns_chips(tool_name, args):
+    """Round 4 §C-NEW-3 — happy path de cada tool deve trazer chips."""
+    ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1")
+    result = dispatch_tool(tool_name, args, ctx)
+    assert result.error is None, f"{tool_name} retornou erro: {result.error}"
+    assert result.chips, f"{tool_name} sem chips — round 4 spec exige follow-ups canon"
+    assert len(result.chips) >= 2, f"{tool_name} chips < 2"
+    for chip in result.chips:
+        assert chip.get("label"), f"{tool_name} chip sem label: {chip}"
+        assert chip.get("action") in {"send", "navigate", "expand"}, (
+            f"{tool_name} chip action inválido: {chip}"
+        )
+
+
+def test_chips_coverage_at_least_9_of_10_mutations():
+    """Round 4 §C-NEW-3 acceptance: ≥ 9/10 mutações com chips."""
+    mutations = [
+        "add_to_order", "change_order", "remove_from_cart", "cancel_order",
+        "confirm_order", "request_table_merge", "send_complaint",
+        "send_message_to_manager", "ask_about_restaurant", "view_chat_history",
+    ]
+    ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1")
+    args_for = {
+        "add_to_order": {"itemId": "12345678-1234-4234-8234-123456789012", "quantity": 1},
+        "change_order": {"orderId": "abc", "changes": {"notes": "x"}},
+        "remove_from_cart": {"itemId": "abc"},
+        "cancel_order": {"orderId": "abc"},
+        "confirm_order": {},
+        "request_table_merge": {"targetTable": "14"},
+        "send_complaint": {},
+        "send_message_to_manager": {"text": "hello"},
+        "ask_about_restaurant": {"topic": "horário"},
+        "view_chat_history": {},
+    }
+    with_chips = 0
+    for name in mutations:
+        try:
+            res = dispatch_tool(name, args_for[name], ctx)
+            if res.chips and len(res.chips) >= 1:
+                with_chips += 1
+        except Exception:
+            pass
+    assert with_chips >= 9, f"chips coverage = {with_chips}/10 (< 9 — round 4 spec falhou)"

@@ -38,7 +38,25 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         allergens_str = f" · alérgenos: {', '.join(allergens)}" if allergens else ""
         lines.append(f"- {it.get('name', '?')}: R$ {price:.2f}{allergens_str}")
 
+    # Round 4 §C-NEW-3 — chips por item facilitam "quero esse" 1-tap
+    chips = [
+        {
+            "id": f"compare-pick-{it.get('id')}",
+            "label": f"Quero {it.get('name', 'esse')}",
+            "action": "send",
+            "payload": f"quero o {it.get('name', '')}",
+        }
+        for it in items[:2]
+    ]
+    chips.append({
+        "id": "compare-other",
+        "label": "Comparar outros",
+        "action": "send",
+        "payload": "compara outros pratos pra mim",
+    })
+
     return ToolResult(
         message="Comparando:\n" + "\n".join(lines),
+        chips=chips,
         action_payload={"items": items},
     )

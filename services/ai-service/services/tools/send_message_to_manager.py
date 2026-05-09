@@ -34,7 +34,13 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         except Exception as e:
             return ToolResult(error={"code": "api_error", "message": str(e)})
 
+    # Round 4 §C-NEW-3 — chips: enquanto espera resposta, opções típicas.
     return ToolResult(
         message="Mensagem enviada.",
+        chips=[
+            {"id": "view_menu", "label": "Ver cardápio", "action": "navigate", "payload": "cardapio"},
+            {"id": "view_order", "label": "Ver pedido", "action": "send", "payload": "ver meu pedido"},
+            {"id": "call_waiter", "label": "Chamar garçom", "action": "send", "payload": "chamar o garçom"},
+        ],
         action_payload={"messageSent": True, "toSessionId": target_session_id},
     )

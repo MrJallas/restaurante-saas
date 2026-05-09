@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { PillButton } from '../../components/ui/PillButton';
 import { useSession } from '../../hooks/useSession';
+import { useUIState } from '../../providers/UIStateProvider';
 import { useCustomerHostEvents } from '../../hooks/useCustomerHostEvents';
 
 export type WaitingMode = 'late-arrival' | 'merge-target' | 'merge-origin';
@@ -59,6 +60,7 @@ export function ScreenCustomerWaitingApproval({
   retryEnabled = true,
 }: ScreenCustomerWaitingApprovalProps) {
   const router = useRouter();
+  const { openCallWaiterSheet } = useUIState();
   const { sessionId, customerId } = useSession();
 
   const [state, setState] = useState<WaitingState>('waiting');
@@ -219,84 +221,90 @@ export function ScreenCustomerWaitingApproval({
         : 'text-mute';
 
   return (
-    <main className="flex min-h-dvh flex-col bg-bg">
-      <div className="flex flex-1 flex-col items-center justify-start px-6 pb-6 pt-[max(env(safe-area-inset-top),24px)] text-center">
-        <span
-          className={`text-[10.5px] font-bold uppercase tracking-[1.2px] ${eyebrowColor}`}
-        >
-          {state === 'waiting' && (
-            <span className="mr-2 inline-block h-1.5 w-1.5 animate-bounce-dot rounded-full bg-ink align-middle" />
-          )}
-          {eyebrow}
-        </span>
-
-        <h1 className="mt-3.5 text-[26px] font-bold leading-[1.15] tracking-[-0.6px] text-ink">
-          {hero}
-        </h1>
-
-        <p className="mt-3 max-w-[300px] text-[15px] font-medium leading-[1.5] tracking-[-0.05px] text-mute">
-          {sub}
-        </p>
-
-        <div className="my-10 flex h-24 w-24 items-center justify-center">
-          {state === 'waiting' && <Pulse />}
-          {state === 'approved' && <CheckMark />}
-          {(state === 'rejected' || state === 'expired') && <Sleep />}
-        </div>
-
-        {/* Pill ladder · indica step / redirecionamento */}
-        {state === 'waiting' && (
-          <div className="flex items-center gap-2 rounded-full border border-border-soft bg-surface px-3.5 py-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-ink" />
-            <span className="text-[9.5px] font-bold uppercase tracking-[0.6px] text-faint">
-              {escalated ? 'recepcionista' : 'host'}
-              {secondsLeft != null && ` · ${secondsLeft} s`}
-            </span>
-          </div>
-        )}
-
-        {state === 'approved' && (
-          <div className="flex items-center gap-2 rounded-full bg-success/10 px-3.5 py-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-success" />
-            <span className="text-[9.5px] font-bold uppercase tracking-[0.6px] text-success">
-              redirecionando…
-            </span>
-          </div>
-        )}
-
-        <div className="flex-1" />
-
-        {/* CTAs · variam por estado */}
-        {state === 'waiting' && (
-          <PillButton
-            variant="outline"
-            onClick={() => router.back()}
-            className="mt-3"
+    // Round 4 §C-NEW-11 — centralizado vertical+horizontal (V20 canon dos
+    // outros flows: Welcome / IdentifyBeforeJoin). Antes: justify-start +
+    // flex-1 spacer empurrava o CTA pro rodapé e o conteúdo ficava no
+    // topo. Agora todo o bloco (eyebrow → title → sub → ícone → pill →
+    // CTA) fica como uma unidade no centro do viewport.
+    <main className="bg-bg" data-testid="waiting-approval">
+      <div className="relative grid h-[100dvh] min-h-dvh w-full place-items-center px-6 py-8">
+        <div className="flex w-full max-w-[420px] flex-col items-center text-center">
+          <span
+            className={`font-mono text-[10px] font-bold uppercase tracking-[1.2px] ${eyebrowColor}`}
           >
-            Cancelar pedido
-          </PillButton>
-        )}
-
-        {(state === 'rejected' || state === 'expired') && (
-          <div className="mt-2 flex w-full flex-col gap-2.5">
-            <PillButton
-              variant="filled"
-              onClick={() => router.push(`/${slug}/garcom/chamar`)}
-              className="w-full"
-            >
-              Chamar recepcionista
-            </PillButton>
-            {retryEnabled && (
-              <PillButton
-                variant="outline"
-                onClick={() => window.location.reload()}
-                className="w-full"
-              >
-                Tentar de novo
-              </PillButton>
+            {state === 'waiting' && (
+              <span className="mr-2 inline-block h-1.5 w-1.5 animate-bounce-dot rounded-full bg-ink align-middle" />
             )}
+            {eyebrow}
+          </span>
+
+          <h1 className="mt-[14px] text-[26px] font-bold leading-[1.15] tracking-[-0.024em] text-ink text-pretty">
+            {hero}
+          </h1>
+
+          <p className="mt-[12px] max-w-[300px] text-[15px] font-medium leading-[1.5] tracking-[-0.005em] text-mute text-pretty">
+            {sub}
+          </p>
+
+          <div className="my-8 flex h-24 w-24 items-center justify-center">
+            {state === 'waiting' && <Pulse />}
+            {state === 'approved' && <CheckMark />}
+            {(state === 'rejected' || state === 'expired') && <Sleep />}
           </div>
-        )}
+
+          {/* Pill ladder · indica step / redirecionamento */}
+          {state === 'waiting' && (
+            <div className="flex items-center gap-2 rounded-full border border-border-soft bg-surface px-3.5 py-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-ink" />
+              <span className="text-[9.5px] font-bold uppercase tracking-[0.6px] text-faint">
+                {escalated ? 'recepcionista' : 'host'}
+                {secondsLeft != null && ` · ${secondsLeft} s`}
+              </span>
+            </div>
+          )}
+
+          {state === 'approved' && (
+            <div className="flex items-center gap-2 rounded-full bg-success/10 px-3.5 py-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-success" />
+              <span className="text-[9.5px] font-bold uppercase tracking-[0.6px] text-success">
+                redirecionando…
+              </span>
+            </div>
+          )}
+
+          {/* CTAs · variam por estado · agora colados no bloco central
+              em vez de empurrados ao bottom (V20 canon). */}
+          {state === 'waiting' && (
+            <PillButton
+              variant="outline"
+              onClick={() => router.back()}
+              className="mt-7"
+            >
+              Cancelar pedido
+            </PillButton>
+          )}
+
+          {(state === 'rejected' || state === 'expired') && (
+            <div className="mt-7 flex w-full flex-col gap-2.5">
+              <PillButton
+                variant="filled"
+                fullWidth
+                onClick={openCallWaiterSheet}
+              >
+                Chamar recepcionista
+              </PillButton>
+              {retryEnabled && (
+                <PillButton
+                  variant="outline"
+                  fullWidth
+                  onClick={() => window.location.reload()}
+                >
+                  Tentar de novo
+                </PillButton>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </main>
   );

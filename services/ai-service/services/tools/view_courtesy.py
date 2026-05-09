@@ -21,12 +21,16 @@ from .types import ToolContext, ToolResult
 def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     # Intentionally no api_client call here — endpoint doesn't exist yet.
     # Returning a friendly fallback keeps the LLM from looping on 404s.
+    # Round 4 §C-NEW-3 — chip canônico em vez do legado `fallbackChip`.
     return ToolResult(
         message="Não consegui consultar suas cortesias agora. Quer que eu chame o garçom pra confirmar?",
+        chips=[
+            {"id": "courtesy-call-waiter", "label": "Chamar garçom", "action": "send", "payload": "chamar o garçom"},
+            {"id": "courtesy-view-order", "label": "Ver pedido", "action": "send", "payload": "ver meu pedido"},
+        ],
         action_payload={
             "status": "not_implemented",
             "tool": "view_courtesy",
-            # Hint to FE: render a single chip routing to call_waiter.
             "fallbackChip": "chamar garçom",
         },
     )

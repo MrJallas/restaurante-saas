@@ -29,11 +29,10 @@ export { QRPattern } from './QRPattern';
 export { Row } from './Row';
 export { SoftInput } from './SoftInput';
 
-// New primitives — Phase 3 (C1). ContextualInputExpand removido em
-// 2026-05-09 (round 3 Cat 13 dead code cleanup) — nunca foi importado
-// fora do próprio arquivo. Chips com action='expand' agora caem no
-// fallback `send` do chat page até decidirmos se a feature volta.
+// Chips com action='expand' caem no fallback `send` do chat page (não há
+// mais primitivo dedicado pra "expand").
 export { AssistantBlock, AssistantText, SuggestionChipRow } from './AssistantBlock';
+export { CallWaiterSheet } from './CallWaiterSheet';
 export { ContinuationHome } from './ContinuationHome';
 export { ManagerBubble } from './ManagerBubble';
 export type { ManagerChipActionKind } from './ManagerBubble';

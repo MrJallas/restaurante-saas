@@ -91,9 +91,22 @@ BEGIN
   END IF;
 END$$;
 
-ALTER TABLE table_merge_cooldowns
-  ADD CONSTRAINT table_merge_cooldowns_directional_unique
-  UNIQUE (source_table_session_id, target_table_session_id);
+-- Idempotent constraint creation: ADD CONSTRAINT crasha se já existe.
+-- Round 4 §C-NEW-1 fix: round 3 aplicou esta migration manualmente em
+-- restaurant_dev então o constraint pode existir antes da runner ser
+-- invocada (e o tracker `__migrations__` ainda não conhecer 037).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'table_merge_cooldowns_directional_unique'
+       AND conrelid = (current_schema() || '.table_merge_cooldowns')::regclass
+  ) THEN
+    EXECUTE 'ALTER TABLE table_merge_cooldowns
+      ADD CONSTRAINT table_merge_cooldowns_directional_unique
+      UNIQUE (source_table_session_id, target_table_session_id)';
+  END IF;
+END$$;
 
 CREATE INDEX IF NOT EXISTS idx_table_merge_cooldowns_directional
   ON table_merge_cooldowns(source_table_session_id, target_table_session_id, cooldown_expires_at);

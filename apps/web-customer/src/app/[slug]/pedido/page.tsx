@@ -6,6 +6,7 @@ import { apiGet } from '../../../lib/api';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
+import { useUIState } from '../../../providers/UIStateProvider';
 import { useTableSocket } from '../../../hooks/useTableSocket';
 import { AppShell } from '../../../components/layout/AppShell';
 import { PillButton } from '../../../components/ui/PillButton';
@@ -65,6 +66,7 @@ export default function PedidoPage() {
   const params = useParams();
   const router = useRouter();
   const { push } = useNav();
+  const { openCallWaiterSheet } = useUIState();
   const { tableLabel, sessionId } = useSession();
   const slug = params.slug as string;
 
@@ -255,7 +257,7 @@ export default function PedidoPage() {
         </div>
 
         <div className="flex shrink-0 gap-2.5 px-[22px] pb-safe pb-6 pt-2.5">
-          <PillButton onClick={() => push(`/${slug}/garcom/chamar`)} className="flex-1">
+          <PillButton onClick={openCallWaiterSheet} className="flex-1">
             Garçom
           </PillButton>
           <PillButton

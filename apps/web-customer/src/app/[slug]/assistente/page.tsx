@@ -13,6 +13,9 @@ import { Bubble } from '../../../components/ui/Bubble';
 import { SoftInput } from '../../../components/ui/SoftInput';
 import { ToolCallIndicator } from '../../../components/ui/ToolCallIndicator';
 import { SuggestionChip } from '../../../components/ui/SuggestionChip';
+import { PillButton } from '../../../components/ui/PillButton';
+import { HomeHero } from '../../../components/home/HomeHero';
+import { useUIState } from '../../../providers/UIStateProvider';
 import {
   OverlaySalonMap,
   type SalonTable,
@@ -235,6 +238,7 @@ export default function AssistentePage() {
   const searchParams = useSearchParams();
   const session = useSession();
   const { push } = useNav();
+  const { openCallWaiterSheet } = useUIState();
   const { addItem } = useDraftOrder();
   const router = useRouter();
   const slug = params.slug as string;
@@ -268,6 +272,14 @@ export default function AssistentePage() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(!!prefill);
+  // Round 4 §C-NEW-8 — `/assistente` agora abre numa "landing" tipo Mesa
+  // Home (eyebrow ASSISTENTE + greeting da continuation API + chips +
+  // input). Bubbles de chat só aparecem quando o customer envia a 1ª
+  // mensagem nesta sessão. Voltar pra `/assistente` (ex.: vindo de
+  // /cardapio) recomeça em landing — histórico completo fica em
+  // `/chat-history`. Com prefill, já entra direto em chat (skip landing).
+  const [chatStarted, setChatStarted] = useState<boolean>(!!prefill);
+  const [landingGreeting, setLandingGreeting] = useState<string | null>(null);
   // suggestions agora carrega chips canônicos (ChipCanon) em vez de só
   // strings — herdamos do backend `res.chips` quando uma tool dispatched
   // emitiu chips reativos. Fallback é DEFAULT_SUGGESTIONS (idle state).
@@ -280,37 +292,37 @@ export default function AssistentePage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoSentRef = useRef(false);
 
+  // Round 4 §C-NEW-8 — em vez de carregar histórico inteiro como bubbles,
+  // /assistente abre num "landing" com greeting da continuation API
+  // (mesmo endpoint que a Mesa Home consome). Histórico completo fica em
+  // `/chat-history` (rota dedicada). Quando customer envia 1ª mensagem,
+  // o greeting vira a 1ª bubble do assistant + vai a user msg + resposta.
   useEffect(() => {
-    // Quando ha prefill, o usuario acabou de digitar na home; nao sobrescrever
-    // o bubble inicial com historico — o envio do prefill ja vai anexar a
-    // resposta da IA abaixo dele.
-    if (!slug || prefill) return;
+    if (!slug || prefill) return; // prefill: já vai em chat mode
     const load = async () => {
       try {
-        // Passa customerId pra que o backend filtre por proprio cliente —
-        // sem isso, cliente B na mesma mesa via TODA a conversa do
-        // cliente A (LGPD/privacidade).
-        const url = session.customerId
-          ? `/${slug}/assistant/history?customerId=${session.customerId}`
-          : `/${slug}/assistant/history`;
-        const res = await apiGet<{ messages: { role: string; content: string }[] }>(
-          url,
-        );
-        if (res.messages.length > 0) {
-          setMessages(
-            res.messages.map((m, i) => ({
-              id: `history-${i}`,
-              role: m.role === 'user' ? 'user' : 'ai',
-              content: m.content,
-            })),
-          );
+        const qs = new URLSearchParams({
+          tenantId: slug,
+          customerId: session.customerId ?? '',
+          isReturning: String(session.isReturning ?? false),
+          customerName: session.customerName ?? '',
+        });
+        const res = await apiGet<{
+          rendered: string | null;
+          chips?: ChipCanon[];
+        }>(`/${slug}/continuation?${qs.toString()}`);
+        if (res?.rendered) {
+          setLandingGreeting(res.rendered);
+          if (res.chips && res.chips.length > 0) {
+            setSuggestions(res.chips as ChipCanon[]);
+          }
         }
       } catch {
-        /* ignore */
+        /* ignore — fallback é greeting genérico no render */
       }
     };
     load();
-  }, [slug, prefill]);
+  }, [slug, prefill, session.customerId, session.isReturning, session.customerName]);
 
   useEffect(() => {
     // Nas primeiras mensagens o "smooth" faz o chat animar de baixo pra cima
@@ -471,6 +483,23 @@ export default function AssistentePage() {
   const sendMessage = async (text: string, options?: { skipUserBubble?: boolean }) => {
     const trimmed = text.trim();
     if (!trimmed) return;
+
+    // Round 4 §C-NEW-8: 1ª mensagem do customer triggera transição
+    // landing→chat. O greeting que estava na landing vira o 1º AI bubble,
+    // PRECEDENDO o user bubble — assim o usuário tem contexto visual de
+    // "o assistant disse X, eu respondi Y".
+    if (!chatStarted) {
+      setChatStarted(true);
+      if (landingGreeting && !options?.skipUserBubble) {
+        setMessages([
+          {
+            id: `greeting-${Date.now()}`,
+            role: 'ai',
+            content: landingGreeting,
+          },
+        ]);
+      }
+    }
 
     if (!options?.skipUserBubble) {
       const userMsg: ChatMessage = {
@@ -748,14 +777,32 @@ export default function AssistentePage() {
     >
       <div className="flex flex-1 flex-col">
         <div className="gpu-layer flex flex-1 flex-col gap-3.5 overflow-auto px-[22px] pb-4 pt-3">
-          {/* Round 3 Cat 4 (V20 chat): eyebrow inicial · canvas v20
-              mostra "VOCÊ ENTROU AGORA · HH:MM" antes da primeira bubble.
-              Aparece somente quando ainda não há messages (idle/empty). */}
-          {messages.length === 0 && (
-            <div className="self-center pb-1 pt-2">
-              <span className="font-mono text-[10px] uppercase tracking-[1.5px] text-faint">
-                VOCÊ ENTROU AGORA · {new Date().toTimeString().slice(0, 5)}
-              </span>
+          {/* Round 4 §C-NEW-8: landing view (idle) · 2 PillButtons grandes
+              acima do greeting do LLM, alinhado ao layout da Mesa Home.
+              Ao 1º send do customer, chatStarted vira true e essa view
+              é substituída pelos bubbles de chat (que pre-pendam o
+              greeting como 1º AI message). */}
+          {!chatStarted && (
+            <div
+              data-testid="assistente-landing"
+              className="flex flex-1 flex-col justify-center gap-7"
+            >
+              <div className="flex flex-col items-center gap-3">
+                <PillButton onClick={openCallWaiterSheet}>
+                  Chamar garçom
+                </PillButton>
+                <PillButton onClick={() => push(`/${slug}/cardapio`)}>
+                  Ver cardápio
+                </PillButton>
+              </div>
+              <HomeHero
+                kicker="Assistente"
+                animate={false}
+                message={
+                  landingGreeting ||
+                  `Olá${session.customerName ? `, ${session.customerName.split(' ')[0]}` : ''}! Posso ajudar com sugestões, ingredientes, pedido e pagamento.`
+                }
+              />
             </div>
           )}
           {messages.map((msg) => {
@@ -957,10 +1004,8 @@ export default function AssistentePage() {
                       const dest = txt.startsWith('/') ? txt : `/${slug}/${txt}`;
                       router.push(dest);
                     } else if (c.action === 'expand') {
-                      // ContextualInputExpand não tá mais em uso (round 3
-                      // dead-code cleanup); fallback envia o payload direto
-                      // como mensagem pra que send_complaint/send_message
-                      // ainda funcionem.
+                      // 'expand' cai no fallback `send` — sem primitivo
+                      // dedicado, o payload do chip vira mensagem direta.
                       await sendMessage(txt);
                     } else {
                       // 'send' default
