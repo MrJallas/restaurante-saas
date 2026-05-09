@@ -9,6 +9,7 @@ import {
   deleteAllThreads,
 } from '../../lib/api/chat-history';
 import { useSession } from '../../hooks/useSession';
+import { useRequireCustomerId } from '../../hooks/useRequireCustomerId';
 import { AppShell } from '../../components/layout/AppShell';
 import { PillButton } from '../../components/ui/PillButton';
 import { BottomSheet } from '../../components/ui/BottomSheet';
@@ -72,6 +73,10 @@ function formatThreadDateTime(iso: string): string {
 export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryProps) {
   const session = useSession();
   const router = useRouter();
+  // P0 guard: rotas que dependem de customerId nao podem mais mostrar
+  // estado passivo "faca login na proxima visita" — bouncamos pro
+  // /identify pra dar uma CTA real ao usuario.
+  const ready = useRequireCustomerId(slug);
   const [threads, setThreads] = useState<ChatThreadDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -158,6 +163,10 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
     }
   };
 
+  // Guard: o hook ja redirecionou pra /identify; nao renderiza nada
+  // ate o customerId estar resolvido (evita flash do empty-state passivo).
+  if (!ready) return null;
+
   return (
     <AppShell
       slug={slug}
@@ -180,13 +189,7 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
           </div>
         )}
 
-        {!session.customerId && !loading && (
-          <div className="rounded-[14px] border border-border-soft bg-surface px-4 py-6 text-center text-[14px] text-mute">
-            Faça login na próxima visita pra ver seu histórico.
-          </div>
-        )}
-
-        {session.customerId && !loading && threads.length === 0 && (
+        {!loading && threads.length === 0 && (
           <div className="rounded-[14px] border border-border-soft bg-surface px-4 py-10 text-center">
             <div className="mb-2 text-[15px] font-medium text-ink">
               Nenhuma conversa por aqui ainda

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ApiRequestError } from '../../lib/api';
 import { submitOrderRating } from '../../lib/api/feedback';
 import { useSession } from '../../hooks/useSession';
+import { useRequireCustomerId } from '../../hooks/useRequireCustomerId';
 import { AppShell } from '../../components/layout/AppShell';
 import { PillButton } from '../../components/ui/PillButton';
 
@@ -36,6 +37,9 @@ export function ScreenCustomerOrderRating({
 }: ScreenCustomerOrderRatingProps) {
   const session = useSession();
   const router = useRouter();
+  // P0: rating depende de customerId. Push notification cold-start
+  // pode chegar aqui sem customerId; o hook bouncha pro /identify.
+  const ready = useRequireCustomerId(slug);
   const [rating, setRating] = useState<number>(0);
   const [hover, setHover] = useState<number>(0);
   const [comment, setComment] = useState('');
@@ -99,6 +103,8 @@ export function ScreenCustomerOrderRating({
   };
 
   const stars = useMemo(() => [1, 2, 3, 4, 5], []);
+
+  if (!ready) return null;
 
   if (done) {
     return (

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ApiRequestError } from '../../lib/api';
 import { createComplaint, cacheComplaint } from '../../lib/api/feedback';
 import { useSession } from '../../hooks/useSession';
+import { useRequireCustomerId } from '../../hooks/useRequireCustomerId';
 import { AppShell } from '../../components/layout/AppShell';
 import { PillButton } from '../../components/ui/PillButton';
 import type { ComplaintProblemType } from '@restaurant/shared-types';
@@ -41,6 +42,10 @@ export function ScreenCustomerComplaintCompose({
 }: ScreenCustomerComplaintComposeProps) {
   const session = useSession();
   const router = useRouter();
+  // P0: rota depende de customerId para criar a complaint. Sem ele,
+  // bouncamos pro /identify em vez de deixar o submit-button disabled
+  // sem CTA visivel.
+  const ready = useRequireCustomerId(slug);
   const [problemType, setProblemType] = useState<ComplaintProblemType | null>(
     null,
   );
@@ -89,6 +94,8 @@ export function ScreenCustomerComplaintCompose({
       setSubmitting(false);
     }
   };
+
+  if (!ready) return null;
 
   return (
     <AppShell

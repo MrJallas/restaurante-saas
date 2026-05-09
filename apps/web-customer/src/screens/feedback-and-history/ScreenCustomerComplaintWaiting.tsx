@@ -10,6 +10,7 @@ import {
   type ComplaintRecord,
 } from '../../lib/api/feedback';
 import { useSession } from '../../hooks/useSession';
+import { useRequireCustomerId } from '../../hooks/useRequireCustomerId';
 import { useComplaintEvents } from '../../hooks/useComplaintEvents';
 import { AppShell } from '../../components/layout/AppShell';
 import { PillButton } from '../../components/ui/PillButton';
@@ -71,6 +72,9 @@ export function ScreenCustomerComplaintWaiting({
 }: ScreenCustomerComplaintWaitingProps) {
   const session = useSession();
   const router = useRouter();
+  // P0: openOthers() depende de customerId. Sem ele, bouncamos pro
+  // /identify em vez de manter o usuario travado em "Sua reclamacao".
+  const ready = useRequireCustomerId(slug);
   const [complaint, setComplaint] = useState<ComplaintRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showOthers, setShowOthers] = useState(false);
@@ -175,6 +179,8 @@ export function ScreenCustomerComplaintWaiting({
     }
     return list;
   })();
+
+  if (!ready) return null;
 
   return (
     <AppShell
