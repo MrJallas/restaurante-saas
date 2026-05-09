@@ -1,10 +1,13 @@
 # Prompt 2 · Validação cross-simulator · Jornada completa + bug-hunt
 
-> **Como usar:** rodar **DEPOIS** que o Prompt 1 mergou os 6 PRs de fix.
-> Pré-condição absoluta: stack inteira viva e estável. Cola num chat novo
-> de Claude Code dentro do repo. O orquestrador dispara 14 subagentes em
-> paralelo via Agent tool (`run_in_background=true`), cada um operando 1-4
-> simuladores ao mesmo tempo via xcodebuildmcp + Playwright + queries DB.
+> **Versão**: v3.0 (2026-05-09 · pós round 3 fixes do Cat 1-15).
+> **Como usar:** rodar **DEPOIS** que o Prompt 1 mergou os 6 PRs de fix
+> *e* o PR consolidado da round 3 (este). Pré-condição absoluta: stack
+> inteira viva e estável. Cola num chat novo de Claude Code dentro do
+> repo. O orquestrador dispara **18 subagentes** (14 originais A-N + 4
+> novos O/P/Q/R) em paralelo via Agent tool (`run_in_background=true`),
+> cada um operando 1-4 simuladores ao mesmo tempo via xcodebuildmcp +
+> Playwright + queries DB.
 
 ---
 
@@ -47,7 +50,55 @@ docker exec restaurant-postgres psql -U postgres -d restaurant_dev \
   -c "SELECT COUNT(*) FROM tables WHERE tenant_slug='restaurant_dev';"   # ≥ 12
 docker exec restaurant-postgres psql -U postgres -d restaurant_dev \
   -c "SELECT COUNT(*) FROM dishes WHERE tenant_slug='restaurant_dev';"   # ≥ 20
+
+# 8. Pipeline LLM→tools end-to-end smoke (round 3 v3.0)
+# Valida fix do Cat 1: API_BASE_URL setado, normalize hoist chips,
+# contextual_chips persistido, FE ready pra renderizar.
+PG_T() { docker exec restaurant-postgres psql -U postgres -d restaurant_saas \
+         -t -A -c "$1" 2>/dev/null; }
+PEDRO_ID=$(PG_T "SELECT id FROM restaurant_dev.customers WHERE cpf='55588811194'")
+M05_ID=$(PG_T "SELECT id FROM restaurant_dev.tables WHERE code='M05'")
+PG_T "UPDATE restaurant_dev.table_sessions SET status='closed' WHERE table_id='$M05_ID' AND status IN ('open','active')" > /dev/null
+SECRET=$(PG_T "SELECT qr_hmac_secret FROM restaurant_dev.tables WHERE code='M05'")
+TS_MS=$(python3 -c 'import time; print(int(time.time() * 1000))')
+SIG=$(printf "M05:%s" "$TS_MS" | openssl dgst -sha256 -hmac "$SECRET" -binary | xxd -p -c 256)
+INIT=$(curl -s -X POST "http://localhost:3001/api/restaurant_dev/session/init" \
+  -H "Content-Type: application/json" -c /tmp/p.txt \
+  -d "{\"tableCode\":\"M05\",\"timestamp\":\"$TS_MS\",\"hmacSignature\":\"$SIG\"}")
+SESSION_ID=$(echo "$INIT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('sessionId',''))")
+curl -s -X POST "http://localhost:3001/api/restaurant_dev/customer/welcome" \
+  -H "Content-Type: application/json" -b /tmp/p.txt -c /tmp/p.txt \
+  -d '{"name":"Pedro","cpf":"55588811194"}' > /dev/null
+sleep 1
+RESP=$(curl -s -X POST "http://localhost:3001/api/restaurant_dev/assistant/message" \
+  -H "Content-Type: application/json" -b /tmp/p.txt --max-time 60 \
+  -d "{\"message\":\"mostra o cardapio\",\"customerId\":\"$PEDRO_ID\"}")
+echo "$RESP" | python3 -c "
+import json,sys
+r=json.load(sys.stdin)
+tc=r.get('toolCalls',[])
+print('tools_dispatched:', len(tc))
+print('first_tool:', tc[0].get('name') if tc else None)
+print('chips_count:', len(tc[0].get('chips',[])) if tc else 0)
+print('chips_in_response:', len(r.get('chips') or []))
+"
+# Esperado:
+#   tools_dispatched: ≥ 1
+#   first_tool: view_menu
+#   chips_count: ≥ 1   (hoisted no normalizeToolCalls)
+#   chips_in_response: ≥ 1   (aggregateChipsFromTools)
+PG_T "SELECT contextual_chips IS NOT NULL FROM restaurant_dev.assistant_messages \
+      WHERE customer_id='$PEDRO_ID' ORDER BY created_at DESC LIMIT 1"
+# Esperado: t (true)
 ```
+
+Se algum dos 3 esperados acima falhar (em particular tools_dispatched=0
+ou contextual_chips=NULL), **PARA** — Cat 1 não foi fixado de verdade
+neste deploy. Conferir:
+- `docker exec restaurant-ai env | grep API_BASE_URL` (deve mostrar `http://api:3001/api/restaurant_dev`)
+- `docker logs restaurant-ai --tail 50 | grep tool_calls`
+- `apps/api/src/modules/assistant/assistant.service.ts:normalizeToolCalls`
+  hoisted `chips` field
 
 Se algum check falhar, **PARA** e me avisa.
 
@@ -190,8 +241,12 @@ subagentes A-D. Os outros (E-N) testam interações multi-papel + edge cases.
 
 ### Subagent B · Order lifecycle + KDS observation (4 tools de pedido)
 
-> **Sims**: 2. Customer iOS (sim 1, Carla CPF 33399922200) + Cozinha Playwright web em `/cozinha`.
-> **Tools cobertas**: `add_to_order`, `view_order`, `modify_order_item`, `remove_order_item`.
+> **Sims**: 2. Customer iOS (sim 1, Carla CPF 33366699957) + Cozinha Playwright web em `/cozinha`.
+> **Tools cobertas (round 3 canon)**: `add_to_order`, `view_order`, `change_order` (era `modify_order_item`), `remove_from_cart` ou `cancel_order` (era `remove_order_item`).
+> **Naming canon (atualizado 2026-05-09)**: spec antiga referenciava
+> `modify_order_item` / `remove_order_item` — esses nomes não existem
+> no registry. Use os canônicos: `change_order(itemId, qty)` e
+> `remove_from_cart(itemId)` (ou `cancel_order` pra cancelar pedido inteiro).
 
 **Pré-condições**: Mesa 7 liberada. Carla cadastrada.
 
@@ -211,11 +266,13 @@ subagentes A-D. Os outros (E-N) testam interações multi-papel + edge cases.
 7. Customer digita "adiciona um pão de alho também". → IA dispara `add_to_order(item='pão de alho', qty=1)`. Bubble confirma + chips.
 8. **Cozinha**: card da mesa 7 atualiza → 2 items.
 9. Customer digita "vê meu pedido". → `view_order` (silent — abre overlay /pedido OR renderiza cards).
-10. Customer digita "muda o risoto pra 2 unidades". → `modify_order_item(item_id='X', modifiers={qty:2})`.
+10. Customer digita "muda o risoto pra 2 unidades". → `change_order(itemId='X', qty=2)`.
     - **Validar Postgres**: `order_items` row updated, `qty=2`, `subtotal_cents=2*X`.
+    - **Validar tool name canon**: `assistant_messages.tool_calls[0].name='change_order'` (não `modify_order_item`).
 11. **Cozinha**: vê "2x Risoto de cogumelos" (atualização ao vivo OR no polling 5s).
-12. Customer digita "tira o pão de alho". → `remove_order_item(item_id='Y')`.
+12. Customer digita "tira o pão de alho". → `remove_from_cart(itemId='Y')`.
     - **Validar Postgres**: row deleted OR `is_deleted=true`.
+    - **Validar tool name canon**: `tool_calls[0].name='remove_from_cart'`.
 13. **Cozinha**: card mostra só risoto.
 14. **Cozinha**: tap "Confirmar" no card → status `received → preparing`. **Validar**:
     ```sql
@@ -227,8 +284,9 @@ subagentes A-D. Os outros (E-N) testam interações multi-papel + edge cases.
 17. **Customer**: digita "como tá meu pedido?". → IA referencia status (`view_order` silent + bubble dizendo "tá pronto" OR "saindo da cozinha").
     - **Contextualização test**: IA sabe que pedido tá `ready`? Se disser "ainda preparando" mas DB mostra `ready`, é P1.
 18. Customer digita "qual o total?". → IA responde com valor de `total_cents` formatado em BRL (R$ XX,XX).
-19. **Validar Mongo chat persistence**: `docker exec restaurant-mongo mongosh restaurant_chat --eval 'db.chat_messages.find({customer_id:"Carla"}).count()'` ≥ 14 docs.
-20. **Validar tool_calls**: `assistant_messages` tem 4 distintas: `add_to_order` (×2), `view_order`, `modify_order_item`, `remove_order_item`.
+19. **Validar Mongo chat persistence**: `docker exec restaurant-mongo mongosh restaurant_chat --eval 'db.chat_messages.find({customerId:"Carla"}).count()'` ≥ 14 docs. Field name agora é `customerId` (camelCase) — round 3 Cat 11 fix wira `chat_history.appendTurn` no AssistantService.
+20. **Validar tool_calls**: `assistant_messages` tem 4 distintas: `add_to_order` (×2), `view_order`, `change_order`, `remove_from_cart`.
+21. **Tool naming canon (round 3)** — após `add_to_order` ok, dispatch `change_order(itemId=X, qty=2)` (não `modify_order_item`!). Validar `tool_calls[0].name='change_order'`. Mesma coisa pra `remove_from_cart` (era `remove_order_item`).
 
 **Bugs a procurar**:
 - Cozinha não recebe modify (polling stale)
@@ -284,7 +342,9 @@ subagentes A-D. Os outros (E-N) testam interações multi-papel + edge cases.
 ### Subagent D · Payment 3 modes (5 tools)
 
 > **Sims**: 2. Customer iOS (sim 1, Ana) + Customer iOS sim 2 (Bruno, depois entra na mesa).
-> **Tools cobertas**: `request_bill`, `pay_full`, `pay_individual`, `split_bill`, `open_payment_screen`.
+> **Tools cobertas (round 3 canon)**: `request_check` (era `request_bill`), `pay_full`, `pay_individual`, `split_bill`, `open_payment_screen`.
+> **Naming canon (atualizado 2026-05-09)**: spec antiga referenciava
+> `request_bill` — o nome real no registry é `request_check`. Use o canônico.
 
 **Pré-condições**: Mesa 22 liberada. Ana e Bruno cadastrados.
 
@@ -919,5 +979,177 @@ Após todos 14 subagentes terminarem:
 | **Infrastructure** | L | 9 push lockscreens |
 | **Resilience** | M | 12 sub-cenários de edge/recovery |
 | **Smoke** | N | 5 telas Eu novas + UI smoke |
+| **Regression r3** | O | Re-validar 15 categorias do round 3 |
+| **V20 chat** | P | Redesign customer chat + screenshots |
+| **Continuation** | Q | 5 kinds × 2 segments (regular/vip) |
+| **Dead code** | R | Confirmar limpeza dos componentes órfãos |
 
-**Total: 23 tools cobertas + jornada completa (QR scan → LGPD) + 9 push lockscreens + 12 edge cases + 5 telas Eu.**
+**Total: 23 tools cobertas + jornada completa (QR scan → LGPD) + 9 push lockscreens + 12 edge cases + 5 telas Eu + 4 subagents de regression r3.**
+
+---
+
+# REGRESSION SUITE · Subagentes O/P/Q/R (round 3 v3.0)
+
+Após os subagentes A-N existentes, os 4 abaixo focam exclusivamente em
+re-validar o que foi corrigido na round 3 (Cat 1-15 do prompt de fix).
+
+---
+
+### Subagent O · Regression suite (pós-fixes round 3)
+
+> **Sims**: 1 (Customer iOS, Pedro CPF 55588811194 já cadastrado, Mesa M05).
+> Re-validar TODOS os fixes Categoria 1-15 do prompt de fix.
+
+**Casos de teste** (cada um precisa passar pra subagent passar):
+
+| # | Categoria | Caso | Aceitação |
+|---|---|---|---|
+| O.1 | C1 (tool dispatch) | 5 mutações em sequência (`mostra menu`, `1 risoto`, `pode chamar garçom`, `quero pagar`, `apaga conversa`) | ≥ 4/5 com `tool_calls` populated |
+| O.2 | C1 (chips) | mesma sessão acima | `assistant_messages.contextual_chips` not null em ≥ 4/5 turnos |
+| O.3 | C2 (KDS) | criar order via API → ver em `/cozinha` | Aparece em < 5s, sem hard-refresh |
+| O.4 | C4 (chat V20) | screenshots dos 4 estados (welcome novo / já-na-mesa / turn com chips / multi-step vinho) | Bate com `docs/design-canvas/handoff/cliente/cliente-journey-v20.jsx`: header com nome do host, eyebrow `··· USANDO X ···`, system join notice, placeholder contextual |
+| O.5 | C5 (continuation) | abrir home pós (a) viu menu (b) chamou garçom (c) abriu pedido (d) pagou (e) voltou sem ação | 5 screenshots distintos com texto + chips canon retornados pelo `GET /continuation?kind=…` |
+| O.6 | C6 (cooldown unidirecional) | A→B reject + cooldown ativo + B→A retry | A→B retry: 429. B→A: 201. (cooldown não bloqueia direção reversa) |
+| O.7 | C7 (migration 035→036) | `\d+ table_merge_requests` no schema restaurant_dev | mostra colunas `approved_by_a_at` + `approved_by_b_at` |
+| O.8 | C8 (staff override) | manager `POST /staff/table-merges/force` com mesa em cooldown | merge approved + `escalation_chains.steps` registra `kind=staff_override` |
+| O.9 | C9 (classifier) | `qual o horário?` enviado por customer | classifier.allowed=true, was_blocked=false |
+| O.10 | C10 (customer_id) | qualquer mensagem do chat customer com bundle | `assistant_messages.customer_id IS NOT NULL` |
+| O.11 | C11 (mongo) | enviar 5 mensagens com customerId | `db.chat_messages.countDocuments({customerId})` ≥ 10 |
+| O.12 | C12 (qty validation) | `1 risoto` → `add_to_order(qty=1, itemId=<UUID>)` | qty=1 + itemId é UUID v4 |
+| O.13 | C13 (dead code) | `git diff --stat HEAD~..HEAD` | ContextualInputExpand.tsx + MergedTableTile.tsx removidos do tree |
+| O.14a | C14 (cozinha overflow) | screenshot de `/cozinha` em viewport 430×932 | User-button visível dentro do viewport (header tem flex-wrap) |
+| O.14b | C14 (bottom-nav name) | navegar `/manager?name=Caleb` → tap engrenagem | URL final tem `?name=Caleb` preserved |
+| O.15 | C15 (pix leak) | `POST /payments {method:'card'}` | `pixQrCode === null` no response, `pix_qr_code IS NULL` no DB |
+
+**Report**: `qa-reports/e2e-cross-O-regression-r3.md`
+
+**Bugs a procurar (regression)**:
+- Algum dos 15 casos volta a falhar como na round 2
+- Side-effects inesperados (ex: chat customer quebra ao usar SuggestionChip)
+- Migration 035→036 rename causa downgrade em outros tenants
+
+---
+
+### Subagent P · UI redesign customer chat V20
+
+> **Sims**: 1 (Customer iOS sim 1, Pedro Mesa M05).
+> Cobre Categoria 4 do round 3 — port do canvas v20 pro chat customer.
+
+**Spec source-of-truth**:
+- `docs/design-canvas/cliente-journey-v20.html` (renderizado do .jsx)
+- `docs/design-canvas/handoff/cliente/cliente-journey-v20.jsx`
+- 4 screenshots-alvo definidos no canvas:
+  - 07 welcome no chat do cliente novo · iOS
+  - 08 chat dos já-na-mesa
+  - 04 chat turn com chips após `add_to_order`
+  - 03 multi-step (e.g. "queria 1 vinho tinto" → "Tinto, branco ou rosé?")
+
+**Sequência (5 passos)**:
+
+1. Pedro entra em M05 (auto-recognize), abre `/restaurant_dev/assistente`. **Screenshot 1** (welcome novo). Validar:
+   - Header: `Trattoria Luna · Mesa 14 · com Caleb` (label dinâmica via `session.tableLabel`)
+   - Eyebrow `VOCÊ ENTROU AGORA · HH:MM` antes da primeira interação
+   - Placeholder do input: `Pergunte alguma coisa...`
+2. Pedro digita "1 risoto". → IA chama `add_to_order` (validar tool_calls populated). **Screenshot 2** (turn com chips). Validar:
+   - Eyebrow `··· USANDO ADD_TO_ORDER ···` antes do bubble
+   - Chips: "Ver pedido / Pedir mais / Pedir conta" (canônicos do tool)
+   - Bubble do customer: "Você · agora" timestamp
+3. Após `add_to_order`, Pedro digita "queria 1 vinho tinto". IA pergunta categoria. **Screenshot 3** (multi-step). Validar chips Tinto/Branco/Rosé/Recomende você.
+4. Late-arrival flow: Marina escaneia M05 (sim 2 hipotético OU DB direct). Aprova. Volta pro chat do Pedro: **screenshot 4** (já-na-mesa) com system join notice tracejado: `MESA 14 · AGORA / Marina entrou na mesa de vocês.`
+5. Após `send_complaint` ou `send_message_to_manager`: placeholder muda pra `Mensagem para a casa`. Confirmar via screenshot.
+
+**Aceitação**: 4 screenshots Playwright (393×852) bate com o canvas v20 (eyebrows, system notice, tool eyebrow, placeholder contextual presentes).
+
+**Bugs a procurar**:
+- Eyebrow não aparece (lastToolName state não atualizado)
+- System join notice não dispara (WS event missing)
+- Placeholder não muda contextualmente
+
+**Report**: `qa-reports/e2e-cross-P-chat-v20.md` + screenshots em `qa-reports/screenshots/P/`.
+
+---
+
+### Subagent Q · Continuation feature 5 kinds × 2 segments
+
+> **Sims**: 1 (Customer iOS sim 1).
+> Cobre Categoria 5 do round 3 — 5 novos kinds + segment regular/vip.
+
+**Spec source-of-truth**:
+- `services/ai-service/services/continuation.py` DEFAULTS dict
+- Canvas v20 prints: `viu cardápio · iOS`, `chamou garçom · iOS`, `abriu pedido · iOS`, `pagou · iOS`, `voltou sem ação · iOS`
+
+**Sequência (10 cenários · 5 kinds × 2 segments)**:
+
+| # | Customer | kind | Setup |
+|---|---|---|---|
+| Q.1 | Pedro (regular, returning) | `viu_menu` | sessão M05 com `assistant_messages` recente que tenha tool_calls @> view_menu |
+| Q.2 | Ana (VIP, returning) | `viu_menu` | mesma situação · tom mais quente esperado |
+| Q.3 | Pedro | `chamou_garcom` | `waiter_calls` row recente status=pending |
+| Q.4 | Ana (VIP) | `chamou_garcom` | idem |
+| Q.5 | Pedro | `abriu_pedido` | `orders` aberto status=preparing · primary_cta "Acompanhar pedido" |
+| Q.6 | Ana (VIP) | `abriu_pedido` | idem |
+| Q.7 | Pedro | `pagou` | `payments` recente status=confirmed (< 10min) |
+| Q.8 | Ana (VIP) | `pagou` | idem |
+| Q.9 | Pedro | `voltou_sem_acao` | sessão reabriu sem nenhum evento recente |
+| Q.10 | Ana (VIP) | `voltou_sem_acao` | idem |
+
+**Aceitação**: pra cada cenário:
+- `GET /api/restaurant_dev/continuation?kind=<kind>&isReturning=true&isVip=<bool>&customerName=<name>`
+  retorna `rendered`, `chips`, `subtitle`, `primary_cta` opcional
+- Screenshot da home `/restaurant_dev` mostra `ContinuationHome` com texto correto + chips canon
+- VIP segment usa tom mais caloroso (validar prosa)
+
+**Bugs a procurar**:
+- kind ausente cai pro idle_nudge (default)
+- chips vazios em algum kind
+- primary_cta de `abriu_pedido` não renderiza
+
+**Report**: `qa-reports/e2e-cross-Q-continuation.md` + 10 screenshots.
+
+---
+
+### Subagent R · Dead code audit
+
+> **Sims**: 0 (auditoria local).
+> Cobre Categoria 13 do round 3.
+
+**Sequência (4 verificações)**:
+
+1. **Files removidos**:
+   ```bash
+   test ! -f apps/web-customer/src/components/ui/ContextualInputExpand.tsx
+   test ! -f apps/web-staff/src/components/manager/MergedTableTile.tsx
+   ```
+   ESPERADO: ambos retornam 0 (file não existe).
+
+2. **Imports não quebrados**:
+   ```bash
+   npx tsc --noEmit --project apps/web-customer
+   npx tsc --noEmit --project apps/web-staff
+   ```
+   ESPERADO: 0 errors.
+
+3. **SuggestionChip wirado**:
+   ```bash
+   grep -n "SuggestionChip" apps/web-customer/src/app/[slug]/assistente/page.tsx
+   ```
+   ESPERADO: pelo menos 2 referências (import + uso no map de chips).
+
+4. **ContinuationHome wirado**:
+   ```bash
+   grep -n "ContinuationHome" apps/web-customer/src/app/[slug]/page.tsx
+   ```
+   ESPERADO: 1+ referências (não mais é dead code).
+
+**Report**: `qa-reports/e2e-cross-R-dead-code.md`.
+
+---
+
+### Subagent K · update (round 3)
+
+Substituir Tabela do passo 3 do Subagent K — agora cada tool **DEVE**
+retornar `chips` populated (round 3 Cat 1 / K-9). Se vier vazio, é
+regression. Tools cobertas com chips: `view_menu`, `add_to_order`,
+`view_order`, `pay_full`, `pay_individual`, `split_bill`, `request_check`,
+`call_waiter`, `send_complaint`, `recommend_dish` (já tinha),
+`show_lgpd_notice` (já tinha).

@@ -16,5 +16,10 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     return ToolResult(
         message="Pedi a conta pro garçom — já já chega na sua mesa.",
+        chips=[
+            {"id": "pay_pix", "label": "Pagar com PIX", "action": "send", "payload": "quero pagar com pix"},
+            {"id": "pay_card", "label": "Pagar com cartão", "action": "send", "payload": "quero pagar com cartão"},
+            {"id": "split", "label": "Dividir conta", "action": "send", "payload": "quero dividir a conta"},
+        ],
         action_payload={"checkRequested": True},
     )

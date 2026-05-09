@@ -7,8 +7,26 @@
 // Mobile-first; all interactive elements have aria-label/role.
 
 import type { CSSProperties, ReactNode, MouseEvent } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useG, G_FONT, MONO_FONT } from './tokens';
 import { Icon } from './Icons';
+
+// ─── preserveQuery — anexa a query string atual da rota ao destino ─
+// MBottomNav navega entre /manager, /manager/operacoes, /manager/configuracoes
+// etc. Sem isso, ao pular pra Eu/Configurações, o `?name=Erica%20Gerente`
+// que o login setou se perde e o profile cai no fallback "Renata
+// Albuquerque". Whitelist de keys pra não vazar params irrelevantes.
+const PRESERVED_QUERY_KEYS = new Set(['name', 'staffId', 'role', 'managerId']);
+function appendPreservedQuery(to: string, current: URLSearchParams | null): string {
+  if (!current) return to;
+  const next = new URLSearchParams();
+  for (const [k, v] of current.entries()) {
+    if (PRESERVED_QUERY_KEYS.has(k)) next.set(k, v);
+  }
+  const qs = next.toString();
+  if (!qs) return to;
+  return to.includes('?') ? `${to}&${qs}` : `${to}?${qs}`;
+}
 
 // ─── GIconBtn — circular icon button used in topbars ──────────────
 export function GIconBtn({
@@ -527,12 +545,16 @@ export function MBottomNav({
   alerts?: number;
 }) {
   const C = useG(!!dark);
+  // Lê a query atual pra preservar `?name=…` ao pular entre abas.
+  // useSearchParams retorna null durante o SSR; appendPreservedQuery
+  // tolera null devolvendo o destino sem alteração.
+  const searchParams = useSearchParams();
   const items: { id: ManagerNavId; label: string; icon: (s?: number) => ReactNode; to: string; badge?: number }[] = [
-    { id: 'home', label: 'Painel', icon: Icon.list, to: '/manager' },
-    { id: 'ops', label: 'Operação', icon: Icon.flame, to: '/manager/operacoes', badge: alerts > 0 ? alerts : undefined },
-    { id: 'staff', label: 'Equipe', icon: Icon.user, to: '/manager/equipe' },
-    { id: 'finance', label: 'Financeiro', icon: Icon.receipt, to: '/manager/financeiro' },
-    { id: 'me', label: 'Eu', icon: Icon.settings, to: '/manager/configuracoes' },
+    { id: 'home', label: 'Painel', icon: Icon.list, to: appendPreservedQuery('/manager', searchParams) },
+    { id: 'ops', label: 'Operação', icon: Icon.flame, to: appendPreservedQuery('/manager/operacoes', searchParams), badge: alerts > 0 ? alerts : undefined },
+    { id: 'staff', label: 'Equipe', icon: Icon.user, to: appendPreservedQuery('/manager/equipe', searchParams) },
+    { id: 'finance', label: 'Financeiro', icon: Icon.receipt, to: appendPreservedQuery('/manager/financeiro', searchParams) },
+    { id: 'me', label: 'Eu', icon: Icon.settings, to: appendPreservedQuery('/manager/configuracoes', searchParams) },
   ];
   return (
     <nav

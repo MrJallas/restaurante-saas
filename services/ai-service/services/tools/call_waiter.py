@@ -21,5 +21,10 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     # still gets a normal acknowledgment — spec says zone pause is silent.
     return ToolResult(
         message="Chamei o garçom — vai estar com você logo.",
+        chips=[
+            {"id": "cancel_call", "label": "Cancelar chamado", "action": "send", "payload": "cancela o chamado do garçom"},
+            {"id": "see_menu", "label": "Ver bebidas", "action": "send", "payload": "mostra as bebidas"},
+            {"id": "eta", "label": "Quanto tempo?", "action": "send", "payload": "quanto tempo leva pra alguém vir?"},
+        ],
         action_payload={"waiterCalled": True, "reason": reason},
     )

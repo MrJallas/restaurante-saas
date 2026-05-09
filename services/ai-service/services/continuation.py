@@ -110,6 +110,92 @@ DEFAULTS: dict[str, list[dict]] = {
             "weight": 1.0,
         },
     ],
+    # ─────────────────────────────────────────────────────────────
+    # Round 3 (Cat 5) · 5 novos kinds pra cobrir o canvas v20:
+    # viu_menu, chamou_garcom, abriu_pedido, pagou, voltou_sem_acao.
+    # Cada um tem `chips` canon — FE renderiza via SuggestionChipRow.
+    # ─────────────────────────────────────────────────────────────
+    "viu_menu": [
+        {
+            "id": "vm1",
+            "kind": "viu_menu",
+            "subtitle": "VOCÊ ESTEVE NO MENU",
+            "template": "Tava bisbilhotando o menu? Posso te recomendar uma sobremesa do dia ou um vinho que combina.",
+            "slots": [],
+            "chips": [
+                {"id": "sobremesa-do-dia", "label": "Sobremesa do dia", "action": "send", "payload": "qual a sobremesa do dia?"},
+                {"id": "vinho-da-casa", "label": "Vinho da casa", "action": "send", "payload": "qual o vinho da casa?"},
+                {"id": "voltar-pro-menu", "label": "Voltar pro menu", "action": "navigate", "payload": "cardapio"},
+                {"id": "comparar-pratos", "label": "Comparar dois pratos", "action": "send", "payload": "compara dois pratos pra mim"},
+            ],
+            "weight": 1.0,
+        },
+    ],
+    "chamou_garcom": [
+        {
+            "id": "cg1",
+            "kind": "chamou_garcom",
+            "subtitle": "GARÇOM AVISADO",
+            "template": "Avisei o garçom — ele tá indo aí. Quer ir vendo a próxima rodada enquanto isso?",
+            "slots": [],
+            "chips": [
+                {"id": "ver-bebidas", "label": "Ver bebidas", "action": "send", "payload": "mostra as bebidas"},
+                {"id": "ver-sobremesas", "label": "Ver sobremesas", "action": "send", "payload": "mostra as sobremesas"},
+                {"id": "cancelar-chamado", "label": "Cancelar chamado", "action": "send", "payload": "cancela o chamado do garçom"},
+                {"id": "eta-garcom", "label": "Quanto tempo?", "action": "send", "payload": "quanto tempo o garçom leva?"},
+            ],
+            "weight": 1.0,
+        },
+    ],
+    "abriu_pedido": [
+        {
+            "id": "ap1",
+            "kind": "abriu_pedido",
+            "subtitle": "PEDIDO EM ANDAMENTO",
+            "template": "Seu pedido tá com a cozinha. Te aviso aqui quando estiver pronto pra ir. Quer adicionar algo enquanto espera?",
+            "slots": [],
+            "chips": [
+                {"id": "adicionar-bebida", "label": "Adicionar bebida", "action": "send", "payload": "quero adicionar uma bebida"},
+                {"id": "ver-pedido", "label": "Ver pedido", "action": "send", "payload": "ver meu pedido"},
+                {"id": "pedir-mais", "label": "Pedir mais", "action": "send", "payload": "quero pedir mais alguma coisa"},
+                {"id": "eta-cozinha", "label": "Quanto tempo?", "action": "send", "payload": "quanto tempo demora o pedido?"},
+            ],
+            "primary_cta": {"label": "Acompanhar pedido", "action": "navigate", "payload": "pedido"},
+            "weight": 1.0,
+        },
+    ],
+    "pagou": [
+        {
+            "id": "pg1",
+            "kind": "pagou",
+            "subtitle": "PAGAMENTO OK",
+            "template": "Paguinho registrado, {customerName}. Mais alguma coisa antes de fechar a comanda?",
+            "slots": ["customerName"],
+            "chips": [
+                {"id": "conta-final", "label": "Pedir conta final", "action": "send", "payload": "quero a conta final"},
+                {"id": "cafe", "label": "Café espresso", "action": "send", "payload": "quero um café espresso"},
+                {"id": "ainda-quero", "label": "Ainda quero algo", "action": "send", "payload": "quero pedir mais alguma coisa"},
+                {"id": "avaliar", "label": "Avaliar atendimento", "action": "navigate", "payload": "avaliar"},
+            ],
+            "weight": 1.0,
+        },
+    ],
+    "voltou_sem_acao": [
+        {
+            "id": "vs1",
+            "kind": "voltou_sem_acao",
+            "subtitle": "DE VOLTA",
+            "template": "Bem-vindo de volta. Da última vez foi {last_item}. Posso sugerir algo parecido ou mostrar novidades?",
+            "slots": ["last_item"],
+            "chips": [
+                {"id": "repetir-ultima", "label": "Repetir última", "action": "send", "payload": "quero pedir igual da última vez"},
+                {"id": "novidades", "label": "Mostrar novidades", "action": "send", "payload": "o que tem de novo no cardápio?"},
+                {"id": "algo-leve", "label": "Algo leve", "action": "send", "payload": "me indica algo leve"},
+                {"id": "comecar-zero", "label": "Começar do zero", "action": "send", "payload": "abre o cardápio"},
+            ],
+            "weight": 1.0,
+        },
+    ],
 }
 
 
@@ -174,4 +260,43 @@ def render_continuation(message: dict, slots: dict[str, str]) -> str:
     out = message.get("template", "")
     for s in message.get("slots", []):
         out = out.replace("{" + s + "}", slots.get(s, ""))
+    return out
+
+
+def get_continuation_full(
+    tenant_id: str,
+    customer_ctx: dict | None = None,
+    kind: str | None = None,
+    slots: dict[str, str] | None = None,
+) -> dict | None:
+    """
+    Convenience wrapper · retorna o ContinuationMessage canônico já com
+    template renderizado + chips + subtitle preservados.
+
+    Usado pelo apps/api `home.service.ts` (round 3 Cat 5) pra simplificar
+    o pipeline GET /continuation: 1 chamada, payload completo.
+
+    Returns dict com:
+      - id, kind, template, subtitle, weight (do pool)
+      - chips: list[ContextualChip] (canônicos do canvas v20)
+      - rendered: string com slots resolvidos
+      - primary_cta: optional dict (só presente em alguns kinds, ex.
+        'abriu_pedido' que tem botão fixo "Acompanhar pedido")
+    """
+    msg = get_continuation(tenant_id=tenant_id, customer_ctx=customer_ctx, kind=kind)
+    if not msg:
+        return None
+
+    rendered_slots = slots or {}
+    rendered = render_continuation(msg, rendered_slots)
+    out = {
+        "id": msg.get("id"),
+        "kind": msg.get("kind"),
+        "subtitle": msg.get("subtitle"),
+        "template": msg.get("template"),
+        "rendered": rendered,
+        "chips": msg.get("chips", []),
+    }
+    if "primary_cta" in msg:
+        out["primary_cta"] = msg["primary_cta"]
     return out

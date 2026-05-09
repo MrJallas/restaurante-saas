@@ -10,16 +10,31 @@ Responda "sim" se a mensagem é sobre:
 - Recomendações de comida/bebida
 - Ingredientes, alérgenos, restrições alimentares
 - Preços, promoções do restaurante
-- Horário de funcionamento
-- Pedidos, status de pedidos
+- INFORMAÇÕES OPERACIONAIS DO RESTAURANTE (sempre permitir): horário de
+  funcionamento ("até que horas vocês ficam abertos", "quando fecham",
+  "abrem domingo?"), endereço, telefone, formas de pagamento, política
+  de cancelamento, wi-fi, estacionamento, acessibilidade, dress code.
+  Estas perguntas NUNCA são off-topic — são exatamente o caso de uso da
+  tool `ask_about_restaurant`. Se o assistente bloquear essas, é regression.
+- Pedidos, status de pedidos, conta, pagamento, dividir conta
 - Elogios/reclamações sobre a comida ou serviço
-- Dúvidas sobre o restaurante
+- Dúvidas sobre o restaurante (qualquer coisa sobre o estabelecimento)
 - Fome, sede, vontade de comer/beber, estado do apetite ("estou com fome", "tô com sede", "bateu a fome")
 - Pedidos de sugestão geral ("o que você recomenda", "o que tem de bom", "me indica algo")
 - Pedir para chamar garçom ou ajuda no atendimento
 - Follow-ups curtos ou ambíguos QUANDO o contexto anterior é do restaurante ("os dois", "quero esse", "quanto?", "pode ser", "esse mesmo", "sim", "pode trazer")
+- Pedidos sociais relacionados à mesa: juntar mesas, late-arrival, mensagem pro gerente, reclamação, LGPD/exclusão de dados
 
-Responda "não" APENAS se a mensagem é claramente sobre outro assunto não relacionado ao restaurante (política, religião, esportes, código, finanças, etc).
+Responda "não" APENAS se a mensagem é claramente sobre outro assunto não relacionado ao restaurante (política, religião, esportes não-pizza-relacionados, código, finanças pessoais, etc).
+
+EXEMPLOS DE PERGUNTAS QUE DEVEM RETORNAR "sim" (regression do round 3):
+- "qual o horário de funcionamento?" → sim
+- "vocês abrem domingo?" → sim
+- "qual o endereço?" → sim
+- "tem wi-fi?" → sim
+- "aceitam cartão?" → sim
+- "tem estacionamento?" → sim
+- "qual a política de cancelamento?" → sim
 
 {history_block}Mensagem atual do cliente: "{message}"
 

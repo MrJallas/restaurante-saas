@@ -85,6 +85,20 @@ _ALLOW_LIST_PATTERNS: list[re.Pattern[str]] = [
     # Table merge intent · "junta com a mesa", "juntar mesas"
     re.compile(r"\bjunta(r)?\b.*\bmesa", re.IGNORECASE),
     re.compile(r"\bmesa\b.*\bjunta(r)?\b", re.IGNORECASE),
+    # Restaurant info questions (P1 #C9 / round 3): horário / endereço /
+    # wi-fi / pagamento / estacionamento / cancelamento. Antes o LLM
+    # classifier marcava "qual o horário?" como off-topic apesar de ser
+    # informação direta do estabelecimento. Allow-list bypassa pra que a
+    # tool `ask_about_restaurant` possa ser invocada.
+    re.compile(r"\b(hor[áa]rio|funcionamento|abre|fecha|abrem|fecham|aberto|fechado)\b", re.IGNORECASE),
+    re.compile(r"\b(endere[cç]o|onde\s+(fica|vc[eê]s|voc[eê]s|est[aã]o)|chegar|localiza[cç][aã]o)\b", re.IGNORECASE),
+    re.compile(r"\b(telefone|whatsapp|contato|reservar?|reserva)\b", re.IGNORECASE),
+    re.compile(r"\b(wi[-\s]?fi|wifi|senha|internet)\b", re.IGNORECASE),
+    re.compile(r"\b(aceita[mr]?|aceitam|aceito|forma\s+de\s+pagamento|cart[aã]o|pix|dinheiro|d[eé]bito|cr[eé]dito)\b", re.IGNORECASE),
+    re.compile(r"\b(estacionamento|valet|park)\b", re.IGNORECASE),
+    re.compile(r"\b(cancela(mento|r)?|trocar|alterar|adiar)\s+(reserva|pedido|mesa)?", re.IGNORECASE),
+    re.compile(r"\b(dress\s+code|traje|roupa)\b", re.IGNORECASE),
+    re.compile(r"\b(acessibilidade|cadeira\s+de\s+rodas|rampa)\b", re.IGNORECASE),
 ]
 
 

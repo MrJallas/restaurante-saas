@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { AiServiceClient, type AiToolCall } from '../../infra/ai/ai-service.client';
 import { RedisService } from '../../infra/redis/redis.service';
+import { ChatHistoryService } from '../chat-history/chat-history.service';
 
 const BLOCKED_RESPONSE =
   'Desculpe, só posso ajudar com assuntos do restaurante: cardápio, pratos, bebidas, recomendações e informações sobre o estabelecimento.';
@@ -48,12 +49,16 @@ export interface LinkedItem {
 /**
  * Normalise the AI service's tool_calls into the flat shape FE consumers
  * expect (`{ name, arguments, result, silent, router, routerTarget,
- * actionPayload }`). Upstream returns the raw OpenAI shape with the tool
- * name nested under `function.name` — flattening here keeps the chat page
- * (`AssistantToolCall`) and the chat-history rehydrate path consistent.
+ * actionPayload, chips }`). Upstream returns the raw OpenAI shape with the
+ * tool name nested under `function.name` — flattening here keeps the chat
+ * page (`AssistantToolCall`) and the chat-history rehydrate path consistent.
  *
- * Returns `null` when the AI service returned no tools (so the FE's
+ * Returns empty array when the AI service returned no tools (so the FE's
  * `res.toolCalls && res.toolCalls.length > 0` guard short-circuits cleanly).
+ *
+ * K-1 fix (round 3): hoist `result.chips` ao top-level. Antes ficava
+ * dentro de `tc.result.chips` e o FE só lia `res.suggestions` — chips
+ * canônicos das tools nunca apareciam no chat.
  */
 function normalizeToolCalls(
   raw: AiToolCall[] | undefined,
@@ -68,6 +73,7 @@ function normalizeToolCalls(
         : (fn?.name ?? '');
     const flatArgs = (tc.args ?? fn?.arguments ?? {}) as Record<string, unknown>;
     const result = (tc.result ?? null) as Record<string, unknown> | null;
+    const chips = Array.isArray(result?.chips) ? (result!.chips as unknown[]) : [];
     return {
       ...tc,
       name: flatName,
@@ -82,8 +88,32 @@ function normalizeToolCalls(
           ? result.routerTarget
           : undefined,
       actionPayload: result?.actionPayload,
+      chips,
     };
   });
+}
+
+/**
+ * Aggregate `chips` arrays from each dispatched tool into a single flat
+ * list. First non-empty wins (most specific); duplicate ids dropped. When
+ * NO tool emitted chips, returns `null` so the caller can fall back to the
+ * static SUGGESTION_CHIPS — keeps the chat from rendering empty bottom row.
+ */
+function aggregateChipsFromTools(
+  toolCalls: Array<Record<string, unknown>>,
+): unknown[] | null {
+  const seen = new Set<string>();
+  const out: unknown[] = [];
+  for (const tc of toolCalls) {
+    const chips = Array.isArray(tc.chips) ? (tc.chips as Array<Record<string, unknown>>) : [];
+    for (const c of chips) {
+      const id = typeof c.id === 'string' ? c.id : JSON.stringify(c);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push(c);
+    }
+  }
+  return out.length > 0 ? out : null;
 }
 
 function normalizeForMatch(text: string): string {
@@ -141,6 +171,10 @@ export class AssistantService {
     private readonly tenantConn: TenantConnectionProvider,
     private readonly aiClient: AiServiceClient,
     private readonly redis: RedisService,
+    // Optional pra que o module fique resiliente a Mongo offline em dev:
+    // se ChatHistoryService não conseguir injetar, AssistantService continua
+    // funcionando (Postgres é fonte de verdade).
+    @Optional() private readonly chatHistory?: ChatHistoryService,
   ) {}
 
   async sendMessage(
@@ -241,10 +275,15 @@ export class AssistantService {
         customerContext,
       );
 
-      // Save message — including the tool_calls audit trail when the LLM
-      // invoked any tool. Migration 029 added the JSONB column; without
-      // persisting it the FE's `ToolCallIndicator` over the chat history
-      // never lit up because chat-history reads NULL for every row.
+      const normalizedTools = normalizeToolCalls(result.tool_calls);
+      // K-1 fix: prefer chips canônicos das tools sobre SUGGESTION_CHIPS estático.
+      // Quando nenhuma tool emitiu chips (ex: turno 100% texto), caímos
+      // pro trio default — assim o cliente nunca vê uma row de chips vazia.
+      const toolChips = aggregateChipsFromTools(normalizedTools);
+      const fallbackChips: string[] = SUGGESTION_CHIPS.slice(0, 3);
+      // Persistir os chips canônicos em `assistant_messages.contextual_chips`
+      // (jsonb, migration 030). Se a tool não retornou nada, persistimos
+      // null pra que o GIN index parcial fique enxuto.
       await this.saveMessage(tableSessionId, safeCustomerId, message, result.response, {
         tokensIn: result.tokens_in,
         tokensOut: result.tokens_out,
@@ -253,16 +292,50 @@ export class AssistantService {
         estimatedCostCents: result.estimated_cost_cents,
         latencyMs: result.latency_ms,
         toolCalls: result.tool_calls ?? null,
+        contextualChips: toolChips,
       });
 
       const linkedItems = extractLinkedItems(result.response, menuItems);
 
+      // P1 #B-6 fix (round 3): dual-write pra Mongo `chat_messages`.
+      // Best-effort — Postgres remains source of truth e o appendTurn
+      // engole exceptions internamente (Mongo offline → log + skip).
+      // Só persiste quando temos customerId — flow anônimo não vai pra
+      // chat-history (não tem como linkar a customer).
+      if (safeCustomerId && this.chatHistory) {
+        const tenantId = (tenantContext as { tenantId?: string })?.tenantId
+          || (tenantContext as { restaurant_name?: string })?.restaurant_name
+          || _schemaName;
+        await this.chatHistory.appendTurn({
+          tenantId,
+          customerId: safeCustomerId,
+          sessionId: tableSessionId,
+          userMessage: message,
+          assistantResponse: result.response,
+          toolCalls: result.tool_calls ?? null,
+          suggestionChips: toolChips
+            ? (toolChips as Array<Record<string, unknown>>)
+                .map((c) => (typeof c.label === 'string' ? c.label : ''))
+                .filter((s) => s.length > 0)
+            : null,
+          linkedItems,
+        });
+      }
+
       return {
         response: result.response,
         wasBlocked: false,
-        suggestions: SUGGESTION_CHIPS.slice(0, 3),
+        // suggestions agora reflete os chips canônicos quando presentes,
+        // ou cai no fallback estático. FE consome esse array independente
+        // de toolCalls (que também é exposto pra dispatch FE-side).
+        suggestions: toolChips
+          ? (toolChips as Array<Record<string, unknown>>)
+              .map((c) => (typeof c.label === 'string' ? c.label : ''))
+              .filter((s) => s.length > 0)
+          : fallbackChips,
+        chips: toolChips ?? undefined,
         linkedItems,
-        toolCalls: normalizeToolCalls(result.tool_calls),
+        toolCalls: normalizedTools,
       };
     } catch (err) {
       this.logger.error(`AI chat error: ${err}`);
@@ -449,6 +522,12 @@ export class AssistantService {
        * rendering on the FE.
        */
       toolCalls?: AiToolCall[] | null;
+      /**
+       * Chips canônicos retornados pelas tools dispatched. Persistido
+       * em `assistant_messages.contextual_chips` (JSONB, migration 030).
+       * Antes a coluna ficava sempre NULL — fix do K-2 round 3.
+       */
+      contextualChips?: unknown[] | null;
     },
   ) {
     // Pass null when no tools were called — the JSONB column is nullable,
@@ -458,13 +537,18 @@ export class AssistantService {
       meta.toolCalls && meta.toolCalls.length > 0
         ? JSON.stringify(meta.toolCalls)
         : null;
+    const contextualChipsJson =
+      meta.contextualChips && meta.contextualChips.length > 0
+        ? JSON.stringify(meta.contextualChips)
+        : null;
     await this.tenantConn.query(
       `INSERT INTO assistant_messages
        (table_session_id, customer_id, user_message, assistant_response,
         tokens_in, tokens_out, model_used, provider_used,
         estimated_cost_cents, latency_ms, was_blocked, block_reason,
-        tool_calls)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`,
+        tool_calls, contextual_chips)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+               $13::jsonb, $14::jsonb)`,
       [
         tableSessionId,
         customerId,
@@ -479,6 +563,7 @@ export class AssistantService {
         meta.wasBlocked || false,
         meta.blockReason || null,
         toolCallsJson,
+        contextualChipsJson,
       ],
     );
   }

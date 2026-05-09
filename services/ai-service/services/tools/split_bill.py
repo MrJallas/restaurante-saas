@@ -16,6 +16,11 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     mode = args.get("mode")  # 'equal' | 'per-item' | 'custom'
     return ToolResult(
         message="Te levo pra tela de dividir a conta.",
+        chips=[
+            {"id": "equal", "label": "Em partes iguais", "action": "send", "payload": "divide igual entre todos"},
+            {"id": "by_item", "label": "Cada um o que pediu", "action": "send", "payload": "cada um paga o que pediu"},
+            {"id": "custom", "label": "Custom", "action": "send", "payload": "quero personalizar a divisão"},
+        ],
         router_target="ScreenCustomerSplitBill",
         action_payload={
             "mode": mode,

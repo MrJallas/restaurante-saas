@@ -15,6 +15,11 @@ from .types import ToolContext, ToolResult
 def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     return ToolResult(
         message="Abro a tela pra você pagar só a sua parte.",
+        chips=[
+            {"id": "pay_pix", "label": "Pagar com PIX", "action": "send", "payload": "quero pagar minha parte com pix"},
+            {"id": "pay_card", "label": "Pagar com cartão", "action": "send", "payload": "quero pagar minha parte com cartão"},
+            {"id": "pay_full", "label": "Pagar tudo", "action": "send", "payload": "quero pagar a conta toda"},
+        ],
         router_target="ScreenCustomerPayIndividual",
         action_payload={
             "status": "not_implemented",

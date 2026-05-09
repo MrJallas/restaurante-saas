@@ -100,6 +100,13 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      # P0 #B-1 / Cat 1 (round 3): tools que chamam ctx.api_client batiam
+      # em http://localhost:3000 (default do config.py) e davam Connection
+      # refused — localhost:3000 dentro do container não resolve pro NestJS
+      # rodando em outra container. Aponta pro service docker `api` na
+      # porta interna 3001 (host port também é 3001).
+      API_BASE_URL: ${API_BASE_URL:-http://api:3001/api/restaurant_dev}
+      API_REQUEST_TIMEOUT: ${API_REQUEST_TIMEOUT:-10}
     volumes:
       - ./services/ai-service:/app
     ports:

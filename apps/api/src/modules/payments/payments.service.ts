@@ -116,8 +116,14 @@ export class PaymentsService {
       }
     }
 
-    // Generate PIX (mock — PSP wiring lives elsewhere)
-    const pixCode = `00020126580014BR.GOV.BCB.PIX0136${randomUUID()}5204000053039865406${(amountCents / 100).toFixed(2)}5802BR`;
+    // Generate PIX payload only when method is `pix`. Antes, gerávamos
+    // sempre — então `pixQrCode`/`pixCopyPaste` vazavam no response de um
+    // pagamento de cartão (P2-D-3). Agora null pra method != 'pix' (tanto
+    // no INSERT quanto no response).
+    const isPix = method === 'pix';
+    const pixCode = isPix
+      ? `00020126580014BR.GOV.BCB.PIX0136${randomUUID()}5204000053039865406${(amountCents / 100).toFixed(2)}5802BR`
+      : null;
     const pixCopyPaste = pixCode;
 
     const rows = (await this.tenantConn.query(
@@ -144,8 +150,8 @@ export class PaymentsService {
       status: string;
       amount_cents: number;
       method: string;
-      pix_qr_code: string;
-      pix_copy_paste: string;
+      pix_qr_code: string | null;
+      pix_copy_paste: string | null;
       expires_at: string | null;
       split_mode: string | null;
       split_allocations: SplitAllocation[] | null;
@@ -282,8 +288,8 @@ export class PaymentsService {
       status: string;
       amount_cents: number;
       method: string;
-      pix_qr_code: string;
-      pix_copy_paste: string;
+      pix_qr_code: string | null;
+      pix_copy_paste: string | null;
       paid_at: string | null;
       created_at: string;
       expires_at: string | null;

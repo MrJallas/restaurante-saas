@@ -15,7 +15,11 @@ from services.intent_classifier import classify_message
 from services.response_validator import validate_response
 from services.llm.factory import get_provider
 from services.smart_suggestions import get_suggestions as smart_get_suggestions
-from services.continuation import get_continuation, render_continuation
+from services.continuation import (
+    get_continuation,
+    render_continuation,
+    get_continuation_full,
+)
 from services.tools import (
     TOOLS,
     STAFF_TOOLS_REQUIRING_TEXT,
@@ -164,6 +168,12 @@ class ContinuationRequest(BaseModel):
 class ContinuationResponse(BaseModel):
     message: dict | None
     rendered: str | None
+    # Round 3 (Cat 5): chips canon do canvas v20 + subtitle (eyebrow row)
+    # + primary_cta opcional (ex: 'abriu_pedido' tem CTA fixo "Acompanhar
+    # pedido"). FE renderiza via SuggestionChipRow + ContinuationHome.
+    chips: list[dict] = []
+    subtitle: str | None = None
+    primary_cta: dict | None = None
 
 
 class ToolDispatchRequest(BaseModel):
@@ -398,8 +408,20 @@ async def smart_suggestions(req: SmartSuggestionsRequest):
 
 @app.post("/continuation", response_model=ContinuationResponse)
 async def continuation(req: ContinuationRequest):
-    """Picks a continuation message for the customer + segment."""
-    msg = get_continuation(
+    """Picks a continuation message for the customer + segment.
+
+    Round 3 (Cat 5): retorna agora chips/subtitle/primary_cta dos 5 novos
+    kinds (viu_menu, chamou_garcom, abriu_pedido, pagou, voltou_sem_acao).
+    Quando `kind` é null (default), cai no segment-based selection (vip
+    vs regular, returning vs new) — mantém compat com chamadas antigas.
+    """
+    slots = {
+        "customerName": req.customerName or "",
+        "favoriteItem": req.favoriteItem or "",
+        "tableLabel": "",
+        "last_item": req.favoriteItem or "",
+    }
+    full = get_continuation_full(
         tenant_id=req.tenantId,
         customer_ctx={
             "is_returning": req.isReturning,
@@ -408,16 +430,25 @@ async def continuation(req: ContinuationRequest):
             "favorite_item": req.favoriteItem or "",
         },
         kind=req.kind,
+        slots=slots,
     )
-    if not msg:
+    if not full:
         return ContinuationResponse(message=None, rendered=None)
 
-    rendered = render_continuation(msg, {
-        "customerName": req.customerName or "",
-        "favoriteItem": req.favoriteItem or "",
-        "tableLabel": "",
-    })
-    return ContinuationResponse(message=msg, rendered=rendered)
+    # `message` mantido por compat com callers antigos que esperam o doc
+    # cru (template + slots). Novos consumidores usam chips/subtitle direto.
+    return ContinuationResponse(
+        message={
+            "id": full["id"],
+            "kind": full["kind"],
+            "template": full["template"],
+            "subtitle": full.get("subtitle"),
+        },
+        rendered=full["rendered"],
+        chips=full.get("chips", []) or [],
+        subtitle=full.get("subtitle"),
+        primary_cta=full.get("primary_cta"),
+    )
 
 
 @app.get("/continuation")
@@ -427,20 +458,48 @@ async def continuation_get(
     isReturning: bool = False,
     isVip: bool = False,
     customerName: str | None = None,
+    kind: str | None = None,
+    favoriteItem: str | None = None,
 ):
-    """GET variant for the apps/api home.service to call."""
-    msg = get_continuation(
+    """GET variant for the apps/api home.service to call.
+
+    Aceita `kind` query param pra forçar um dos 5 novos segments do
+    canvas v20 (viu_menu, chamou_garcom, abriu_pedido, pagou,
+    voltou_sem_acao). apps/api detecta o kind baseado em estado de DB
+    (orders abertas, payments confirmados, waiter_calls inflight) e passa
+    explicitamente — ai-service não consulta backend (não pode, sem
+    api_client com tenant scoping).
+    """
+    slots = {
+        "customerName": customerName or "",
+        "tableLabel": "",
+        "last_item": favoriteItem or "",
+        "favoriteItem": favoriteItem or "",
+    }
+    full = get_continuation_full(
         tenant_id=tenantId,
         customer_ctx={
             "is_returning": isReturning,
             "is_vip": isVip,
             "customer_name": customerName or "",
         },
+        kind=kind,
+        slots=slots,
     )
-    if not msg:
-        return {"message": None, "rendered": None}
-    rendered = render_continuation(msg, {"customerName": customerName or ""})
-    return {"message": msg, "rendered": rendered}
+    if not full:
+        return {"message": None, "rendered": None, "chips": [], "subtitle": None}
+    return {
+        "message": {
+            "id": full["id"],
+            "kind": full["kind"],
+            "template": full["template"],
+            "subtitle": full.get("subtitle"),
+        },
+        "rendered": full["rendered"],
+        "chips": full.get("chips", []) or [],
+        "subtitle": full.get("subtitle"),
+        "primary_cta": full.get("primary_cta"),
+    }
 
 
 @app.post("/tools/dispatch", response_model=ToolDispatchResponse)
@@ -542,23 +601,40 @@ REGRAS LGPD (privacidade · obrigatório):
   excluir" ou responder afirmativamente em texto livre. Não pule a etapa
   do notice — ela é obrigatória pra captura de consentimento.
 
-USO DE FERRAMENTAS (function calling · obrigatório quando aplicável):
+USO DE FERRAMENTAS (function calling · OBRIGATÓRIO em mutações):
 - Você TEM ferramentas disponíveis (function calls). USE-AS sempre que o
   cliente expressar uma intenção concreta, em vez de só responder em texto.
-- Mapeamento de gatilhos comuns:
-  · "quero o X" / "me traz X" / "vou querer Y" → `add_to_order` com itemId.
-  · "ver cardápio" / "abre o menu" → `view_menu`.
-  · "vê meu pedido" / "o que tá no carrinho" → `view_order`.
-  · "fechar a conta" / "pagar" / "trazer a conta" → `request_check` ou
-    `open_payment_screen` (dependendo do contexto).
-  · "chama o garçom" / "preciso de ajuda" → `call_waiter`.
-  · "junta com a mesa N" → `request_table_merge` com targetTable.
-  · "tem glúten?" / "é sem lactose?" → `check_allergens` com itemIds.
+- REGRA DE OURO: TODA mensagem que pede pra MUDAR ESTADO (adicionar item,
+  cancelar, pagar, chamar garçom, mandar mensagem, juntar mesa, apagar
+  dados) DEVE chamar uma function. Se você não chamar a function, o
+  side-effect NÃO acontece — o cliente vai ficar olhando uma resposta
+  bonita sem nada ter mudado no sistema.
+- Mapeamento OBRIGATÓRIO de gatilhos:
+  · "quero o X" / "me traz X" / "vou querer Y" / "1 risoto" / "pede X"
+       → `add_to_order(itemId=<UUID do item>, quantity=<int 1-20>)`.
+       NUNCA passe o NOME do prato em itemId — sempre o UUID. Quantity
+       sempre o número que o cliente disse (default 1, NUNCA inventar 3).
+  · "ver cardápio" / "abre o menu" / "mostra o menu" → `view_menu`.
+  · "vê meu pedido" / "o que tá no carrinho" / "mostra meu pedido"
+       → `view_order`.
+  · "tira o X" / "remove o X" → `remove_from_cart(itemId)`.
+  · "muda o X pra Y unidades" / "altera quantidade" → `change_order(itemId, qty)`.
+  · "cancela o pedido" → `cancel_order`.
+  · "fechar a conta" / "trazer a conta" / "pedir conta" → `request_check`.
+  · "quero pagar tudo" → `pay_full`. "minha parte" → `pay_individual`.
+  · "dividir conta" → `split_bill`. Genérico de pagamento → `open_payment_screen`.
+  · "chama o garçom" / "preciso de ajuda" / "chamar atendente" → `call_waiter`.
+  · "junta com a mesa N" / "juntar mesas" → `request_table_merge(targetTable=N)`.
+  · "tem glúten?" / "é sem lactose?" / "tem alérgeno X?" → `check_allergens`.
   · "quero comparar X e Y" → `compare_dishes`.
-  · "mensagem pro gerente" → `send_message_to_manager` com text.
-  · "quero apagar dados" → `show_lgpd_notice` PRIMEIRO.
+  · "manda recado pro gerente" / "mensagem pra gerência" → `send_message_to_manager(text=…)`.
+  · "quero reclamar" / "tô insatisfeito" → `send_complaint`.
+  · "quero apagar dados" / "exclusão LGPD" → `show_lgpd_notice` PRIMEIRO.
+  · "qual o horário?" / "endereço?" / "wi-fi?" → `ask_about_restaurant(topic=…)`.
 - Quando chamar uma tool, NÃO repita o resultado em texto — o sistema renderiza
-  a mensagem da tool. Responda em texto APENAS quando nenhuma tool se aplica."""
+  a mensagem da tool. Responda em texto APENAS quando nenhuma tool se aplica
+  (perguntas conceituais sobre comida, conversação, descrição de pratos).
+- Se em dúvida entre texto vs tool em pedido de mutação, SEMPRE escolha a tool."""
 
     if categories:
         prompt += f"\n\nCATEGORIAS DO CARDÁPIO:\n{categories}"

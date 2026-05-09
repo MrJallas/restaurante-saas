@@ -12,6 +12,7 @@ import { AppShell } from '../../../components/layout/AppShell';
 import { Bubble } from '../../../components/ui/Bubble';
 import { SoftInput } from '../../../components/ui/SoftInput';
 import { ToolCallIndicator } from '../../../components/ui/ToolCallIndicator';
+import { SuggestionChip } from '../../../components/ui/SuggestionChip';
 import {
   OverlaySalonMap,
   type SalonTable,
@@ -94,11 +95,35 @@ interface AssistantToolCall {
   router?: boolean;
 }
 
+/**
+ * Chip canon retornado pela tool dispatched (round 3 Cat 1 / K-1). Mirror
+ * de `@restaurant/shared-types::ContextualChip`. Inline aqui pra evitar
+ * import cycle até o shared-types exportar a versão pública.
+ *
+ * `payload` é `unknown` no shared-types (LLM podia mandar qualquer coisa
+ * relevante pra ação); aqui sempre tratamos como string ao consumir
+ * (string verb pra send, path string pra navigate, prefill string pra
+ * expand). Vazio default quando ausente — handler tolera.
+ */
+interface ChipCanon {
+  id: string;
+  label: string;
+  action: 'send' | 'navigate' | 'expand';
+  payload: unknown;
+  primary?: boolean;
+}
+
 interface SendResponse {
   response: string;
   wasBlocked: boolean;
   blockReason?: string;
   suggestions?: string[];
+  /**
+   * Round 3 (Cat 1 / K-1): chips canon das tools dispatchadas. Quando
+   * presente substitui o trio estático SUGGESTION_CHIPS. Cada chip tem
+   * `action` (send|navigate|expand) que o `<SuggestionChip>` sabe lidar.
+   */
+  chips?: ChipCanon[];
   linkedItems?: LinkedItem[];
   /** Optional tool hints from B3's AI service — see `AssistantToolHint`. */
   toolHint?: AssistantToolHint;
@@ -112,12 +137,26 @@ interface SendResponse {
   toolCalls?: AssistantToolCall[];
 }
 
-const DEFAULT_SUGGESTIONS = [
-  'Sugestão leve',
-  'Sobremesa combina?',
-  'Pratos com camarão',
-  'Como pagar?',
+// Fallback chips — só aparecem em idle (antes do primeiro turno) ou
+// quando a tool dispatched não retornou chips canônicos. Backend devolve
+// `chips` quando vier de uma tool com chips populated; aí esses defaults
+// somem.
+const DEFAULT_SUGGESTIONS: ChipCanon[] = [
+  { id: 'default-leve', label: 'Sugestão leve', action: 'send' as const, payload: 'me indica algo leve' },
+  { id: 'default-sobremesa', label: 'Sobremesa combina?', action: 'send' as const, payload: 'que sobremesa combina?' },
+  { id: 'default-camarao', label: 'Pratos com camarão', action: 'send' as const, payload: 'tem prato com camarão?' },
+  { id: 'default-pagar', label: 'Como pagar?', action: 'send' as const, payload: 'como pago a conta?' },
 ];
+
+/**
+ * Coerce o `payload` (que é `unknown` no contrato) pra string com fallback
+ * pro label. Backend pode mandar string|null|undefined; o handler precisa
+ * de uma string final pra navigate (path) ou send (texto pra digitar).
+ */
+function chipText(chip: ChipCanon): string {
+  if (typeof chip.payload === 'string' && chip.payload.length > 0) return chip.payload;
+  return chip.label;
+}
 
 // Palavras que, combinadas com itens ja mencionados pela IA, indicam "quero
 // pedir". Tem que ter VERBO de pedido — "tudo bem"/"tudo certo" virava falso
@@ -205,8 +244,16 @@ export default function AssistentePage() {
   useEffect(() => {
     if (!getSessionToken()) {
       router.replace(`/${slug}`);
+      return;
     }
-  }, [slug, router]);
+    // Round 3 Cat 10 (P1 #B-9): chat tem que ter customerId pra grava
+    // tool_calls e contextual_chips linkados ao cliente certo. Sem isso
+    // assistant_messages.customer_id ficava NULL e o histórico ficava
+    // órfão. Redirect pra welcome modal quando ausente.
+    if (!session.customerId) {
+      router.replace(`/${slug}/identify?next=assistente`);
+    }
+  }, [slug, router, session.customerId]);
 
   // Se chegou via prefill (usuario ja digitou algo na home), arrancamos com o
   // bubble do usuario ja visivel + loading — sem exibir o greeting "Olá" —
@@ -221,8 +268,15 @@ export default function AssistentePage() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(!!prefill);
-  const [suggestions, setSuggestions] = useState<string[]>(DEFAULT_SUGGESTIONS);
+  // suggestions agora carrega chips canônicos (ChipCanon) em vez de só
+  // strings — herdamos do backend `res.chips` quando uma tool dispatched
+  // emitiu chips reativos. Fallback é DEFAULT_SUGGESTIONS (idle state).
+  const [suggestions, setSuggestions] = useState<ChipCanon[]>(DEFAULT_SUGGESTIONS);
   const [chipBusy, setChipBusy] = useState(false);
+  // Round 3 Cat 4 (V20 chat): última tool dispatched neste turno — usa
+  // pra renderizar a eyebrow `··· USANDO ADD_TO_ORDER ···` antes do
+  // bubble do assistente.
+  const [lastToolName, setLastToolName] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoSentRef = useRef(false);
 
@@ -497,8 +551,32 @@ export default function AssistentePage() {
       };
       setMessages((prev) => [...prev, aiMsg]);
 
-      if (res.suggestions && res.suggestions.length > 0) {
-        setSuggestions(res.suggestions);
+      // K-1 fix (round 3): chips canon das tools dispatchadas têm
+      // prioridade sobre `res.suggestions` (que é o trio estático ou
+      // string[] legacy). Ambos os campos coexistem por compat com clients
+      // antigos; novos consumimos `res.chips`.
+      if (res.chips && res.chips.length > 0) {
+        setSuggestions(res.chips);
+      } else if (res.suggestions && res.suggestions.length > 0) {
+        // Legacy string[] suggestions → embrulhamos como ChipCanon[] de
+        // action 'send' pra que SuggestionChip continue funcionando.
+        setSuggestions(
+          res.suggestions.map((label, i) => ({
+            id: `legacy-${i}-${label.slice(0, 12)}`,
+            label,
+            action: 'send' as const,
+            payload: label,
+          })),
+        );
+      }
+
+      // Round 3 Cat 4 (V20 chat): atualiza eyebrow `··· USANDO X ···`
+      // baseado na primeira tool dispatched neste turno. Limpamos no
+      // próximo turno do user (handler do submit).
+      if (res.toolCalls && res.toolCalls.length > 0) {
+        setLastToolName(res.toolCalls[0].name);
+      } else {
+        setLastToolName(null);
       }
 
       // Dispatch FE-side tool calls (overlay opens, screen navigations, etc.).
@@ -670,6 +748,16 @@ export default function AssistentePage() {
     >
       <div className="flex flex-1 flex-col">
         <div className="gpu-layer flex flex-1 flex-col gap-3.5 overflow-auto px-[22px] pb-4 pt-3">
+          {/* Round 3 Cat 4 (V20 chat): eyebrow inicial · canvas v20
+              mostra "VOCÊ ENTROU AGORA · HH:MM" antes da primeira bubble.
+              Aparece somente quando ainda não há messages (idle/empty). */}
+          {messages.length === 0 && (
+            <div className="self-center pb-1 pt-2">
+              <span className="font-mono text-[10px] uppercase tracking-[1.5px] text-faint">
+                VOCÊ ENTROU AGORA · {new Date().toTimeString().slice(0, 5)}
+              </span>
+            </div>
+          )}
           {messages.map((msg) => {
             const selected = msg.selectedIds ?? [];
             const hasCards = !!msg.linkedItems && msg.linkedItems.length > 0;
@@ -839,26 +927,50 @@ export default function AssistentePage() {
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Round 3 Cat 4 (V20): eyebrow `··· USANDO <TOOL> ···` antes
+            do bubble do assistente quando uma tool foi dispatched. Canvas
+            v20 mostra esse signal logo acima do bubble. */}
+        {lastToolName && !loading && (
+          <div className="-mt-1.5 mb-1 flex justify-start px-[22px]">
+            <span className="font-mono text-[10px] uppercase tracking-[1.5px] text-faint">
+              ··· USANDO {lastToolName} ···
+            </span>
+          </div>
+        )}
+
         <div className="shrink-0 pt-1.5">
           <div className="-mx-[22px] flex gap-1.5 overflow-x-auto px-[22px] pb-2 [&::-webkit-scrollbar]:hidden">
-            {suggestions.map((s) => (
-              <button
-                key={s}
-                type="button"
+            {/* Round 3 Cat 1 / Cat 13: usa SuggestionChip em vez do
+                <button> plano. Chip canônico (action: send|navigate|expand)
+                permite contextual input expand pra send_complaint etc. */}
+            {suggestions.map((chip) => (
+              <SuggestionChip
+                key={chip.id}
+                chip={chip}
                 disabled={loading || chipBusy}
-                onClick={async () => {
+                onTap={async (c) => {
                   if (chipBusy) return;
                   setChipBusy(true);
                   try {
-                    await sendMessage(s);
+                    const txt = chipText(c as ChipCanon);
+                    if (c.action === 'navigate') {
+                      const dest = txt.startsWith('/') ? txt : `/${slug}/${txt}`;
+                      router.push(dest);
+                    } else if (c.action === 'expand') {
+                      // ContextualInputExpand não tá mais em uso (round 3
+                      // dead-code cleanup); fallback envia o payload direto
+                      // como mensagem pra que send_complaint/send_message
+                      // ainda funcionem.
+                      await sendMessage(txt);
+                    } else {
+                      // 'send' default
+                      await sendMessage(txt);
+                    }
                   } finally {
                     setTimeout(() => setChipBusy(false), 800);
                   }
                 }}
-                className="shrink-0 whitespace-nowrap rounded-full border border-ink/[0.15] bg-surface px-3.5 py-1.5 text-[12px] text-ink transition-colors duration-100 active:bg-white disabled:opacity-50"
-              >
-                {s}
-              </button>
+              />
             ))}
           </div>
         </div>
@@ -866,7 +978,15 @@ export default function AssistentePage() {
         <div className="keyboard-anchor shrink-0 px-[22px] pt-2">
           <SoftInput
             maxLength={2000}
-            placeholder="Digite aqui"
+            // Round 3 Cat 4 (V20): placeholder muda contextualmente
+            // quando uma tool acabou de rodar — sinaliza que o próximo
+            // input vai pra mesa (host/staff) e não mais pra IA conversar.
+            placeholder={
+              lastToolName === 'send_complaint' ||
+              lastToolName === 'send_message_to_manager'
+                ? 'Mensagem para a casa'
+                : 'Pergunte alguma coisa...'
+            }
             value={input}
             onChange={setInput}
             onSubmit={sendMessage}

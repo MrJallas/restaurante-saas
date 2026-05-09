@@ -21,8 +21,8 @@ const COOLDOWN_MINUTES = 10;
 
 interface CooldownRow {
   id: string;
-  table_session_a_id: string;
-  table_session_b_id: string;
+  source_table_session_id: string;
+  target_table_session_id: string;
   cooldown_expires_at: string;
   reason: string | null;
 }
@@ -64,19 +64,21 @@ export class TableMergeService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    const [a, b] = orderedPair(
-      input.sourceTableSessionId,
-      input.targetTableSessionId,
-    );
 
-    // Check active cooldown — block before allocating a row.
+    // P0 #F-1 fix (round 3): cooldown UNIDIRECIONAL. Antes `orderedPair`
+    // canonicalizava o par e o UNIQUE constraint era em (a, b) — ou seja,
+    // A→B-rejected bloqueava B→A-tentativa-reversa. Spec V16 line 261
+    // diz explicitamente: "caminho reverso continua aberto". Migration 037
+    // reorganizou pra (source, target) directional.
     const cooldown = (await this.tenantConn.query(
-      `SELECT id, table_session_a_id, table_session_b_id, cooldown_expires_at, reason
+      `SELECT id, source_table_session_id, target_table_session_id,
+              cooldown_expires_at, reason
        FROM table_merge_cooldowns
-       WHERE table_session_a_id = $1 AND table_session_b_id = $2
+       WHERE source_table_session_id = $1
+         AND target_table_session_id = $2
          AND cooldown_expires_at > now()
        LIMIT 1`,
-      [a, b],
+      [input.sourceTableSessionId, input.targetTableSessionId],
     )) as CooldownRow[];
     if (cooldown.length) {
       const c = cooldown[0];
@@ -90,7 +92,12 @@ export class TableMergeService {
         retryAfterSeconds: retryAfter,
         reason: c.reason ?? 'rejected',
         message: 'Voce pode tentar de novo em alguns minutos.',
-        pair: { a, b },
+        // `pair` mantém a forma { a, b } no payload por compat com FE — mas
+        // agora reflete a direção real (a = source, b = target).
+        pair: {
+          a: input.sourceTableSessionId,
+          b: input.targetTableSessionId,
+        },
       };
       throw new HttpException(payload, HttpStatus.TOO_MANY_REQUESTS);
     }
@@ -292,33 +299,37 @@ export class TableMergeService {
       }
 
       const row = updated[0];
-      const [a, b] = orderedPair(
-        row.source_table_session_id as string,
-        row.target_table_session_id as string,
-      );
+      // F-1 fix: cooldown direcional. Insert usa (source, target) reais
+      // do request — A→B-rejected NÃO bloqueia B→A. Mantemos as colunas
+      // legacy `table_session_a_id/b_id` populated com mesmo valor pra
+      // forward-compat com queries de monitoring inflight; podem ser
+      // dropadas no próximo release após confirmar zero callers.
+      const sourceId = row.source_table_session_id as string;
+      const targetId = row.target_table_session_id as string;
       const cooldownExpires = new Date(
         Date.now() + COOLDOWN_MINUTES * 60 * 1000,
       ).toISOString();
 
       const cooldownRows = (await tx.query(
         `INSERT INTO table_merge_cooldowns
-           (table_session_a_id, table_session_b_id, cooldown_expires_at,
-            last_request_id, reason)
-         VALUES ($1, $2, $3, $4, 'rejected')
-         ON CONFLICT (table_session_a_id, table_session_b_id) DO UPDATE
+           (source_table_session_id, target_table_session_id,
+            table_session_a_id, table_session_b_id,
+            cooldown_expires_at, last_request_id, reason)
+         VALUES ($1, $2, $1, $2, $3, $4, 'rejected')
+         ON CONFLICT (source_table_session_id, target_table_session_id) DO UPDATE
            SET cooldown_expires_at = EXCLUDED.cooldown_expires_at,
                last_request_id = EXCLUDED.last_request_id,
                reason = EXCLUDED.reason,
                updated_at = now()
          RETURNING id`,
-        [a, b, cooldownExpires, id],
+        [sourceId, targetId, cooldownExpires, id],
       )) as Array<{ id: string }>;
 
       return {
         mapped: this.mapRow(row),
         cooldownEndsAt: cooldownExpires,
         cooldownId: cooldownRows[0]?.id ?? id,
-        pair: { a, b },
+        pair: { a: sourceId, b: targetId },
       };
     });
 
@@ -350,6 +361,142 @@ export class TableMergeService {
     }
 
     return { ...result.mapped, cooldownEndsAt: result.cooldownEndsAt };
+  }
+
+  /**
+   * P1 #F-3 fix (round 3): staff override.
+   *
+   * V16 line 784 prevê que staff só pode intervir em merges via override
+   * explícito ("staff override é a única forma de staff intervir"). Antes
+   * não existia endpoint algum — manager só via ações customer-scoped.
+   *
+   * Comportamento:
+   *   - Bypassa cooldown ativo (manager presencial confirma os 2 hosts).
+   *   - Cria request `approved` direto, sem passar por dual-consent.
+   *   - Marca `decided_by_customer_id = staffId` (mesmo campo, semântica
+   *     "decisor humano"; FE distingue via flag staff_override no
+   *     escalation_chains.steps).
+   *   - Append em `escalation_chains.steps` jsonb com `{ kind:
+   *     'staff_override', staff_id, reason, at }` pra audit.
+   */
+  async forceMerge(
+    input: {
+      sourceTableSessionId: string;
+      targetTableSessionId: string;
+      staffId: string;
+      reason: string;
+    },
+    slug?: string,
+  ) {
+    if (input.sourceTableSessionId === input.targetTableSessionId) {
+      throw new HttpException(
+        'Nao da pra juntar a mesa com ela mesma.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (!input.reason || !input.reason.trim()) {
+      throw new HttpException(
+        'reason obrigatório no staff override (audit trail).',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const result = await this.tenantConn.transaction(async (tx) => {
+      // 1. Resolve hosts pra audit (informativo apenas; override não exige
+      // que ambos hosts existam — manager pode forçar walkin sem app).
+      const sessionRows = (await tx.query(
+        `SELECT id, host_customer_id FROM table_sessions
+         WHERE id IN ($1, $2)`,
+        [input.sourceTableSessionId, input.targetTableSessionId],
+      )) as Array<{ id: string; host_customer_id: string | null }>;
+      const sourceHost =
+        sessionRows.find((r) => r.id === input.sourceTableSessionId)
+          ?.host_customer_id ?? null;
+      const targetHost =
+        sessionRows.find((r) => r.id === input.targetTableSessionId)
+          ?.host_customer_id ?? null;
+
+      // 2. Cria escalation_chain pra audit (steps jsonb append).
+      const chainStep = {
+        kind: 'staff_override',
+        staff_id: input.staffId,
+        reason: input.reason,
+        at: new Date().toISOString(),
+      };
+      const chainRows = (await tx.query(
+        `INSERT INTO escalation_chains (type, context, current_step, status,
+                                         steps, resolved_at, resolved_by)
+         VALUES ('table_merge', $1::jsonb, 1, 'approved', $2::jsonb,
+                 now(), $3)
+         RETURNING id`,
+        [
+          JSON.stringify({
+            sourceTableSessionId: input.sourceTableSessionId,
+            targetTableSessionId: input.targetTableSessionId,
+            override: true,
+          }),
+          JSON.stringify([chainStep]),
+          `staff:${input.staffId}`,
+        ],
+      )) as Array<{ id: string }>;
+
+      // 3. Cria request `approved` direto. ttl_expires_at no passado pra
+      // marcar que não tá esperando timeout — já decidido.
+      const ttl = new Date(Date.now() - 1000).toISOString();
+      const reqRows = unwrapRows<Record<string, unknown>>(
+        await tx.query(
+          `INSERT INTO table_merge_requests
+             (source_table_session_id, target_table_session_id,
+              requesting_customer_id, target_customer_id,
+              decided_by_customer_id, status, message, ttl_expires_at,
+              decided_at, approved_by_a_at, approved_by_b_at,
+              escalation_chain_id)
+           VALUES ($1, $2,
+                   COALESCE($3, '00000000-0000-0000-0000-000000000000'::uuid),
+                   $4, NULL, 'approved', $5, $6, now(), now(), now(), $7)
+           RETURNING *`,
+          [
+            input.sourceTableSessionId,
+            input.targetTableSessionId,
+            sourceHost,
+            targetHost,
+            `STAFF OVERRIDE · ${input.reason}`,
+            ttl,
+            chainRows[0].id,
+          ],
+        ),
+      );
+
+      // 4. Limpar cooldowns ativos entre o par (em qualquer direção) —
+      // override deve permitir mesmo em retry agressivo.
+      await tx.query(
+        `DELETE FROM table_merge_cooldowns
+         WHERE (source_table_session_id = $1 AND target_table_session_id = $2)
+            OR (source_table_session_id = $2 AND target_table_session_id = $1)
+            OR (table_session_a_id IN ($1, $2) AND table_session_b_id IN ($1, $2))`,
+        [input.sourceTableSessionId, input.targetTableSessionId],
+      );
+
+      return reqRows[0];
+    });
+
+    if (slug && this.events) {
+      // Emite como `side: 'both'` pra que ambos hosts (e o staff stream)
+      // recebam — staff override consuma simultaneamente. O fato de ser
+      // override fica audit-trail-only em escalation_chains.steps.kind=staff_override.
+      this.events.emitTableMergeApproved(
+        slug,
+        result.source_table_session_id as string,
+        result.target_table_session_id as string,
+        {
+          requestId: result.id as string,
+          side: 'both',
+          status: 'approved',
+        },
+      );
+    }
+
+    return this.mapRow(result);
   }
 
   async list(filters: { status?: string; tableSessionId?: string }) {
@@ -399,7 +546,9 @@ export class TableMergeService {
   }
 }
 
-/** Returns the same pair always in canonical order (smaller uuid first). */
-function orderedPair(x: string, y: string): [string, string] {
-  return x < y ? [x, y] : [y, x];
-}
+// `orderedPair` foi removido em 2026-05-09 (round 3 P0 #F-1). Era usado
+// pra canonicalizar (a, b) no cooldown e no INSERT — resultado: A→B-rejected
+// bloqueava B→A reverso. Agora cooldown é direcional (source, target) e os
+// inserts usam os IDs reais do request. Se você precisa reativar canonical
+// ordering em outra feature, use uma helper local em vez de exportar
+// global pra evitar a regressão.

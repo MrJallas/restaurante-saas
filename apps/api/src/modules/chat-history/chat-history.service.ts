@@ -4,10 +4,17 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { MongoService } from '../../infra/mongo/mongo.service';
 
 const THREADS_COLLECTION = 'chat_threads';
 const MESSAGES_COLLECTION = 'chat_messages';
+
+/**
+ * Default TTL for chat docs · 90 days. Per docs/features/chat-history-lgpd.md
+ * the customer can erase earlier via tool, otherwise Mongo TTL index drops it.
+ */
+const DEFAULT_TTL_DAYS = 90;
 
 interface ThreadDoc {
   threadId: string;
@@ -40,6 +47,97 @@ export class ChatHistoryService {
   private readonly logger = new Logger(ChatHistoryService.name);
 
   constructor(private readonly mongo: MongoService) {}
+
+  /**
+   * Append a (user_message, assistant_response) pair from `assistant.service`
+   * to Mongo. Soft-failure: if Mongo is offline, log + skip — Postgres
+   * remains the source of truth. P1 #B-6 fix (round 3): antes ninguém
+   * chamava esse método e a collection ficava em 0 docs apesar do flow
+   * rodar.
+   *
+   * @param ctx.threadId opcional — quando ausente, criamos uma nova thread
+   *   pelo par (tenantId, customerId, day-bucket). Customer com 5 idas no
+   *   mesmo dia compartilha thread; nova visita amanhã abre thread nova.
+   */
+  async appendTurn(ctx: {
+    tenantId: string;
+    customerId: string;
+    sessionId: string;
+    userMessage: string;
+    assistantResponse: string;
+    toolCalls?: unknown[] | null;
+    suggestionChips?: string[] | null;
+    linkedItems?: unknown[] | null;
+  }): Promise<void> {
+    const db = this.mongo.tryDb();
+    if (!db) {
+      // Não bloqueia o flow do customer — apenas log warn.
+      this.logger.warn(
+        `Mongo offline · skipping chat persist for customer ${ctx.customerId}`,
+      );
+      return;
+    }
+
+    try {
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000);
+      // Day bucket: AAAA-MM-DD UTC. Cada visita cria thread nova quando
+      // muda o dia, mantendo turnos da mesma visita agrupados.
+      const dayBucket = now.toISOString().slice(0, 10);
+      const threadId = `${ctx.tenantId}:${ctx.customerId}:${dayBucket}`;
+
+      // Upsert thread — incrementa messageCount em 2 (user + assistant).
+      const previewSource = ctx.userMessage.slice(0, 80);
+      await db.collection<ThreadDoc>(THREADS_COLLECTION).updateOne(
+        { threadId },
+        {
+          $setOnInsert: {
+            threadId,
+            customerId: ctx.customerId,
+            tenantId: ctx.tenantId,
+            startedAt: now,
+            expiresAt,
+          },
+          $set: { lastMessageAt: now, preview: previewSource },
+          $inc: { messageCount: 2 },
+        },
+        { upsert: true },
+      );
+
+      // Append user + assistant docs in 1 ordered insertMany.
+      const docs: MessageDoc[] = [
+        {
+          messageId: randomUUID(),
+          threadId,
+          customerId: ctx.customerId,
+          role: 'user',
+          content: ctx.userMessage,
+          createdAt: now,
+          expiresAt,
+        },
+        {
+          messageId: randomUUID(),
+          threadId,
+          customerId: ctx.customerId,
+          role: 'assistant',
+          content: ctx.assistantResponse,
+          toolCalls: ctx.toolCalls ?? undefined,
+          suggestionChips: ctx.suggestionChips ?? undefined,
+          linkedItems: ctx.linkedItems ?? undefined,
+          // 1ms shift so FE sort by createdAt mantém user antes de assistant
+          // mesmo quando os 2 doc Date acabam idênticos no clock granularity.
+          createdAt: new Date(now.getTime() + 1),
+          expiresAt,
+        },
+      ];
+      await db.collection<MessageDoc>(MESSAGES_COLLECTION).insertMany(docs);
+    } catch (err) {
+      // Persist é best-effort — não derruba o turn do customer.
+      this.logger.warn(
+        `Falha ao persistir chat turn em Mongo: ${(err as Error).message}`,
+      );
+    }
+  }
 
   async listThreads(customerId: string, tenantId: string) {
     const db = this.requireDb();

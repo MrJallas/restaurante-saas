@@ -24,7 +24,7 @@ interface AssistantBlockProps {
  *   - 1+ `<AssistantText>` (texto puro)
  *   - 1+ `<ToolCallIndicator>` (tools em execução)
  *   - chips no final (`<SuggestionChip>` row)
- *   - eventualmente um `<ContextualInputExpand>` quando chip exige texto
+ *   - eventualmente um input expand inline quando chip exige texto
  *
  * Padrão de uso (callsite C2/C3):
  *   <AssistantBlock kicker="Assistente">
