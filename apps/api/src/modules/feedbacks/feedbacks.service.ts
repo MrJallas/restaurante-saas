@@ -16,36 +16,43 @@ export interface SubmitFeedbackInput {
 export class FeedbacksService {
   constructor(private readonly tenantConn: TenantConnectionProvider) {}
 
+  /**
+   * Round 16 (B-NEW-51): idempotency atômica via UNIQUE INDEX em
+   * `feedbacks(visit_id) WHERE visit_id IS NOT NULL` (migration 040).
+   * Antes fazia SELECT-then-INSERT — 2 requests concorrentes com mesmo
+   * visit_id ambos viam empty SELECT, ambos INSERTavam. Agora PG
+   * rejeita o segundo com 23505 e traduzimos pra BadRequest amigável.
+   */
   async submitFeedback(input: SubmitFeedbackInput) {
-    // Dedup only for identified visits — anonymous feedbacks skip the check.
-    if (input.visitId) {
-      const existing = (await this.tenantConn.query(
-        `SELECT id FROM feedbacks WHERE visit_id = $1`,
-        [input.visitId],
-      )) as { id: string }[];
-
-      if (existing.length > 0) {
+    let rows: { id: string; created_at: string }[];
+    try {
+      rows = (await this.tenantConn.query(
+        `INSERT INTO feedbacks
+           (visit_id, customer_id, overall_rating, food_rating,
+            service_rating, ambience_rating, comment, tags)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, created_at`,
+        [
+          input.visitId,
+          input.customerId,
+          input.overallRating,
+          input.foodRating ?? null,
+          input.serviceRating ?? null,
+          input.ambienceRating ?? null,
+          input.comment ?? null,
+          input.tags && input.tags.length > 0 ? input.tags : null,
+        ],
+      )) as { id: string; created_at: string }[];
+    } catch (err) {
+      if (
+        err &&
+        typeof err === 'object' &&
+        (err as { code?: string }).code === '23505'
+      ) {
         throw new BadRequestException('Feedback ja enviado para esta visita.');
       }
+      throw err;
     }
-
-    const rows = (await this.tenantConn.query(
-      `INSERT INTO feedbacks
-         (visit_id, customer_id, overall_rating, food_rating,
-          service_rating, ambience_rating, comment, tags)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, created_at`,
-      [
-        input.visitId,
-        input.customerId,
-        input.overallRating,
-        input.foodRating ?? null,
-        input.serviceRating ?? null,
-        input.ambienceRating ?? null,
-        input.comment ?? null,
-        input.tags && input.tags.length > 0 ? input.tags : null,
-      ],
-    )) as { id: string; created_at: string }[];
 
     return {
       feedbackId: rows[0].id,

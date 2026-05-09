@@ -12,6 +12,7 @@ import { DataSource } from 'typeorm';
 import { Server, Socket } from 'socket.io';
 import { timingSafeEqual } from 'crypto';
 import { RedisService } from '../../infra/redis/redis.service';
+import { safeJsonParse } from '../../common/utils/safe-json';
 import type {
   WsEscalationCreated,
   WsEscalationAdvanced,
@@ -89,6 +90,24 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {}
 
   /**
+   * Round 16 (B-NEW-55): extrai IP do handshake. Atrás de proxy/CDN
+   * `x-forwarded-for` é a fonte real (mesmo pattern de
+   * customers.controller.identifyClientKey).
+   */
+  private handshakeIp(client: AuthedSocket): string {
+    const xff = client.handshake.headers['x-forwarded-for'];
+    const xffStr = Array.isArray(xff) ? xff[0] : xff;
+    return (
+      (xffStr as string | undefined) ??
+      client.handshake.address ??
+      'unknown'
+    )
+      .toString()
+      .split(',')[0]
+      .trim();
+  }
+
+  /**
    * Round 15 (P1-NEW-1 round14): valida que `customerId` pertence ao
    * tenant do staff. Antes `join:customer` staff-path entrava na room
    * sem checar — staff de tenant A com customerId de tenant B (UUID
@@ -136,6 +155,23 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   async handleConnection(client: AuthedSocket) {
+    // Round 16 (B-NEW-55): rate-limit handshake por IP — atacante sem
+    // credentials válidas conseguia bater handshake centenas de vezes
+    // por segundo (CPU spend em timingSafeEqual + Redis get). 30
+    // tentativas por 60s é folgado pra reconnect normal mas mata DoS.
+    const ip = this.handshakeIp(client);
+    const handshakeKey = `ws:handshake:${ip}`;
+    const attempts = await this.redis.incr(handshakeKey);
+    if (attempts === 1) {
+      await this.redis.expire(handshakeKey, 60);
+    }
+    if (attempts > 30) {
+      this.logger.warn(`WS handshake rate-limit hit: ${ip}`);
+      client.emit('error', { message: 'Rate limit. Tente novamente em 60s.' });
+      client.disconnect(true);
+      return;
+    }
+
     const staffKey =
       (client.handshake.headers['x-staff-key'] as string) ??
       (client.handshake.auth?.staffKey as string);
@@ -204,17 +240,21 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (sessionToken) {
       const data = await this.redis.get(`session:${sessionToken}`);
       if (data) {
-        const session = JSON.parse(data) as {
+        // Round 16 (B-NEW-53): safeJsonParse — payload corrompido cai em
+        // null e o handshake é rejeitado com 'Authentication required'.
+        const session = safeJsonParse<{
           sessionId: string;
           customerId?: string;
-        };
-        client.data.authType = 'session';
-        client.data.sessionId = session.sessionId;
-        if (session.customerId) {
-          client.data.customerId = session.customerId;
+        }>(data);
+        if (session) {
+          client.data.authType = 'session';
+          client.data.sessionId = session.sessionId;
+          if (session.customerId) {
+            client.data.customerId = session.customerId;
+          }
+          this.logger.log(`Session client connected: ${client.id}`);
+          return;
         }
-        this.logger.log(`Session client connected: ${client.id}`);
-        return;
       }
     }
 

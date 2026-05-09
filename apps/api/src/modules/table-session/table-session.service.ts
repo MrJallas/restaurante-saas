@@ -10,6 +10,7 @@ import {
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { RedisService } from '../../infra/redis/redis.service';
 import { EventsGateway } from '../websocket/events.gateway';
+import { safeJsonParse } from '../../common/utils/safe-json';
 import { QrCodeService } from './qr-code.service';
 
 interface SessionData {
@@ -18,6 +19,14 @@ interface SessionData {
   tableCode: string;
   tableLabel: string;
   schemaName: string;
+  /**
+   * Round 16 (B-NEW-65): customerId carimbado no session payload após
+   * welcome/identify pra que `join:customer` customer-side WS handshake
+   * consiga validar `client.data.customerId === data.customerId`.
+   * Antes era undefined → join sempre rejeitado → late_arrival popup
+   * sempre fallback REST.
+   */
+  customerId?: string;
 }
 
 const SESSION_TTL_SECONDS = 4 * 60 * 60; // 4 hours
@@ -170,7 +179,30 @@ export class TableSessionService {
   async getSessionFromToken(sessionToken: string): Promise<SessionData | null> {
     const data = await this.redis.get(`session:${sessionToken}`);
     if (!data) return null;
-    return JSON.parse(data) as SessionData;
+    // Round 16 (B-NEW-53): safeJsonParse — payload corrompido cai em null,
+    // caller trata como cache miss em vez de propagar SyntaxError.
+    return safeJsonParse<SessionData>(data);
+  }
+
+  /**
+   * Round 16 (B-NEW-65): grava customerId no payload Redis após welcome /
+   * identify, refrescando TTL. Idempotente — sobrescreve se já tiver.
+   * Caller customer-side `join:customer` valida via
+   * `client.data.customerId === data.customerId` no WS gateway.
+   */
+  async attachCustomerToSession(
+    sessionId: string,
+    customerId: string,
+  ): Promise<void> {
+    const data = await this.redis.get(`session:${sessionId}`);
+    if (!data) return; // sessão expirou — silenciosamente no-op
+    const parsed = safeJsonParse<SessionData>(data);
+    if (!parsed) return;
+    await this.redis.set(
+      `session:${sessionId}`,
+      JSON.stringify({ ...parsed, customerId }),
+      SESSION_TTL_SECONDS,
+    );
   }
 
   /**

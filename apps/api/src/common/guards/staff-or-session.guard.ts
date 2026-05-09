@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { timingSafeEqual } from 'crypto';
 import { RedisService } from '../../infra/redis/redis.service';
+import { safeJsonParse } from '../utils/safe-json';
 import type { SessionData, SessionRequest } from './session.guard';
 
 /**
@@ -73,7 +74,16 @@ export class StaffOrSessionGuard implements CanActivate {
       );
     }
 
-    request.sessionData = JSON.parse(data) as SessionData;
+    // Round 16 (B-NEW-53): safeJsonParse trata payload corrompido como
+    // sessão inválida em vez de crashar 5xx.
+    const parsed = safeJsonParse<SessionData>(data);
+    if (!parsed) {
+      throw new HttpException(
+        'Sessao corrompida. Escaneie o QR Code novamente.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    request.sessionData = parsed;
     request.actorType = 'session';
     return true;
   }

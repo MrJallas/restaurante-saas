@@ -11,6 +11,7 @@ import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
 import { EventsGateway } from '../websocket/events.gateway';
 import { OrderRatingsService } from '../order-ratings/order-ratings.service';
+import { safeJsonParse } from '../../common/utils/safe-json';
 
 // TTL do guard de idempotencia. 5 minutos cobre folgado o double-tap
 // (segundos) e ate retries de cliente apos timeout (alguns segundos).
@@ -107,11 +108,13 @@ export class OrdersService {
         while (Date.now() < pollDeadline) {
           const existing = await this.redis.get(idemKey);
           if (existing) {
-            const cached = JSON.parse(existing) as {
+            // Round 16 (B-NEW-53): safeJsonParse — corrompido cai em null
+            // e o poll continua (no-op até timeout).
+            const cached = safeJsonParse<{
               orderId?: string;
               inflight?: boolean;
-            };
-            if (cached.orderId) {
+            }>(existing);
+            if (cached?.orderId) {
               const existingOrder = await this.getOrderById(
                 tableSessionId,
                 cached.orderId,

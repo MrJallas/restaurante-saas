@@ -118,6 +118,11 @@ export class CustomersService {
       visitId,
     );
 
+    // Round 16 (B-NEW-65): grava customerId no payload Redis da sessão
+    // pra que WS join:customer customer-side valide ownership corretamente.
+    // Antes session.customerId vinha undefined → join sempre rejeitado.
+    await this.tableSessionService.attachCustomerToSession(sessionId, customerId);
+
     // Busca consumption_summary se existir
     let lastVisitSummary: Record<string, unknown> | null = null;
     if (isReturning) {

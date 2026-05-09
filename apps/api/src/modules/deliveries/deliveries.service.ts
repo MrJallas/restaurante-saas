@@ -9,7 +9,12 @@ export class DeliveriesService {
     private readonly eventsGateway: EventsGateway,
   ) {}
 
-  async claimOrder(orderId: string, slug: string) {
+  /**
+   * Round 16 (P3-NEW-1): staffId real do header passa a ser persistido
+   * em `claimed_by` (UUID FK pra staff). Antes era apenas NULL +
+   * `'garcom'` string genérica no audit, perdendo accountability.
+   */
+  async claimOrder(orderId: string, slug: string, staffId: string) {
     // Verify order exists and is ready
     const orderRows = (await this.tenantConn.query(
       `SELECT o.id, o.status, o.table_session_id, t.label as table_label
@@ -36,10 +41,10 @@ export class DeliveriesService {
     let deliveryRows: { id: string; status: string; claimed_at: string }[];
     try {
       deliveryRows = (await this.tenantConn.query(
-        `INSERT INTO order_deliveries (order_id, claimed_at, status)
-         VALUES ($1, now(), 'claimed')
+        `INSERT INTO order_deliveries (order_id, claimed_by, claimed_at, status)
+         VALUES ($1, $2, now(), 'claimed')
          RETURNING id, status, claimed_at`,
-        [orderId],
+        [orderId, staffId],
       )) as { id: string; status: string; claimed_at: string }[];
     } catch (err) {
       // 23505 unique_violation = outro garçom claimou no race window.
@@ -49,8 +54,10 @@ export class DeliveriesService {
       throw err;
     }
 
-    // Emit claimed event to remove from other waiters
-    this.eventsGateway.emitOrderClaimed(slug, orderId, 'garcom');
+    // Emit claimed event to remove from other waiters.
+    // Round 16: passamos staffId pro consumer poder filtrar a UI ("eu
+    // claimei vs outro claimou") em vez do label genérico 'garcom'.
+    this.eventsGateway.emitOrderClaimed(slug, orderId, staffId);
 
     return {
       deliveryId: deliveryRows[0].id,
@@ -60,7 +67,7 @@ export class DeliveriesService {
     };
   }
 
-  async markDelivered(deliveryId: string, slug: string) {
+  async markDelivered(deliveryId: string, slug: string, staffId: string) {
     const rows = (await this.tenantConn.query(
       `SELECT od.id, od.order_id, od.status
        FROM order_deliveries od
@@ -88,11 +95,14 @@ export class DeliveriesService {
       [rows[0].order_id],
     );
 
-    // Record status history
+    // Record status history.
+    // Round 16: changed_by recebe staffId UUID em vez de 'garcom' literal.
+    // Coluna é VARCHAR(100), aceita UUID; consumer pode JOIN com staff
+    // pra display name.
     await this.tenantConn.query(
       `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
-       VALUES ($1, 'ready', 'delivered', 'garcom')`,
-      [rows[0].order_id],
+       VALUES ($1, 'ready', 'delivered', $2)`,
+      [rows[0].order_id, staffId],
     );
 
     // Emit status update

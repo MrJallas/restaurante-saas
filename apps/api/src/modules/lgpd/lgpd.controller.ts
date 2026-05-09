@@ -22,6 +22,7 @@ import {
 } from 'class-validator';
 import { SessionGuard } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { CustomersService } from '../customers/customers.service';
 import { LgpdService } from './lgpd.service';
 
@@ -119,9 +120,16 @@ export class LgpdController {
     return resolved.customerId;
   }
 
-  /** `GET /lgpd-requests` · manager view. */
+  /**
+   * `GET /lgpd-requests` · manager view.
+   *
+   * Round 16 (LGPD-list-hardening): adicionado ManagerOnlyGuard. Antes
+   * StaffOnly só (qualquer waiter/cook listava todos requests com
+   * customer_cpf no payload — leak LGPD). Manager DB role lookup já
+   * existe no guard (round 7).
+   */
   @Get()
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async list(@Query() q: ListQueryDto) {
     return this.service.list({ status: q.status, kind: q.kind });
   }
