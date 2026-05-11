@@ -244,61 +244,6 @@ export async function fetchSmartSuggestions(params: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Alerts — operational notifications feed (Onda 4 batch 2).
-//
-// Endpoints shipped by `apps/api/src/modules/alerts/`:
-//   GET  /:slug/alerts?sev=all|crítica|atenção|info&status=open|dismissed|resolved|all
-//   POST /:slug/alerts/:id/dismiss
-//   POST /:slug/alerts/:id/resolve
-//
-// WS event `alert.created` fanned out on the same socket the manager hooks
-// already join. Surface is consumed by `ScreenManagerNotifications` (rota
-// /manager/notifications · /host/notifications).
-//
-// The `actions` field is a JSONB array of `{ label, route?, kind? }` objects
-// — UIs render them as inline action buttons inside each notification row.
-// Endpoint is wired up in parallel (sibling worktree); when it's not
-// reachable the screen falls back to an empty state.
-// ─────────────────────────────────────────────────────────────
-
-export type AlertSeverity = 'crítica' | 'atenção' | 'info';
-export type AlertStatus = 'open' | 'dismissed' | 'resolved';
-
-export interface AlertActionDescriptor {
-  label: string;
-  route?: string;
-  kind?: 'primary' | 'ghost';
-}
-
-export interface AlertRow {
-  id: string;
-  sev: AlertSeverity;
-  kind: string;
-  title: string;
-  sub: string | null;
-  ttl_at: string | null;
-  actions: AlertActionDescriptor[];
-  dismissed_at: string | null;
-  resolved_at: string | null;
-  created_at: string;
-}
-
-export const alertsApi = (slug: string) => ({
-  list: (params?: { sev?: AlertSeverity | 'all'; status?: AlertStatus | 'all'; limit?: number }) => {
-    const search = new URLSearchParams();
-    if (params?.sev) search.set('sev', params.sev);
-    if (params?.status) search.set('status', params.status);
-    if (params?.limit) search.set('limit', String(params.limit));
-    const query = search.toString();
-    return staffGet<{ alerts: AlertRow[] }>(
-      `/${slug}/alerts${query ? `?${query}` : ''}`,
-    ).then((r) => r.alerts ?? []);
-  },
-  dismiss: (id: string) => staffPost<AlertRow>(`/${slug}/alerts/${id}/dismiss`, {}),
-  resolve: (id: string) => staffPost<AlertRow>(`/${slug}/alerts/${id}/resolve`, {}),
-});
-
-// ─────────────────────────────────────────────────────────────
 // Generic staff/me lookup — used by header greetings + bell badge.
 // ─────────────────────────────────────────────────────────────
 
@@ -385,10 +330,11 @@ export interface AlertRow {
 }
 
 export const alertsApi = (slug: string) => ({
-  list: (params: { sev?: AlertSeverity | 'all'; status?: AlertStatus | 'all' } = {}) => {
+  list: (params: { sev?: AlertSeverity | 'all'; status?: AlertStatus | 'all'; limit?: number } = {}) => {
     const search = new URLSearchParams();
     if (params.sev) search.set('sev', params.sev);
     if (params.status) search.set('status', params.status);
+    if (params.limit) search.set('limit', String(params.limit));
     const query = search.toString();
     return staffGet<{ alerts: AlertRow[] } | AlertRow[]>(
       `/${slug}/alerts${query ? `?${query}` : ''}`,
