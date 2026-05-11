@@ -29,3 +29,6 @@ e2e/.auth/
 # Worktrees criadas por agentes Claude (cada sessao do harness gera uma) —
 # nao versionar nada dentro, evita poluir o repo.
 .claude/worktrees/
+
+# Screenshots no root (debug/contextualizacao de sessao — nao versionar)
+/*.png
