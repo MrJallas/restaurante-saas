@@ -233,6 +233,15 @@ class ContinuationRequest(BaseModel):
     customerName: str | None = None
     favoriteItem: str | None = None
     kind: str | None = None
+    # Round 19: rich slots pra contextualidade (pos_reclamacao, chamou_garcom
+    # com waitMinutes, abriu_pedido com customerName+waitMinutes etc).
+    # Quando ausentes, fallback variants do pool são selecionados.
+    managerName: str | None = None
+    avgResponseMin: int | None = None
+    waitMinutes: int | None = None
+    tableLabel: str | None = None
+    lastItem: str | None = None
+    lastOrderSummary: str | None = None
 
 
 class ContinuationResponse(BaseModel):
@@ -488,8 +497,12 @@ async def continuation(req: ContinuationRequest):
     slots = {
         "customerName": req.customerName or "",
         "favoriteItem": req.favoriteItem or "",
-        "tableLabel": "",
-        "last_item": req.favoriteItem or "",
+        "tableLabel": req.tableLabel or "",
+        "last_item": req.lastItem or req.favoriteItem or "",
+        "managerName": req.managerName or "",
+        "avgResponseMin": str(req.avgResponseMin) if req.avgResponseMin is not None else "",
+        "waitMinutes": str(req.waitMinutes) if req.waitMinutes is not None else "",
+        "lastOrderSummary": req.lastOrderSummary or "",
     }
     full = get_continuation_full(
         tenant_id=req.tenantId,

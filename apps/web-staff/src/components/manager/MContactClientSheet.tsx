@@ -9,16 +9,20 @@
 //   static chips if the AI service is unreachable (handled in
 //   `lib/api/manager.ts → fetchSmartSuggestions`).
 //
-// On send: POSTs to `/staff-messages` (kind=`direct_reply` by default).
+// On send: POSTs to `/assistant/staff-to-customer` (round 18 Onda 4 batch 2).
+// Persiste em `assistant_messages` (from_role='staff') e emite WS pra
+// `session:<tableSessionId>` — customer ve a bubble em real-time no
+// /[slug]/assistente. Antes (round 18 Onda 1) batia em `/staff-messages`
+// (staff↔staff) e o service ignorava os fields customer/tableSession.
 // State machine: idle → selected → sent.
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useG, G_FONT, MONO_FONT } from './tokens';
 import { Icon } from './Icons';
 import { GButton } from './primitives';
 import {
   fetchSmartSuggestions,
-  staffMessagesApi,
+  assistantApi,
   type SmartSuggestionChip,
 } from '../../lib/api/manager';
 
@@ -75,6 +79,13 @@ export function MContactClientSheet({
   const [draft, setDraft] = useState('');
   const [state, setState] = useState<'idle' | 'selected' | 'sent'>('idle');
   const [sending, setSending] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Round 18 (Onda 1 wiring): drag-to-dismiss state. Antes o handle
+  // visual era afordância falsa (parecia arrastável mas não tinha
+  // pointer listeners). Pattern espelha CallWaiterSheet (V20 customer).
+  const dragStartY = useRef<number | null>(null);
+  const [dragOffsetY, setDragOffsetY] = useState(0);
 
   const loadSuggestions = useCallback(async () => {
     try {
@@ -95,6 +106,8 @@ export function MContactClientSheet({
       setSelectedIdx(-1);
       setDraft('');
       setState('idle');
+      setErrorMsg(null);
+      setDragOffsetY(0);
     }
   }, [open, loadSuggestions]);
 
@@ -113,19 +126,56 @@ export function MContactClientSheet({
   const onSend = async () => {
     if (!draft.trim() || sending) return;
     setSending(true);
+    setErrorMsg(null);
     try {
-      await staffMessagesApi(tenantSlug).send({
+      // Round 18 (Onda 4 batch 2): chama `/assistant/staff-to-customer`
+      // (manager → customer direct bubble). Persiste em assistant_messages
+      // com from_role='staff' e emite WS `assistant.staff_message_received`
+      // pra sessao da mesa — cliente recebe em real-time no /assistente.
+      //
+      // `fromStaffId` vem do localStorage.staffId (auth pattern do staff
+      // login). Endpoint exige manager-only via guards no backend.
+      const fromStaffId =
+        typeof window !== 'undefined'
+          ? window.localStorage.getItem('staffId')
+          : null;
+      if (!fromStaffId) {
+        throw new Error('staffId ausente — faça login antes de enviar.');
+      }
+      await assistantApi(tenantSlug).staffToCustomer({
         tableSessionId,
-        customerId,
-        content: draft.trim(),
-        kind: 'direct_reply',
+        message: draft.trim(),
+        fromStaffId,
       });
       setState('sent');
       onSent?.(draft.trim());
-    } catch {
-      // Stay on selected; toast surfacing is the screen's job.
+    } catch (e) {
+      const msg = (e as Error).message || 'Erro ao enviar mensagem.';
+      setErrorMsg(msg);
     } finally {
       setSending(false);
+    }
+  };
+
+  // ─── Drag-to-dismiss handlers ─────────────────────────────────
+  const onDragPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (state === 'sent') return;
+    dragStartY.current = e.clientY;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onDragPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragStartY.current == null) return;
+    const dy = e.clientY - dragStartY.current;
+    setDragOffsetY(Math.max(0, dy));
+  };
+  const onDragPointerUp = () => {
+    if (dragStartY.current == null) return;
+    const dy = dragOffsetY;
+    dragStartY.current = null;
+    if (dy > 120) {
+      onClose?.();
+    } else {
+      setDragOffsetY(0);
     }
   };
 
@@ -164,10 +214,27 @@ export function MContactClientSheet({
           boxShadow: '0 -10px 36px rgba(0,0,0,0.18)',
           display: 'flex',
           flexDirection: 'column',
-          transition: 'height 220ms cubic-bezier(.2,.8,.2,1)',
+          transform: `translateY(${dragOffsetY}px)`,
+          transition: dragOffsetY === 0
+            ? 'height 220ms cubic-bezier(.2,.8,.2,1), transform 180ms cubic-bezier(.2,.8,.2,1)'
+            : 'height 220ms cubic-bezier(.2,.8,.2,1)',
+          touchAction: 'pan-y',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 6px' }}>
+        <div
+          onPointerDown={onDragPointerDown}
+          onPointerMove={onDragPointerMove}
+          onPointerUp={onDragPointerUp}
+          onPointerCancel={onDragPointerUp}
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            padding: '12px 0 10px',
+            cursor: 'grab',
+            touchAction: 'none',
+          }}
+          aria-label="Arraste para fechar"
+        >
           <div style={{ width: 38, height: 4, borderRadius: 2, background: C.borderSoft }} />
         </div>
 
@@ -507,6 +574,24 @@ export function MContactClientSheet({
             background: C.bg,
           }}
         >
+          {errorMsg && (
+            <div
+              role="alert"
+              style={{
+                marginBottom: 10,
+                padding: '8px 10px',
+                background: '#FFF1F1',
+                border: '1px solid #F4C7C7',
+                borderRadius: 10,
+                fontSize: 12,
+                color: '#A12626',
+                fontWeight: 500,
+                lineHeight: 1.4,
+              }}
+            >
+              {errorMsg}
+            </div>
+          )}
           {state === 'sent' ? (
             <div style={{ display: 'flex', gap: 8 }}>
               <GButton dark={dark} full kind="ghost" onClick={onClose}>

@@ -6,6 +6,7 @@ import { apiPost, apiGet } from '../../../../lib/api';
 import { setSessionToken } from '../../../../lib/storage';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
+import { useTableSocket } from '../../../../hooks/useTableSocket';
 import { useUIState } from '../../../../providers/UIStateProvider';
 import { useZonePause } from '../../../../hooks/useZonePause';
 import { WelcomeModal } from '../../../../components/welcome/WelcomeModal';
@@ -14,7 +15,8 @@ import { HomeHero } from '../../../../components/home/HomeHero';
 import { PillButton } from '../../../../components/ui/PillButton';
 import { SoftInput } from '../../../../components/ui/SoftInput';
 import { HostApprovalModal } from '../../../../components/host/HostApprovalModal';
-import { PendingApprovalScreen } from '../../../../components/host/PendingApprovalScreen';
+import { HostJoinRequestBanner } from '../../../../components/host/HostJoinRequestBanner';
+import { ScreenCustomerWaitingApproval } from '../../../../screens/customer-host-flows/ScreenCustomerWaitingApproval';
 import type { SessionResponseDto, CustomerWelcomeResponseDto } from '@restaurant/shared-types';
 
 // Hard cap para a splash "Preparando sua experiencia". Se o initSession demorar
@@ -340,6 +342,42 @@ export default function MesaPage() {
     [slug, checkParticipantStatus],
   );
 
+  // Round 19 — bug fix: on the recognize path (returning customer cookie),
+  // the original flow set `pageState='home'` without ever calling
+  // `checkParticipantStatus`. Result: the host wouldn't see the join
+  // request banner (or the legacy HostApprovalModal) on reload, because
+  // `isHost` was never set, and a non-host returning customer with
+  // status='pending' would skip past `pending_approval` straight to home.
+  //
+  // This effect runs whenever the recognize path hands us a customerId
+  // but the participant status hasn't been resolved yet (isHost still
+  // false AND hostName null). It re-evaluates and either redirects into
+  // the waiting screen or unlocks the host UI.
+  useEffect(() => {
+    if (pageState !== 'home') return;
+    if (!customerId) return;
+    // Re-check only when we haven't already determined host/non-host.
+    // After the first run isHost flips true OR hostName populates;
+    // either way we don't loop.
+    if (isHost || hostName) return;
+    let cancelled = false;
+    (async () => {
+      const status = await checkParticipantStatus(customerId);
+      if (cancelled) return;
+      if (status === 'pending') {
+        setPageState('pending_approval');
+      } else if (status === 'rejected') {
+        setErrorMessage(
+          'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.',
+        );
+        setPageState('error');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pageState, customerId, isHost, hostName, checkParticipantStatus]);
+
   const handleAssistantSubmit = useCallback(
     (value: string) => {
       const trimmed = value.trim();
@@ -370,11 +408,20 @@ export default function MesaPage() {
   }
 
   if (pageState === 'pending_approval') {
+    // Round 19 — V20 canon LOCKED waiting screen (ScreenCustomerWaitingApproval)
+    // substitui o legacy `PendingApprovalScreen` (V13 dots + título "Aguardando
+    // aprovação"). Per user ask: "a tela de espera do outro cliente tentando
+    // entrar na mesa tambem tem que existir". Mode='late-arrival' usa o copy
+    // canon ("Esperando aprovação · {host} foi avisado").
+    //
+    // System A (participant) não emite `late_arrival.approved` — usa
+    // `participant:decision`. Logo, este wrapper escuta via useTableSocket
+    // diretamente e força `setPageState('home')` quando o decision chegar.
     return (
-      <PendingApprovalScreen
+      <PendingApprovalWrapper
+        slug={slug}
         hostName={hostName}
         onApproved={async () => {
-          // Quando aprovado, recarrega home com customerId.
           try {
             const url = customerId
               ? `/${slug}/home?customerId=${customerId}`
@@ -385,6 +432,12 @@ export default function MesaPage() {
             /* ignore */
           }
           setPageState('home');
+        }}
+        onRejected={() => {
+          setErrorMessage(
+            'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.',
+          );
+          setPageState('error');
         }}
       />
     );
@@ -426,6 +479,12 @@ export default function MesaPage() {
       activeHref={`/${slug}/mesa/${tableCode}`}
       noMainPadding
     >
+      {/* Round 19 — banner clicável V20 ("X quer entrar · →") pra deep-link
+          na tela cheia /host/approve/participant. Modal bottom legacy fica
+          como atalho inline pra hosts que preferem decidir sem deixar a
+          home. Os dois rendem o mesmo dado (`/table/participants`) e
+          escutam o mesmo WS — ambos somem quando não há pendentes. */}
+      {isHost && <HostJoinRequestBanner slug={slug} />}
       {/* Modal flutuante so pra host: lista pendentes e oferece
           aprovar/rejeitar. Desaparece sozinho quando nao tem
           ninguem pendente. */}
@@ -499,6 +558,68 @@ export default function MesaPage() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+/**
+ * Round 19 wrapper · monta o V20 canon `ScreenCustomerWaitingApproval`
+ * (mode='late-arrival') em cima do contrato WS do System A (participants).
+ * Listens para `participant:decision` e bridgea pro callback do mount —
+ * o V20 canon LOCKED não pode ser editado pra reconhecer
+ * `participant:decision` diretamente, então mantemos o wiring aqui.
+ */
+function PendingApprovalWrapper({
+  slug,
+  hostName,
+  onApproved,
+  onRejected,
+}: {
+  slug: string;
+  hostName: string | null;
+  onApproved: () => void;
+  onRejected: () => void;
+}) {
+  const { sessionId, customerId } = useSession();
+
+  useTableSocket(sessionId, (event, data) => {
+    if (event !== 'participant:decision') return;
+    const payload = data as { customerId: string; status: string };
+    if (payload.customerId !== customerId) return;
+    if (payload.status === 'approved') onApproved();
+    else if (payload.status === 'rejected') onRejected();
+  });
+
+  // Fallback poll: same 8s cadência do legacy PendingApprovalScreen.
+  // Useful pra casos onde o WS dropou silenciosamente.
+  useEffect(() => {
+    if (!sessionId || !customerId) return;
+    const tick = setInterval(async () => {
+      try {
+        const res = await apiGet<{
+          participants: { customerId: string; status: string }[];
+        }>(`/${slug}/table/participants`);
+        const me = res.participants.find((p) => p.customerId === customerId);
+        if (me?.status === 'approved') onApproved();
+        else if (me?.status === 'rejected') onRejected();
+      } catch {
+        /* ignore */
+      }
+    }, 8000);
+    return () => clearInterval(tick);
+  }, [slug, sessionId, customerId, onApproved, onRejected]);
+
+  return (
+    <ScreenCustomerWaitingApproval
+      slug={slug}
+      mode="late-arrival"
+      hostName={hostName}
+      // Sem requestId nem expiresAt: o System A não tem TTL (host pode
+      // demorar). O ScreenCustomerWaitingApproval cai num eyebrow sem
+      // contagem ("Aguardando host da mesa") quando expiresAt é null —
+      // o canon V20 já cobre esse cenário (linhas 158-181 do screen).
+      requestId={null}
+      expiresAt={null}
+    />
   );
 }
 

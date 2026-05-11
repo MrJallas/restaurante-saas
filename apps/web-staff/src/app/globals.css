@@ -1,3 +1,16 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Esconde o scrollbar em rows horizontalmente roláveis (ex. ChipRow em
+   /manager/equipe) sem perder o gesto de arrastar. Apenas adicionar o
+   atributo `data-hide-scrollbar` no container. */
+[data-hide-scrollbar] {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+[data-hide-scrollbar]::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}

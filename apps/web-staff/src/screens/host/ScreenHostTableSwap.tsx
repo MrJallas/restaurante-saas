@@ -69,7 +69,7 @@ export const ScreenHostTableSwap: React.FC<ScreenHostTableSwapProps> = ({
   return (
     <div
       style={{
-        width: '100%', minHeight: '100vh', background: C.bg, color: C.ink,
+        width: '100%', height: '100dvh', background: C.bg, color: C.ink,
         fontFamily: G_FONT, display: 'flex', flexDirection: 'column',
       }}
     >
@@ -79,7 +79,7 @@ export const ScreenHostTableSwap: React.FC<ScreenHostTableSwapProps> = ({
         title="Trocar mesa"
       />
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '14px 16px' }}>
+      <div style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: '14px 16px' }}>
         <div
           style={{
             fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase',
@@ -181,6 +181,7 @@ export const ScreenHostTableSwap: React.FC<ScreenHostTableSwapProps> = ({
         style={{
           padding: '12px 16px 18px',
           borderTop: `1px solid ${C.borderFaint}`, background: C.bg,
+          flexShrink: 0,
         }}
       >
         <GButton

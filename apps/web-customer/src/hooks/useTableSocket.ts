@@ -53,11 +53,18 @@ export function useTableSocket(
       socket.emit('join:session', { sessionId });
     });
 
-    // Eventos que importam pro customer.
+    // Eventos que importam pro customer. Round 19 — adicionados
+    // `participant:join_request` (host vê quando alguém pediu pra
+    // entrar) e `participant:decision` (joiner vê quando host
+    // aprovou/rejeitou). Antes esses eventos chegavam pela conexão WS
+    // mas o handler ignorava (lista hardcoded), e a UI dependia de
+    // refetch manual — modal só aparecia se mounting timing acertasse.
     const events = [
       'order:created',
       'order:status',
       'waiter:acknowledged',
+      'participant:join_request',
+      'participant:decision',
     ] as const;
     for (const ev of events) {
       socket.on(ev, (data: unknown) => onEventRef.current(ev, data));

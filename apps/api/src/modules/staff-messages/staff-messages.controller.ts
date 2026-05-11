@@ -21,8 +21,16 @@ import { CallerResolverService } from '../../common/services/caller-resolver.ser
 import { StaffMessagesService } from './staff-messages.service';
 
 class SendMessageDto {
+  // Round 18 fix: senderStaffId vira optional. Round 10 (B-NEW-49)
+  // tornou-o derivado do x-staff-id header (anti-impersonation), mas
+  // o validator ainda exigia o campo no body — qualquer FE/curl que
+  // não passasse retornava 400 "senderStaffId must be a UUID" mesmo
+  // o backend ignorando o valor. MContactStaffSheet pre-fix mandava
+  // pra path errado (`/staff-messages/staff` 404) e o catch silencioso
+  // escondia o erro real, então ninguém viu esse 400 antes.
+  @IsOptional()
   @IsUUID()
-  senderStaffId!: string;
+  senderStaffId?: string;
 
   @IsOptional()
   @IsUUID()

@@ -345,21 +345,20 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.emit('error', { message: 'Session inválida ou expirada.' });
         return;
       }
-      try {
-        const parsed = JSON.parse(sessionData) as { schemaName?: string };
-        // Round 14 (P1-NEW-1): handshake garante staffTenantSlug presente,
-        // então o check anterior `&& ...` virou `!staffTenantSlug ||` pra
-        // não curto-circuitar caso futura regressão volte a stamping
-        // condicional.
-        if (
-          !client.data.staffTenantSlug ||
-          parsed.schemaName !== client.data.staffTenantSlug
-        ) {
-          client.emit('error', { message: 'Cross-tenant session join blocked.' });
-          return;
-        }
-      } catch {
+      const parsed = safeJsonParse<{ schemaName?: string }>(sessionData);
+      if (!parsed) {
         client.emit('error', { message: 'Session payload corrompido.' });
+        return;
+      }
+      // Round 14 (P1-NEW-1): handshake garante staffTenantSlug presente,
+      // então o check anterior `&& ...` virou `!staffTenantSlug ||` pra
+      // não curto-circuitar caso futura regressão volte a stamping
+      // condicional.
+      if (
+        !client.data.staffTenantSlug ||
+        parsed.schemaName !== client.data.staffTenantSlug
+      ) {
+        client.emit('error', { message: 'Cross-tenant session join blocked.' });
         return;
       }
     }
@@ -1005,5 +1004,20 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server
       .to(`session:${payload.sessionId}`)
       .emit('host.vip_flagged', payload);
+  }
+
+  /**
+   * Round 18 (Onda 4 batch 2): broadcast pra dashboards de manager
+   * quando um alerta novo é inserido na tabela `alerts` (migration
+   * 045). Sem slug-arg (alerta nao carrega slug — eh tenant-scoped
+   * pela schema de quem inseriu); o gateway emite no namespace
+   * default. Subscribers no FE (`ScreenManagerAlertsAll`) filtram
+   * por dismissed/resolved e re-fetch ao receber o event.
+   *
+   * Payload: o row do alerta serializado. Inclui `actions` JSONB ja
+   * parsed pro FE renderizar botoes inline sem segundo fetch.
+   */
+  emitAlertCreated(alert: Record<string, unknown>) {
+    this.server.emit('alert.created', alert);
   }
 }

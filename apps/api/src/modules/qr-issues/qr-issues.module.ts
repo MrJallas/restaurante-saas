@@ -1,18 +1,20 @@
 import { Module } from '@nestjs/common';
 import { RedisModule } from '../../infra/redis/redis.module';
+import { TenantModule } from '../tenant/tenant.module';
+import { CallerResolverModule } from '../../common/services/caller-resolver.module';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { QrIssuesController } from './qr-issues.controller';
+import { QrIssuesService } from './qr-issues.service';
 
 /**
- * P1 #17 — Stub module so the FE-defined `POST /:slug/qr-issues` and
- * `GET /:slug/qr-issues` routes resolve instead of 404'ing. The
- * controller is intentionally light (no service/persistence) — when the
- * real pipeline lands the implementation can be filled in without
- * touching the routing wiring.
+ * Round 18 (Onda 4 batch 1 wiring): persistencia real do qr-issues.
+ * Antes era stub (GET [], POST fake id) — agora persiste em `qr_issues`
+ * (migration 044) e o GET filtra por `?status=`.
  */
 @Module({
-  imports: [RedisModule],
+  imports: [RedisModule, TenantModule, CallerResolverModule],
   controllers: [QrIssuesController],
-  providers: [StaffOrSessionGuard],
+  providers: [QrIssuesService, StaffOrSessionGuard],
+  exports: [QrIssuesService],
 })
 export class QrIssuesModule {}

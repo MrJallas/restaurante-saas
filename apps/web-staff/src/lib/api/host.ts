@@ -13,6 +13,8 @@ export interface HostTableEntry {
   seats?: number;
   since?: string;
   waiter_initial?: string | null;
+  /** UUID do table_sessions ativo (null se livre). */
+  active_session_id?: string | null;
 }
 
 export interface WaitlistEntry {

@@ -94,7 +94,7 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
   return (
     <div
       style={{
-        height: '100%', minHeight: '100vh',
+        height: '100%', height: '100vh',
         display: 'flex', flexDirection: 'column',
         background: C.surface, fontFamily: G_FONT, color: C.ink, position: 'relative',
       }}
@@ -143,6 +143,7 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
 
       {/* Filter chips */}
       <div
+        data-hide-scrollbar
         style={{
           display: 'flex', gap: 8, padding: '10px 12px 4px',
           overflowX: 'auto', flexShrink: 0,

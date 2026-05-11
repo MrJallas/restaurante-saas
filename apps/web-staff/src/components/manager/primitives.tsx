@@ -7,7 +7,7 @@
 // Mobile-first; all interactive elements have aria-label/role.
 
 import type { CSSProperties, ReactNode, MouseEvent } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useG, G_FONT, MONO_FONT } from './tokens';
 import { Icon } from './Icons';
 
@@ -662,6 +662,10 @@ export function MAppHeader({
   onBell?: () => void;
 }) {
   const C = useG(!!dark);
+  const router = useRouter();
+  // Round 18 placebo-fix · campainha do header passa a navegar pra
+  // `/manager/notifications` por padrão (consumer pode override via prop).
+  const bellHandler = onBell ?? (() => router.push('/manager/notifications'));
   return (
     <>
       <MTopBar
@@ -672,7 +676,7 @@ export function MAppHeader({
             dark={dark}
             icon={Icon.bell(20)}
             badge={bellBadge > 0 ? bellBadge : undefined}
-            onClick={onBell}
+            onClick={bellHandler}
             ariaLabel="Notificações"
           />
         }

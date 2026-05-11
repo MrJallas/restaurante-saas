@@ -1,8 +1,15 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { AiServiceClient, type AiToolCall } from '../../infra/ai/ai-service.client';
 import { RedisService } from '../../infra/redis/redis.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
+import { EventsGateway } from '../websocket/events.gateway';
 
 const BLOCKED_RESPONSE =
   'Desculpe, só posso ajudar com assuntos do restaurante: cardápio, pratos, bebidas, recomendações e informações sobre o estabelecimento.';
@@ -175,6 +182,7 @@ export class AssistantService {
     // se ChatHistoryService não conseguir injetar, AssistantService continua
     // funcionando (Postgres é fonte de verdade).
     @Optional() private readonly chatHistory?: ChatHistoryService,
+    @Optional() private readonly events?: EventsGateway,
   ) {}
 
   async sendMessage(
@@ -432,6 +440,105 @@ export class AssistantService {
       }
       return msgs;
     });
+  }
+
+  /**
+   * Round 18 (Onda 4 batch 2): manager → cliente direct message.
+   *
+   * Persiste em `assistant_messages` com `from_role='staff'` e
+   * `assistant_response = message` (o customer-side `/assistente`
+   * renderiza o bubble do staff lendo essa coluna). `user_message`
+   * fica string vazia — schema requere NOT NULL pra essa coluna.
+   *
+   * `to_staff_id` é nullable + (não usado aqui — esta mensagem é
+   * INBOUND pro customer, não outbound pro staff). `from_staff_id`
+   * (via `model_used` workaround? não — usamos `to_staff_id` invertido?)
+   * Hmm — a coluna `to_staff_id` foi adicionada em 030 pra inbox
+   * staff. Pra mensagem do staff PRO customer só precisamos identificar
+   * o autor; vamos guardar o staffId em `model_used` (text 100 chars)
+   * que sobra pra esse uso, OU criar via mecanismo Postgres usando
+   * `provider_used = 'staff'` + `model_used = staffId`. Pragmático
+   * sem migration nova.
+   *
+   * Emite WS `assistant.staff_message_received` no room
+   * `session:<tableSessionId>` pra cliente atualizar UI em real-time.
+   */
+  async sendStaffToCustomer(input: {
+    tableSessionId: string;
+    message: string;
+    fromStaffId: string;
+  }): Promise<{
+    id: string;
+    tableSessionId: string;
+    message: string;
+    fromStaffId: string;
+    fromStaffName: string | null;
+    createdAt: string;
+  }> {
+    if (!input.message || !input.message.trim()) {
+      throw new BadRequestException('Mensagem nao pode ser vazia.');
+    }
+    if (input.message.length > 2000) {
+      throw new BadRequestException('Mensagem muito longa (max 2000 chars).');
+    }
+
+    // Confirma table session existe e está ativa.
+    const sessionRows = (await this.tenantConn.query(
+      `SELECT id FROM table_sessions WHERE id = $1 AND status = 'active'`,
+      [input.tableSessionId],
+    )) as Array<{ id: string }>;
+    if (!sessionRows.length) {
+      throw new NotFoundException('Sessão de mesa não encontrada ou já encerrada.');
+    }
+
+    // Confirma staff existe e está ativo. Pega name pra payload do WS.
+    const staffRows = (await this.tenantConn.query(
+      `SELECT id, name FROM staff WHERE id = $1 AND is_active = true`,
+      [input.fromStaffId],
+    )) as Array<{ id: string; name: string }>;
+    if (!staffRows.length) {
+      throw new NotFoundException('Funcionário não encontrado ou inativo.');
+    }
+    const staffName = staffRows[0].name;
+
+    // Persiste em assistant_messages. Usa `assistant_response` pro corpo
+    // (o customer-side render le essa coluna) e `from_role='staff'`
+    // (migration 030 check constraint aceita). `provider_used`+`model_used`
+    // identificam o autor (workaround sem migration extra).
+    const inserted = (await this.tenantConn.query(
+      `INSERT INTO assistant_messages
+         (table_session_id, user_message, assistant_response,
+          from_role, to_role, provider_used, model_used,
+          was_blocked, tokens_in, tokens_out)
+       VALUES ($1, '', $2, 'staff', 'customer', 'staff', $3, false, 0, 0)
+       RETURNING id, created_at`,
+      [input.tableSessionId, input.message.trim(), input.fromStaffId],
+    )) as Array<{ id: string; created_at: string }>;
+
+    if (!inserted.length) {
+      throw new BadRequestException('Falha ao persistir mensagem.');
+    }
+
+    const row = inserted[0];
+    const payload = {
+      id: row.id,
+      tableSessionId: input.tableSessionId,
+      message: input.message.trim(),
+      fromStaffId: input.fromStaffId,
+      fromStaffName: staffName,
+      createdAt: row.created_at,
+    };
+
+    // Emit WS pra session room — customer recebe em real-time.
+    if (this.events) {
+      this.events.emitToSession(
+        input.tableSessionId,
+        'assistant.staff_message_received',
+        payload,
+      );
+    }
+
+    return payload;
   }
 
   private async buildTenantContext(): Promise<{

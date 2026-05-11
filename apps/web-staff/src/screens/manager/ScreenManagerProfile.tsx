@@ -8,7 +8,7 @@
 // destacado mostarda · Histórico · Equipe e turnos · Cortesias) · Conta ·
 // Estabelecimento (só owner) · Sair em vermelho · footer versão.
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -65,6 +65,14 @@ export function ScreenManagerProfile({
   const initials =
     managerInitials ??
     managerName.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
+  // Round 18 (Onda 2A): stub feedback pra ActionRows sem backend ainda.
+  // Antes 9 de 13 rows não tinham onClick — clique silencioso. Agora
+  // toast curto explica que está em desenvolvimento.
+  const [stubMsg, setStubMsg] = useState<string | null>(null);
+  const showStub = (action: string) => {
+    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
+    setTimeout(() => setStubMsg(null), 2800);
+  };
 
   const handleLogout = () => {
     try {
@@ -86,7 +94,7 @@ export function ScreenManagerProfile({
   return (
     <div
       style={{
-        minHeight: '100vh',
+        height: '100vh',
         display: 'flex',
         flexDirection: 'column',
         background: C.surface,
@@ -105,7 +113,13 @@ export function ScreenManagerProfile({
           }}
         >
           <h1 style={{ flex: 1, margin: 0, fontSize: 18, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>Eu</h1>
-          <GIconBtn dark={dark} icon={Icon.bell(20)} badge={bellBadge > 0 ? bellBadge : undefined} ariaLabel="Notificações" />
+          <GIconBtn
+            dark={dark}
+            icon={Icon.bell(20)}
+            badge={bellBadge > 0 ? bellBadge : undefined}
+            onClick={() => router.push('/manager/notifications')}
+            ariaLabel="Notificações"
+          />
         </div>
 
         {/* 1 · HERO — avatar lado-a-lado · pulse "em turno desde HH:MM" */}
@@ -214,6 +228,7 @@ export function ScreenManagerProfile({
           <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <button
               type="button"
+              onClick={() => showStub('Encerrar turno')}
               style={{
                 all: 'unset',
                 cursor: 'pointer',
@@ -259,6 +274,7 @@ export function ScreenManagerProfile({
               icon={Icon.list(18)}
               lbl="Histórico de turnos"
               sub="Vendas, mesas e desempenho dos turnos passados"
+              onClick={() => showStub('Histórico de turnos')}
             />
             <ActionRow
               dark={dark}
@@ -285,18 +301,21 @@ export function ScreenManagerProfile({
               icon={Icon.bell(18)}
               lbl="Notificações"
               sub="Avisos do turno · push · sons · lock screen"
+              onClick={() => showStub('Notificações')}
             />
             <ActionRow
               dark={dark}
               icon={Icon.shield(18)}
               lbl="Segurança e senha"
               sub="Trocar senha · 2FA · sessões ativas"
+              onClick={() => showStub('Segurança e senha')}
             />
             <ActionRow
               dark={dark}
               icon={Icon.flame(18)}
               lbl="Aparência"
               sub="Modo claro · escuro · automático"
+              onClick={() => showStub('Aparência')}
             />
           </div>
         </MSection>
@@ -310,24 +329,28 @@ export function ScreenManagerProfile({
                 icon={Icon.table(18)}
                 lbl="Configuração de mesas"
                 sub="Número, capacidade, setores · imprimir QR codes"
+                onClick={() => showStub('Configuração de mesas')}
               />
               <ActionRow
                 dark={dark}
                 icon={Icon.clock(18)}
                 lbl="Horários do restaurante"
                 sub="Abertura, fechamento, dias da semana"
+                onClick={() => showStub('Horários do restaurante')}
               />
               <ActionRow
                 dark={dark}
                 icon={Icon.list(18)}
                 lbl="Cardápio"
                 sub="Editar pratos, preços, fotos, categorias"
+                onClick={() => showStub('Cardápio')}
               />
               <ActionRow
                 dark={dark}
                 icon={Icon.receipt(18)}
                 lbl="Plano e cobrança"
                 sub="Plano atual · histórico · método de pagamento"
+                onClick={() => showStub('Plano e cobrança')}
               />
             </div>
           </MSection>
@@ -368,6 +391,31 @@ export function ScreenManagerProfile({
       </div>
 
       <MBottomNav active="me" dark={dark} onTo={(r) => router.push(r)} />
+
+      {stubMsg && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 90,
+            transform: 'translateX(-50%)',
+            zIndex: 80,
+            padding: '12px 18px',
+            borderRadius: 999,
+            background: C.ink,
+            color: C.bg,
+            fontSize: 13,
+            fontWeight: 600,
+            letterSpacing: -0.1,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            maxWidth: 'calc(100vw - 32px)',
+            textAlign: 'center',
+          }}
+        >
+          {stubMsg}
+        </div>
+      )}
 
       {/* Pulse keyframe — usado pelo dot "em turno desde …". CSS inline no
           framework não tolera @keyframes; injetamos via styled-jsx. */}

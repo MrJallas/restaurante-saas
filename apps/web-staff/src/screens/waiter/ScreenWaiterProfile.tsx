@@ -73,7 +73,7 @@ export const ScreenWaiterProfile: React.FC<ScreenWaiterProfileProps> = ({
     <div
       style={{
         width: '100%',
-        minHeight: '100vh',
+        height: '100vh',
         background: C.bg,
         color: C.ink,
         fontFamily: G_FONT,

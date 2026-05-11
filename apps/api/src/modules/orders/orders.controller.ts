@@ -233,6 +233,22 @@ export class OrdersController {
   }
 
   /**
+   * Round 18 (Onda 4 batch 2): timeline aggregator pra
+   * ScreenManagerTimeline (canvas /manager/timeline/[orderId]).
+   * Staff-only — manager dashboard view, nao customer-side. Retorna
+   * lista cronologica de status transitions com staff name resolvido
+   * por join em `order_status_history.changed_by`.
+   *
+   * Declarado ANTES do `@Get(':orderId')` wildcard pra Nest matcher
+   * nao cair em getOrder('timeline').
+   */
+  @Get(':orderId/timeline')
+  @UseGuards(StaffOrSessionGuard)
+  async getTimeline(@Param('orderId') orderId: string) {
+    return this.ordersService.getOrderTimeline(orderId);
+  }
+
+  /**
    * Customer-facing single-order fetch used by `/pedido/enviado` and the
    * kitchen status timeline. Scoped to the caller's session so a customer
    * cannot peek at orders from another table.

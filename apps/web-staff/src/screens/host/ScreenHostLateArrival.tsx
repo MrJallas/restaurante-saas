@@ -83,7 +83,7 @@ export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
   return (
     <div
       style={{
-        width: '100%', minHeight: '100vh', background: C.bg, color: C.ink,
+        width: '100%', height: '100vh', background: C.bg, color: C.ink,
         fontFamily: G_FONT, display: 'flex', flexDirection: 'column',
       }}
     >

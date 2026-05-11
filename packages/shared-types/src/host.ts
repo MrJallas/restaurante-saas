@@ -24,6 +24,13 @@ export interface HostTableDto {
   since?: string;
   /** Iniciais do garcom (deriv. de staff.name) — placeholder ate roteamento real. */
   waiter_initial?: string | null;
+  /**
+   * UUID do `table_sessions` ativo. Necessário pra deep-links staff-side
+   * (ex: `/manager/mesa/[n]` resolve numero -> sessionId pra abrir a
+   * `ScreenManagerTableMenu` que requer `tableSessionId`). `null` quando
+   * mesa esta livre.
+   */
+  active_session_id?: string | null;
 }
 
 // ─── Inbox ───

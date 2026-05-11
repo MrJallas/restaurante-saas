@@ -548,6 +548,76 @@ export class OrdersService {
     };
   }
 
+  /**
+   * Round 18 (Onda 4 batch 2): timeline aggregator pra
+   * ScreenManagerTimeline. Junta `order_status_history` com `staff`
+   * pra resolver byStaffName quando `changed_by` carrega um UUID de
+   * staff (vs labels fixos 'system'/'customer'). Retorna lista
+   * cronologica ascendente — FE renderiza como linha do tempo.
+   *
+   * `changed_by` é VARCHAR(100) por design legacy (migration 007). Pode
+   * ser 'system', 'customer', um UUID de staff, ou o staffId.toString()
+   * passado em `updateStatus(orderId, status, changedBy)`. O LEFT JOIN
+   * em staff falha graciosamente pra labels não-UUID (NULL byStaffName).
+   *
+   * Não exige session ownership — endpoint é staff-only (manager dashboard).
+   */
+  async getOrderTimeline(orderId: string): Promise<{
+    orderId: string;
+    events: Array<{
+      event: string;
+      at: string;
+      byStaffId: string | null;
+      byStaffName: string | null;
+      fromStatus: string | null;
+    }>;
+  }> {
+    // Confirma que o pedido existe (404 limpo em vez de timeline vazia
+    // por orderId errado).
+    const orderRows = (await this.tenantConn.query(
+      `SELECT id FROM orders WHERE id = $1`,
+      [orderId],
+    )) as Array<{ id: string }>;
+    if (!orderRows.length) {
+      throw new NotFoundException('Pedido nao encontrado.');
+    }
+
+    const rows = (await this.tenantConn.query(
+      `
+      SELECT osh.from_status,
+             osh.to_status,
+             osh.created_at,
+             osh.changed_by,
+             s.id   AS staff_id,
+             s.name AS staff_name
+        FROM order_status_history osh
+        LEFT JOIN staff s
+          ON s.id::text = osh.changed_by
+        WHERE osh.order_id = $1
+        ORDER BY osh.created_at ASC, osh.id ASC
+      `,
+      [orderId],
+    )) as Array<{
+      from_status: string | null;
+      to_status: string;
+      created_at: string;
+      changed_by: string | null;
+      staff_id: string | null;
+      staff_name: string | null;
+    }>;
+
+    return {
+      orderId,
+      events: rows.map((r) => ({
+        event: r.to_status,
+        at: r.created_at,
+        byStaffId: r.staff_id,
+        byStaffName: r.staff_name,
+        fromStatus: r.from_status,
+      })),
+    };
+  }
+
   async getOrdersBySession(
     tableSessionId: string,
     billingMode?: string,

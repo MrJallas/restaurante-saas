@@ -44,7 +44,7 @@ const TOOLS_FULL: ReadonlyArray<{
   tintBg: string;
   iconKey: 'flame' | 'pause' | 'chat';
 }> = [
-  { id: 'reorder', label: 'Cozinha', sub: 'Reordenar fila', to: '/manager/cozinha-reorder', tint: '#C2401A', tintBg: '#FFF1EC', iconKey: 'flame' },
+  { id: 'reorder', label: 'Cozinha', sub: 'Reordenar fila', to: '/manager/kitchen-reorder', tint: '#C2401A', tintBg: '#FFF1EC', iconKey: 'flame' },
   { id: 'pause', label: 'Pausa', sub: 'Pedidos novos', to: '/manager/pausa-zona', tint: '#9A7212', tintBg: '#FFF7E6', iconKey: 'pause' },
 ];
 

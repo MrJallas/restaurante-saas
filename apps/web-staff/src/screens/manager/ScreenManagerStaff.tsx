@@ -110,6 +110,13 @@ export function ScreenManagerStaff({
   const [roleFilter, setRoleFilter] = useState<'todos' | StaffMember['role'] | 'cozinha+bar'>('todos');
   const [openShift, setOpenShift] = useState<ShiftId | null>(null);
   const [contactTarget, setContactTarget] = useState<ManagerStaffTarget | null>(null);
+  // Round 18 (Onda 2A): stub feedback pra ActionPills sem backend ainda.
+  // Antes: 3 de 4 pills sem onClick (silencioso). Agora: toast curto.
+  const [stubMsg, setStubMsg] = useState<string | null>(null);
+  const showStub = (action: string) => {
+    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
+    setTimeout(() => setStubMsg(null), 2800);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -201,7 +208,7 @@ export function ScreenManagerStaff({
     <div
       style={{
         position: 'relative',
-        minHeight: '100vh',
+        height: '100vh',
         display: 'flex',
         flexDirection: 'column',
         background: C.surface,
@@ -209,44 +216,56 @@ export function ScreenManagerStaff({
         color: C.ink,
       }}
     >
-      <div style={{ flex: 1, overflow: 'auto', paddingBottom: 124 }}>
+      <div style={{ flex: 1, overflow: 'auto', paddingBottom: 'calc(140px + max(0px, env(safe-area-inset-bottom, 0px) - 14px))' }}>
         <MAppHeader dark={dark} title="Equipe" />
 
-        {/* 2 · 3 KPIs Compact */}
+        {/* 2 · 3 KPIs Compact — Round 18 Onda 4: tap navega pro drill-down V9.
+            Cada MStat agora vive dentro de um <button> resetado pra preservar
+            visual + tornar o tile clicável. O `?` tooltip vira `onHelp` que
+            também navega (mesmo destino) — antes era só tooltip. */}
         <div style={{ padding: '14px 16px 0', display: 'flex', gap: 8 }}>
-          <MStat
-            dark={dark}
-            compact
-            label="Em campo"
-            value={
-              <span>
-                {inField}
-                <span style={{ fontSize: 13, color: C.faint, fontWeight: 500 }}>/{totalCount}</span>
-              </span>
-            }
-            sub={totalCount - inField > 0 ? `${totalCount - inField} fora` : 'todos OK'}
-            help="Funcionários logados com status 'em turno' agora · não inclui pausados ou fora."
-          />
-          <MStat
-            dark={dark}
-            compact
-            label="Sobrecarga"
-            value={String(overloadCount)}
-            sub={overloadCount > 0 ? '↓ realocar' : 'tudo certo'}
-            accent={overloadCount > 0 ? '#A12626' : null}
-            subColor={overloadCount > 0 ? '#A12626' : undefined}
-            help="Funcionários com 7+ mesas atendendo simultaneamente · ajuste o limiar em Operação."
-          />
-          <MStat
-            dark={dark}
-            compact
-            label="Carga média"
-            value={avgLoad}
-            accent={loadHealth.accent}
-            sub={loadHealth.sub}
-            subColor={loadHealth.color}
-            help="Mesas abertas dividido por funcionários em campo · meta menor que 5 por garçom."
-          />
+          <StatButton onClick={() => router.push('/manager/equipe/em-campo')}>
+            <MStat
+              dark={dark}
+              compact
+              label="Em campo"
+              value={
+                <span>
+                  {inField}
+                  <span style={{ fontSize: 13, color: C.faint, fontWeight: 500 }}>/{totalCount}</span>
+                </span>
+              }
+              sub={totalCount - inField > 0 ? `${totalCount - inField} fora` : 'todos OK'}
+              help="Funcionários logados com status 'em turno' agora · não inclui pausados ou fora."
+              onHelp={() => router.push('/manager/equipe/em-campo')}
+            />
+          </StatButton>
+          <StatButton onClick={() => router.push('/manager/equipe/sobrecarga')}>
+            <MStat
+              dark={dark}
+              compact
+              label="Sobrecarga"
+              value={String(overloadCount)}
+              sub={overloadCount > 0 ? '↓ realocar' : 'tudo certo'}
+              accent={overloadCount > 0 ? '#A12626' : null}
+              subColor={overloadCount > 0 ? '#A12626' : undefined}
+              help="Funcionários com 7+ mesas atendendo simultaneamente · ajuste o limiar em Operação."
+              onHelp={() => router.push('/manager/equipe/sobrecarga')}
+            />
+          </StatButton>
+          <StatButton onClick={() => router.push('/manager/equipe/carga-media')}>
+            <MStat
+              dark={dark}
+              compact
+              label="Carga média"
+              value={avgLoad}
+              accent={loadHealth.accent}
+              sub={loadHealth.sub}
+              subColor={loadHealth.color}
+              help="Mesas abertas dividido por funcionários em campo · meta menor que 5 por garçom."
+              onHelp={() => router.push('/manager/equipe/carga-media')}
+            />
+          </StatButton>
         </div>
 
         {/* 3 · Banner sugestão IA · oculto quando bannerHidden ou null */}
@@ -453,7 +472,15 @@ export function ScreenManagerStaff({
               Nenhum funcionário cadastrado.
             </div>
           ) : (
-            filtered.map((p) => <StaffCard key={p.id} dark={dark} p={p} onContact={(t) => setContactTarget(t)} />)
+            filtered.map((p) => (
+              <StaffCard
+                key={p.id}
+                dark={dark}
+                p={p}
+                onContact={(t) => setContactTarget(t)}
+                onStubAction={showStub}
+              />
+            ))
           )}
         </div>
 
@@ -603,17 +630,42 @@ export function ScreenManagerStaff({
         )}
       </div>
 
-      {/* 8 · CTA fixa "+ Adicionar funcionário" — sobre o bottom-nav */}
+      {/* 8 · CTA fixa "+ Adicionar funcionário" — sobre o bottom-nav.
+          Wrapper vai até `bottom: 0` (debaixo do nav). O nav tem z-index 4
+          e cobre a porção sob ele, então a blur visualmente termina
+          EXATAMENTE no topo do nav, sem gap.
+          `paddingBottom` soma a altura do nav (76px em macOS, ~96 em iOS
+          via env) + 16px de respiro pra posicionar o botão logo acima do
+          nav. Halo blur full-width com fade-in vertical suave em cima e
+          blur denso na base do botão pra cobrir o respiro até o nav. */}
       <div
         style={{
           position: 'absolute',
           left: 0,
           right: 0,
-          bottom: 60,
-          padding: '12px 16px',
+          bottom: 0,
+          paddingTop: 40,
+          paddingBottom:
+            'calc(92px + max(0px, env(safe-area-inset-bottom, 0px) - 14px))',
+          paddingLeft: 16,
+          paddingRight: 16,
           pointerEvents: 'none',
         }}
       >
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            maskImage:
+              'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.35) 14%, rgba(0,0,0,0.7) 28%, black 45%, black 100%)',
+            WebkitMaskImage:
+              'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.35) 14%, rgba(0,0,0,0.7) 28%, black 45%, black 100%)',
+            pointerEvents: 'none',
+          }}
+        />
         <button
           type="button"
           onClick={() => router.push('/manager/equipe/novo')}
@@ -634,7 +686,8 @@ export function ScreenManagerStaff({
             fontSize: 14,
             fontWeight: 700,
             letterSpacing: -0.1,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.16)',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.12)',
+            position: 'relative',
           }}
         >
           {Icon.plus(18)} Adicionar funcionário
@@ -650,6 +703,66 @@ export function ScreenManagerStaff({
         target={contactTarget ?? { staffId: '', name: '' }}
         onClose={() => setContactTarget(null)}
       />
+
+      {stubMsg && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 90,
+            transform: 'translateX(-50%)',
+            zIndex: 80,
+            padding: '12px 18px',
+            borderRadius: 999,
+            background: C.ink,
+            color: C.bg,
+            fontSize: 13,
+            fontWeight: 600,
+            letterSpacing: -0.1,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            maxWidth: 'calc(100vw - 32px)',
+            textAlign: 'center',
+          }}
+        >
+          {stubMsg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── StatButton — wraps MStat pra virar nav target.
+// USA `div role="button"` em vez de `<button>` porque o MStat interno
+// já contém um `<button>` (o ícone `?` de help tooltip), e nesting de
+// button dentro de button é HTML inválido + causa hydration error.
+// Keyboard handler dá Enter/Space pra a11y, igual a um `<button>` nativo.
+function StatButton({
+  onClick,
+  children,
+}: {
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      style={{
+        cursor: 'pointer',
+        flex: 1,
+        display: 'flex',
+        minWidth: 0,
+      }}
+    >
+      {children}
     </div>
   );
 }
@@ -666,7 +779,10 @@ function ChipRow({
 }) {
   const C = useG(!!dark);
   return (
-    <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+    <div
+      data-hide-scrollbar
+      style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}
+    >
       {items.map((it) => (
         <button
           key={it.id}
@@ -713,12 +829,15 @@ function ChipRow({
 function StaffCard({
   p,
   onContact,
+  onStubAction,
   dark,
 }: {
   p: StaffMember;
   onContact: (t: ManagerStaffTarget) => void;
+  onStubAction?: (action: string) => void;
   dark?: boolean;
 }) {
+  const router = useRouter();
   const C = useG(!!dark);
   const status =
     p.status === 'off'
@@ -730,14 +849,34 @@ function StaffCard({
       : { id: 'ok' as const, tone: 'success' as const, label: 'Em turno' };
   const showOverloadActions = status.id === 'sobre' || status.id === 'media';
 
+  // Round 18 (Onda 2): clique no card abre StaffDetail. Antes o card
+  // era render-only.
+  const openDetail = () => {
+    const search = new URLSearchParams(
+      typeof window !== 'undefined' ? window.location.search : '',
+    );
+    const slug = search.get('slug') ?? '';
+    router.push(`/manager/equipe/${p.id}${slug ? `?slug=${slug}` : ''}`);
+  };
+
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onClick={openDetail}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openDetail();
+        }
+      }}
       style={{
         padding: 12,
         borderRadius: 12,
         border: `1px solid ${C.borderSoft}`,
         background: status.id === 'folga' ? C.surface : C.bg,
         opacity: status.id === 'folga' ? 0.78 : 1,
+        cursor: 'pointer',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -821,7 +960,11 @@ function StaffCard({
         <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
           {showOverloadActions ? (
             <>
-              <ActionPill filled dark={dark}>
+              <ActionPill
+                filled
+                dark={dark}
+                onClick={() => onStubAction?.('Realocar mesas')}
+              >
                 Realocar mesas
               </ActionPill>
               <ActionPill
@@ -842,8 +985,12 @@ function StaffCard({
             </>
           ) : (
             <>
-              <ActionPill dark={dark}>Ver mesas</ActionPill>
-              <ActionPill dark={dark}>Mover mesa</ActionPill>
+              <ActionPill dark={dark} onClick={() => onStubAction?.('Ver mesas')}>
+                Ver mesas
+              </ActionPill>
+              <ActionPill dark={dark} onClick={() => onStubAction?.('Mover mesa')}>
+                Mover mesa
+              </ActionPill>
             </>
           )}
         </div>

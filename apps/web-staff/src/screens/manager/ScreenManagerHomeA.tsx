@@ -143,6 +143,19 @@ export function ScreenManagerHomeA({
   const [inProgress, setInProgress] = useState<InProgressItem[]>([]);
   const [team, setTeam] = useState(M_TEAM_FALLBACK);
   const [, setRefreshTick] = useState(0);
+  // Round 18 (Onda 2A): alerts agora é state pra que o X (Dispensar)
+  // funcione. Antes era array hardcoded — clicar no X não fazia nada.
+  // Quando endpoint /alerts shipar (canvas docs/features/alerts.md), o
+  // dismiss vai virar PATCH /alerts/:id/dismiss. Por ora UI-only.
+  const [alerts, setAlerts] = useState(DEFAULT_ALERTS);
+  const [stubMsg, setStubMsg] = useState<string | null>(null);
+  const showStub = (action: string) => {
+    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
+    setTimeout(() => setStubMsg(null), 2800);
+  };
+  const dismissAlert = (id: number) => {
+    setAlerts((prev) => prev.filter((a) => a.id !== id));
+  };
 
   const refreshAll = useMemo(
     () => async () => {
@@ -310,12 +323,12 @@ export function ScreenManagerHomeA({
   const pauseOp = inProgress.find(
     (o) => o.kind === 'zone-pause-active' && o.zonePauseRemaining != null,
   );
-  const topAlerts = DEFAULT_ALERTS.slice(0, 3);
+  const topAlerts = alerts.slice(0, 3);
 
   return (
     <div
       style={{
-        minHeight: '100vh',
+        height: '100vh',
         display: 'flex',
         flexDirection: 'column',
         background: C.surface,
@@ -380,9 +393,9 @@ export function ScreenManagerHomeA({
 
         <MSection
           dark={dark}
-          title={`Hoje no turno · ${DEFAULT_ALERTS.length}`}
+          title={`Hoje no turno · ${alerts.length}`}
           action="Ver todos →"
-          onAction={() => router.push('/manager/operacoes')}
+          onAction={() => router.push('/manager/alertas')}
         >
           {topAlerts.length === 0 ? (
             <div
@@ -414,7 +427,9 @@ export function ScreenManagerHomeA({
                     }}
                   >
                     <button
+                      type="button"
                       aria-label="Dispensar"
+                      onClick={() => dismissAlert(a.id)}
                       style={{
                         all: 'unset',
                         cursor: 'pointer',
@@ -472,6 +487,8 @@ export function ScreenManagerHomeA({
                     </div>
                     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                       <button
+                        type="button"
+                        onClick={() => showStub(a.actions[0])}
                         style={{
                           all: 'unset',
                           cursor: 'pointer',
@@ -486,6 +503,8 @@ export function ScreenManagerHomeA({
                         {a.actions[0]}
                       </button>
                       <button
+                        type="button"
+                        onClick={() => showStub(a.actions[1])}
                         style={{
                           all: 'unset',
                           cursor: 'pointer',
@@ -677,7 +696,32 @@ export function ScreenManagerHomeA({
         <div style={{ height: 24 }} />
       </div>
 
-      <MBottomNav active="home" dark={dark} onTo={(r) => router.push(r)} alerts={DEFAULT_ALERTS.length} />
+      <MBottomNav active="home" dark={dark} onTo={(r) => router.push(r)} alerts={alerts.length} />
+
+      {stubMsg && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 90,
+            transform: 'translateX(-50%)',
+            zIndex: 80,
+            padding: '12px 18px',
+            borderRadius: 999,
+            background: C.ink,
+            color: C.bg,
+            fontSize: 13,
+            fontWeight: 600,
+            letterSpacing: -0.1,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            maxWidth: 'calc(100vw - 32px)',
+            textAlign: 'center',
+          }}
+        >
+          {stubMsg}
+        </div>
+      )}
     </div>
   );
 }

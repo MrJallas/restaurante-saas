@@ -147,7 +147,7 @@ export function ScreenManagerOrdersPause({
   return (
     <div
       style={{
-        minHeight: '100vh',
+        height: '100vh',
         display: 'flex',
         flexDirection: 'column',
         background: C.surface,

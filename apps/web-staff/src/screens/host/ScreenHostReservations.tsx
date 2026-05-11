@@ -5,7 +5,7 @@
 // ScreenHostReservations.
 
 import * as React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
@@ -85,7 +85,7 @@ export const ScreenHostReservations: React.FC<ScreenHostReservationsProps> = ({
   return (
     <div
       style={{
-        width: '100%', minHeight: '100vh', background: C.surface, color: C.ink,
+        width: '100%', height: '100vh', background: C.surface, color: C.ink,
         fontFamily: G_FONT, display: 'flex', flexDirection: 'column',
       }}
     >
@@ -174,25 +174,7 @@ export const ScreenHostReservations: React.FC<ScreenHostReservationsProps> = ({
       </div>
 
       {showAdd && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 50,
-            background: 'rgba(0,0,0,0.42)',
-            display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
-          }}
-        >
-          <div
-            style={{
-              background: C.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22,
-              padding: '18px 22px 24px', display: 'flex', flexDirection: 'column', gap: 12,
-            }}
-          >
-            <div
-              style={{
-                width: 38, height: 4, borderRadius: 2, background: '#dcdcdc',
-                margin: '0 auto 4px',
-              }}
-            />
+        <DragSheet onClose={() => setShowAdd(false)} C={C}>
             <div style={{ fontSize: 18, fontWeight: 700 }}>Nova reserva</div>
             <input
               placeholder="Nome"
@@ -275,13 +257,97 @@ export const ScreenHostReservations: React.FC<ScreenHostReservationsProps> = ({
                 </GButton>
               </div>
             </div>
-          </div>
-        </div>
+        </DragSheet>
       )}
 
       <HBottomNav active="reserva" dark={dark} onTabChange={(id) => onTabChange?.(id)} />
     </div>
   );
 };
+
+// Round 18 (Onda 2A): bottom-sheet com drag-to-dismiss reutilizavel.
+// Mesma impl do HostWaitlist — extrair pra primitive em Onda 3.
+function DragSheet({
+  onClose,
+  C,
+  children,
+}: {
+  onClose: () => void;
+  C: { bg: string; borderSoft: string };
+  children: React.ReactNode;
+}) {
+  const dragStartY = useRef<number | null>(null);
+  const [dy, setDy] = useState(0);
+  const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragStartY.current = e.clientY;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragStartY.current == null) return;
+    setDy(Math.max(0, e.clientY - dragStartY.current));
+  };
+  const onUp = () => {
+    if (dragStartY.current == null) return;
+    const total = dy;
+    dragStartY.current = null;
+    if (total > 120) onClose();
+    else setDy(0);
+  };
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 50,
+        background: 'rgba(0,0,0,0.42)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-end',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: C.bg,
+          borderTopLeftRadius: 22,
+          borderTopRightRadius: 22,
+          padding: '0 22px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          transform: `translateY(${dy}px)`,
+          transition: dy === 0 ? 'transform 180ms cubic-bezier(.2,.8,.2,1)' : 'none',
+          touchAction: 'pan-y',
+        }}
+      >
+        <div
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={onUp}
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            padding: '12px 0 4px',
+            cursor: 'grab',
+            touchAction: 'none',
+          }}
+          aria-label="Arraste para fechar"
+        >
+          <div
+            style={{
+              width: 38,
+              height: 4,
+              borderRadius: 2,
+              background: '#dcdcdc',
+            }}
+          />
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 export default ScreenHostReservations;

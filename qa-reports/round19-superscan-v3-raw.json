@@ -1,0 +1,5323 @@
+[
+  {
+    "name": "manager-home",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager",
+    "final_url": "http://localhost:3002/manager",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "7",
+        "tag": "button",
+        "role": "",
+        "aria": "Notifica\u00e7\u00f5es",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Cozinha\nReordenar fila",
+        "tag": "button",
+        "role": "",
+        "aria": "Cozinha \u00b7 Reordenar fila",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Pausa\nPedidos novos",
+        "tag": "button",
+        "role": "",
+        "aria": "Pausa \u00b7 Pedidos novos",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "RECLAMA\u00c7\u00c3O \u00b7 MESA ? \u00b7 ABERTA\nCliente \u00b7 Mesa ?\nEncaminhar\nResponder",
+        "tag": "div",
+        "role": "button",
+        "aria": "RECLAMA\u00c7\u00c3O \u00b7 MESA ? \u00b7 ABERTA",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Encaminhar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Responder",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "RECLAMA\u00c7\u00c3O \u00b7 MESA ? \u00b7 ABERTA\nCliente \u00b7 Mesa ?\nEncaminhar\nResponder",
+        "tag": "div",
+        "role": "button",
+        "aria": "RECLAMA\u00c7\u00c3O \u00b7 MESA ? \u00b7 ABERTA",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Encaminhar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Responder",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "RECLAMA\u00c7\u00c3O \u00b7 MESA ? \u00b7 ABERTA\nCliente \u00b7 Mesa ?\nEncaminhar\nResponder",
+        "tag": "div",
+        "role": "button",
+        "aria": "RECLAMA\u00c7\u00c3O \u00b7 MESA ? \u00b7 ABERTA",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Encaminhar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Responder",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "RECLAMA\u00c7\u00c3O \u00b7 MESA ? \u00b7 ABERTA\nCliente \u00b7 Mesa ?\nEncaminhar\nResponder",
+        "tag": "div",
+        "role": "button",
+        "aria": "RECLAMA\u00c7\u00c3O \u00b7 MESA ? \u00b7 ABERTA",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Encaminhar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Responder",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "JUN\u00c7\u00c3O DE MESAS \u00b7 MESA ?\nCliente \u00b7 Mesa ?\nAGUARDA HOSTS APROVAR\nVer detalhes",
+        "tag": "div",
+        "role": "button",
+        "aria": "JUN\u00c7\u00c3O DE MESAS \u00b7 MESA ?",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Ver detalhes",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "JUN\u00c7\u00c3O DE MESAS \u00b7 MESA ?\nCliente \u00b7 Mesa ?\nAGUARDA HOSTS APROVAR\nVer detalhes",
+        "tag": "div",
+        "role": "button",
+        "aria": "JUN\u00c7\u00c3O DE MESAS \u00b7 MESA ?",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Ver detalhes",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "JUN\u00c7\u00c3O DE MESAS \u00b7 MESA ?\nCliente \u00b7 Mesa ?\nAGUARDA HOSTS APROVAR\nVer detalhes",
+        "tag": "div",
+        "role": "button",
+        "aria": "JUN\u00c7\u00c3O DE MESAS \u00b7 MESA ?",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Ver detalhes",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Ver todos \u2192",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Dispensar",
+        "tag": "button",
+        "role": "",
+        "aria": "Dispensar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisar cozinha",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Contactar cliente",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Dispensar",
+        "tag": "button",
+        "role": "",
+        "aria": "Dispensar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Realocar mesa",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Chamar gar\u00e7om",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Dispensar",
+        "tag": "button",
+        "role": "",
+        "aria": "Dispensar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Entregar agora",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisar gar\u00e7om",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Ver mais \u2192",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "AG\nAna Garcom\nwaiter \u00b7 7 mesas \u00b7 1,2m resposta\n\u2605 4.5",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "BG\nBruno Garcom\nwaiter \u00b7 6 mesas \u00b7 1,5m resposta\n\u2605 4.6",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "CC\nCarlos Cozinha\ncook \u00b7 5 mesas \u00b7 1,8m resposta\n\u2605 4.7",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "DC\nDiana Cozinha\ncook \u00b7 4 mesas \u00b7 2,1m resposta\n\u2605 4.5",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "3\nOpera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-operacoes-alerts",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/operacoes?tab=alerts",
+    "final_url": "http://localhost:3002/manager/operacoes?tab=alerts",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Notifica\u00e7\u00f5es",
+        "tag": "button",
+        "role": "",
+        "aria": "Notifica\u00e7\u00f5es",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Alertas\n4",
+        "tag": "button",
+        "role": "tab",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mapa",
+        "tag": "button",
+        "role": "tab",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Funil",
+        "tag": "button",
+        "role": "tab",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "CR\u00cdTICOS\n2\nRESOLVER AGORA\n?",
+        "tag": "div",
+        "role": "button",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "?",
+        "tag": "button",
+        "role": "",
+        "aria": "Detalhes sobre Cr\u00edticos",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "ATEN\u00c7\u00c3O\n2\nPR\u00d3X. 10 MIN\n?",
+        "tag": "div",
+        "role": "button",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "?",
+        "tag": "button",
+        "role": "",
+        "aria": "Detalhes sobre Aten\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Dispensar alerta",
+        "tag": "button",
+        "role": "",
+        "aria": "Dispensar alerta",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisar cozinha",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Contactar cliente",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Dispensar alerta",
+        "tag": "button",
+        "role": "",
+        "aria": "Dispensar alerta",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Realocar mesa",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Chamar Henrique",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Dispensar alerta",
+        "tag": "button",
+        "role": "",
+        "aria": "Dispensar alerta",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Entregar agora",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisar Caleb",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Dispensar alerta",
+        "tag": "button",
+        "role": "",
+        "aria": "Dispensar alerta",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Pausar pedidos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Ver fila",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Cozinha\nReordenar fila",
+        "tag": "button",
+        "role": "",
+        "aria": "Cozinha \u00b7 Reordenar fila",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Pausa\nPedidos novos",
+        "tag": "button",
+        "role": "",
+        "aria": "Pausa \u00b7 Pedidos novos",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "4\nOpera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-operacoes-map",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/operacoes?tab=map",
+    "final_url": "http://localhost:3002/manager/operacoes?tab=map",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Notifica\u00e7\u00f5es",
+        "tag": "button",
+        "role": "",
+        "aria": "Notifica\u00e7\u00f5es",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Alertas\n4",
+        "tag": "button",
+        "role": "tab",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mapa",
+        "tag": "button",
+        "role": "tab",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Funil",
+        "tag": "button",
+        "role": "tab",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "MESAS ATIVAS\n10/12\n2 LIVRES\n?",
+        "tag": "div",
+        "role": "button",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "?",
+        "tag": "button",
+        "role": "",
+        "aria": "Detalhes sobre Mesas ativas",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "EM ALERTA\n3\n1 CR\u00cdTICAS\n?",
+        "tag": "div",
+        "role": "button",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "?",
+        "tag": "button",
+        "role": "",
+        "aria": "Detalhes sobre Em alerta",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "1\n4m\nCS\nR$142",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "2\n7m\nCS\nR$88",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "3\n22m\nHL\nR$312",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "4\n11m\nOM\nR$64",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "6\n18m\nOM\nR$184",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "7\n9m\nCS\nR$96",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "8\n5m\nHL\nR$220",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "9\n14m\nCS\nR$412",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "11\n28m\nOM\nR$156",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "12\n8m\nHL\nR$78",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Cozinha\nReordenar fila",
+        "tag": "button",
+        "role": "",
+        "aria": "Cozinha \u00b7 Reordenar fila",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Pausa\nPedidos novos",
+        "tag": "button",
+        "role": "",
+        "aria": "Pausa \u00b7 Pedidos novos",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "4\nOpera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-operacoes-funnel",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/operacoes?tab=funnel",
+    "final_url": "http://localhost:3002/manager/operacoes?tab=funnel",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Notifica\u00e7\u00f5es",
+        "tag": "button",
+        "role": "",
+        "aria": "Notifica\u00e7\u00f5es",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Alertas\n4",
+        "tag": "button",
+        "role": "tab",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mapa",
+        "tag": "button",
+        "role": "tab",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Funil",
+        "tag": "button",
+        "role": "tab",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Cozinha\nReordenar fila",
+        "tag": "button",
+        "role": "",
+        "aria": "Cozinha \u00b7 Reordenar fila",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Pausa\nPedidos novos",
+        "tag": "button",
+        "role": "",
+        "aria": "Pausa \u00b7 Pedidos novos",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "4\nOpera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-operacoes-criticos",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/operacoes/criticos",
+    "final_url": "http://localhost:3002/manager/operacoes/criticos",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Resolver",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisar Caleb",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Atender agora",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Realocar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Resolver todos em sequ\u00eancia",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisar todos os gar\u00e7ons da pra\u00e7a",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "2\nOpera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-operacoes-atencao",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/operacoes/atencao",
+    "final_url": "http://localhost:3002/manager/operacoes/atencao",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisar Olivia",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Realocar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Adiantar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisar cozinha",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Adiantar todos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "2\nOpera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-operacoes-mesas-ativas",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/operacoes/mesas-ativas",
+    "final_url": "http://localhost:3002/manager/operacoes/mesas-ativas",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "1\nCS\n1h 12 aberta\nR$ 142",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "2\nCS\n0h 38 aberta\nR$ 88",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "3\nHL\n1h 47 aberta\nR$ 312",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "4\nOM\n0h 52 aberta\nR$ 64",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "6\nOM\n1h 22 aberta\nR$ 184",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "7\nCS\n0h 41 aberta\nR$ 96",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "8\nHL\n1h 04 aberta\nR$ 220",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "9\nCS\n2h 11 aberta\nR$ 412",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "11\nOM\n1h 38 aberta\nR$ 156",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "12\nHL\n0h 28 aberta\nR$ 78",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "13\nCS\n1h 14 aberta\nR$ 244",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "14\nHL\n2h 03 aberta\nR$ 168",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "16\nOM\n0h 47 aberta\nR$ 110",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Ver no Mapa \u2192",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-operacoes-em-alerta",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/operacoes/em-alerta",
+    "final_url": "http://localhost:3002/manager/operacoes/em-alerta",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "11\nCR\u00cdTICA\nOlivia \u00b7 1h 38 aberta\nVER \u2192",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "14\nCR\u00cdTICA\nHenrique \u00b7 2h 03 aberta\nVER \u2192",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "3\nLENTA\nHenrique \u00b7 1h 47 aberta\nVER \u2192",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "6\nLENTA\nOlivia \u00b7 1h 22 aberta\nVER \u2192",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Realocar mesas cr\u00edticas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mensagem direta pros gar\u00e7ons das cr\u00edticas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "4\nOpera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-equipe",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/equipe",
+    "final_url": "http://localhost:3002/manager/equipe",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Notifica\u00e7\u00f5es",
+        "tag": "button",
+        "role": "",
+        "aria": "Notifica\u00e7\u00f5es",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "EM CAMPO\n6/6\nTODOS OK\n?",
+        "tag": "div",
+        "role": "button",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "?",
+        "tag": "button",
+        "role": "",
+        "aria": "Detalhes sobre Em campo",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "SOBRECARGA\n1\n\u2193 REALOCAR\n?",
+        "tag": "div",
+        "role": "button",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "?",
+        "tag": "button",
+        "role": "",
+        "aria": "Detalhes sobre Sobrecarga",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "CARGA M\u00c9DIA\n4,5\n\u00b7 DENTRO DA META\n?",
+        "tag": "div",
+        "role": "button",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "?",
+        "tag": "button",
+        "role": "",
+        "aria": "Detalhes sobre Carga m\u00e9dia",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Todos\n\u00b7 6",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Em turno\n\u00b7 6",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Sobrecarregados\n\u00b7 1",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Folga\n\u00b7 0",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Fora\n\u00b7 0",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Todos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Gar\u00e7ons\n\u00b7 2",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Cozinha+Bar\n\u00b7 2",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Caixa\n\u00b7 0",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "AG\nAna Garcom\nGar\u00e7om \u00b7 17:00 \u2014 23:00\nSOBRECARREGADO\nMESAS\n7\nRESPOSTA\n1,2m\nVENDIDO\nR$ 1.000\nRealocar mesas\nMensagem diret",
+        "tag": "div",
+        "role": "button",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Realocar mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mensagem direta",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "BG\nBruno Garcom\nGar\u00e7om \u00b7 17:00 \u2014 23:00\nCARGA M\u00c9DIA\nMESAS\n6\nRESPOSTA\n1,5m\nVENDIDO\nR$ 1.200\nRealocar mesas\nMensagem direta",
+        "tag": "div",
+        "role": "button",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Realocar mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mensagem direta",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "CC\nCarlos Cozinha\nCozinheiro \u00b7 17:00 \u2014 23:00\nCARGA M\u00c9DIA\nMESAS\n5\nRESPOSTA\n1,8m\nVENDIDO\nR$ 1.400\nRealocar mesas\nMensagem ",
+        "tag": "div",
+        "role": "button",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Realocar mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mensagem direta",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "DC\nDiana Cozinha\nCozinheiro \u00b7 17:00 \u2014 23:00\nEM TURNO\nMESAS\n4\nRESPOSTA\n2,1m\nVENDIDO\nR$ 1.600\nVer mesas\nMover mesa",
+        "tag": "div",
+        "role": "button",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Ver mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mover mesa",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "EG\nErica Gerente\nmanager \u00b7 17:00 \u2014 23:00\nEM TURNO\nMESAS\n3\nRESPOSTA\n1,2m\nVENDIDO\nR$ 1.800\nVer mesas\nMover mesa",
+        "tag": "div",
+        "role": "button",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Ver mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mover mesa",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "RH\nRenata Host\nhost \u00b7 17:00 \u2014 23:00\nEM TURNO\nMESAS\n2\nRESPOSTA\n1,5m\nVENDIDO\nR$ 2.000\nVer mesas\nMover mesa",
+        "tag": "div",
+        "role": "button",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Ver mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mover mesa",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Editar turnos \u2192",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "TARDE \u00b7 12H \u2013 17H\n0 funcion\u00e1rios",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "NOITE \u00b7 17H \u2013 23H\n6 funcion\u00e1rios\nATUAL",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "ENCERRAMENTO \u00b7 23H \u2013 02H\n0 funcion\u00e1rios",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Adicionar funcion\u00e1rio",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-equipe-em-campo",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/equipe/em-campo",
+    "final_url": "http://localhost:3002/manager/equipe/em-campo",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisar quem ainda n\u00e3o logou",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Marcar folga retroativa",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Substituir por outro funcion\u00e1rio",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-equipe-sobrecarga",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/equipe/sobrecarga",
+    "final_url": "http://localhost:3002/manager/equipe/sobrecarga",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "AG\nAna Garcom\n7 MESAS \u00b7 LIMITE 6",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Aplicar sugest\u00e3o \u00b7 mover 1 mesa",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Realocar mesas manualmente",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mensagem direta pro Ana",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Pausar mesas do Ana por 5 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-equipe-carga-media",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/equipe/carga-media",
+    "final_url": "http://localhost:3002/manager/equipe/carga-media",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Realocar mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Pausar pedidos novos por 5 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Chamar funcion\u00e1rio da folga",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-equipe-turnos",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/equipe/turnos",
+    "final_url": "http://localhost:3002/manager/equipe/turnos",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Novo turno",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "MANH\u00c3 \u00b7 06H \u2013 12H\nNingu\u00e9m escalado",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "TARDE \u00b7 12H \u2013 17H\nNingu\u00e9m escalado",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "NOITE \u00b7 17H \u2013 23H\nNingu\u00e9m escalado\nATUAL",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Adicionar funcion\u00e1rio a este turno",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Duplicar pra pr\u00f3xima semana",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-equipe-novo",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/equipe/novo",
+    "final_url": "http://localhost:3002/manager/equipe/novo",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Fechar",
+        "tag": "button",
+        "role": "",
+        "aria": "Fechar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Gar\u00e7om",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Cozinheiro",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Bartender",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Caixa",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Gerente",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Manh\u00e3",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Tarde",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Noite",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Cadastrar e enviar acesso",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-equipe-detail",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/equipe/8bd06156-1fe5-4c18-a82d-43d38287ed4a",
+    "final_url": "http://localhost:3002/manager/equipe/8bd06156-1fe5-4c18-a82d-43d38287ed4a",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mais a\u00e7\u00f5es",
+        "tag": "button",
+        "role": "",
+        "aria": "Mais a\u00e7\u00f5es",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Hoje",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "7 dias",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "30 dias",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Editar funcion\u00e1rio",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-cortesias-history",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/cortesias?tab=history",
+    "final_url": "http://localhost:3002/manager/cortesias?tab=history",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Hist\u00f3rico\n0",
+        "tag": "button",
+        "role": "tab",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Nova cortesia",
+        "tag": "button",
+        "role": "tab",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-cortesias-new",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/cortesias?tab=new",
+    "final_url": "http://localhost:3002/manager/cortesias?tab=new",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Hist\u00f3rico\n0",
+        "tag": "button",
+        "role": "tab",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Nova cortesia",
+        "tag": "button",
+        "role": "tab",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Abrir compositor",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-compensate",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/compensate",
+    "final_url": "http://localhost:3002/manager/compensate",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesa 1\n2p \u00b7 Sal\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesa 7\n0p \u00b7 Sal\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Sobremesa\nDa casa",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Drink\nBar manda",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Couvert\nPor conta",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Desconto\n% no total",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mensagem\nSem brinde",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Outro\nPersonalizado",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-kitchen-reorder",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/kitchen-reorder",
+    "final_url": "http://localhost:3002/manager/kitchen-reorder",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesa 14 \u00b7 #142\n22 MIN \u00b7 ATRASADA\nRisoto cogumelos\nOM\nOlivia M. \u00b7 meta 12 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesa 7 \u00b7 #143\n18 MIN \u00b7 ATRASADA\nFil\u00e9 + risoto \u00b7 2 pratos\nCS\nCaleb S. \u00b7 meta 12 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesa 9 \u00b7 #144\n15 MIN\nPizza margherita\nHL\nHenrique L. \u00b7 meta 18 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesa 12 \u00b7 #145\n8 MIN\nSalada c\u00e9sar \u00b7 2\nCS\nCaleb S. \u00b7 meta 8 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesa 5 \u00b7 #146\n5 MIN\nTagliatelle \u00b7 1 prato\nOM\nOlivia M. \u00b7 meta 14 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisar cozinha \u00b7 2 pedidos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-alertas",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/alertas",
+    "final_url": "http://localhost:3002/manager/alertas",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Buscar",
+        "tag": "button",
+        "role": "",
+        "aria": "Buscar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Todos \u00b7 6",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Cr\u00edticos \u00b7 2",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "M\u00e9dios \u00b7 3",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Cozinha \u00b7 2",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisar cozinha",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Contactar cliente",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Dispensar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Realocar mesa",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Chamar Henrique",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Dispensar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Entregar agora",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisar Caleb",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Dispensar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Pausar pedidos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Ver fila",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Dispensar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Levar maquininha",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Pagar pelo app",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Dispensar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisar bar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Esconder do menu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Dispensar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "6\nOpera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-financeiro",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/financeiro",
+    "final_url": "http://localhost:3002/manager/financeiro",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Notifica\u00e7\u00f5es",
+        "tag": "button",
+        "role": "",
+        "aria": "Notifica\u00e7\u00f5es",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Voltar ao Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-configuracoes",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/configuracoes",
+    "final_url": "http://localhost:3002/manager/configuracoes",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Notifica\u00e7\u00f5es",
+        "tag": "button",
+        "role": "",
+        "aria": "Notifica\u00e7\u00f5es",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mensagens\nHist\u00f3rico",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Encerrar turno\nVai gerar resumo \u00b7 voc\u00ea sai do app",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Hist\u00f3rico de turnos\nVendas, mesas e desempenho dos turnos passados",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe e turnos\nMesma tela da aba Equipe \u00b7 turnos do dia inclusos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Cortesias\nHist\u00f3rico \u00b7 criar manualmente",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Notifica\u00e7\u00f5es\nAvisos do turno \u00b7 push \u00b7 sons \u00b7 lock screen",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Seguran\u00e7a e senha\nTrocar senha \u00b7 2FA \u00b7 sess\u00f5es ativas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Apar\u00eancia\nModo claro \u00b7 escuro \u00b7 autom\u00e1tico",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Sair do app",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-pausa-zona",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/pausa-zona",
+    "final_url": "http://localhost:3002/manager/pausa-zona",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "AG\nAna",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "BG\nBruno",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "5 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "10 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "15 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "30 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-mensagens",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/mensagens",
+    "final_url": "http://localhost:3002/manager/mensagens",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "manager-notifications",
+    "persona": "manager",
+    "url": "http://localhost:3002/manager/notifications",
+    "final_url": "http://localhost:3002/manager/notifications",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "host-home",
+    "persona": "host",
+    "url": "http://localhost:3002/host",
+    "final_url": "http://localhost:3002/host",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Notifica\u00e7\u00f5es",
+        "tag": "button",
+        "role": "",
+        "aria": "Notifica\u00e7\u00f5es",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Espera",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Reservas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "host-waitlist",
+    "persona": "host",
+    "url": "http://localhost:3002/host/waitlist",
+    "final_url": "http://localhost:3002/host/waitlist",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Adicionar",
+        "tag": "button",
+        "role": "",
+        "aria": "Adicionar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Todas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "1\u20132",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "3\u20134",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "5+",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Espera",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Reservas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "host-reservations",
+    "persona": "host",
+    "url": "http://localhost:3002/host/reservations",
+    "final_url": "http://localhost:3002/host/reservations",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Adicionar",
+        "tag": "button",
+        "role": "",
+        "aria": "Adicionar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Todas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Aguardadas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Chegaram",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Espera",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Reservas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "host-swap",
+    "persona": "host",
+    "url": "http://localhost:3002/host/swap",
+    "final_url": "http://localhost:3002/host/swap",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "host-profile",
+    "persona": "host",
+    "url": "http://localhost:3002/host/profile",
+    "final_url": "http://localhost:3002/host/profile",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Notifica\u00e7\u00f5es",
+        "tag": "button",
+        "role": "",
+        "aria": "Notifica\u00e7\u00f5es",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mensagens\nHist\u00f3rico",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Hist\u00f3rico de turnos\nLibera\u00e7\u00f5es, esperas e reservas dos turnos passados",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Notifica\u00e7\u00f5es\nAvisos do turno \u00b7 push \u00b7 sons \u00b7 lock screen",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Seguran\u00e7a e senha\nTrocar senha \u00b7 2FA \u00b7 sess\u00f5es ativas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Apar\u00eancia\nModo claro \u00b7 escuro \u00b7 autom\u00e1tico",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Sair do app",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Espera",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Reservas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "host-turnos-historico",
+    "persona": "host",
+    "url": "http://localhost:3002/host/turnos-historico",
+    "final_url": "http://localhost:3002/host/turnos-historico",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "SEX\n09\n09/05/26 \u00b7 17:00\u201323:14\n28 libera\u00e7\u00f5es \u00b7 14 reservas \u00b7 espera ~8 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "QUI\n08\n08/05/26 \u00b7 17:02\u201322:51\n22 libera\u00e7\u00f5es \u00b7 11 reservas \u00b7 espera ~6 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "QUA\n07\n07/05/26 \u00b7 17:00\u201322:34\n19 libera\u00e7\u00f5es \u00b7 9 reservas \u00b7 espera ~5 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "TER\n06\n06/05/26 \u00b7 17:05\u201322:20\n17 libera\u00e7\u00f5es \u00b7 8 reservas \u00b7 espera ~4 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "SEG\n05\n05/05/26 \u00b7 17:01\u201322:10\n15 libera\u00e7\u00f5es \u00b7 6 reservas \u00b7 espera ~4 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "DOM\n04\n04/05/26 \u00b7 11:30\u201316:45\n24 libera\u00e7\u00f5es \u00b7 12 reservas \u00b7 espera ~12 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "S\u00c1B\n03\n03/05/26 \u00b7 17:00\u201323:38\n32 libera\u00e7\u00f5es \u00b7 18 reservas \u00b7 espera ~14 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "SEX\n02\n02/05/26 \u00b7 17:00\u201323:05\n27 libera\u00e7\u00f5es \u00b7 13 reservas \u00b7 espera ~9 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "QUI\n01\n01/05/26 \u00b7 17:00\u201323:18\n30 libera\u00e7\u00f5es \u00b7 15 reservas \u00b7 espera ~11 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "QUA\n30\n30/04/26 \u00b7 17:02\u201322:40\n21 libera\u00e7\u00f5es \u00b7 10 reservas \u00b7 espera ~7 min",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Espera",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Reservas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "host-notificacoes-prefs",
+    "persona": "host",
+    "url": "http://localhost:3002/host/notificacoes-prefs",
+    "final_url": "http://localhost:3002/host/notificacoes-prefs",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Espera",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Reservas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesa liberada\nUm gar\u00e7om liberou uma mesa",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Mesa liberada",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Um gar\u00e7om liberou uma mesa",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Espera longa\nCliente na lista de espera h\u00e1 mais de 30 min",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Espera longa",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Cliente na lista de espera h\u00e1 mais de 30 min",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Reserva pr\u00f3xima\n15 min antes da hora marcada",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Reserva pr\u00f3xima",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "15 min antes da hora marcada",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Chegada tardia\nPedido de cliente pra entrar em mesa ocupada",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Chegada tardia",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Pedido de cliente pra entrar em mesa ocupada",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Tocar som em alertas\nSom curto em chegadas/libera\u00e7\u00f5es",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Tocar som em alertas",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Som curto em chegadas/libera\u00e7\u00f5es",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Som de espera longa\nToque insistente quando espera passa 30 min",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Som de espera longa",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Toque insistente quando espera passa 30 min",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Mostrar conte\u00fado na tela bloqueada\nNome e mesa aparecem mesmo com o celular travado",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Mostrar conte\u00fado na tela bloqueada",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Nome e mesa aparecem mesmo com o celular travado",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Vibra\u00e7\u00e3o forte\nPadr\u00e3o de vibra\u00e7\u00e3o mais percept\u00edvel em ambiente barulhento",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Vibra\u00e7\u00e3o forte",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Padr\u00e3o de vibra\u00e7\u00e3o mais percept\u00edvel em ambiente barulhento",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "host-seguranca",
+    "persona": "host",
+    "url": "http://localhost:3002/host/seguranca",
+    "final_url": "http://localhost:3002/host/seguranca",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Trocar senha\nDefina uma nova senha de acesso",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Encerrar",
+        "tag": "button",
+        "role": "",
+        "aria": "Encerrar sess\u00e3o Este dispositivo",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Encerrar",
+        "tag": "button",
+        "role": "",
+        "aria": "Encerrar sess\u00e3o iPhone \u2014 sala dos gar\u00e7ons",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Espera",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Reservas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "(div-no-label)",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Pedir c\u00f3digo a cada login\nAdiciona uma camada extra no login do app",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Pedir c\u00f3digo a cada login",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      },
+      {
+        "label": "Adiciona uma camada extra no login do app",
+        "tag": "div",
+        "role": "",
+        "aria": "",
+        "handler": false,
+        "href": "",
+        "status": "placebo-div"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "host-aparencia",
+    "persona": "host",
+    "url": "http://localhost:3002/host/aparencia",
+    "final_url": "http://localhost:3002/host/aparencia",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Claro\nTema claro o tempo todo",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Escuro\nTema escuro o tempo todo",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Autom\u00e1tico\nAcompanha o sistema (claro de dia \u00b7 escuro de noite)",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Espera",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Reservas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "host-notifications",
+    "persona": "host",
+    "url": "http://localhost:3002/host/notifications",
+    "final_url": "http://localhost:3002/host/notifications",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Espera",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Reservas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Avisos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "waiter-home",
+    "persona": "waiter",
+    "url": "http://localhost:3002/waiter",
+    "final_url": "http://localhost:3002/waiter",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Notifica\u00e7\u00f5es",
+        "tag": "button",
+        "role": "",
+        "aria": "Notifica\u00e7\u00f5es",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Nova intera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Nova intera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Chamados",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Novo",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Turno",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "waiter-eu",
+    "persona": "waiter",
+    "url": "http://localhost:3002/waiter/eu",
+    "final_url": "http://localhost:3002/waiter/eu",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mensagens\nHist\u00f3rico\n\u203a",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Encerrar turno\n\u203a",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Sair da conta",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Chamados",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Novo",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Turno",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "waiter-qr-issue",
+    "persona": "waiter",
+    "url": "http://localhost:3002/waiter/qr-issue",
+    "final_url": "http://localhost:3002/waiter/qr-issue",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Fechar",
+        "tag": "button",
+        "role": "",
+        "aria": "Fechar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Diminuir",
+        "tag": "button",
+        "role": "",
+        "aria": "Diminuir",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Aumentar",
+        "tag": "button",
+        "role": "",
+        "aria": "Aumentar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "QR borrado",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Descolou",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Rasgado",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Sumiu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Outro",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "+ Adicionar foto (opcional)",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Reportar pra gerente",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Cancelar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "waiter-chamados",
+    "persona": "waiter",
+    "url": "http://localhost:3002/waiter/chamados",
+    "final_url": "http://localhost:3002/waiter/chamados",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "(no label)",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Notifica\u00e7\u00f5es",
+        "tag": "button",
+        "role": "",
+        "aria": "Notifica\u00e7\u00f5es",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Todos \u00b7 5",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Urgentes \u00b7 3",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Pronto \u00b7 1",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Minhas mesas \u00b7 0",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "PEDIU A CONTA \u00b7 H\u00c1 1 MIN\nMesa 3 \u00b7 5p\nR$ 612,40 \u00b7 maquininha",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "CHAMOU GAR\u00c7OM \u00b7 H\u00c1 30S\nMesa 18 \u00b7 4p\nSem motivo informado",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "PRONTO \u00b7 COZINHA \u00b7 H\u00c1 2 MIN\nMesa 12 \u00b7 4p\nRisoto + Fil\u00e9 \u00b7 2 pratos",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "PEDIU BEBIDA \u00b7 H\u00c1 4 MIN\nMesa 7 \u00b7 2p\nAperol Spritz \u00b7 sem azeitona",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "CHAMOU GAR\u00c7OM \u00b7 H\u00c1 5 MIN\nMesa 9 \u00b7 3p\nCliente acionou app",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Mesas",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Chamados",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Novo",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Turno",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "waiter-notifications",
+    "persona": "waiter",
+    "url": "http://localhost:3002/waiter/notifications",
+    "final_url": "http://localhost:3002/waiter/notifications",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "393x852",
+    "clickables": [
+      {
+        "label": "Voltar",
+        "tag": "button",
+        "role": "",
+        "aria": "Voltar",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Painel",
+        "tag": "button",
+        "role": "",
+        "aria": "Painel",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Opera\u00e7\u00e3o",
+        "tag": "button",
+        "role": "",
+        "aria": "Opera\u00e7\u00e3o",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Equipe",
+        "tag": "button",
+        "role": "",
+        "aria": "Equipe",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Financeiro",
+        "tag": "button",
+        "role": "",
+        "aria": "Financeiro",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Eu",
+        "tag": "button",
+        "role": "",
+        "aria": "Eu",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "cozinha",
+    "persona": "cook",
+    "url": "http://localhost:3002/cozinha",
+    "final_url": "http://localhost:3002/cozinha",
+    "title": "\ud83d\udc34 Restaurant SaaS \u2014 Staff",
+    "viewport": "427x926",
+    "clickables": [
+      {
+        "label": "Som ON",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Perfil",
+        "tag": "button",
+        "role": "",
+        "aria": "Perfil",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Preparar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Preparar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Preparar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Preparar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Preparar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Preparar",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      },
+      {
+        "label": "Entregue",
+        "tag": "button",
+        "role": "",
+        "aria": "",
+        "handler": true,
+        "href": "",
+        "status": "real"
+      }
+    ],
+    "console_errors": []
+  },
+  {
+    "name": "customer-assistente",
+    "persona": "none",
+    "url": "http://localhost:3003/restaurant_dev/assistente?slug=restaurant_dev",
+    "final_url": "http://localhost:3003/restaurant_dev",
+    "title": "Restaurant SaaS",
+    "viewport": "393x852",
+    "clickables": [],
+    "console_errors": []
+  }
+]

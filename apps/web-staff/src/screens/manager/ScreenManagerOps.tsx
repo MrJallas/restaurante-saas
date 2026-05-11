@@ -12,7 +12,7 @@
 //   • Barra fixa "Agir agora" (Cozinha · Pausa) sobre o bottom-nav
 //   • MBottomNav active="ops"
 
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -118,7 +118,17 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
   const [active, setActive] = useState<OpsTab>(tab);
   const api = manager(tenantSlug);
 
-  const [alerts] = useState(FALLBACK_ALERTS);
+  // Round 18 (Onda 2A): alerts é state mutável pra Dispensar funcionar.
+  // Antes era const sem setter — clique no X era silencioso.
+  const [alerts, setAlerts] = useState(FALLBACK_ALERTS);
+  const [stubMsg, setStubMsg] = useState<string | null>(null);
+  const dismissAlert = (id: number) => {
+    setAlerts((prev) => prev.filter((a) => a.id !== id));
+  };
+  const showStub = (action: string) => {
+    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
+    setTimeout(() => setStubMsg(null), 2800);
+  };
   const [pauseRemaining, setPauseRemaining] = useState<number | null>(null);
 
   // Buscar pausa ativa pra mostrar countdown na MQuickActionsBar.
@@ -157,7 +167,7 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
   return (
     <div
       style={{
-        minHeight: '100vh',
+        height: '100vh',
         display: 'flex',
         flexDirection: 'column',
         background: C.surface,
@@ -187,7 +197,16 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
           </MTab>
         </div>
 
-        {active === 'alerts' && <OpsAlerts dark={dark} alerts={alerts} high={high} med={med} />}
+        {active === 'alerts' && (
+          <OpsAlerts
+            dark={dark}
+            alerts={alerts}
+            high={high}
+            med={med}
+            onDismiss={dismissAlert}
+            onAction={showStub}
+          />
+        )}
         {active === 'map' && <OpsMap dark={dark} tables={FALLBACK_TABLES} />}
         {active === 'funnel' && <OpsFunnel dark={dark} stages={FALLBACK_FUNNEL} />}
 
@@ -210,6 +229,31 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
         pauseActive={pauseRemaining != null ? { remaining: pauseRemaining } : null}
       />
       <MBottomNav active="ops" dark={dark} onTo={(r) => router.push(r)} alerts={alerts.length} />
+
+      {stubMsg && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 132,
+            transform: 'translateX(-50%)',
+            zIndex: 80,
+            padding: '12px 18px',
+            borderRadius: 999,
+            background: C.ink,
+            color: C.bg,
+            fontSize: 13,
+            fontWeight: 600,
+            letterSpacing: -0.1,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            maxWidth: 'calc(100vw - 32px)',
+            textAlign: 'center',
+          }}
+        >
+          {stubMsg}
+        </div>
+      )}
     </div>
   );
 }
@@ -220,34 +264,47 @@ function OpsAlerts({
   alerts,
   high,
   med,
+  onDismiss,
+  onAction,
 }: {
   dark?: boolean;
   alerts: typeof FALLBACK_ALERTS;
   high: number;
   med: number;
+  onDismiss?: (id: number) => void;
+  onAction?: (label: string) => void;
 }) {
   const C = useG(!!dark);
+  const router = useRouter();
   return (
     <div>
+      {/* Round 18 Onda 4: 2 chips (Críticos · Atenção) viraram tap-targets
+          pros drill-downs V9. Visual preservado · wrapper <button> reset. */}
       <div style={{ padding: '12px 16px 0', display: 'flex', gap: 10 }}>
-        <MStat
-          dark={dark}
-          compact
-          label="Críticos"
-          value={String(high)}
-          sub="resolver agora"
-          accent={high > 0 ? '#C43A3A' : null}
-          help="Pedido ou chamado passou muito da meta — cliente está esperando."
-        />
-        <MStat
-          dark={dark}
-          compact
-          label="Atenção"
-          value={String(med)}
-          sub="próx. 10 min"
-          accent={med > 0 ? '#9A7212' : null}
-          help="Vai virar crítico se não agir logo."
-        />
+        <ChipButton onClick={() => router.push('/manager/operacoes/criticos')}>
+          <MStat
+            dark={dark}
+            compact
+            label="Críticos"
+            value={String(high)}
+            sub="resolver agora"
+            accent={high > 0 ? '#C43A3A' : null}
+            help="Pedido ou chamado passou muito da meta — cliente está esperando."
+            onHelp={() => router.push('/manager/operacoes/criticos')}
+          />
+        </ChipButton>
+        <ChipButton onClick={() => router.push('/manager/operacoes/atencao')}>
+          <MStat
+            dark={dark}
+            compact
+            label="Atenção"
+            value={String(med)}
+            sub="próx. 10 min"
+            accent={med > 0 ? '#9A7212' : null}
+            help="Vai virar crítico se não agir logo."
+            onHelp={() => router.push('/manager/operacoes/atencao')}
+          />
+        </ChipButton>
       </div>
 
       <div
@@ -298,6 +355,7 @@ function OpsAlerts({
                   type="button"
                   title="Dispensar"
                   aria-label="Dispensar alerta"
+                  onClick={() => onDismiss?.(a.id)}
                   style={{
                     position: 'absolute',
                     top: 6,
@@ -379,6 +437,7 @@ function OpsAlerts({
                 <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
                   <button
                     type="button"
+                    onClick={() => onAction?.(a.actions[0])}
                     style={{
                       all: 'unset',
                       cursor: 'pointer',
@@ -397,6 +456,7 @@ function OpsAlerts({
                   </button>
                   <button
                     type="button"
+                    onClick={() => onAction?.(a.actions[1])}
                     style={{
                       all: 'unset',
                       cursor: 'pointer',
@@ -467,24 +527,32 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
 
   return (
     <div>
+      {/* Round 18 Onda 4: 2 chips (Mesas ativas · Em alerta) viraram tap-
+          targets pros drill-downs V9. Visual preservado. */}
       <div style={{ padding: '12px 16px 0', display: 'flex', gap: 10 }}>
-        <MStat
-          dark={dark}
-          compact
-          label="Mesas ativas"
-          value={`${occupied}/${tables.length}`}
-          sub={`${free} livres`}
-          help="Mesas com cliente sentado agora · resto está vazio."
-        />
-        <MStat
-          dark={dark}
-          compact
-          label="Em alerta"
-          value={String(critical + warn)}
-          sub={critical > 0 ? `${critical} críticas` : 'nenhuma crítica'}
-          accent={critical > 0 ? '#C43A3A' : null}
-          help="Mesas onde o pedido passou da meta de tempo."
-        />
+        <ChipButton onClick={() => router.push('/manager/operacoes/mesas-ativas')}>
+          <MStat
+            dark={dark}
+            compact
+            label="Mesas ativas"
+            value={`${occupied}/${tables.length}`}
+            sub={`${free} livres`}
+            help="Mesas com cliente sentado agora · resto está vazio."
+            onHelp={() => router.push('/manager/operacoes/mesas-ativas')}
+          />
+        </ChipButton>
+        <ChipButton onClick={() => router.push('/manager/operacoes/em-alerta')}>
+          <MStat
+            dark={dark}
+            compact
+            label="Em alerta"
+            value={String(critical + warn)}
+            sub={critical > 0 ? `${critical} críticas` : 'nenhuma crítica'}
+            accent={critical > 0 ? '#C43A3A' : null}
+            help="Mesas onde o pedido passou da meta de tempo."
+            onHelp={() => router.push('/manager/operacoes/em-alerta')}
+          />
+        </ChipButton>
       </div>
 
       <div style={{ padding: '12px 16px 6px', fontSize: 11.5, color: C.faint, fontWeight: 500, lineHeight: 1.5 }}>
@@ -759,6 +827,35 @@ function OpsFunnel({ dark, stages }: { dark?: boolean; stages: typeof FALLBACK_F
           <li>Se piorar, pause pedidos novos por 5 min até a fila baixar.</li>
         </ol>
       </div>
+    </div>
+  );
+}
+
+// ─── ChipButton — wraps MStat pra virar nav target.
+// USA `div role="button"` em vez de `<button>` porque o MStat interno
+// já contém um `<button>` (o ícone `?` de help tooltip), e nesting de
+// button dentro de button é HTML inválido + causa hydration error.
+// Keyboard handler dá Enter/Space pra a11y, igual a um `<button>` nativo.
+function ChipButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      style={{
+        cursor: 'pointer',
+        flex: 1,
+        display: 'flex',
+        minWidth: 0,
+      }}
+    >
+      {children}
     </div>
   );
 }

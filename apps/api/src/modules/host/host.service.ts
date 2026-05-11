@@ -935,6 +935,7 @@ export class HostService {
       seats: row.participant_count ?? undefined,
       since: row.active_session_started_at ?? undefined,
       waiter_initial: null,
+      active_session_id: row.active_session_id,
     };
   }
 

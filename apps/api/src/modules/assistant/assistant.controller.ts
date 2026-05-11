@@ -8,6 +8,8 @@ import {
   MaxLength,
 } from 'class-validator';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
+import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { AssistantService } from './assistant.service';
@@ -27,6 +29,12 @@ class SendMessageDto {
   @IsOptional()
   @IsUUID()
   customerId?: string;
+}
+
+class StaffToCustomerDto {
+  @IsUUID() tableSessionId!: string;
+  @IsString() @IsNotEmpty() @MaxLength(2000) message!: string;
+  @IsUUID() fromStaffId!: string;
 }
 
 @Controller(':slug/assistant')
@@ -78,5 +86,35 @@ export class AssistantController {
       callerCustomerId,
     );
     return { messages: history };
+  }
+
+  /**
+   * Round 18 (Onda 4 batch 2): manager → cliente direct message.
+   *
+   * Substitui o mis-routing previamente em MContactClientSheet que
+   * batia em `/staff-messages` (staff↔staff). Aqui o staff (manager)
+   * envia bubble pro customer aparecer em `/[slug]/assistente` com
+   * role=staff. Persiste em `assistant_messages` (from_role='staff')
+   * e emite WS `assistant.staff_message_received` no room
+   * `session:<tableSessionId>` pra real-time.
+   *
+   * Auth: manager-only (decisao de produto — waiters chamam o cliente
+   * via outros canais; mensagem inline no chat eh manager prerogativa).
+   *
+   * `fromStaffId` vem do body do FE. Defesa-em-profundidade: o service
+   * valida que o staffId existe e está ativo no DB (mesmo padrao do
+   * `requireActiveStaffId`). Audit-spoof prevenido pq StaffOnlyGuard
+   * + ManagerOnlyGuard ja confirma que x-staff-id eh manager — body
+   * mismatch eh permitido (manager pode delegar?) mas o staffId
+   * persistido é o do body, nao header. Trade-off explicito.
+   */
+  @Post('staff-to-customer')
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
+  async staffToCustomer(@Body() dto: StaffToCustomerDto) {
+    return this.assistantService.sendStaffToCustomer({
+      tableSessionId: dto.tableSessionId,
+      message: dto.message,
+      fromStaffId: dto.fromStaffId,
+    });
   }
 }

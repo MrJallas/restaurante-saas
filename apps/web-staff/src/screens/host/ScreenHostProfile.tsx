@@ -8,6 +8,7 @@
 // turnos) · Conta (Notificações · Segurança · Aparência) · Sair · footer.
 
 import * as React from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
@@ -63,6 +64,22 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
 }) => {
   const dark = false;
   const C = useG(dark);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // Preserva ?tenant= e ?hostId= ao navegar pras sub-screens (back leva de
+  // volta pra /host/profile com a query intacta).
+  const navTo = React.useCallback(
+    (path: string) => {
+      const tenant = searchParams?.get('tenant');
+      const hostId = searchParams?.get('hostId');
+      const qs = new URLSearchParams();
+      if (tenant) qs.set('tenant', tenant);
+      if (hostId) qs.set('hostId', hostId);
+      const search = qs.toString();
+      router.push(search ? `${path}?${search}` : path);
+    },
+    [router, searchParams],
+  );
   const initials =
     hostInitials ?? (hostName ? hostName.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase() : 'EU');
 
@@ -89,7 +106,13 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
           }}
         >
           <h1 style={{ flex: 1, margin: 0, fontSize: 18, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>Eu</h1>
-          <GIconBtn dark={dark} icon={Icon.bell(20)} badge={bellBadge > 0 ? String(bellBadge) : undefined} ariaLabel="Notificações" />
+          <GIconBtn
+            dark={dark}
+            icon={Icon.bell(20)}
+            badge={bellBadge > 0 ? String(bellBadge) : undefined}
+            onClick={() => router.push('/host/notifications')}
+            ariaLabel="Notificações"
+          />
         </div>
 
         {/* HERO · avatar lado-a-lado · pulse em turno */}
@@ -224,15 +247,34 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
             icon={Icon.history(18)}
             lbl="Histórico de turnos"
             sub="Liberações, esperas e reservas dos turnos passados"
+            onClick={() => navTo('/host/turnos-historico')}
           />
         </div>
 
         {/* CONTA */}
         <SectionTitle dark={dark}>Conta</SectionTitle>
         <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <ActionRow dark={dark} icon={Icon.bell(18)} lbl="Notificações" sub="Avisos do turno · push · sons · lock screen" />
-          <ActionRow dark={dark} icon={Icon.shield(18)} lbl="Segurança e senha" sub="Trocar senha · 2FA · sessões ativas" />
-          <ActionRow dark={dark} icon={Icon.flame(18)} lbl="Aparência" sub="Modo claro · escuro · automático" />
+          <ActionRow
+            dark={dark}
+            icon={Icon.bell(18)}
+            lbl="Notificações"
+            sub="Avisos do turno · push · sons · lock screen"
+            onClick={() => navTo('/host/notificacoes-prefs')}
+          />
+          <ActionRow
+            dark={dark}
+            icon={Icon.shield(18)}
+            lbl="Segurança e senha"
+            sub="Trocar senha · 2FA · sessões ativas"
+            onClick={() => navTo('/host/seguranca')}
+          />
+          <ActionRow
+            dark={dark}
+            icon={Icon.flame(18)}
+            lbl="Aparência"
+            sub="Modo claro · escuro · automático"
+            onClick={() => navTo('/host/aparencia')}
+          />
         </div>
 
         {/* SAIR · destrutivo brick */}

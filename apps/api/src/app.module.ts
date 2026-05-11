@@ -34,6 +34,10 @@ import { ChatHistoryModule } from './modules/chat-history/chat-history.module';
 import { JobsModule } from './modules/jobs/jobs.module';
 import { QrIssuesModule } from './modules/qr-issues/qr-issues.module';
 import { HostModule } from './modules/host/host.module';
+import { CourtesiesModule } from './modules/courtesies/courtesies.module';
+import { ShiftsModule } from './modules/shifts/shifts.module';
+import { AlertsModule } from './modules/alerts/alerts.module';
+import { ContinuationModule } from './modules/continuation/continuation.module';
 
 @Module({
   imports: [
@@ -72,6 +76,10 @@ import { HostModule } from './modules/host/host.module';
     JobsModule,
     QrIssuesModule,
     HostModule,
+    CourtesiesModule,
+    ShiftsModule,
+    AlertsModule,
+    ContinuationModule,
   ],
   controllers: [AppController],
 })

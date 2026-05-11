@@ -38,15 +38,25 @@ const PIN_IP_LOCK_SECONDS = 15 * 60;
 
 class CreateStaffDto {
   @IsString() @IsNotEmpty() @MaxLength(80) name!: string;
-  @IsIn(['waiter', 'cook', 'manager']) role!: string;
+  @IsIn(['waiter', 'cook', 'manager', 'host', 'bartender', 'cashier']) role!: string;
   @Matches(/^\d{4,6}$/, { message: 'PIN deve ter 4-6 digitos.' }) pin!: string;
+  // Round 18 (Onda 1 wiring): campos do canvas StaffForm. Todos
+  // opcionais — backend nao quebra se FE legacy mandar so name/role/pin.
+  @IsOptional() @IsString() @MaxLength(20) cpf?: string;
+  @IsOptional() @IsString() @MaxLength(30) phone?: string;
+  @IsOptional() @IsString() @MaxLength(120) email?: string;
+  @IsOptional() @IsIn(['Manhã', 'Tarde', 'Noite']) default_shift?: string;
 }
 
 class UpdateStaffDto {
   @IsOptional() @IsString() @MaxLength(80) name?: string;
-  @IsOptional() @IsIn(['waiter', 'cook', 'manager']) role?: string;
+  @IsOptional() @IsIn(['waiter', 'cook', 'manager', 'host', 'bartender', 'cashier']) role?: string;
   @IsOptional() @Matches(/^\d{4,6}$/) pin?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsString() @MaxLength(20) cpf?: string;
+  @IsOptional() @IsString() @MaxLength(30) phone?: string;
+  @IsOptional() @IsString() @MaxLength(120) email?: string;
+  @IsOptional() @IsIn(['Manhã', 'Tarde', 'Noite']) default_shift?: string;
 }
 
 class VerifyPinDto {
@@ -106,6 +116,27 @@ export class StaffController {
     const sessionId =
       req.actorType === 'session' ? req.sessionData?.sessionId ?? null : null;
     return this.staffService.listActiveTables(sessionId);
+  }
+
+  /**
+   * Round 18 (Onda 4 batch 2): KPIs agregados pra
+   * `ScreenManagerStaffDetail` (canvas /manager/equipe/[id]).
+   * Period: today | 7d | 30d. Auth: staff-only (manager dashboard).
+   *
+   * Declarado ANTES do wildcard `@Get(':id')` pra Nest matcher não cair
+   * em getById('performance'). Vide `path collision` em SUPER-PROMPT-V3 §9.
+   */
+  @Get(':id/performance')
+  @UseGuards(StaffOrSessionGuard)
+  async getPerformance(
+    @Param('id') id: string,
+    @Query('period') period?: string,
+  ) {
+    const p =
+      period === '7d' || period === '30d' || period === 'today'
+        ? (period as 'today' | '7d' | '30d')
+        : 'today';
+    return this.staffService.getPerformance(id, p);
   }
 
   @Get(':id')

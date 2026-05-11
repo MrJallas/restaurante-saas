@@ -15,10 +15,16 @@ function WaiterHomePageInner() {
       tenantSlug={tenantSlug}
       waiterId={waiterId}
       onNewEntry={() => router.push(`/waiter/new-entry?tenant=${tenantSlug}`)}
-      onOpenCall={(callId) => router.push(`/waiter?call=${callId}&tenant=${tenantSlug}`)}
-      onOpenTable={(t) => router.push(`/waiter?table=${t}&tenant=${tenantSlug}`)}
+      onOpenCall={(callId) =>
+        router.push(`/waiter/call/${callId}?tenant=${tenantSlug}`)
+      }
+      onOpenTable={(t) =>
+        router.push(`/waiter/table/${t}?tenant=${tenantSlug}&tableNumber=${t}`)
+      }
       onTabChange={(tab) => {
         if (tab === 'me') router.push(`/waiter/eu?tenant=${tenantSlug}&waiterId=${waiterId}`);
+        else if (tab === 'calls') router.push(`/waiter/chamados?tenant=${tenantSlug}`);
+        else if (tab === 'scan') router.push(`/waiter/scan-qr?tenant=${tenantSlug}`);
       }}
       fab
     />

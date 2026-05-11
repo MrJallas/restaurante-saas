@@ -76,7 +76,7 @@ export const ScreenWaiterNewEntry: React.FC<ScreenWaiterNewEntryProps> = ({
   return (
     <div
       style={{
-        width: '100%', minHeight: '100vh', background: C.surface, color: C.ink,
+        width: '100%', height: '100vh', background: C.surface, color: C.ink,
         fontFamily: G_FONT, display: 'flex', flexDirection: 'column', position: 'relative',
       }}
     >

@@ -1,0 +1,29 @@
+// Host · Notificações — destino do sino do header em todo host UI.
+// Round 18 placebo-fix (audit-report Onda 18). Tenant slug: `?slug=` query
+// param OR `NEXT_PUBLIC_TENANT_SLUG`.
+'use client';
+
+import { useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
+import { ScreenManagerNotifications } from '../../../screens/manager/ScreenManagerNotifications';
+
+function NotificationsInner() {
+  const params = useSearchParams();
+  const slug =
+    params.get('slug') || process.env.NEXT_PUBLIC_TENANT_SLUG || 'demo';
+  return <ScreenManagerNotifications tenantSlug={slug} persona="host" />;
+}
+
+export default function HostNotificationsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>
+          Carregando…
+        </div>
+      }
+    >
+      <NotificationsInner />
+    </Suspense>
+  );
+}

@@ -10,7 +10,11 @@ import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
 
-const VALID_ROLES = ['waiter', 'cook', 'manager'];
+// Round 18 (Onda 1 wiring): inclui host/bartender/cashier — canvas
+// StaffForm permite todos os 6 roles. host ja existia em registros
+// seedados mas o VALID_ROLES legacy bloqueava update/create.
+const VALID_ROLES = ['waiter', 'cook', 'manager', 'host', 'bartender', 'cashier'];
+const VALID_SHIFTS = ['Manhã', 'Tarde', 'Noite'];
 
 // Limite de tentativas falhas em verifyPin antes de bloquear o
 // staff_id por LOCKOUT_SECONDS. Sem isso o PIN de 4 digitos
@@ -51,7 +55,9 @@ export class StaffService {
     }
     const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
     return this.tenantConn.query(
-      `SELECT id, name, role, is_active, created_at, updated_at FROM staff ${whereClause} ORDER BY name ASC`,
+      `SELECT id, name, role, is_active, cpf, phone, email, default_shift,
+              created_at, updated_at
+         FROM staff ${whereClause} ORDER BY name ASC`,
       params,
     );
   }
@@ -145,31 +151,191 @@ export class StaffService {
 
   async getById(id: string) {
     const rows = (await this.tenantConn.query(
-      `SELECT id, name, role, is_active, created_at, updated_at FROM staff WHERE id = $1`,
+      `SELECT id, name, role, is_active, cpf, phone, email, default_shift,
+              created_at, updated_at
+         FROM staff WHERE id = $1`,
       [id],
     )) as unknown[];
     if (!rows.length) throw new NotFoundException('Funcionario nao encontrado.');
     return rows[0];
   }
 
-  async create(data: { name: string; role: string; pin: string }) {
+  /**
+   * Round 18 (Onda 4 batch 2): KPIs agregados pra
+   * `ScreenManagerStaffDetail` (canvas /manager/equipe/[id]).
+   *
+   * Sources:
+   *  • ordersServed → orders cujos rows em `order_status_history` tem
+   *    `to_status='delivered'` e `changed_by = staff_id`. Distinct
+   *    order_id pra contar pedidos servidos (não eventos).
+   *  • totalRevenue → SUM(orders.total_cents) dos mesmos ordersServed.
+   *  • avgResponseSec → AVG(EXTRACT(EPOCH FROM acknowledged_at - created_at))
+   *    em waiter_calls.acknowledged_by = $1.
+   *  • sessionsHandled → table_sessions onde `closed_by = staff_id::text`
+   *    (closed_by é VARCHAR(50) legacy; alguns paths stampam o UUID).
+   *  • callsAnswered → COUNT(*) em waiter_calls.acknowledged_by = $1.
+   *
+   * Period: today (since 00:00) | 7d (since now-7d) | 30d (since now-30d).
+   * Window aplicado a `created_at` da tabela source pra que "served" use
+   * a transition timestamp, "session" use o closed_at, etc.
+   */
+  async getPerformance(
+    staffId: string,
+    period: 'today' | '7d' | '30d',
+  ): Promise<{
+    staffId: string;
+    period: string;
+    kpis: {
+      ordersServed: number;
+      totalRevenue: number;
+      avgResponseSec: number;
+      sessionsHandled: number;
+      callsAnswered: number;
+    };
+  }> {
+    // Confirma staff existe (404 limpo).
+    const sRows = (await this.tenantConn.query(
+      `SELECT id FROM staff WHERE id = $1`,
+      [staffId],
+    )) as Array<{ id: string }>;
+    if (!sRows.length) {
+      throw new NotFoundException('Funcionario nao encontrado.');
+    }
+
+    // SQL `since` expression. `date_trunc('day', now())` = 00:00 today.
+    const sinceExpr =
+      period === 'today'
+        ? `date_trunc('day', now())`
+        : period === '7d'
+          ? `now() - interval '7 days'`
+          : `now() - interval '30 days'`;
+
+    // 1. ordersServed + totalRevenue (DISTINCT order_id pra não
+    // duplicar quando ha multiplas transitions). Junta orders pra
+    // somar total_cents.
+    const ordersAggRows = (await this.tenantConn.query(
+      `
+      WITH served AS (
+        SELECT DISTINCT osh.order_id
+          FROM order_status_history osh
+          WHERE osh.to_status = 'delivered'
+            AND osh.changed_by = $1
+            AND osh.created_at >= ${sinceExpr}
+      )
+      SELECT
+        COUNT(s.order_id)::int AS orders_served,
+        COALESCE(SUM(o.total_cents), 0)::int AS total_revenue
+      FROM served s
+      JOIN orders o ON o.id = s.order_id
+      `,
+      [staffId],
+    )) as Array<{ orders_served: number; total_revenue: number }>;
+    const ordersAgg = ordersAggRows[0] ?? { orders_served: 0, total_revenue: 0 };
+
+    // 2. callsAnswered + avgResponseSec.
+    const callsAggRows = (await this.tenantConn.query(
+      `
+      SELECT
+        COUNT(*)::int AS calls_answered,
+        COALESCE(
+          AVG(EXTRACT(EPOCH FROM (acknowledged_at - created_at))),
+          0
+        )::int AS avg_response_sec
+      FROM waiter_calls
+      WHERE acknowledged_by = $1
+        AND acknowledged_at IS NOT NULL
+        AND created_at >= ${sinceExpr}
+      `,
+      [staffId],
+    )) as Array<{ calls_answered: number; avg_response_sec: number }>;
+    const callsAgg = callsAggRows[0] ?? { calls_answered: 0, avg_response_sec: 0 };
+
+    // 3. sessionsHandled — closed_by é VARCHAR(50), comparacao textual.
+    const sessionsRows = (await this.tenantConn.query(
+      `
+      SELECT COUNT(*)::int AS sessions_handled
+      FROM table_sessions
+      WHERE closed_by = $1::text
+        AND closed_at IS NOT NULL
+        AND closed_at >= ${sinceExpr}
+      `,
+      [staffId],
+    )) as Array<{ sessions_handled: number }>;
+    const sessionsHandled = sessionsRows[0]?.sessions_handled ?? 0;
+
+    return {
+      staffId,
+      period,
+      kpis: {
+        ordersServed: ordersAgg.orders_served,
+        totalRevenue: ordersAgg.total_revenue,
+        avgResponseSec: callsAgg.avg_response_sec,
+        sessionsHandled,
+        callsAnswered: callsAgg.calls_answered,
+      },
+    };
+  }
+
+  async create(data: {
+    name: string;
+    role: string;
+    pin: string;
+    cpf?: string;
+    phone?: string;
+    email?: string;
+    default_shift?: string;
+  }) {
     if (!VALID_ROLES.includes(data.role)) {
       throw new BadRequestException('Cargo invalido.');
     }
     if (!/^\d{4,6}$/.test(data.pin)) {
       throw new BadRequestException('PIN deve ter 4-6 digitos.');
     }
-    const rows = (await this.tenantConn.query(
-      `INSERT INTO staff (name, role, pin_hash) VALUES ($1, $2, $3)
-       RETURNING id, name, role, is_active, created_at, updated_at`,
-      [data.name, data.role, hashPin(data.pin)],
-    )) as unknown[];
-    return rows[0];
+    if (data.default_shift && !VALID_SHIFTS.includes(data.default_shift)) {
+      throw new BadRequestException('Turno padrao invalido.');
+    }
+    try {
+      const rows = (await this.tenantConn.query(
+        `INSERT INTO staff (name, role, pin_hash, cpf, phone, email, default_shift)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, name, role, is_active, cpf, phone, email, default_shift,
+                   created_at, updated_at`,
+        [
+          data.name,
+          data.role,
+          hashPin(data.pin),
+          data.cpf ?? null,
+          data.phone ?? null,
+          data.email ?? null,
+          data.default_shift ?? null,
+        ],
+      )) as unknown[];
+      return rows[0];
+    } catch (e) {
+      // Round 18: traduz unique_violation do CPF (idx staff_cpf_unique
+      // da migration 041) pra erro amigavel. PG codigo 23505.
+      const err = e as { code?: string; constraint?: string };
+      if (err.code === '23505' && err.constraint === 'staff_cpf_unique') {
+        throw new BadRequestException(
+          'Ja existe um funcionario com esse CPF.',
+        );
+      }
+      throw e;
+    }
   }
 
   async update(
     id: string,
-    data: Partial<{ name: string; role: string; pin: string; isActive: boolean }>,
+    data: Partial<{
+      name: string;
+      role: string;
+      pin: string;
+      isActive: boolean;
+      cpf: string;
+      phone: string;
+      email: string;
+      default_shift: string;
+    }>,
   ) {
     const setClauses: string[] = [];
     const params: unknown[] = [];
@@ -197,6 +363,25 @@ export class StaffService {
       setClauses.push(`is_active = $${idx++}`);
       params.push(data.isActive);
     }
+    if (data.cpf !== undefined) {
+      setClauses.push(`cpf = $${idx++}`);
+      params.push(data.cpf || null);
+    }
+    if (data.phone !== undefined) {
+      setClauses.push(`phone = $${idx++}`);
+      params.push(data.phone || null);
+    }
+    if (data.email !== undefined) {
+      setClauses.push(`email = $${idx++}`);
+      params.push(data.email || null);
+    }
+    if (data.default_shift !== undefined) {
+      if (data.default_shift && !VALID_SHIFTS.includes(data.default_shift)) {
+        throw new BadRequestException('Turno padrao invalido.');
+      }
+      setClauses.push(`default_shift = $${idx++}`);
+      params.push(data.default_shift || null);
+    }
 
     if (!setClauses.length) return this.getById(id);
 
@@ -206,7 +391,8 @@ export class StaffService {
     const rows = unwrapRows<Record<string, unknown>>(
       await this.tenantConn.query(
         `UPDATE staff SET ${setClauses.join(', ')} WHERE id = $${idx}
-         RETURNING id, name, role, is_active, created_at, updated_at`,
+         RETURNING id, name, role, is_active, cpf, phone, email, default_shift,
+                   created_at, updated_at`,
         params,
       ),
     );

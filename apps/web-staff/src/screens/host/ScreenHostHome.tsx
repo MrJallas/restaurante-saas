@@ -8,6 +8,7 @@
 
 import * as React from 'react';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useG, G_FONT, HSt } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
@@ -33,6 +34,7 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
 }) => {
   const dark = false;
   const C = useG(dark);
+  const router = useRouter();
   const [tables, setTables] = useState<HostTableEntry[]>([]);
   const [lateArrivals, setLateArrivals] = useState<LateArrivalRequestDto[]>([]);
   const { on } = useHostEvents({ tenantSlug, hostId });
@@ -90,7 +92,7 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
   return (
     <div
       style={{
-        width: '100%', minHeight: '100vh', background: C.surface, color: C.ink,
+        width: '100%', height: '100vh', background: C.surface, color: C.ink,
         fontFamily: G_FONT, display: 'flex', flexDirection: 'column',
       }}
     >
@@ -109,7 +111,15 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
         }
         title="Salão"
         sub={`${livres} LIVRES · ${ocupadas} EM USO`}
-        right={<GIconBtn icon={Icon.bell(20)} dark={dark} badge={alerta > 0 ? String(alerta) : undefined} />}
+        right={
+          <GIconBtn
+            icon={Icon.bell(20)}
+            dark={dark}
+            badge={alerta > 0 ? String(alerta) : undefined}
+            onClick={() => router.push('/host/notifications')}
+            ariaLabel="Notificações"
+          />
+        }
       />
 
       <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px 80px' }}>

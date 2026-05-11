@@ -7,7 +7,8 @@
 // Transferir, Fechar). VIP toggle lives in the MoreSheet of this screen
 // (per docs/features/vip-customer.md).
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   useG,
   G_FONT,
@@ -59,11 +60,33 @@ export function ScreenManagerTableMenu({
   onClose,
 }: ScreenManagerTableMenuProps) {
   const C = useG(!!dark);
+  const router = useRouter();
   const api = manager(tenantSlug);
   const [flags, setFlags] = useState<SessionFlag[]>(initialFlags);
   const [moreOpen, setMoreOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Round 18 (Onda 2A): stub feedback pra ações ainda sem backend
+  // (Imprimir / Transferir / Fechar / Ver timeline / Reportar / Auditoria).
+  // Antes os ActionRows nao tinham onClick — clique era completamente
+  // silencioso. Agora abre toast curto explicando que esta em desenvolvimento.
+  const [stubMsg, setStubMsg] = useState<string | null>(null);
+  const showStub = (action: string) => {
+    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
+    setTimeout(() => setStubMsg(null), 2800);
+  };
+
+  // Round 18 (Onda 2A): "Mandar cortesia" agora navega pra
+  // /manager/compensate com mesa pre-selecionada via query params.
+  // Antes era placebo (sem onClick).
+  const goToCompensate = () => {
+    const qs = new URLSearchParams({
+      slug: tenantSlug,
+      tableNumber: String(tableNumber),
+      tableSessionId,
+    }).toString();
+    router.push(`/manager/compensate?${qs}`);
+  };
 
   // Re-sync flags from API on mount (in case caller passed stale prop)
   useEffect(() => {
@@ -109,7 +132,7 @@ export function ScreenManagerTableMenu({
   return (
     <div
       style={{
-        minHeight: '100vh',
+        height: '100vh',
         display: 'flex',
         flexDirection: 'column',
         background: C.surface,
@@ -242,6 +265,7 @@ export function ScreenManagerTableMenu({
               icon={Icon.gift(18)}
               label="Mandar cortesia"
               sub="Sobremesa, drink, desconto ou só uma mensagem"
+              onClick={goToCompensate}
             />
             <ActionRow
               dark={dark}
@@ -256,18 +280,21 @@ export function ScreenManagerTableMenu({
               icon={Icon.history(18)}
               label="Ver timeline da mesa"
               sub="Diagnóstico · ações sugeridas · histórico"
+              onClick={() => showStub('Ver timeline da mesa')}
             />
             <ActionRow
               dark={dark}
               icon={Icon.receipt(18)}
               label="Imprimir conta"
               sub="Conta detalhada · vai pra impressora do salão"
+              onClick={() => showStub('Imprimir conta')}
             />
             <ActionRow
               dark={dark}
               icon={Icon.arrow(18)}
               label="Transferir mesa"
               sub="Mover pra outra mesa · pedidos vão junto"
+              onClick={() => showStub('Transferir mesa')}
             />
             <ActionRow
               dark={dark}
@@ -276,6 +303,7 @@ export function ScreenManagerTableMenu({
               sub="Encerra a sessão · só com conta paga"
               danger
               last
+              onClick={() => showStub('Fechar mesa')}
             />
           </div>
         </div>
@@ -290,6 +318,10 @@ export function ScreenManagerTableMenu({
               icon: Icon.flame(18),
               label: 'Reportar problema com a mesa',
               sub: 'Cadeira quebrada, lâmpada queimada — marca pra manutenção',
+              onClick: () => {
+                setMoreOpen(false);
+                showStub('Reportar problema');
+              },
             },
             {
               icon: Icon.sparkle(18),
@@ -304,6 +336,10 @@ export function ScreenManagerTableMenu({
               icon: Icon.history(18),
               label: 'Ver auditoria',
               sub: 'Quem abriu, fechou ou transferiu a mesa',
+              onClick: () => {
+                setMoreOpen(false);
+                showStub('Ver auditoria');
+              },
             },
           ]}
           onClose={() => setMoreOpen(false)}
@@ -323,6 +359,31 @@ export function ScreenManagerTableMenu({
           managerName={managerName}
           onClose={() => setContactOpen(false)}
         />
+      )}
+
+      {stubMsg && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 32,
+            transform: 'translateX(-50%)',
+            zIndex: 80,
+            padding: '12px 18px',
+            borderRadius: 999,
+            background: C.ink,
+            color: C.bg,
+            fontSize: 13,
+            fontWeight: 600,
+            letterSpacing: -0.1,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            maxWidth: 'calc(100vw - 32px)',
+            textAlign: 'center',
+          }}
+        >
+          {stubMsg}
+        </div>
       )}
     </div>
   );
@@ -486,6 +547,25 @@ function MoreSheet({
   onClose: () => void;
 }) {
   const C = useG(!!dark);
+  // Round 18 (Onda 2A): drag-to-dismiss state. Antes o handle visual era
+  // afordância falsa.
+  const dragStartY = useRef<number | null>(null);
+  const [dragOffsetY, setDragOffsetY] = useState(0);
+  const onDragPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragStartY.current = e.clientY;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onDragPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragStartY.current == null) return;
+    setDragOffsetY(Math.max(0, e.clientY - dragStartY.current));
+  };
+  const onDragPointerUp = () => {
+    if (dragStartY.current == null) return;
+    const dy = dragOffsetY;
+    dragStartY.current = null;
+    if (dy > 120) onClose();
+    else setDragOffsetY(0);
+  };
   return (
     <div
       role="dialog"
@@ -508,19 +588,36 @@ function MoreSheet({
           borderTopLeftRadius: 22,
           borderTopRightRadius: 22,
           boxShadow: '0 -10px 40px rgba(0,0,0,0.18)',
-          paddingTop: 8,
+          paddingTop: 0,
           paddingBottom: 24,
+          transform: `translateY(${dragOffsetY}px)`,
+          transition: dragOffsetY === 0 ? 'transform 180ms cubic-bezier(.2,.8,.2,1)' : 'none',
+          touchAction: 'pan-y',
         }}
       >
         <div
+          onPointerDown={onDragPointerDown}
+          onPointerMove={onDragPointerMove}
+          onPointerUp={onDragPointerUp}
+          onPointerCancel={onDragPointerUp}
           style={{
-            width: 38,
-            height: 4,
-            borderRadius: 2,
-            background: dark ? '#3a3a40' : '#dcdcdc',
-            margin: '0 auto 10px',
+            display: 'flex',
+            justifyContent: 'center',
+            padding: '12px 0 8px',
+            cursor: 'grab',
+            touchAction: 'none',
           }}
-        />
+          aria-label="Arraste para fechar"
+        >
+          <div
+            style={{
+              width: 38,
+              height: 4,
+              borderRadius: 2,
+              background: dark ? '#3a3a40' : '#dcdcdc',
+            }}
+          />
+        </div>
         <div
           style={{
             padding: '4px 22px 12px',

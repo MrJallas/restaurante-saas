@@ -67,7 +67,7 @@ export function ScreenStaffMessages({ dark, tenantSlug, managerId }: ScreenStaff
   return (
     <div
       style={{
-        minHeight: '100vh',
+        height: '100vh',
         display: 'flex',
         flexDirection: 'column',
         background: C.surface,
@@ -203,7 +203,7 @@ export function ScreenStaffMessageThread({
       .getThread(threadId)
       .then((r) => {
         if (cancelled) return;
-        setMessages(r.messages);
+        setMessages(r.messages ?? []);
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -214,7 +214,7 @@ export function ScreenStaffMessageThread({
   return (
     <div
       style={{
-        minHeight: '100vh',
+        height: '100vh',
         display: 'flex',
         flexDirection: 'column',
         background: C.surface,

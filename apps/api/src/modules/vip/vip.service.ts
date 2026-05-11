@@ -30,7 +30,7 @@ export class VipService {
     tableSessionId: string,
     flag: string,
     action: 'add' | 'remove',
-    by: { staffId?: string; customerId?: string; reason?: string },
+    by: { staffId?: string; reason?: string },
     slug?: string,
   ) {
     if (!KNOWN_FLAGS.has(flag)) {
@@ -51,7 +51,7 @@ export class VipService {
           tableSessionId,
           flag,
           by.staffId ?? null,
-          by.customerId ?? null,
+          null,
           JSON.stringify({ reason: by.reason ?? null }),
         ],
       );

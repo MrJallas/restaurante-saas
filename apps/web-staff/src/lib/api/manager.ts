@@ -244,6 +244,61 @@ export async function fetchSmartSuggestions(params: {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Alerts — operational notifications feed (Onda 4 batch 2).
+//
+// Endpoints shipped by `apps/api/src/modules/alerts/`:
+//   GET  /:slug/alerts?sev=all|crítica|atenção|info&status=open|dismissed|resolved|all
+//   POST /:slug/alerts/:id/dismiss
+//   POST /:slug/alerts/:id/resolve
+//
+// WS event `alert.created` fanned out on the same socket the manager hooks
+// already join. Surface is consumed by `ScreenManagerNotifications` (rota
+// /manager/notifications · /host/notifications).
+//
+// The `actions` field is a JSONB array of `{ label, route?, kind? }` objects
+// — UIs render them as inline action buttons inside each notification row.
+// Endpoint is wired up in parallel (sibling worktree); when it's not
+// reachable the screen falls back to an empty state.
+// ─────────────────────────────────────────────────────────────
+
+export type AlertSeverity = 'crítica' | 'atenção' | 'info';
+export type AlertStatus = 'open' | 'dismissed' | 'resolved';
+
+export interface AlertActionDescriptor {
+  label: string;
+  route?: string;
+  kind?: 'primary' | 'ghost';
+}
+
+export interface AlertRow {
+  id: string;
+  sev: AlertSeverity;
+  kind: string;
+  title: string;
+  sub: string | null;
+  ttl_at: string | null;
+  actions: AlertActionDescriptor[];
+  dismissed_at: string | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+export const alertsApi = (slug: string) => ({
+  list: (params?: { sev?: AlertSeverity | 'all'; status?: AlertStatus | 'all'; limit?: number }) => {
+    const search = new URLSearchParams();
+    if (params?.sev) search.set('sev', params.sev);
+    if (params?.status) search.set('status', params.status);
+    if (params?.limit) search.set('limit', String(params.limit));
+    const query = search.toString();
+    return staffGet<{ alerts: AlertRow[] }>(
+      `/${slug}/alerts${query ? `?${query}` : ''}`,
+    ).then((r) => r.alerts ?? []);
+  },
+  dismiss: (id: string) => staffPost<AlertRow>(`/${slug}/alerts/${id}/dismiss`, {}),
+  resolve: (id: string) => staffPost<AlertRow>(`/${slug}/alerts/${id}/resolve`, {}),
+});
+
+// ─────────────────────────────────────────────────────────────
 // Generic staff/me lookup — used by header greetings + bell badge.
 // ─────────────────────────────────────────────────────────────
 
@@ -260,6 +315,92 @@ export const managerMe = (slug: string) => ({
 });
 
 // ─────────────────────────────────────────────────────────────
+// Assistant — manager → cliente direct bubble (Onda 4 batch 2).
+//
+// Substitui o mis-routing previo em MContactClientSheet que batia
+// em `/staff-messages` (staff↔staff). O endpoint `/assistant/staff-to-customer`
+// persiste em `assistant_messages` (from_role='staff') e emite WS
+// `assistant.staff_message_received` pra customer atualizar a UI
+// em real-time.
+// ─────────────────────────────────────────────────────────────
+
+export interface AssistantStaffToCustomerDto {
+  tableSessionId: string;
+  message: string;
+  fromStaffId: string;
+}
+
+export interface AssistantStaffMessageResponseDto {
+  id: string;
+  tableSessionId: string;
+  message: string;
+  fromStaffId: string;
+  fromStaffName: string | null;
+  createdAt: string;
+}
+
+export const assistantApi = (slug: string) => ({
+  staffToCustomer: (body: AssistantStaffToCustomerDto) =>
+    staffPost<AssistantStaffMessageResponseDto>(
+      `/${slug}/assistant/staff-to-customer`,
+      body,
+    ),
+});
+
+// ─────────────────────────────────────────────────────────────
+// Alerts — operational notifications feed (Round 18 bell wiring).
+//
+// Endpoints shipped by `apps/api/src/modules/alerts/`:
+//   GET  /:slug/alerts?sev=all|crítica|atenção|info&status=open|dismissed|resolved|all
+//   POST /:slug/alerts/:id/dismiss
+//   POST /:slug/alerts/:id/resolve
+//
+// Surface is consumed by `ScreenManagerNotifications` (rota
+// /manager/notifications · /host/notifications · /waiter/notifications).
+// `actions` é JSONB de `{ label, route?, kind? }` — UI renderiza como
+// botões inline. Endpoint pode estar em deploy paralelo — o screen
+// trata erro caindo no empty state ao invés de quebrar.
+// ─────────────────────────────────────────────────────────────
+
+export type AlertSeverity = 'crítica' | 'atenção' | 'info';
+export type AlertStatus = 'open' | 'dismissed' | 'resolved';
+
+export interface AlertActionDescriptor {
+  label: string;
+  route?: string;
+  kind?: 'primary' | 'ghost';
+}
+
+export interface AlertRow {
+  id: string;
+  sev: AlertSeverity;
+  kind: string;
+  title: string;
+  sub: string | null;
+  ttl_at: string | null;
+  actions: AlertActionDescriptor[];
+  dismissed_at: string | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+export const alertsApi = (slug: string) => ({
+  list: (params: { sev?: AlertSeverity | 'all'; status?: AlertStatus | 'all' } = {}) => {
+    const search = new URLSearchParams();
+    if (params.sev) search.set('sev', params.sev);
+    if (params.status) search.set('status', params.status);
+    const query = search.toString();
+    return staffGet<{ alerts: AlertRow[] } | AlertRow[]>(
+      `/${slug}/alerts${query ? `?${query}` : ''}`,
+    ).then((r) => (Array.isArray(r) ? r : r.alerts ?? []));
+  },
+  dismiss: (id: string) =>
+    staffPost<AlertRow>(`/${slug}/alerts/${id}/dismiss`, {}),
+  resolve: (id: string) =>
+    staffPost<AlertRow>(`/${slug}/alerts/${id}/resolve`, {}),
+});
+
+// ─────────────────────────────────────────────────────────────
 // Staff roster — wraps the `{ staff: [...] }` envelope from the
 // API so callers receive a flat array. Centralised here so every
 // screen (Staff, Home, OrdersPause, Funcionarios) gets the same
@@ -270,10 +411,28 @@ export const managerMe = (slug: string) => ({
 export interface StaffRosterEntry {
   id: string;
   name: string;
-  role: 'waiter' | 'cook' | 'manager' | string;
+  role: 'waiter' | 'cook' | 'manager' | 'host' | 'bartender' | 'cashier' | string;
   is_active: boolean;
   created_at: string;
   updated_at?: string;
+  cpf?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  default_shift?: 'Manhã' | 'Tarde' | 'Noite' | null;
+}
+
+export interface CreateStaffPayload {
+  name: string;
+  role: 'waiter' | 'cook' | 'manager' | 'host' | 'bartender' | 'cashier';
+  pin: string; // 4-6 digits
+  cpf?: string;
+  phone?: string;
+  email?: string;
+  default_shift?: 'Manhã' | 'Tarde' | 'Noite';
+}
+
+export interface UpdateStaffPayload extends Partial<CreateStaffPayload> {
+  isActive?: boolean;
 }
 
 export const staffRosterApi = (slug: string) => ({
@@ -286,6 +445,119 @@ export const staffRosterApi = (slug: string) => ({
       `/${slug}/staff${query ? `?${query}` : ''}`,
     ).then((r) => r.staff ?? []);
   },
+  create: (payload: CreateStaffPayload) =>
+    staffPost<StaffRosterEntry>(`/${slug}/staff`, payload),
+  update: (id: string, payload: UpdateStaffPayload) =>
+    staffApi<StaffRosterEntry>(`/${slug}/staff/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deactivate: (id: string) =>
+    staffApi<StaffRosterEntry>(`/${slug}/staff/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive: false }),
+    }),
+  delete: (id: string) =>
+    staffDelete<{ deleted: true }>(`/${slug}/staff/${id}`),
+});
+
+// ─────────────────────────────────────────────────────────────
+// Courtesies (round 18 Onda 1 wiring) — `/courtesies` not
+// `/staff/courtesies` because StaffController has wildcard `:id`.
+// ─────────────────────────────────────────────────────────────
+
+export interface CourtesyEntry {
+  id: string;
+  table_session_id: string | null;
+  table_number: number | null;
+  type: string;
+  item: string;
+  status: 'pendente' | 'aceita' | 'recusada';
+  manager_staff_id: string;
+  manager_name: string;
+  notes: string | null;
+  created_at: string;
+  responded_at: string | null;
+  response_seconds: number | null;
+}
+
+export interface CreateCourtesyPayload {
+  type: 'Sobremesa' | 'Drink' | 'Desconto' | 'Couvert' | 'Mensagem' | 'Outro';
+  item: string;
+  tableSessionId?: string;
+  tableNumber?: number;
+  notes?: string;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Shifts (round 18 Onda 2 backend) — `/shifts/*` not `/staff/shifts/*`
+// to avoid the StaffController `:id` wildcard collision (same trick as
+// courtesies).
+// ─────────────────────────────────────────────────────────────
+
+export interface ShiftMemberEntry {
+  assignment_id: string;
+  staff_id: string;
+  staff_name: string;
+  staff_role: string;
+  work_date: string;
+  overtime_minutes: number;
+}
+
+export interface ShiftWithMembers {
+  id: string;
+  label: string;
+  range_label: string;
+  time_start: string;
+  time_end: string;
+  sort_order: number;
+  members: ShiftMemberEntry[];
+}
+
+export const shiftsApi = (slug: string) => ({
+  list: (date?: string) => {
+    const q = date ? `?date=${date}` : '';
+    return staffGet<ShiftWithMembers[]>(`/${slug}/shifts${q}`);
+  },
+  addMember: (payload: { shiftId: string; staffId: string; workDate: string }) =>
+    staffPost<ShiftMemberEntry & { shift_id: string }>(
+      `/${slug}/shifts/assignments`,
+      payload,
+    ),
+  moveMember: (assignmentId: string, toShiftId: string) =>
+    staffApi<ShiftMemberEntry & { shift_id: string }>(
+      `/${slug}/shifts/assignments/${assignmentId}/move`,
+      { method: 'PATCH', body: JSON.stringify({ toShiftId }) },
+    ),
+  setOvertime: (assignmentId: string, minutes: number) =>
+    staffApi<ShiftMemberEntry & { shift_id: string }>(
+      `/${slug}/shifts/assignments/${assignmentId}/overtime`,
+      { method: 'PATCH', body: JSON.stringify({ minutes }) },
+    ),
+  removeMember: (assignmentId: string) =>
+    staffDelete<{ removed: true }>(
+      `/${slug}/shifts/assignments/${assignmentId}`,
+    ),
+  duplicateWeek: (fromDate: string, toDate: string) =>
+    staffPost<{ duplicated: number }>(`/${slug}/shifts/duplicate-week`, {
+      fromDate,
+      toDate,
+    }),
+});
+
+export const courtesiesApi = (slug: string) => ({
+  list: (params?: { today?: boolean; status?: 'pendente' | 'aceita' | 'recusada'; limit?: number }) => {
+    const search = new URLSearchParams();
+    if (params?.today) search.set('today', 'true');
+    if (params?.status) search.set('status', params.status);
+    if (params?.limit) search.set('limit', String(params.limit));
+    const query = search.toString();
+    return staffGet<CourtesyEntry[]>(`/${slug}/courtesies${query ? `?${query}` : ''}`);
+  },
+  create: (payload: CreateCourtesyPayload) =>
+    staffPost<CourtesyEntry>(`/${slug}/courtesies`, payload),
+  respond: (id: string, status: 'aceita' | 'recusada') =>
+    staffPost<CourtesyEntry>(`/${slug}/courtesies/${id}/respond`, { status }),
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -305,6 +577,10 @@ export function manager(slug: string) {
     lgpd: lgpdApi(slug),
     chatHistory: chatHistoryApi(slug),
     staffRoster: staffRosterApi(slug),
+    courtesies: courtesiesApi(slug),
+    shifts: shiftsApi(slug),
+    assistant: assistantApi(slug),
+    alerts: alertsApi(slug),
     me: managerMe(slug),
   };
 }

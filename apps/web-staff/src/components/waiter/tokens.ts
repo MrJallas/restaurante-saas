@@ -60,6 +60,9 @@ export const G_DARK: GTokens = {
 };
 
 export const G_FONT = "'Inter', system-ui, -apple-system, sans-serif";
+// Round 18 (Onda 3): MONO_FONT exposto pra waiter screens novas
+// (TableDetail/CallDetail/WaiterCalls) que usam eyebrow uppercase.
+export const MONO_FONT = "ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace";
 
 export const useG = (dark: boolean): GTokens => (dark ? G_DARK : G_LIGHT);
 

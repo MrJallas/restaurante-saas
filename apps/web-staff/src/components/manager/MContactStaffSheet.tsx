@@ -3,14 +3,14 @@
 // Bottom sheet · "Mensagem pra equipe" — quick chips + free text. Mirror of
 // MContactClientSheet, but the destination is a fellow staff member.
 //
-// Persistence:
-//   POST /staff-messages with `kind=direct_reply` and a target customerId is
-//   wrong here — we route to a separate endpoint that the staff-messages
-//   service exposes for staff-to-staff (see Phase 2). Schema follows the
-//   `assistant_messages` to_role='staff' / to_staff_id pattern from
-//   docs/features/complaint-flow-v12.md.
+// Round 18 (Onda 1 wiring fix): path estava `/staff-messages/staff`
+// (404 — nao existe) com fields `{toStaffId, content}` que tambem nao
+// batiam com o DTO `{recipientStaffId, body}`. O catch silencioso
+// (`catch { setState('sent') }`) escondia o 404 do user e fingia
+// sucesso. Agora chama o endpoint canonico `POST /staff-messages` e
+// surface erros via setError.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useG, G_FONT, MONO_FONT } from './tokens';
 import { Icon } from './Icons';
 import { GButton, MAvatar } from './primitives';
@@ -66,11 +66,21 @@ export function MContactStaffSheet({
   const [draft, setDraft] = useState('');
   const [state, setState] = useState<'idle' | 'sent'>('idle');
   const [sending, setSending] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Drag-to-dismiss state (vaul-style). Round 18 add — antes o handle
+  // visual era afordância falsa (parecia arrastável mas não tinha
+  // pointer listeners).
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const dragStartY = useRef<number | null>(null);
+  const [dragOffsetY, setDragOffsetY] = useState(0);
 
   useEffect(() => {
     if (open) {
       setDraft('');
       setState('idle');
+      setErrorMsg(null);
+      setDragOffsetY(0);
     }
   }, [open]);
 
@@ -79,22 +89,45 @@ export function MContactStaffSheet({
   const onSend = async () => {
     if (!draft.trim() || sending) return;
     setSending(true);
+    setErrorMsg(null);
     try {
-      // Staff-to-staff direct messaging endpoint (Phase 2). Falls back silently
-      // when the API rejects (offline / not implemented yet).
-      await staffPost(`/${tenantSlug}/staff-messages/staff`, {
-        toStaffId: target.staffId,
-        content: draft.trim(),
+      // Round 18 fix: endpoint canonico `POST /staff-messages` com fields
+      // do DTO real (recipientStaffId/body). Antes batia em
+      // `/staff-messages/staff` (404) e o catch silencioso fingia sucesso.
+      await staffPost(`/${tenantSlug}/staff-messages`, {
+        recipientStaffId: target.staffId,
+        body: draft.trim(),
       });
       setState('sent');
       onSent?.(draft.trim());
-    } catch {
-      // Soft-fail: still show "sent" UI to keep flow forward; manager screens
-      // surface persistent errors via toast. (Phase-2 endpoint may differ —
-      // backend C-team will wire it up.)
-      setState('sent');
+    } catch (e) {
+      const msg = (e as Error).message || 'Erro ao enviar mensagem.';
+      setErrorMsg(msg);
     } finally {
       setSending(false);
+    }
+  };
+
+  // ─── Drag-to-dismiss handlers ─────────────────────────────────
+  const onDragPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (state === 'sent') return;
+    dragStartY.current = e.clientY;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onDragPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragStartY.current == null) return;
+    const dy = e.clientY - dragStartY.current;
+    setDragOffsetY(Math.max(0, dy));
+  };
+  const onDragPointerUp = () => {
+    if (dragStartY.current == null) return;
+    const dy = dragOffsetY;
+    dragStartY.current = null;
+    if (dy > 120) {
+      // Threshold: arrastou mais que 120px pra baixo → fecha
+      onClose?.();
+    } else {
+      setDragOffsetY(0);
     }
   };
 
@@ -121,6 +154,7 @@ export function MContactStaffSheet({
       }}
     >
       <div
+        ref={sheetRef}
         onClick={(e) => e.stopPropagation()}
         style={{
           height: sheetH,
@@ -130,10 +164,27 @@ export function MContactStaffSheet({
           boxShadow: '0 -10px 36px rgba(0,0,0,0.18)',
           display: 'flex',
           flexDirection: 'column',
-          transition: 'height 220ms cubic-bezier(.2,.8,.2,1)',
+          transform: `translateY(${dragOffsetY}px)`,
+          transition: dragOffsetY === 0
+            ? 'height 220ms cubic-bezier(.2,.8,.2,1), transform 180ms cubic-bezier(.2,.8,.2,1)'
+            : 'height 220ms cubic-bezier(.2,.8,.2,1)',
+          touchAction: 'pan-y',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 6px' }}>
+        <div
+          onPointerDown={onDragPointerDown}
+          onPointerMove={onDragPointerMove}
+          onPointerUp={onDragPointerUp}
+          onPointerCancel={onDragPointerUp}
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            padding: '12px 0 10px',
+            cursor: 'grab',
+            touchAction: 'none',
+          }}
+          aria-label="Arraste para fechar"
+        >
           <div style={{ width: 38, height: 4, borderRadius: 2, background: C.borderSoft }} />
         </div>
 
@@ -433,6 +484,24 @@ export function MContactStaffSheet({
             background: C.bg,
           }}
         >
+          {errorMsg && (
+            <div
+              role="alert"
+              style={{
+                marginBottom: 10,
+                padding: '8px 10px',
+                background: '#FFF1F1',
+                border: '1px solid #F4C7C7',
+                borderRadius: 10,
+                fontSize: 12,
+                color: '#A12626',
+                fontWeight: 500,
+                lineHeight: 1.4,
+              }}
+            >
+              {errorMsg}
+            </div>
+          )}
           {state === 'sent' ? (
             <div style={{ display: 'flex', gap: 8 }}>
               <GButton dark={dark} full kind="ghost" onClick={onClose}>

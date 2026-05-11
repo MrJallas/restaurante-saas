@@ -11,6 +11,13 @@
       },
       "port": 3003,
       "autoPort": false
+    },
+    {
+      "name": "web-staff",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["logs", "-f", "restaurant-web-staff"],
+      "port": 3002,
+      "autoPort": false
     }
   ]
 }

@@ -24,7 +24,7 @@ export const ScreenWaiterScanQr: React.FC<ScreenWaiterScanQrProps> = ({
   return (
     <div
       style={{
-        width: '100%', minHeight: '100vh', background: bg, color: '#fff',
+        width: '100%', height: '100vh', background: bg, color: '#fff',
         fontFamily: G_FONT, display: 'flex', flexDirection: 'column', position: 'relative',
       }}
     >

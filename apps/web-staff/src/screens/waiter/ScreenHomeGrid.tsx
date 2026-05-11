@@ -9,6 +9,7 @@
 
 import * as React from 'react';
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import {
@@ -59,6 +60,7 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
 }) => {
   const dark = false;
   const C = useG(dark);
+  const router = useRouter();
   const [tables, setTables] = useState<ActiveTableSummary[]>([]);
   const [calls, setCalls] = useState<WaiterCallSummary[]>([]);
   const [pauses, setPauses] = useState<ZonePauseDto[]>([]);
@@ -134,7 +136,7 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
   return (
     <div
       style={{
-        width: '100%', minHeight: '100vh', background: C.bg, color: C.ink,
+        width: '100%', height: '100vh', background: C.bg, color: C.ink,
         fontFamily: G_FONT, display: 'flex', flexDirection: 'column', position: 'relative',
       }}
     >
@@ -153,7 +155,15 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
         }
         title="Minhas mesas"
         sub={`${tables.filter((t) => t.status !== 'livre').length} ABERTAS · ${tables.filter((t) => t.status === 'livre').length} LIVRES`}
-        right={<GIconBtn icon={Icon.bell(20)} dark={dark} badge={callsCount > 0 ? String(callsCount) : undefined} />}
+        right={
+          <GIconBtn
+            icon={Icon.bell(20)}
+            dark={dark}
+            badge={callsCount > 0 ? String(callsCount) : undefined}
+            onClick={() => router.push('/waiter/notifications')}
+            ariaLabel="Notificações"
+          />
+        }
       />
 
       {/* Zone-pause banner — per docs/features/zone-pause.md */}
