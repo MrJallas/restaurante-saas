@@ -7,9 +7,11 @@ import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
 import { useTableMerge } from '../../../hooks/useTableMerge';
+import { useTableSocket } from '../../../hooks/useTableSocket';
 import { useDraftOrder } from '../../../providers/DraftOrderProvider';
 import { AppShell } from '../../../components/layout/AppShell';
 import { Bubble } from '../../../components/ui/Bubble';
+import { StaffBubble } from '../../../components/ui/StaffBubble';
 import { SoftInput } from '../../../components/ui/SoftInput';
 import { ToolCallIndicator } from '../../../components/ui/ToolCallIndicator';
 import { SuggestionChip } from '../../../components/ui/SuggestionChip';
@@ -32,8 +34,24 @@ interface LinkedItem {
 
 interface ChatMessage {
   id: string;
-  role: 'user' | 'ai' | 'blocked';
+  /**
+   * `'staff'` adicionado round 18 (Onda 4 batch 2) — bubble assinada de
+   * manager→customer inbound chega via WS `assistant.staff_message_received`
+   * e renderiza como `<StaffBubble>` em vez de `<Bubble>` (V20 canon: border-
+   * left 3px ink + avatar + eyebrow "RENATA · GERENTE"). Distinct de `ai`
+   * (sem assinatura) e do fluxo complaint que reusa `ManagerBubble` (border
+   * mostarda + chip-action inset).
+   */
+  role: 'user' | 'ai' | 'staff' | 'blocked';
   content: string;
+  /** Staff metadata · só populated quando role === 'staff'. */
+  staffName?: string;
+  /** Inicial uppercase pro avatar circle. Derivado de staffName quando ausente. */
+  staffInitial?: string;
+  /** Cargo (default "Gerente" se ausente — V20 só envia manager hoje). */
+  staffRole?: string;
+  /** ISO timestamp do WS payload — formatado em "agora"/"há N min" no render. */
+  staffCreatedAt?: string;
   linkedItems?: LinkedItem[];
   /** menuItemIds the user chose from this message's cards */
   selectedIds?: string[];
@@ -192,6 +210,26 @@ const NON_ORDER_TUDO_PATTERNS =
 const ALL_ITEMS_KEYWORDS =
   /\b(os dois|as duas|os 2|ambos|ambas|os tres|as tres|os 3|todos os|todas as)\b/;
 
+/**
+ * Formata um ISO timestamp em label humano ("agora", "há N min", "há N h")
+ * pra eyebrow direita de bubbles signed (staff/manager). Mantém short — V20
+ * canon tem espaço apertado no header do bubble. Fallback "agora" cobre
+ * payloads sem timestamp válido (defesa-em-profundidade — backend sempre
+ * manda createdAt mas string parse error não pode quebrar o render).
+ */
+function formatRelativeTime(iso: string | undefined): string {
+  if (!iso) return 'agora';
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return 'agora';
+  const diffSec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (diffSec < 60) return 'agora';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `há ${diffMin} min`;
+  const diffH = Math.round(diffMin / 60);
+  if (diffH < 24) return `há ${diffH} h`;
+  return 'há tempo';
+}
+
 function normalize(text: string): string {
   return text
     .toLowerCase()
@@ -254,8 +292,29 @@ export default function AssistentePage() {
     // tool_calls e contextual_chips linkados ao cliente certo. Sem isso
     // assistant_messages.customer_id ficava NULL e o histórico ficava
     // órfão. Redirect pra welcome modal quando ausente.
+    //
+    // Round 18 (Onda 4 batch 2): fallback pra sessionStorage evita race
+    // de 1 frame onde `session.customerId` ainda é null porque o
+    // SessionProvider rehydrata em useEffect filho-primeiro depois do
+    // primeiro render do AssistentePage. Sem isso, hard reload em
+    // `/assistente` redirecionava pra `/identify` mesmo quando o bundle
+    // tinha customerId — o cliente ficava preso num loop. O bundle JÁ é
+    // source-of-truth (writeBundle persiste em writeCustomer); só
+    // estávamos lendo o estado errado.
     if (!session.customerId) {
-      router.replace(`/${slug}/identify?next=assistente`);
+      let bundleCustomerId: string | null = null;
+      try {
+        const raw = window.sessionStorage.getItem('session:bundle');
+        if (raw) {
+          const parsed = JSON.parse(raw) as { customerId?: string };
+          if (parsed?.customerId) bundleCustomerId = parsed.customerId;
+        }
+      } catch {
+        /* ignore — fallback path; useEffect roda de novo quando context update */
+      }
+      if (!bundleCustomerId) {
+        router.replace(`/${slug}/identify?next=assistente`);
+      }
     }
   }, [slug, router, session.customerId]);
 
@@ -332,6 +391,59 @@ export default function AssistentePage() {
       behavior: messages.length > 3 ? 'smooth' : 'auto',
     });
   }, [messages, loading]);
+
+  /**
+   * Round 18 (Onda 4 batch 2) — WS subscriber pra mensagens inbound do
+   * staff (manager). Backend emite `assistant.staff_message_received` no
+   * room `session:<tableSessionId>` quando um manager envia via
+   * MContactClientSheet (POST /assistant/staff-to-customer). Payload
+   * shape vem direto de `assistant.service.ts::sendStaffToCustomer`:
+   *   { id, tableSessionId, message, fromStaffId, fromStaffName, createdAt }
+   *
+   * O bubble é apendado on-the-fly (não há fetch de histórico aqui — a
+   * página opera ephemeral state, então quem chega depois do staff
+   * mandar a msg vai ler o histórico em `/chat-history` separadamente).
+   * Dedupe por `id` defende contra reconexão do socket re-emitindo.
+   *
+   * Trigger de transição landing→chat: se o customer ainda está na
+   * landing (`!chatStarted`) e o manager mandar mensagem, faz sentido
+   * subir o customer pro chat mode pra ele ver o staff bubble (sem ele
+   * o bubble fica escondido atrás do hero/PillButtons).
+   */
+  useTableSocket(session.sessionId, (event, data) => {
+    if (event !== 'assistant.staff_message_received') return;
+    const payload = (data ?? {}) as {
+      id?: string;
+      message?: string;
+      fromStaffId?: string;
+      fromStaffName?: string | null;
+      createdAt?: string;
+    };
+    if (!payload.id || !payload.message) return;
+    const rawName = (payload.fromStaffName ?? '').trim();
+    const fullName = rawName.length > 0 ? rawName : 'Gerência';
+    const firstName = fullName.split(' ')[0] || 'Gerência';
+    const initial = (firstName[0] ?? 'G').toUpperCase();
+    setChatStarted(true);
+    setMessages((prev) => {
+      // Dedupe se reconectarmos e o servidor re-emitir o mesmo payload.
+      if (payload.id && prev.some((m) => m.id === `staff-${payload.id}`)) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          id: `staff-${payload.id}`,
+          role: 'staff' as const,
+          content: payload.message ?? '',
+          staffName: firstName,
+          staffInitial: initial,
+          staffRole: 'Gerente',
+          staffCreatedAt: payload.createdAt,
+        },
+      ];
+    });
+  });
 
   const [placingOrder, setPlacingOrder] = useState(false);
   // Guard against double-tap on the LGPD confirm chip — the action is
@@ -841,6 +953,23 @@ export default function AssistentePage() {
                   <span style={{ textWrap: 'pretty' as never }}>
                     {msg.content}
                   </span>
+                </div>
+              );
+            }
+            // Round 18 (Onda 4 batch 2) · staff→customer signed bubble.
+            // `Bubble` só sabe 'user'|'ai'|'blocked' — staff messages têm
+            // header próprio (avatar + eyebrow "RENATA · GERENTE" + time).
+            if (msg.role === 'staff') {
+              return (
+                <div key={msg.id} className="flex flex-col gap-2">
+                  <StaffBubble
+                    initial={msg.staffInitial ?? (msg.staffName?.[0] ?? 'G').toUpperCase()}
+                    name={msg.staffName ?? 'Gerência'}
+                    roleLabel={msg.staffRole ?? 'Gerente'}
+                    relativeTime={formatRelativeTime(msg.staffCreatedAt)}
+                  >
+                    {msg.content}
+                  </StaffBubble>
                 </div>
               );
             }
