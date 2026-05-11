@@ -189,5 +189,11 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
+    name: restaurant-saas_postgres_data
+    external: true
   mongodb_data:
+    name: restaurant-saas_mongodb_data
+    external: true
+  redis_data:
+    name: restaurant-saas_redis_data
+    external: true
