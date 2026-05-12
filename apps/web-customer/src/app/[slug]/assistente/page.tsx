@@ -230,6 +230,32 @@ function formatRelativeTime(iso: string | undefined): string {
   return 'há tempo';
 }
 
+type ToolCategory =
+  | 'menu'
+  | 'order'
+  | 'session'
+  | 'info'
+  | 'staff'
+  | 'payment'
+  | 'destructive'
+  | 'lgpd';
+
+/**
+ * Mapeia nome da tool dispatched pelo backend pra category visual usada
+ * no `ToolCallIndicator` inline. Centralizado aqui pra n\u00e3o duplicar
+ * em cada lugar que cria `ChatMessage.toolCall`. Default 'info'.
+ */
+function categorizeToolName(name: string): ToolCategory {
+  if (name === 'view_menu' || name === 'search_dish' || name === 'check_allergens' || name === 'compare_dishes') return 'menu';
+  if (name === 'add_to_order' || name === 'view_order' || name === 'place_order') return 'order';
+  if (name === 'call_waiter' || name === 'send_complaint' || name === 'send_message_to_manager') return 'staff';
+  if (name === 'request_bill' || name === 'split_bill' || name === 'pay_individual' || name === 'pay_full' || name === 'open_payment_screen') return 'payment';
+  if (name === 'lgpd_data_request' || name === 'lgpd_notice') return 'lgpd';
+  if (name === 'delete_chat' || name === 'delete_all_chats') return 'destructive';
+  if (name === 'request_table_merge' || name === 'late_arrival') return 'session';
+  return 'info';
+}
+
 function normalize(text: string): string {
   return text
     .toLowerCase()
@@ -510,11 +536,25 @@ export default function AssistentePage() {
       return;
     }
 
+    // call_waiter → abre CallWaiterSheet (V20 canon F07_CallWaiter). Antes
+    // estava caindo no fallback "no FE dispatch" e o LLM só respondia texto
+    // ("Chamando um garçom..."), sem a sheet com motivos canon.
+    if (name === 'call_waiter') {
+      openCallWaiterSheet();
+      return;
+    }
+
+    // view_menu → navega pra rota do cardápio. Antes estava no stubbedTools
+    // e só renderizava bubble "OK" sem abrir o cardápio.
+    if (name === 'view_menu') {
+      router.push(`/${slug}/cardapio`);
+      return;
+    }
+
     // 2) Tools whose UX isn't fully designed yet — render a generic "OK"
     //    bubble so the chat doesn't crash, log a warning so devs see the
     //    gap. Per F4 brief.
     const stubbedTools = new Set<string>([
-      'view_menu',
       'search_dish',
       'check_allergens',
       'compare_dishes',
@@ -670,12 +710,22 @@ export default function AssistentePage() {
         itemId: itemId || undefined,
       });
 
+      // V20 canon F04_Chat: ToolCallIndicator + bubble texto + chips
+      // ficam INLINE no lado do assistente, junto com a mensagem que os
+      // originou. Atachamos a primeira tool dispatchada (se houver) no
+      // aiMsg pra que o render mostre o indicador ANTES do bubble texto,
+      // dentro do mesmo `<div>` esquerdo. Antes ficava num bloco global
+      // no rodapé (`lastToolName`) que quebrava o layout.
+      const firstTool = res.toolCalls && res.toolCalls.length > 0 ? res.toolCalls[0] : null;
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         role: res.wasBlocked ? 'blocked' : 'ai',
         content: res.response,
         linkedItems: res.linkedItems && res.linkedItems.length > 0 ? res.linkedItems : undefined,
         selectedIds: [],
+        toolCall: firstTool
+          ? { name: firstTool.name, category: categorizeToolName(firstTool.name) }
+          : undefined,
         // LGPD notice flow · the AI service signals this via `toolHint`.
         // We do NOT paraphrase the canonical text — it lives in
         // `services/ai-service/services/lgpd_messages.py` and arrives
@@ -974,7 +1024,22 @@ export default function AssistentePage() {
               );
             }
             return (
-              <div key={msg.id} className="flex flex-col gap-2">
+              <div key={msg.id} className="flex flex-col items-start gap-2">
+                {/* V20 canon F04_Chat: eyebrow "ASSISTENTE · agora" +
+                    ToolCallIndicator aparecem INLINE antes do bubble texto,
+                    todos no lado esquerdo. Só renderiza pra mensagens do
+                    assistente (role='ai') que dispatcharam uma tool. */}
+                {msg.role === 'ai' && msg.toolCall && (
+                  <>
+                    <span className="font-mono text-[10px] uppercase tracking-[1.5px] text-mute">
+                      Assistente · agora
+                    </span>
+                    <ToolCallIndicator
+                      name={msg.toolCall.name}
+                      category={msg.toolCall.category}
+                    />
+                  </>
+                )}
                 <Bubble role={msg.role}>{msg.content}</Bubble>
                 {msg.lgpdNotice && !msg.lgpdNotice.consumed && (
                   <div className="flex flex-wrap gap-2">
@@ -1103,16 +1168,11 @@ export default function AssistentePage() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Round 3 Cat 4 (V20): eyebrow `··· USANDO <TOOL> ···` antes
-            do bubble do assistente quando uma tool foi dispatched. Canvas
-            v20 mostra esse signal logo acima do bubble. */}
-        {lastToolName && !loading && (
-          <div className="-mt-1.5 mb-1 flex justify-start px-[22px]">
-            <span className="font-mono text-[10px] uppercase tracking-[1.5px] text-faint">
-              ··· USANDO {lastToolName} ···
-            </span>
-          </div>
-        )}
+        {/* V20 canon: ToolCallIndicator agora vive INLINE dentro de cada
+            AssistantTurn (via msg.toolCall) — não mais no rodapé global.
+            O state `lastToolName` permanece só pra trocar o placeholder
+            do SoftInput contextualmente (send_complaint / send_message
+            → "Mensagem para a casa"). */}
 
         <div className="shrink-0 pt-1.5">
           <div className="-mx-[22px] flex gap-1.5 overflow-x-auto px-[22px] pb-2 [&::-webkit-scrollbar]:hidden">
