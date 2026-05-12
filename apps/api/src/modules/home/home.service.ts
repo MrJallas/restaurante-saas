@@ -84,11 +84,27 @@ export class HomeService {
 
     if (customerId) {
       const customers = await this.tenantConn.query(
-        'SELECT name FROM customers WHERE id = $1',
+        'SELECT name, created_at FROM customers WHERE id = $1',
         [customerId],
       );
       if ((customers as unknown[]).length > 0) {
-        nome = (customers as Record<string, unknown>[])[0].name as string;
+        const row = (customers as Record<string, unknown>[])[0];
+        nome = row.name as string;
+        // Round 21 — reconhece customer que JÁ se cadastrou e está
+        // retornando, mesmo SEM histórico de pedido completo. Antes a UI
+        // dependia exclusivamente de `customer_consumption_summary`, que
+        // só populates após `order.status='served'` — quem se cadastrou
+        // ontem e nunca chegou a confirmar um pedido ficava marcado como
+        // first-time pra sempre. Heurística: > 30 min desde o cadastro
+        // = "já viu o app antes nessa sessão ou em outra", trigger pro
+        // eyebrow "Assistente · reconheceu você" + greeting de retorno.
+        const createdAt = row.created_at instanceof Date
+          ? row.created_at
+          : new Date(row.created_at as string);
+        const ageMs = Date.now() - createdAt.getTime();
+        if (ageMs > 30 * 60 * 1000) {
+          isReturning = true;
+        }
       }
 
       const summary = await this.tenantConn.query(
