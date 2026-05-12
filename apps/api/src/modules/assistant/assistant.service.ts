@@ -318,11 +318,20 @@ export class AssistantService {
       // Só persiste quando temos customerId — flow anônimo não vai pra
       // chat-history (não tem como linkar a customer).
       if (safeCustomerId && this.chatHistory) {
-        const tenantId = (tenantContext as { tenantId?: string })?.tenantId
-          || (tenantContext as { restaurant_name?: string })?.restaurant_name
-          || _schemaName;
+        // Round 21 §E — tenantId pra Mongo SEMPRE é o schema name (ex:
+        // `restaurant_dev`). Antes priorizava `tenantContext.restaurant_name`
+        // (ex: "Meu Restaurante") → o doc ficava escrito com tenantId
+        // não-slug, mas `listThreads` busca pelo schema do middleware
+        // (`@Tenant()` → `tenantSchemaName`) → query nunca batia → tela
+        // "Conversas com IA" sempre vazia mesmo com 60+ mensagens
+        // persistidas no Mongo. Vídeo round 21 reproduz.
+        //
+        // O schema name (`_schemaName`) é a fonte canônica do tenant em
+        // toda a app (rota slug → middleware → schema postgres → mongo).
+        // restaurant_name/tenantId do contexto podem ser pretty-name
+        // (display), nunca chave de partição.
         await this.chatHistory.appendTurn({
-          tenantId,
+          tenantId: _schemaName,
           customerId: safeCustomerId,
           sessionId: tableSessionId,
           userMessage: message,
