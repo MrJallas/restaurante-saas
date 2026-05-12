@@ -11,6 +11,14 @@ interface UIStateContextValue {
   callWaiterSheetOpen: boolean;
   openCallWaiterSheet: () => void;
   closeCallWaiterSheet: () => void;
+  // Round 21 — overlay "Cardápio" sobre a Home/Chat (canvas V20 §F05). Antes
+  // era rota dedicada `/[slug]/cardapio`. Agora a tool `view_menu` da IA
+  // abre essa sheet em vez de navegar — preserva o contexto do chat sem
+  // perder histórico. A rota antiga continua funcionando pra deep-links
+  // (Drawer, search engines, etc).
+  menuOverlayOpen: boolean;
+  openMenuOverlay: () => void;
+  closeMenuOverlay: () => void;
 }
 
 const UIStateContext = createContext<UIStateContextValue | null>(null);
@@ -18,11 +26,14 @@ const UIStateContext = createContext<UIStateContextValue | null>(null);
 export function UIStateProvider({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [callWaiterSheetOpen, setCallWaiterSheetOpen] = useState(false);
+  const [menuOverlayOpen, setMenuOverlayOpen] = useState(false);
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const toggleDrawer = useCallback(() => setDrawerOpen((s) => !s), []);
   const openCallWaiterSheet = useCallback(() => setCallWaiterSheetOpen(true), []);
   const closeCallWaiterSheet = useCallback(() => setCallWaiterSheetOpen(false), []);
+  const openMenuOverlay = useCallback(() => setMenuOverlayOpen(true), []);
+  const closeMenuOverlay = useCallback(() => setMenuOverlayOpen(false), []);
   const value = useMemo(
     () => ({
       drawerOpen,
@@ -32,6 +43,9 @@ export function UIStateProvider({ children }: { children: ReactNode }) {
       callWaiterSheetOpen,
       openCallWaiterSheet,
       closeCallWaiterSheet,
+      menuOverlayOpen,
+      openMenuOverlay,
+      closeMenuOverlay,
     }),
     [
       drawerOpen,
@@ -41,6 +55,9 @@ export function UIStateProvider({ children }: { children: ReactNode }) {
       callWaiterSheetOpen,
       openCallWaiterSheet,
       closeCallWaiterSheet,
+      menuOverlayOpen,
+      openMenuOverlay,
+      closeMenuOverlay,
     ],
   );
   return <UIStateContext.Provider value={value}>{children}</UIStateContext.Provider>;

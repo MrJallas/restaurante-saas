@@ -298,7 +298,7 @@ export function CallWaiterSheet({
       {/* Sheet */}
       <div
         ref={sheetRef}
-        className="absolute inset-x-0 bottom-0 z-10 flex max-h-[78dvh] flex-col rounded-t-[22px] border-[1.5px] border-b-0 border-ink bg-bg px-[22px] pb-safe pt-3 shadow-[0_-8px_32px_rgba(0,0,0,0.10)] animate-slide-up-overlay"
+        className="absolute inset-x-0 bottom-0 z-10 flex max-h-[78dvh] flex-col select-none rounded-t-[22px] border-[1.5px] border-b-0 border-ink bg-bg px-[22px] pb-safe pt-3 shadow-[0_-8px_32px_rgba(0,0,0,0.10)] animate-slide-up-overlay [-webkit-user-select:none] [-webkit-touch-callout:none]"
         style={{
           transform: dragY ? `translateY(${dragY}px)` : undefined,
           transition:
@@ -308,6 +308,13 @@ export function CallWaiterSheet({
           // pan-y permite scroll interno + drag — touch-action evita que iOS
           // bloqueie o gesture vertical. Sem isso, em iOS Safari a sheet
           // não responde a drag fora do handle.
+          //
+          // `select-none` + `-webkit-touch-callout:none`: iOS Safari, ao
+          // receber long-press num <h2>/<p>, abre o callout nativo
+          // (Copy/Look Up/Translate) e a sheet "engasga" — drag perdido.
+          // Bug reproduzido no video round 4 §C16: user arrastava começando
+          // pelo título "Por que você precisa do garçom?" e iOS selecionava
+          // o texto em vez de drag-to-dismiss.
           touchAction: 'pan-y',
         }}
         onClick={(e) => e.stopPropagation()}

@@ -302,7 +302,7 @@ export default function AssistentePage() {
   const searchParams = useSearchParams();
   const session = useSession();
   const { push } = useNav();
-  const { openCallWaiterSheet } = useUIState();
+  const { openCallWaiterSheet, openMenuOverlay } = useUIState();
   const { addItem } = useDraftOrder();
   const router = useRouter();
   const slug = params.slug as string;
@@ -544,10 +544,12 @@ export default function AssistentePage() {
       return;
     }
 
-    // view_menu → navega pra rota do cardápio. Antes estava no stubbedTools
-    // e só renderizava bubble "OK" sem abrir o cardápio.
+    // view_menu → abre MenuOverlay (sheet bottom-up sobre o chat). Antes
+    // navegava pra rota /cardapio inteira (perde contexto do chat). Canvas
+    // V20 §F05 quer overlay sheet — chat fica preservado por baixo, blur
+    // leve, sheet ~88dvh com drag-to-dismiss.
     if (name === 'view_menu') {
-      router.push(`/${slug}/cardapio`);
+      openMenuOverlay();
       return;
     }
 

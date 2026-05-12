@@ -54,6 +54,11 @@ export default function CardapioPage() {
     }
   }, [slug, router]);
 
+  // Round 21 §A — quando carregado dentro do `<MenuOverlay>` iframe, o
+  // AppShell (header + drawer + footer) é redundante (a sheet já tem
+  // chrome próprio). `?embed=1` faz o page renderizar só o conteúdo,
+  // economizando refator do component em duas formas (rota + overlay).
+  const isEmbed = searchParams.get('embed') === '1';
   const initialTab: Tab = searchParams.get('tab') === 'bebidas' ? 'drink' : 'food';
   const [tab, setTab] = useState<Tab>(initialTab);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -140,6 +145,14 @@ export default function CardapioPage() {
   };
 
   if (loading) {
+    const spinner = (
+      <div className="flex flex-1 items-center justify-center py-20">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-ink border-t-transparent" />
+      </div>
+    );
+    if (isEmbed) {
+      return <main className="flex min-h-dvh flex-col bg-bg">{spinner}</main>;
+    }
     return (
       <AppShell
         slug={slug}
@@ -147,25 +160,16 @@ export default function CardapioPage() {
         tableLabel={session.tableLabel || ''}
         activeHref={`/${slug}/cardapio`}
       >
-        <div className="flex flex-1 items-center justify-center py-20">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-ink border-t-transparent" />
-        </div>
+        {spinner}
       </AppShell>
     );
   }
 
-  return (
-    <AppShell
-      slug={slug}
-      restaurantName=""
-      tableLabel={session.tableLabel || ''}
-      activeHref={`/${slug}/cardapio`}
-      noMainPadding
-    >
-      <div className="flex flex-1 flex-col">
-        <div className="shrink-0 px-[22px] pb-2.5 pt-1">
-          <h1 className="text-[26px] font-semibold tracking-[-0.02em]">Cardápio</h1>
-        </div>
+  const body = (
+    <div className="flex flex-1 flex-col">
+      <div className="shrink-0 px-[22px] pb-2.5 pt-1">
+        <h1 className="text-[26px] font-semibold tracking-[-0.02em]">Cardápio</h1>
+      </div>
 
         <div className="shrink-0 px-[22px] pb-2.5">
           <div className="flex gap-1 rounded-full border border-border-soft bg-surface p-1">
@@ -289,7 +293,21 @@ export default function CardapioPage() {
             />
           )}
         </div>
-      </div>
+    </div>
+  );
+
+  if (isEmbed) {
+    return <main className="flex min-h-dvh flex-col bg-bg">{body}</main>;
+  }
+  return (
+    <AppShell
+      slug={slug}
+      restaurantName=""
+      tableLabel={session.tableLabel || ''}
+      activeHref={`/${slug}/cardapio`}
+      noMainPadding
+    >
+      {body}
     </AppShell>
   );
 }
