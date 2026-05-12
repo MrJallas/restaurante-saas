@@ -6,23 +6,22 @@
  * (canvas V20 §F05 line 216).
  *
  * Round 21 §A. Antes a tool `view_menu` da IA chamava `router.push(/cardapio)`,
- * o que perdia o contexto do chat (mensagens sumiam ao voltar) e quebrava
- * a UX "conversa contínua" do V20. Agora a tool abre essa sheet — o chat
- * fica preservado por baixo (blurred) e o cardápio aparece em overlay
- * arrastável.
+ * o que perdia o contexto do chat (mensagens sumiam ao voltar). Agora a
+ * tool abre essa sheet — o chat fica preservado por baixo e o cardápio
+ * aparece em overlay arrastável.
  *
  * Estratégia: a sheet hospeda um `<iframe>` apontando pra
- * `/[slug]/cardapio?embed=1`. O param `embed` faz a rota cardápio
- * renderizar sem AppShell (header + drawer), economizando refator do
- * `cardapio/page.tsx`. Mesmo origin → iframe compartilha sessionStorage
- * (session token, customerId), então os pedidos funcionam idênticos.
+ * `/[slug]/cardapio?embed=1`. Mesmo origin → iframe compartilha
+ * sessionStorage (session token, customerId), então pedidos funcionam.
  *
- * Drag-to-dismiss segue o mesmo padrão do CallWaiterSheet (pointer events
- * + touch-action: pan-y + user-select: none pra evitar text selection no
- * iOS). Threshold 60% do altura — drag passa disso → dispatch close.
+ * Drag via `useSheetDrag` — native addEventListener com passive:false.
+ * React JSX onPointer* handlers são passive:true em React 17+ e
+ * preventDefault não funciona em iOS Safari (bug conhecido). Hook
+ * centraliza a lógica + scroll detection + threshold.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect } from 'react';
+import { useSheetDrag } from '../../hooks/useSheetDrag';
 
 interface MenuOverlayProps {
   open: boolean;
@@ -30,25 +29,24 @@ interface MenuOverlayProps {
   slug: string;
 }
 
-const DISMISS_THRESHOLD = 0.6;
-
 export function MenuOverlay({ open, onClose, slug }: MenuOverlayProps) {
-  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const sheetHeightFn = useCallback(() => {
+    if (typeof window === 'undefined') return 720;
+    // 88dvh é o canon V20 pra overlay "quase fullscreen" com backdrop visível.
+    return Math.round(window.innerHeight * 0.88);
+  }, []);
 
-  // Drag state — translateY abaixo do estado idle. Mesmo pattern do
-  // CallWaiterSheet pra consistência (pointer events cobrem mouse, touch,
-  // pencil num único path).
-  const [dragY, setDragY] = useState(0);
-  const dragStart = useRef<number | null>(null);
-  const draggingRef = useRef(false);
+  // No MenuOverlay o body é iframe (opaco a pointer events do parent),
+  // então o drag em si só funciona via dragHandle. respectInternalScroll
+  // false porque o iframe gerencia o próprio scroll — não cabe ao parent
+  // detectar "scrollado no topo".
+  const { dragY, sheetRef, dragHandleRef, isDragging } = useSheetDrag({
+    onDismiss: onClose,
+    sheetHeightPx: sheetHeightFn,
+    respectInternalScroll: false,
+  });
 
-  // Reset state on reopen
-  useEffect(() => {
-    if (!open) return;
-    setDragY(0);
-  }, [open]);
-
-  // Lock body scroll. Esc fecha. Padrão idêntico ao CallWaiterSheet.
+  // Lock body scroll + Esc fecha
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -76,57 +74,9 @@ export function MenuOverlay({ open, onClose, slug }: MenuOverlayProps) {
     };
   }, [open, onClose]);
 
-  const sheetHeightPx = useMemo(() => {
-    if (typeof window === 'undefined') return 720;
-    // 88dvh é o canon do V20 pra overlays "tela cheia menos backdrop visível
-    // no topo". Cardápio precisa de espaço pra browsing — mais alto que
-    // CallWaiterSheet (que é 62dvh com 5 motivos curtos).
-    return Math.round(window.innerHeight * 0.88);
-  }, [open]);
-
-  // Pointer drag — captura apenas no drag handle (top 36px) pra evitar
-  // engolir clicks dentro do iframe. Diferente do CallWaiterSheet (onde
-  // drag funcionava em qualquer área fora de buttons), aqui o iframe é
-  // opaco ao pointer events do parent — então o drag tem que vir do
-  // handle visual.
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    dragStart.current = e.clientY;
-    draggingRef.current = false;
-    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-  };
-
-  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragStart.current === null) return;
-    const delta = e.clientY - dragStart.current;
-    if (!draggingRef.current && Math.abs(delta) < 4) return;
-    draggingRef.current = true;
-    if (delta > 0) {
-      setDragY(delta);
-      if (e.cancelable) e.preventDefault();
-    } else {
-      setDragY(0);
-    }
-  };
-
-  const onPointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragStart.current === null) return;
-    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-    if (dragY / sheetHeightPx >= DISMISS_THRESHOLD) {
-      setDragY(sheetHeightPx);
-      setTimeout(onClose, 200);
-    } else {
-      setDragY(0);
-    }
-    dragStart.current = null;
-    draggingRef.current = false;
-  };
-
   if (!open) return null;
 
-  // Embed URL — `?embed=1` faz o /cardapio renderizar sem AppShell
-  // (sem header/drawer/topo). O iframe herda sessionStorage + cookies do
-  // parent (mesmo origin), então session token + customerId funcionam.
+  // Embed URL — `?embed=1` faz o /cardapio renderizar sem AppShell.
   const embedSrc = `/${slug}/cardapio?embed=1`;
 
   return (
@@ -145,38 +95,31 @@ export function MenuOverlay({ open, onClose, slug }: MenuOverlayProps) {
         className="absolute inset-0 z-0 bg-black/[0.32]"
       />
 
-      {/* Sheet */}
+      {/* Sheet — ref vai pro hook (drag pode acontecer no topo da sheet
+          via handle; o iframe ocupa o resto). */}
       <div
         ref={sheetRef}
-        className="absolute inset-x-0 bottom-0 z-10 flex h-[88dvh] flex-col rounded-t-[22px] border-[1.5px] border-b-0 border-ink bg-bg pb-safe shadow-[0_-8px_32px_rgba(0,0,0,0.10)] animate-slide-up-overlay"
+        className="absolute inset-x-0 bottom-0 z-10 flex h-[88dvh] flex-col rounded-t-[22px] border-[1.5px] border-b-0 border-ink bg-bg pb-safe shadow-[0_-8px_32px_rgba(0,0,0,0.10)] animate-slide-up-overlay select-none [-webkit-user-select:none] [-webkit-touch-callout:none]"
         style={{
           transform: dragY ? `translateY(${dragY}px)` : undefined,
-          transition:
-            dragStart.current === null
-              ? 'transform 220ms cubic-bezier(.2,.8,.2,1)'
-              : undefined,
+          transition: isDragging
+            ? undefined
+            : 'transform 220ms cubic-bezier(.2,.8,.2,1)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Drag handle — área tap target alta (h-9) cobrindo o pill visual
-            de 40×4. iOS pointer-capture funciona aqui sem engolir clicks no
-            iframe abaixo. select-none + touch-callout-none previnem iOS
-            text-selection callout interromper o drag. */}
+        {/* Drag handle — área tap target alta (h-12 pra dar grab generoso).
+            ref vai pro hook (drag handle SEMPRE captura drag, mesmo sobre
+            elemento interativo). */}
         <div
+          ref={dragHandleRef}
           data-drag-handle="true"
-          className="flex h-9 w-full shrink-0 cursor-grab select-none touch-none items-center justify-center active:cursor-grabbing [-webkit-user-select:none] [-webkit-touch-callout:none]"
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerEnd}
-          onPointerCancel={onPointerEnd}
+          className="flex h-12 w-full shrink-0 cursor-grab touch-none items-center justify-center active:cursor-grabbing"
         >
-          <div className="h-[4px] w-10 rounded-[3px] bg-border-soft opacity-60" />
+          <div className="h-[5px] w-12 rounded-[3px] bg-border-soft opacity-70" />
         </div>
 
-        {/* Iframe — content do cardápio. Sandbox `allow-same-origin`
-            + `allow-scripts` + `allow-forms` cobrem o necessário (apiPost,
-            sessionStorage). Não precisa `allow-top-navigation` porque os
-            cliques em items navegam DENTRO do iframe (também sem AppShell). */}
+        {/* Iframe — content do cardápio. */}
         <iframe
           src={embedSrc}
           title="Cardápio"

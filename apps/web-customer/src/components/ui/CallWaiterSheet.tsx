@@ -20,10 +20,11 @@
  * escolher motivo virou sheet).
  */
 
-import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiPost } from '../../lib/api';
 import { useSession } from '../../hooks/useSession';
+import { useSheetDrag } from '../../hooks/useSheetDrag';
 
 export type CallWaiterReason =
   | 'bring_menu'
@@ -127,17 +128,22 @@ export function CallWaiterSheet({
 }: CallWaiterSheetProps) {
   const router = useRouter();
   const { visitId, customerId } = useSession();
-  const sheetRef = useRef<HTMLDivElement | null>(null);
   const [selected, setSelected] = useState<CallWaiterReason | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Drag state (pixels translateY abaixo do estado idle).
-  // Usamos pointer events (não só touch) pra cobrir mouse + trackpad +
-  // Apple Pencil + touch num único path. iOS Safari 13+ suporta nativamente.
-  const [dragY, setDragY] = useState(0);
-  const dragStart = useRef<number | null>(null);
-  const draggingRef = useRef(false);
+  const sheetHeightFn = useCallback(() => {
+    if (typeof window === 'undefined') return 520;
+    return Math.round(window.innerHeight * 0.62);
+  }, []);
+
+  // Drag via native addEventListener (passive:false) — React JSX handlers
+  // não permitem preventDefault em iOS Safari (passive default true).
+  // Ver `useSheetDrag` pra root cause completa.
+  const { dragY, sheetRef, dragHandleRef, isDragging } = useSheetDrag({
+    onDismiss: onClose,
+    sheetHeightPx: sheetHeightFn,
+  });
 
   // Reset state on reopen
   useEffect(() => {
@@ -145,7 +151,6 @@ export function CallWaiterSheet({
     setSelected(null);
     setSubmitting(false);
     setErrorMsg(null);
-    setDragY(0);
   }, [open]);
 
   // Lock body scroll while sheet open. Reused logic do MenuDrawer
@@ -176,81 +181,6 @@ export function CallWaiterSheet({
       window.scrollTo(0, scrollY);
     };
   }, [open, onClose]);
-
-  const sheetHeightPx = useMemo(() => {
-    if (typeof window === 'undefined') return 520;
-    return Math.round(window.innerHeight * 0.62);
-  }, [open]);
-
-  /**
-   * Pointer-based drag — funciona em qualquer área da sheet, com regras:
-   *
-   * 1. Se o pointer começa dentro de um <button> ou <a> (motivo, CTA,
-   *    cancel, drag handle), o tap/click vence — não inicia drag. Isso
-   *    evita "engolir" o tap nas opções.
-   *    EXCEÇÃO: o drag handle visual (data-drag-handle) SEMPRE captura
-   *    drag (o usuário tap-puxa o pill no topo).
-   * 2. Se a área scrollable interna NÃO está no topo (scrollTop > 0),
-   *    o drag não inicia — o gesto é interpretado como scroll. Quando
-   *    chega no topo, drag passa a funcionar.
-   * 3. Direção: só drag pra baixo (delta > 0). Pra cima é descartado.
-   *
-   * Antes (round 4 §C16 v1): só onTouchStart/Move/End no container, com
-   * iOS o overflow-y-auto da lista de motivos engolia o gesture e a sheet
-   * ficava inerte fora do drag handle.
-   */
-  const isInteractive = (target: EventTarget | null): boolean => {
-    if (!(target instanceof HTMLElement)) return false;
-    return target.closest('button, a, input, textarea, select') !== null
-      // mas o drag handle ainda dispara
-      && !target.closest('[data-drag-handle="true"]');
-  };
-
-  const isInScrollableAtTop = (target: EventTarget | null): boolean => {
-    if (!(target instanceof HTMLElement)) return true;
-    const scrollEl = target.closest<HTMLElement>('[data-scroll-area="true"]');
-    if (!scrollEl) return true;
-    return scrollEl.scrollTop <= 0;
-  };
-
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (isInteractive(e.target)) return;
-    if (!isInScrollableAtTop(e.target)) return;
-    dragStart.current = e.clientY;
-    draggingRef.current = false; // só vira true após threshold de 4px
-    // Captura o pointer pra que dragmove continue mesmo se o cursor sai
-    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-  };
-
-  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragStart.current === null) return;
-    const delta = e.clientY - dragStart.current;
-    if (!draggingRef.current && Math.abs(delta) < 4) return; // dead zone
-    draggingRef.current = true;
-    if (delta > 0) {
-      setDragY(delta);
-      // No iOS, ao iniciar drag abaixo de threshold, evitar scroll nativo
-      // do container externo se houver. preventDefault só funciona aqui se
-      // o evento for cancelable — o pointer event normalmente é.
-      if (e.cancelable) e.preventDefault();
-    } else {
-      setDragY(0);
-    }
-  };
-
-  const onPointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragStart.current === null) return;
-    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-    if (dragY / sheetHeightPx >= DISMISS_THRESHOLD) {
-      setDragY(sheetHeightPx);
-      setTimeout(onClose, 200);
-    } else {
-      setDragY(0);
-    }
-    dragStart.current = null;
-    draggingRef.current = false;
-  };
 
   const handleConfirm = async () => {
     if (submitting || !selected) return;
@@ -301,30 +231,24 @@ export function CallWaiterSheet({
         className="absolute inset-x-0 bottom-0 z-10 flex max-h-[78dvh] flex-col select-none rounded-t-[22px] border-[1.5px] border-b-0 border-ink bg-bg px-[22px] pb-safe pt-3 shadow-[0_-8px_32px_rgba(0,0,0,0.10)] animate-slide-up-overlay [-webkit-user-select:none] [-webkit-touch-callout:none]"
         style={{
           transform: dragY ? `translateY(${dragY}px)` : undefined,
-          transition:
-            dragStart.current === null
-              ? 'transform 220ms cubic-bezier(.2,.8,.2,1)'
-              : undefined,
-          // pan-y permite scroll interno + drag — touch-action evita que iOS
-          // bloqueie o gesture vertical. Sem isso, em iOS Safari a sheet
-          // não responde a drag fora do handle.
-          //
-          // `select-none` + `-webkit-touch-callout:none`: iOS Safari, ao
-          // receber long-press num <h2>/<p>, abre o callout nativo
-          // (Copy/Look Up/Translate) e a sheet "engasga" — drag perdido.
-          // Bug reproduzido no video round 4 §C16: user arrastava começando
-          // pelo título "Por que você precisa do garçom?" e iOS selecionava
-          // o texto em vez de drag-to-dismiss.
+          transition: isDragging
+            ? undefined
+            : 'transform 220ms cubic-bezier(.2,.8,.2,1)',
+          // `select-none` + `-webkit-touch-callout:none` previnem iOS Safari
+          // de disparar callout de seleção de texto (Copy/Look Up/Translate)
+          // durante long-press num <h2>/<p>, o que engasgava o drag. Drag
+          // em si vem via `useSheetDrag` (native addEventListener com
+          // passive:false — única forma que iOS permite preventDefault na
+          // sequência pointermove).
           touchAction: 'pan-y',
         }}
         onClick={(e) => e.stopPropagation()}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerEnd}
-        onPointerCancel={onPointerEnd}
       >
-        {/* Drag handle 40×4 — área grab "evidente" (cursor + tap target maior). */}
+        {/* Drag handle 40×4 — área grab "evidente" (cursor + tap target maior).
+            ref vai pro hook pra que o handle SEMPRE capture drag (mesmo se
+            for filho de um elemento interativo). */}
         <div
+          ref={dragHandleRef}
           data-drag-handle="true"
           className="mx-auto mb-3.5 -my-1 flex h-6 w-full cursor-grab touch-none items-center justify-center active:cursor-grabbing"
         >
