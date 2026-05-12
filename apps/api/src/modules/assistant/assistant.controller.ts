@@ -11,6 +11,7 @@ import { SessionGuard, SessionData } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
+import { Tenant } from '../../common/decorators/tenant.decorator';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { AssistantService } from './assistant.service';
 
@@ -110,11 +111,15 @@ export class AssistantController {
    */
   @Post('staff-to-customer')
   @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
-  async staffToCustomer(@Body() dto: StaffToCustomerDto) {
+  async staffToCustomer(
+    @Body() dto: StaffToCustomerDto,
+    @Tenant() tenantId: string,
+  ) {
     return this.assistantService.sendStaffToCustomer({
       tableSessionId: dto.tableSessionId,
       message: dto.message,
       fromStaffId: dto.fromStaffId,
+      tenantId,
     });
   }
 }

@@ -132,10 +132,19 @@ export function ScreenCustomerMe({ slug, restaurantName = '' }: ScreenCustomerMe
 
         {/* Acessos */}
         <nav className="mb-6 flex flex-col gap-2" aria-label="Atalhos do perfil">
+          {/* "Mensagens com a equipe" listada antes de "Conversas com IA"
+              porque é o caminho que o customer mais procura quando volta
+              à tela (réplica do manager, cortesia, etc). */}
+          <MeLink
+            icon="✉"
+            label="Mensagens com a equipe"
+            sub="Gerente, garçom e cozinha"
+            onClick={() => router.push(`/${slug}/staff-messages`)}
+          />
           <MeLink
             icon="↻"
-            label="Histórico de chats"
-            sub="Suas conversas com a IA"
+            label="Conversas com IA"
+            sub="Suas conversas com o assistente"
             onClick={() => router.push(`/${slug}/chat-history`)}
           />
           <MeLink

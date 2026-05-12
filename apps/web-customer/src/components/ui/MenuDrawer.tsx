@@ -224,15 +224,28 @@ export function MenuDrawer({
 
           <div className="mx-[22px] my-3.5 h-px bg-border-soft" />
 
-          {/* Chat history entry · per chat-history-lgpd.md "Frontend ·
-              Entry point". Routes to ScreenCustomerChatHistory which lets
-              the customer review and delete their past AI chats. */}
+          {/* Staff inbox entry · per the customer-staff-messages module.
+              Listed BEFORE "Conversas com IA" because the staff thread is
+              usually the one the customer cares about pulling up later
+              (manager's reply to a complaint, a courtesy note, etc). */}
+          <DrawerLink
+            href={`/${slug}/staff-messages`}
+            onNavigate={closeDrawer}
+            icon="✉"
+            label="Mensagens com a equipe"
+            sub="Gerente, garçom e cozinha"
+            active={activeHref?.startsWith(`/${slug}/staff-messages`)}
+          />
+
+          {/* Renomeado em feat/staff-messages-history: "Histórico de chats"
+              → "Conversas com IA" pra distinguir do novo inbox da equipe.
+              Mesma rota / mesma tela. */}
           <DrawerLink
             href={`/${slug}/chat-history`}
             onNavigate={closeDrawer}
             icon="↻"
-            label="Histórico de chats"
-            sub="30 dias atrás até hoje"
+            label="Conversas com IA"
+            sub="Suas conversas com o assistente"
             active={activeHref?.startsWith(`/${slug}/chat-history`)}
           />
 

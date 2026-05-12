@@ -1,0 +1,352 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ApiRequestError } from '../../lib/api';
+import {
+  listThreads,
+  deleteThread,
+  deleteAllThreads,
+} from '../../lib/api/staff-messages';
+import { useSession } from '../../hooks/useSession';
+import { useRequireCustomerId } from '../../hooks/useRequireCustomerId';
+import { AppShell } from '../../components/layout/AppShell';
+import { PillButton } from '../../components/ui/PillButton';
+import { BottomSheet } from '../../components/ui/BottomSheet';
+import type {
+  StaffMessageHistoryThreadDto,
+  StaffMessageHistoryRoleLabel,
+} from '@restaurant/shared-types';
+
+interface ScreenCustomerStaffMessagesProps {
+  slug: string;
+}
+
+const MONTH_LABELS = [
+  'JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN',
+  'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ',
+];
+
+function formatMonthLabel(iso: string): string {
+  const d = new Date(iso);
+  return `${MONTH_LABELS[d.getMonth()]} · ${d.getFullYear()}`;
+}
+
+function formatThreadDateTime(iso: string): string {
+  const d = new Date(iso);
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${day} ${MONTH_LABELS[d.getMonth()]} · ${hh}:${mm}`;
+}
+
+function roleLabelDisplay(label: StaffMessageHistoryRoleLabel | null): string {
+  switch (label) {
+    case 'gerente':
+      return 'Gerente';
+    case 'garçom':
+      return 'Garçom';
+    case 'host':
+      return 'Host';
+    case 'cozinha':
+      return 'Cozinha';
+    default:
+      return 'Equipe';
+  }
+}
+
+/**
+ * Inbox "Mensagens com a equipe" · sibling of `ScreenCustomerChatHistory`.
+ *
+ * Lists every staff thread (manager/garçom/host/cozinha → customer + customer
+ * replies) grouped by month. Same V20 visual language as the AI chat history
+ * — eyebrow mono caps + thread cards with preview + per-row "Apagar" CTA +
+ * destructive "Apagar todas" footer.
+ *
+ * The bubble surface itself stays inside the chat (`/assistente`) for the
+ * realtime path; this screen is the persistent inbox the customer goes to
+ * later to revisit prior conversations.
+ */
+export function ScreenCustomerStaffMessages({
+  slug,
+}: ScreenCustomerStaffMessagesProps) {
+  const session = useSession();
+  const router = useRouter();
+  const ready = useRequireCustomerId(slug);
+  const [threads, setThreads] = useState<StaffMessageHistoryThreadDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<
+    | { kind: 'one'; threadId: string; messageCount: number }
+    | { kind: 'all' }
+    | null
+  >(null);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!session.customerId) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const list = await listThreads(slug);
+        if (!cancelled) setThreads(list);
+      } catch (err) {
+        if (cancelled) return;
+        const message =
+          err instanceof ApiRequestError
+            ? err.message
+            : 'Não consegui carregar suas mensagens agora.';
+        setError(message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, session.customerId]);
+
+  const grouped = (() => {
+    const map = new Map<string, StaffMessageHistoryThreadDto[]>();
+    for (const t of threads) {
+      const d = new Date(t.lastMessageAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}`;
+      const arr = map.get(key) ?? [];
+      arr.push(t);
+      map.set(key, arr);
+    }
+    return Array.from(map.entries()).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  })();
+
+  const handleDeleteOne = async () => {
+    if (!confirming || confirming.kind !== 'one') return;
+    setDeleting(true);
+    try {
+      await deleteThread(slug, confirming.threadId);
+      setThreads((prev) =>
+        prev.filter((t) => t.threadId !== confirming.threadId),
+      );
+      setConfirming(null);
+    } catch (err) {
+      const message =
+        err instanceof ApiRequestError
+          ? err.message
+          : 'Não consegui apagar essa conversa agora.';
+      setError(message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!confirming || confirming.kind !== 'all') return;
+    setDeleting(true);
+    try {
+      await deleteAllThreads(slug);
+      setThreads([]);
+      setConfirming(null);
+    } catch (err) {
+      const message =
+        err instanceof ApiRequestError
+          ? err.message
+          : 'Não consegui apagar tudo agora.';
+      setError(message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (!ready) return null;
+
+  return (
+    <AppShell
+      slug={slug}
+      restaurantName=""
+      tableLabel={session.tableLabel ?? ''}
+      activeHref={`/${slug}/staff-messages`}
+      onBack={() => router.back()}
+    >
+      <div className="flex flex-1 flex-col px-[22px] pb-10 pt-3">
+        <h1 className="mb-1 text-[22px] font-semibold tracking-[-0.02em] text-ink">
+          Mensagens com a equipe
+        </h1>
+        <p className="mb-5 text-[13px] leading-[1.5] text-mute">
+          Gerente, garçom e cozinha · 30 dias atrás até hoje.
+        </p>
+
+        {error && (
+          <div className="mb-4 rounded-[12px] border border-danger bg-[#fdf2f2] px-3.5 py-2.5 text-[13px] text-[#7a1f1f]">
+            {error}
+          </div>
+        )}
+
+        {!loading && threads.length === 0 && (
+          <div className="rounded-[14px] border border-border-soft bg-surface px-4 py-10 text-center">
+            <div className="mb-2 text-[15px] font-medium text-ink">
+              Nenhuma mensagem por aqui ainda
+            </div>
+            <div className="text-[13px] leading-[1.5] text-mute">
+              Suas conversas com a equipe aparecem aqui · ficam por 30 dias
+              antes de sumir.
+            </div>
+          </div>
+        )}
+
+        {loading && (
+          <div className="text-center text-[13px] text-mute">Carregando…</div>
+        )}
+
+        {threads.length > 0 && (
+          <div className="flex flex-col gap-5">
+            {grouped.map(([key, items]) => (
+              <div key={key} className="flex flex-col gap-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[1.5px] text-faint">
+                  {formatMonthLabel(items[0].lastMessageAt)}
+                </div>
+                <div className="flex flex-col gap-2">
+                  {items.map((t) => (
+                    <div
+                      key={t.threadId}
+                      className="rounded-[14px] border border-border-soft bg-bg p-3.5 active:bg-surface"
+                    >
+                      <button
+                        type="button"
+                        className="block w-full text-left"
+                        onClick={() =>
+                          router.push(
+                            `/${slug}/staff-messages/${encodeURIComponent(t.threadId)}`,
+                          )
+                        }
+                      >
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-semibold uppercase tracking-[1.2px] text-faint">
+                            {formatThreadDateTime(t.lastMessageAt)}
+                          </span>
+                          {t.lastStaffName && (
+                            <span className="rounded-full bg-surface px-2 py-[2px] text-[10px] font-semibold uppercase tracking-[1px] text-mute">
+                              {t.lastStaffName.split(' ')[0]} ·{' '}
+                              {roleLabelDisplay(t.lastStaffRole)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="line-clamp-2 text-[14px] leading-[1.4] text-ink">
+                          {t.preview || 'Mensagem sem prévia disponível'}
+                        </div>
+                        <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-[1.2px] text-mute">
+                          {t.messageCount}{' '}
+                          {t.messageCount === 1 ? 'MENSAGEM' : 'MENSAGENS'}
+                        </div>
+                      </button>
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setConfirming({
+                              kind: 'one',
+                              threadId: t.threadId,
+                              messageCount: t.messageCount,
+                            })
+                          }
+                          className="text-[11px] font-medium text-mute underline-offset-2 hover:text-danger hover:underline"
+                        >
+                          Apagar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {threads.length > 0 && (
+          <div className="mt-8 flex flex-col gap-2.5">
+            <button
+              type="button"
+              onClick={() => setConfirming({ kind: 'all' })}
+              className="rounded-full border-[1.3px] border-danger bg-bg px-6 py-3.5 text-[15px] font-medium text-danger active:bg-[#fbe9e7]"
+            >
+              Apagar todas as conversas
+            </button>
+            <p className="px-2 text-center text-[10px] font-semibold uppercase leading-[1.5] tracking-[1.2px] text-faint">
+              Suas mensagens ficam aqui por 30 dias e são apagadas
+              automaticamente · LGPD Art. 18
+            </p>
+          </div>
+        )}
+      </div>
+
+      <BottomSheet
+        open={!!confirming}
+        onClose={() => (deleting ? null : setConfirming(null))}
+        ariaLabel="Confirmar exclusão"
+      >
+        {confirming?.kind === 'all' && (
+          <>
+            <h2 className="mb-2 text-[22px] font-semibold tracking-[-0.02em] text-ink">
+              Apagar todas as mensagens?
+            </h2>
+            <p className="mb-6 text-[14px] leading-[1.5] text-mute">
+              Vai sumir todas as conversas com a equipe · não tem volta.
+            </p>
+            <div className="flex flex-col gap-2.5">
+              <PillButton
+                variant="filled"
+                fullWidth
+                onClick={handleDeleteAll}
+                disabled={deleting}
+                className="!bg-danger !border-danger"
+              >
+                {deleting ? 'Apagando…' : 'Sim, apagar tudo'}
+              </PillButton>
+              <PillButton
+                variant="outline"
+                fullWidth
+                onClick={() => setConfirming(null)}
+                disabled={deleting}
+              >
+                Cancelar
+              </PillButton>
+            </div>
+          </>
+        )}
+        {confirming?.kind === 'one' && (
+          <>
+            <h2 className="mb-2 text-[18px] font-semibold tracking-[-0.02em] text-ink">
+              Apagar essa conversa?
+            </h2>
+            <p className="mb-6 text-[14px] leading-[1.5] text-mute">
+              Vai sumir {confirming.messageCount}{' '}
+              {confirming.messageCount === 1 ? 'mensagem' : 'mensagens'} · não
+              tem volta.
+            </p>
+            <div className="flex flex-col gap-2.5">
+              <PillButton
+                variant="filled"
+                fullWidth
+                onClick={handleDeleteOne}
+                disabled={deleting}
+                className="!bg-danger !border-danger"
+              >
+                {deleting ? 'Apagando…' : 'Apagar'}
+              </PillButton>
+              <PillButton
+                variant="outline"
+                fullWidth
+                onClick={() => setConfirming(null)}
+                disabled={deleting}
+              >
+                Cancelar
+              </PillButton>
+            </div>
+          </>
+        )}
+      </BottomSheet>
+    </AppShell>
+  );
+}

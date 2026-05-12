@@ -9,6 +9,7 @@ import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { AiServiceClient, type AiToolCall } from '../../infra/ai/ai-service.client';
 import { RedisService } from '../../infra/redis/redis.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
+import { CustomerStaffMessagesService } from '../customer-staff-messages/customer-staff-messages.service';
 import { EventsGateway } from '../websocket/events.gateway';
 
 const BLOCKED_RESPONSE =
@@ -182,6 +183,12 @@ export class AssistantService {
     // se ChatHistoryService não conseguir injetar, AssistantService continua
     // funcionando (Postgres é fonte de verdade).
     @Optional() private readonly chatHistory?: ChatHistoryService,
+    // Mesmo padrão soft-fail do chatHistory: o realtime path
+    // (Postgres + WS) continua funcionando se o Mongo estiver fora.
+    // Este serviço grava em paralelo a inbox persistente do customer
+    // ("Mensagens com a equipe").
+    @Optional()
+    private readonly customerStaffMessages?: CustomerStaffMessagesService,
     @Optional() private readonly events?: EventsGateway,
   ) {}
 
@@ -467,6 +474,13 @@ export class AssistantService {
     tableSessionId: string;
     message: string;
     fromStaffId: string;
+    /**
+     * Schema name of the tenant (canonical "tenantId" used for Mongo
+     * partitioning). Optional so legacy callers that don't yet thread it
+     * through still work — when absent we skip the Mongo persist (the
+     * Postgres + WS realtime path remains unchanged).
+     */
+    tenantId?: string;
   }): Promise<{
     id: string;
     tableSessionId: string;
@@ -536,6 +550,44 @@ export class AssistantService {
         'assistant.staff_message_received',
         payload,
       );
+    }
+
+    // Persistência paralela no Mongo (`staff_threads` + `staff_messages`)
+    // pra inbox "Mensagens com a equipe" do cliente. Best-effort: falha
+    // aqui não derruba o realtime flow (Postgres + WS já confirmaram a
+    // entrega visual). Persistimos UM doc por participant aprovado na
+    // mesa — cada cliente tem sua própria thread no histórico, mesmo
+    // que a mensagem do staff seja broadcast pro session room.
+    if (this.customerStaffMessages && input.tenantId) {
+      try {
+        const participants = (await this.tenantConn.query(
+          `SELECT customer_id FROM session_participants
+            WHERE table_session_id = $1
+              AND status = 'approved'
+              AND left_at IS NULL`,
+          [input.tableSessionId],
+        )) as Array<{ customer_id: string }>;
+        await Promise.all(
+          participants.map((p) =>
+            this.customerStaffMessages!.appendInbound({
+              tenantId: input.tenantId!,
+              customerId: p.customer_id,
+              tableSessionId: input.tableSessionId,
+              staffName,
+              // Hoje só manager envia (StaffOnlyGuard + ManagerOnlyGuard).
+              // Quando waiter/host/kitchen ganharem a primitiva, expor
+              // como parâmetro opcional aqui.
+              staffRoleLabel: 'gerente',
+              content: input.message.trim(),
+            }),
+          ),
+        );
+      } catch (err) {
+        // Não bloqueia a resposta — log e segue.
+        this.logger.warn(
+          `Falha ao persistir staff message em Mongo (best-effort): ${(err as Error).message}`,
+        );
+      }
     }
 
     return payload;

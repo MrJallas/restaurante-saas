@@ -31,6 +31,7 @@ import { StaffMessagesModule } from './modules/staff-messages/staff-messages.mod
 import { ZonePauseModule } from './modules/zone-pause/zone-pause.module';
 import { VipModule } from './modules/vip/vip.module';
 import { ChatHistoryModule } from './modules/chat-history/chat-history.module';
+import { CustomerStaffMessagesModule } from './modules/customer-staff-messages/customer-staff-messages.module';
 import { JobsModule } from './modules/jobs/jobs.module';
 import { QrIssuesModule } from './modules/qr-issues/qr-issues.module';
 import { HostModule } from './modules/host/host.module';
@@ -68,6 +69,7 @@ import { ContinuationModule } from './modules/continuation/continuation.module';
     LateArrivalModule,
     TableMergeModule,
     ChatHistoryModule,
+    CustomerStaffMessagesModule,
     LgpdModule,
     ComplaintsModule,
     StaffMessagesModule,

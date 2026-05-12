@@ -99,6 +99,7 @@ export * from './chat-history';
 export * from './lgpd';
 export * from './complaint';
 export * from './staff-message';
+export * from './staff-message-history';
 export * from './vip';
 export * from './zone-pause';
 export * from './host';

@@ -177,10 +177,10 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
     >
       <div className="flex flex-1 flex-col px-[22px] pb-10 pt-3">
         <h1 className="mb-1 text-[22px] font-semibold tracking-[-0.02em] text-ink">
-          Histórico de chats
+          Conversas com IA
         </h1>
         <p className="mb-5 text-[13px] leading-[1.5] text-mute">
-          30 dias atrás até hoje · suas conversas com a IA da casa.
+          Suas conversas com o assistente · 30 dias atrás até hoje.
         </p>
 
         {error && (
