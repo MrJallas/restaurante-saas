@@ -44,13 +44,14 @@ function CallWaiterSheetHost() {
  */
 function MenuOverlayHost() {
   const { slug } = useContext(SessionContext);
-  const { menuOverlayOpen, closeMenuOverlay } = useUIState();
+  const { menuOverlayOpen, menuOverlayTab, closeMenuOverlay } = useUIState();
   if (!slug) return null;
   return (
     <MenuOverlay
       open={menuOverlayOpen}
       onClose={closeMenuOverlay}
       slug={slug}
+      tab={menuOverlayTab}
     />
   );
 }

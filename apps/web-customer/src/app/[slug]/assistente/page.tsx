@@ -548,8 +548,16 @@ export default function AssistentePage() {
     // navegava pra rota /cardapio inteira (perde contexto do chat). Canvas
     // V20 §F05 quer overlay sheet — chat fica preservado por baixo, blur
     // leve, sheet ~88dvh com drag-to-dismiss.
+    //
+    // Round 21 §G: LLM agora pode passar `category` (bebida/sobremesa/
+    // entrada/principal) — repassamos como query param ?tab= pro iframe
+    // do cardápio, que já entende "bebidas" como filtro de tab.
     if (name === 'view_menu') {
-      openMenuOverlay();
+      const cat = (call.arguments?.category as string | undefined)?.toLowerCase().trim();
+      const tab = cat === 'bebida' || cat === 'bebidas' || cat === 'drink' || cat === 'drinks'
+        ? 'bebidas'
+        : undefined;
+      openMenuOverlay({ tab });
       return;
     }
 

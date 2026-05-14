@@ -134,12 +134,24 @@ export default function MesaPage() {
         ]);
         if (cancelled) return;
         setSettings(pubSettings);
+        // Round 21 §G: defesa contra heroMessage vazio do BE. Antes,
+        // qualquer falha de template render ou timeout silencioso
+        // resultava em fallback `defaultHeroMessage` (sempre a mesma
+        // string) — user via "Olá, Caleb! Posso ajudar..." TODAS as
+        // vezes em vez do pool de 35 templates rotativos.
+        if (!home || !home.heroMessage || home.heroMessage.trim().length === 0) {
+          // eslint-disable-next-line no-console
+          console.warn('[mesa] /home retornou heroMessage vazio — caindo no fallback estático', { home });
+        }
         setHomeData(home);
         setPageState('home');
-      } catch {
+      } catch (err) {
         if (cancelled) return;
-        // Se a refetch falhar, ainda assim sai do splash — render com
-        // defaults (homeData null) e nome generico e' melhor que travar.
+        // Antes (silent catch) o user nunca sabia que o /home falhou —
+        // a tela mostrava texto genérico forever. Agora logamos no
+        // console pro dev pegar via Safari Web Inspector.
+        // eslint-disable-next-line no-console
+        console.error('[mesa] /home failed — usando defaultHeroMessage:', err);
         setPageState('home');
       }
     })();

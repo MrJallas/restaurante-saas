@@ -22,14 +22,21 @@
 
 import { useCallback, useEffect } from 'react';
 import { useSheetDrag } from '../../hooks/useSheetDrag';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 interface MenuOverlayProps {
   open: boolean;
   onClose: () => void;
   slug: string;
+  /**
+   * Round 21 §G: quando view_menu tool da IA dispatcha com
+   * `category=bebida`, abrimos a sheet direto na aba "Bebidas" (em vez
+   * de "Comida" default). Iframe recebe `?embed=1&tab=bebidas`.
+   */
+  tab?: 'comida' | 'bebidas' | null;
 }
 
-export function MenuOverlay({ open, onClose, slug }: MenuOverlayProps) {
+export function MenuOverlay({ open, onClose, slug, tab }: MenuOverlayProps) {
   const sheetHeightFn = useCallback(() => {
     if (typeof window === 'undefined') return 720;
     // 88dvh é o canon V20 pra overlay "quase fullscreen" com backdrop visível.
@@ -46,38 +53,28 @@ export function MenuOverlay({ open, onClose, slug }: MenuOverlayProps) {
     respectInternalScroll: false,
   });
 
-  // Lock body scroll + Esc fecha
+  // Body scroll lock centralizado (round 21 §H fix).
+  useBodyScrollLock(open);
+
+  // Esc fecha
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKey);
-    const scrollY = window.scrollY;
-    const prev = {
-      position: document.body.style.position,
-      top: document.body.style.top,
-      width: document.body.style.width,
-      overflow: document.body.style.overflow,
-    };
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.width = '100%';
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.position = prev.position;
-      document.body.style.top = prev.top;
-      document.body.style.width = prev.width;
-      document.body.style.overflow = prev.overflow;
-      window.scrollTo(0, scrollY);
-    };
+    return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
   if (!open) return null;
 
   // Embed URL — `?embed=1` faz o /cardapio renderizar sem AppShell.
-  const embedSrc = `/${slug}/cardapio?embed=1`;
+  // Round 21 §G: passa `tab=bebidas` quando IA pediu view_menu(category=bebida).
+  // cardapio/page.tsx (linha 60) já lê `searchParams.get('tab')` pra setar
+  // initialTab — fix entrega categoria certa pra user de cara.
+  const embedSrc = tab
+    ? `/${slug}/cardapio?embed=1&tab=${tab}`
+    : `/${slug}/cardapio?embed=1`;
 
   return (
     <div

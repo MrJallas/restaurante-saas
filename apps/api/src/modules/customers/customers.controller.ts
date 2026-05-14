@@ -20,7 +20,8 @@ import {
   IsUUID,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { Response } from 'express';
+import { Request, Response } from 'express';
+import { getSecureCookieOptions } from '../../common/utils/cookie-options';
 import { SessionGuard } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
@@ -129,17 +130,13 @@ export class CustomersController {
     }
     await this.bumpIdentifyAttempts(ipKey);
 
-    res.cookie('recognition_token', result.recognitionToken, {
-      httpOnly: true,
-      // Round 9 (B-NEW-37): secure flag em prod com TLS. Antes session_token
-      // tinha mas recognition_token (1 ano TTL) NÃO. Em prod com captive
-      // portal/MITM em wifi público, browser enviava cookie em downgrade
-      // HTTP — atacante capturava identidade permanente do customer.
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
+    res.cookie('recognition_token', result.recognitionToken, getSecureCookieOptions(req as Request, {
+      // Round 9 (B-NEW-37): secure flag em prod com TLS. Round 21 §F:
+      // getSecureCookieOptions detecta HTTPS via req.secure ou
+      // X-Forwarded-Proto (Cloudflare Tunnel, proxy reverso) — Safari iOS
+      // exige secure:true + sameSite:'none' quando origem é HTTPS.
       maxAge: RECOGNITION_COOKIE_MAX_AGE,
-    });
+    }));
 
     // recognitionToken NÃO retornado no body.
     return {
@@ -288,17 +285,13 @@ export class CustomersController {
     }
     await this.bumpWelcomeAttempts(ipKey);
 
-    res.cookie('recognition_token', result.recognitionToken, {
-      httpOnly: true,
-      // Round 9 (B-NEW-37): secure flag em prod com TLS. Antes session_token
-      // tinha mas recognition_token (1 ano TTL) NÃO. Em prod com captive
-      // portal/MITM em wifi público, browser enviava cookie em downgrade
-      // HTTP — atacante capturava identidade permanente do customer.
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
+    res.cookie('recognition_token', result.recognitionToken, getSecureCookieOptions(req as Request, {
+      // Round 9 (B-NEW-37): secure flag em prod com TLS. Round 21 §F:
+      // getSecureCookieOptions detecta HTTPS via req.secure ou
+      // X-Forwarded-Proto (Cloudflare Tunnel, proxy reverso) — Safari iOS
+      // exige secure:true + sameSite:'none' quando origem é HTTPS.
       maxAge: RECOGNITION_COOKIE_MAX_AGE,
-    });
+    }));
 
     // Round 7 (B-NEW-28): recognitionToken NÃO retornado no body —
      // só vai pelo cookie HttpOnly. Antes: XSS no customer-side App
@@ -334,17 +327,13 @@ export class CustomersController {
       session.sessionId,
     );
 
-    res.cookie('recognition_token', result.recognitionToken, {
-      httpOnly: true,
-      // Round 9 (B-NEW-37): secure flag em prod com TLS. Antes session_token
-      // tinha mas recognition_token (1 ano TTL) NÃO. Em prod com captive
-      // portal/MITM em wifi público, browser enviava cookie em downgrade
-      // HTTP — atacante capturava identidade permanente do customer.
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
+    res.cookie('recognition_token', result.recognitionToken, getSecureCookieOptions(req as Request, {
+      // Round 9 (B-NEW-37): secure flag em prod com TLS. Round 21 §F:
+      // getSecureCookieOptions detecta HTTPS via req.secure ou
+      // X-Forwarded-Proto (Cloudflare Tunnel, proxy reverso) — Safari iOS
+      // exige secure:true + sameSite:'none' quando origem é HTTPS.
       maxAge: RECOGNITION_COOKIE_MAX_AGE,
-    });
+    }));
 
     // Round 7 (B-NEW-28): recognitionToken NÃO retornado no body —
     // só via cookie HttpOnly. Mesmo fix do welcome/identify.

@@ -2,6 +2,8 @@
 
 import { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 
+type MenuOverlayTab = 'comida' | 'bebidas';
+
 interface UIStateContextValue {
   drawerOpen: boolean;
   openDrawer: () => void;
@@ -16,8 +18,14 @@ interface UIStateContextValue {
   // abre essa sheet em vez de navegar — preserva o contexto do chat sem
   // perder histórico. A rota antiga continua funcionando pra deep-links
   // (Drawer, search engines, etc).
+  //
+  // Round 21 §G: tool `view_menu` agora pode passar `category` (ex:
+  // 'bebidas'). FE mapeia pra `tab=bebidas` na URL do iframe, e o
+  // cardapio/page abre na aba correta — fix do bug "user pediu bebidas
+  // e veio cardápio completo".
   menuOverlayOpen: boolean;
-  openMenuOverlay: () => void;
+  menuOverlayTab: MenuOverlayTab | null;
+  openMenuOverlay: (opts?: { tab?: MenuOverlayTab }) => void;
   closeMenuOverlay: () => void;
 }
 
@@ -27,13 +35,22 @@ export function UIStateProvider({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [callWaiterSheetOpen, setCallWaiterSheetOpen] = useState(false);
   const [menuOverlayOpen, setMenuOverlayOpen] = useState(false);
+  const [menuOverlayTab, setMenuOverlayTab] = useState<MenuOverlayTab | null>(null);
+
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const toggleDrawer = useCallback(() => setDrawerOpen((s) => !s), []);
   const openCallWaiterSheet = useCallback(() => setCallWaiterSheetOpen(true), []);
   const closeCallWaiterSheet = useCallback(() => setCallWaiterSheetOpen(false), []);
-  const openMenuOverlay = useCallback(() => setMenuOverlayOpen(true), []);
-  const closeMenuOverlay = useCallback(() => setMenuOverlayOpen(false), []);
+  const openMenuOverlay = useCallback((opts?: { tab?: MenuOverlayTab }) => {
+    setMenuOverlayTab(opts?.tab ?? null);
+    setMenuOverlayOpen(true);
+  }, []);
+  const closeMenuOverlay = useCallback(() => {
+    setMenuOverlayOpen(false);
+    setMenuOverlayTab(null);
+  }, []);
+
   const value = useMemo(
     () => ({
       drawerOpen,
@@ -44,6 +61,7 @@ export function UIStateProvider({ children }: { children: ReactNode }) {
       openCallWaiterSheet,
       closeCallWaiterSheet,
       menuOverlayOpen,
+      menuOverlayTab,
       openMenuOverlay,
       closeMenuOverlay,
     }),
@@ -56,6 +74,7 @@ export function UIStateProvider({ children }: { children: ReactNode }) {
       openCallWaiterSheet,
       closeCallWaiterSheet,
       menuOverlayOpen,
+      menuOverlayTab,
       openMenuOverlay,
       closeMenuOverlay,
     ],

@@ -25,6 +25,7 @@ import { useRouter } from 'next/navigation';
 import { apiPost } from '../../lib/api';
 import { useSession } from '../../hooks/useSession';
 import { useSheetDrag } from '../../hooks/useSheetDrag';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 export type CallWaiterReason =
   | 'bring_menu'
@@ -155,33 +156,19 @@ export function CallWaiterSheet({
     setErrorMsg(null);
   }, [open]);
 
-  // Lock body scroll while sheet open. Reused logic do MenuDrawer
-  // (iOS Safari ignora `overflow:hidden` no body — usamos position:fixed).
+  // Body scroll lock via hook centralizado. Round 21 §H fix: contador
+  // global de consumers em vez de restaurar `prev` capturado (que dava
+  // race condition quando 2 sheets abriam em sequência).
+  useBodyScrollLock(open);
+
+  // Esc fecha
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKey);
-    const scrollY = window.scrollY;
-    const prev = {
-      position: document.body.style.position,
-      top: document.body.style.top,
-      width: document.body.style.width,
-      overflow: document.body.style.overflow,
-    };
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.width = '100%';
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.position = prev.position;
-      document.body.style.top = prev.top;
-      document.body.style.width = prev.width;
-      document.body.style.overflow = prev.overflow;
-      window.scrollTo(0, scrollY);
-    };
+    return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
   const handleConfirm = async () => {
