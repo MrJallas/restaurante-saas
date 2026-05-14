@@ -137,10 +137,12 @@ export function CallWaiterSheet({
     return Math.round(window.innerHeight * 0.62);
   }, []);
 
-  // Drag via native addEventListener (passive:false) — React JSX handlers
-  // não permitem preventDefault em iOS Safari (passive default true).
-  // Ver `useSheetDrag` pra root cause completa.
-  const { dragY, sheetRef, dragHandleRef, isDragging } = useSheetDrag({
+  // Drag via React JSX handlers (vaul pattern) — versão anterior tentou
+  // native addEventListener + passive:false, mas iOS Safari < 26.2 não
+  // honra preventDefault em pointer events de forma consistente. Vaul
+  // mostra que React handlers são suficientes se a gente usa
+  // setPointerCapture no target + touch-action: none no draggable.
+  const { dragY, sheetRef, dragHandleRef, isDragging, bind } = useSheetDrag({
     onDismiss: onClose,
     sheetHeightPx: sheetHeightFn,
   });
@@ -225,7 +227,9 @@ export function CallWaiterSheet({
         className="absolute inset-0 z-0 bg-black/[0.32]"
       />
 
-      {/* Sheet */}
+      {/* Sheet — pointer handlers vêm do hook via `{...bind}` (vaul pattern,
+          React JSX em vez de native addEventListener — iOS Safari < 26.2
+          não honra preventDefault em pointer events de forma consistente). */}
       <div
         ref={sheetRef}
         className="absolute inset-x-0 bottom-0 z-10 flex max-h-[78dvh] flex-col select-none rounded-t-[22px] border-[1.5px] border-b-0 border-ink bg-bg px-[22px] pb-safe pt-3 shadow-[0_-8px_32px_rgba(0,0,0,0.10)] animate-slide-up-overlay [-webkit-user-select:none] [-webkit-touch-callout:none]"
@@ -234,23 +238,18 @@ export function CallWaiterSheet({
           transition: isDragging
             ? undefined
             : 'transform 220ms cubic-bezier(.2,.8,.2,1)',
-          // `select-none` + `-webkit-touch-callout:none` previnem iOS Safari
-          // de disparar callout de seleção de texto (Copy/Look Up/Translate)
-          // durante long-press num <h2>/<p>, o que engasgava o drag. Drag
-          // em si vem via `useSheetDrag` (native addEventListener com
-          // passive:false — única forma que iOS permite preventDefault na
-          // sequência pointermove).
-          touchAction: 'pan-y',
         }}
         onClick={(e) => e.stopPropagation()}
+        {...bind}
       >
-        {/* Drag handle 40×4 — área grab "evidente" (cursor + tap target maior).
-            ref vai pro hook pra que o handle SEMPRE capture drag (mesmo se
+        {/* Drag handle 40×4 — área grab generosa (h-9 = 36px). `touch-action:
+            none` aqui (já via className `touch-none`) evita scroll competir.
+            ref no hook permite drag handle SEMPRE capturar drag (mesmo se
             for filho de um elemento interativo). */}
         <div
           ref={dragHandleRef}
           data-drag-handle="true"
-          className="mx-auto mb-3.5 -my-1 flex h-6 w-full cursor-grab touch-none items-center justify-center active:cursor-grabbing"
+          className="mx-auto mb-3.5 -my-1 flex h-9 w-full cursor-grab touch-none items-center justify-center active:cursor-grabbing"
         >
           <div className="h-[4px] w-10 rounded-[3px] bg-border-soft opacity-60" />
         </div>

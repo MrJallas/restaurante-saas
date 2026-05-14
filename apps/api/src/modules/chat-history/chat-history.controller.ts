@@ -19,6 +19,14 @@ import { CustomersService } from '../customers/customers.service';
 class ThreadIdParam {
   @IsString()
   threadId!: string;
+
+  // Round 21 §F — `@Param()` injeta TODOS os route params (`:slug` +
+  // `:threadId`). Com `forbidNonWhitelisted: true` na global ValidationPipe,
+  // a prop `slug` não declarada falhava: "property slug should not exist".
+  // Declarar aqui (ainda que o service ignore) silencia a validação sem
+  // afrouxar o whitelist global. Tenant real vem via @Tenant() decorator.
+  @IsString()
+  slug!: string;
 }
 
 /**

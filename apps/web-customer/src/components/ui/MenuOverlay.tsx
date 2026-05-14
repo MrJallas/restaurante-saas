@@ -37,10 +37,10 @@ export function MenuOverlay({ open, onClose, slug }: MenuOverlayProps) {
   }, []);
 
   // No MenuOverlay o body é iframe (opaco a pointer events do parent),
-  // então o drag em si só funciona via dragHandle. respectInternalScroll
-  // false porque o iframe gerencia o próprio scroll — não cabe ao parent
-  // detectar "scrollado no topo".
-  const { dragY, sheetRef, dragHandleRef, isDragging } = useSheetDrag({
+  // então o drag em si só funciona via dragHandle. `respectInternalScroll:
+  // false` porque o iframe gerencia o próprio scroll. `bind` plugga
+  // pointer handlers no element draggable (vaul pattern, React JSX).
+  const { dragY, sheetRef, dragHandleRef, isDragging, bind } = useSheetDrag({
     onDismiss: onClose,
     sheetHeightPx: sheetHeightFn,
     respectInternalScroll: false,
@@ -95,8 +95,9 @@ export function MenuOverlay({ open, onClose, slug }: MenuOverlayProps) {
         className="absolute inset-0 z-0 bg-black/[0.32]"
       />
 
-      {/* Sheet — ref vai pro hook (drag pode acontecer no topo da sheet
-          via handle; o iframe ocupa o resto). */}
+      {/* Sheet — pointer handlers via {...bind} (vaul pattern). O drag
+          handle lá no topo é onde o user pega — o iframe ocupa o resto e
+          captura pointer events dentro dele (não sobem pro parent). */}
       <div
         ref={sheetRef}
         className="absolute inset-x-0 bottom-0 z-10 flex h-[88dvh] flex-col rounded-t-[22px] border-[1.5px] border-b-0 border-ink bg-bg pb-safe shadow-[0_-8px_32px_rgba(0,0,0,0.10)] animate-slide-up-overlay select-none [-webkit-user-select:none] [-webkit-touch-callout:none]"
@@ -107,10 +108,10 @@ export function MenuOverlay({ open, onClose, slug }: MenuOverlayProps) {
             : 'transform 220ms cubic-bezier(.2,.8,.2,1)',
         }}
         onClick={(e) => e.stopPropagation()}
+        {...bind}
       >
-        {/* Drag handle — área tap target alta (h-12 pra dar grab generoso).
-            ref vai pro hook (drag handle SEMPRE captura drag, mesmo sobre
-            elemento interativo). */}
+        {/* Drag handle — h-12 (48px) pra grab generoso. `touch-action: none`
+            via `touch-none` impede scroll competir. */}
         <div
           ref={dragHandleRef}
           data-drag-handle="true"
