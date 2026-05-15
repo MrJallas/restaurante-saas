@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { apiPost, apiGet } from '../../../lib/api';
+import { listMessages, listThreads } from '../../../lib/api/chat-history';
+import type { ChatMessageDto } from '@restaurant/shared-types';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
@@ -256,6 +258,57 @@ function categorizeToolName(name: string): ToolCategory {
   return 'info';
 }
 
+/**
+ * Mapeia mensagens persistidas no Mongo (DTO) pro shape interno do chat
+ * ativo. Usado por A (continuar conversa antiga via `?threadId=`) e D
+ * (auto-hidrate da thread do dia ao voltar pro /assistente).
+ *
+ * - `assistant` → 'ai' + toolCall opcional (1º elemento de toolCalls[]).
+ * - `manager`   → 'staff' (StaffBubble assinada; nome padrão "Renata"
+ *                 quando metadata.staffName ausente).
+ * - `system`    → dobrado em 'ai' (chat ativo não tem role 'system';
+ *                 conteúdo geralmente é um system notice curto).
+ * - `user`      → 'user'.
+ */
+function mapHistoryToChat(msgs: ChatMessageDto[]): ChatMessage[] {
+  return msgs.map((m, i) => {
+    const id = `history-${m.messageId ?? i}`;
+    if (m.role === 'user') {
+      return { id, role: 'user', content: m.content };
+    }
+    if (m.role === 'manager') {
+      const meta = (m.metadata ?? {}) as Record<string, unknown>;
+      const rawName = typeof meta.staffName === 'string' && meta.staffName.length > 0
+        ? meta.staffName
+        : 'Renata';
+      const firstName = rawName.split(' ')[0] || 'Renata';
+      return {
+        id,
+        role: 'staff',
+        content: m.content,
+        staffName: firstName,
+        staffInitial: (firstName[0] ?? 'R').toUpperCase(),
+        staffRole: typeof meta.staffRole === 'string' ? meta.staffRole : 'Gerente',
+        staffCreatedAt: m.createdAt,
+      };
+    }
+    // assistant + system (system folded into ai pra renderizar como bubble
+    // ai quando vem do histórico — chat ativo não suporta system role).
+    const firstTool = Array.isArray(m.toolCalls) && m.toolCalls.length > 0
+      ? m.toolCalls[0]
+      : null;
+    const toolName = firstTool && typeof firstTool.name === 'string' ? firstTool.name : null;
+    return {
+      id,
+      role: 'ai',
+      content: m.content,
+      toolCall: toolName
+        ? { name: toolName, category: categorizeToolName(toolName) }
+        : undefined,
+    };
+  });
+}
+
 function normalize(text: string): string {
   return text
     .toLowerCase()
@@ -308,6 +361,11 @@ export default function AssistentePage() {
   const slug = params.slug as string;
   const prefill = searchParams.get('prefill') ?? '';
   const itemId = searchParams.get('itemId') ?? '';
+  // Round 22 §A — quando presente, fetcha mensagens dessa thread e
+  // hidrata o chat ativo (skip landing). User vem clicando "Continuar
+  // nessa conversa" em `/chat-history/:threadId`. Sem o param o /assistente
+  // segue o flow normal (landing → 1ª msg → chat).
+  const threadIdParam = searchParams.get('threadId') ?? '';
 
   useEffect(() => {
     if (!getSessionToken()) {
@@ -362,8 +420,14 @@ export default function AssistentePage() {
   // input). Bubbles de chat só aparecem quando o customer envia a 1ª
   // mensagem nesta sessão. Voltar pra `/assistente` (ex.: vindo de
   // /cardapio) recomeça em landing — histórico completo fica em
-  // `/chat-history`. Com prefill, já entra direto em chat (skip landing).
-  const [chatStarted, setChatStarted] = useState<boolean>(!!prefill);
+  // `/chat-history`. Com prefill ou `?threadId=`, já entra direto em chat
+  // (skip landing) — round 22 §A/§D.
+  const [chatStarted, setChatStarted] = useState<boolean>(!!prefill || !!threadIdParam);
+  // Round 22 §A/§D — true enquanto fetcha mensagens persistidas (do
+  // ?threadId= ou da última thread do dia). Mostra um loader inline
+  // em vez da landing/bubbles durante essa janela curta. Sai pra false
+  // depois do fetch (sucesso, 404, ou erro de rede — sempre).
+  const [historyLoading, setHistoryLoading] = useState<boolean>(!!threadIdParam);
   const [landingGreeting, setLandingGreeting] = useState<string | null>(null);
   // suggestions agora carrega chips canônicos (ChipCanon) em vez de só
   // strings — herdamos do backend `res.chips` quando uma tool dispatched
@@ -382,8 +446,15 @@ export default function AssistentePage() {
   // (mesmo endpoint que a Mesa Home consome). Histórico completo fica em
   // `/chat-history` (rota dedicada). Quando customer envia 1ª mensagem,
   // o greeting vira a 1ª bubble do assistant + vai a user msg + resposta.
+  //
+  // Round 22 §A/§D — quando temos `?threadId=` (continuação explícita)
+  // pulamos o fetch da continuation API: o usuário vai ver bubbles direto.
+  // Para o flow D (auto-hidrate da thread do dia), a continuation API
+  // ainda roda em paralelo — se a hidratação encontrar thread, ela
+  // sobrescreve `messages` e a landing some; se não encontrar, mantemos
+  // o greeting carregado pra landing.
   useEffect(() => {
-    if (!slug || prefill) return; // prefill: já vai em chat mode
+    if (!slug || prefill || threadIdParam) return;
     const load = async () => {
       try {
         const qs = new URLSearchParams({
@@ -407,7 +478,77 @@ export default function AssistentePage() {
       }
     };
     load();
-  }, [slug, prefill, session.customerId, session.isReturning, session.customerName]);
+  }, [slug, prefill, threadIdParam, session.customerId, session.isReturning, session.customerName]);
+
+  // Round 22 §A — fetcha mensagens da thread escolhida via `?threadId=`
+  // e hidrata o chat ativo. Backend valida ownership pelo cookie
+  // recognition_token; thread alheia retorna 404 e nós caímos no flow
+  // normal (landing) silenciosamente. Não bloqueia o user — input fica
+  // disponível pra mandar novas msgs (que entram na thread do dia atual,
+  // bucketing por data; continuar tecnicamente "diff thread" é OK pelo
+  // canon de day-bucket).
+  useEffect(() => {
+    if (!slug || !threadIdParam) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const msgs = await listMessages(slug, threadIdParam);
+        if (cancelled) return;
+        if (msgs.length > 0) {
+          setMessages(mapHistoryToChat(msgs));
+          setChatStarted(true);
+        } else {
+          // Thread vazia → cai pra landing.
+          setChatStarted(false);
+        }
+      } catch {
+        // 404 (thread não é sua) / 401 (cookie ausente) / 503 (mongo) →
+        // cair no flow normal de landing.
+        if (!cancelled) setChatStarted(false);
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, threadIdParam]);
+
+  // Round 22 §D — hidrate auto da thread do dia atual quando user volta
+  // pro /assistente SEM `?threadId=` (e sem prefill). Evita começar do
+  // zero quando o cliente sai pro /cardapio e volta — sentido natural
+  // de "voltei pra continuar a conversa onde parei". Thread do dia tem
+  // shape `${tenantId}:${customerId}:${YYYY-MM-DD}` por canon do
+  // appendTurn — buscamos pelo sufixo `:today`.
+  //
+  // Gate: precisa customerId resolvido e chat ainda não iniciado. Após
+  // 1ª msg do customer (chatStarted=true), o effect não dispara de novo
+  // (deps mudam mas early-return cobre). Erros são silenciosos — cai
+  // no flow normal de landing.
+  useEffect(() => {
+    if (!slug || threadIdParam || prefill) return;
+    if (!session.customerId) return;
+    if (chatStarted) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const threads = await listThreads(slug, session.customerId!);
+        if (cancelled || threads.length === 0) return;
+        const today = new Date().toISOString().slice(0, 10);
+        const todayThread = threads.find((t) => t.threadId.endsWith(`:${today}`));
+        if (!todayThread) return;
+        const msgs = await listMessages(slug, todayThread.threadId);
+        if (cancelled || msgs.length === 0) return;
+        setMessages(mapHistoryToChat(msgs));
+        setChatStarted(true);
+      } catch {
+        /* ignore — segue pra landing */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, threadIdParam, prefill, session.customerId, chatStarted]);
 
   useEffect(() => {
     // Nas primeiras mensagens o "smooth" faz o chat animar de baixo pra cima
@@ -949,12 +1090,24 @@ export default function AssistentePage() {
     >
       <div className="flex flex-1 flex-col">
         <div className="gpu-layer flex flex-1 flex-col gap-3.5 overflow-auto px-[22px] pb-4 pt-3">
+          {/* Round 22 §A/§D — loader inline enquanto hidrata o histórico
+              persistido. Some logo que listMessages resolve (sucesso ou
+              erro). Sem ele teríamos um flash da landing antes do chat
+              aparecer (ruim em conexões 4G lentas). */}
+          {historyLoading && (
+            <div
+              data-testid="assistente-history-loading"
+              className="flex flex-1 items-center justify-center"
+            >
+              <div className="text-[13px] text-mute">Carregando conversa…</div>
+            </div>
+          )}
           {/* Round 4 §C-NEW-8: landing view (idle) · 2 PillButtons grandes
               acima do greeting do LLM, alinhado ao layout da Mesa Home.
               Ao 1º send do customer, chatStarted vira true e essa view
               é substituída pelos bubbles de chat (que pre-pendam o
               greeting como 1º AI message). */}
-          {!chatStarted && (
+          {!chatStarted && !historyLoading && (
             <div
               data-testid="assistente-landing"
               className="flex flex-1 flex-col justify-center gap-7"
