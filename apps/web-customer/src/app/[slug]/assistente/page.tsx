@@ -247,6 +247,37 @@ type ToolCategory =
  * no `ToolCallIndicator` inline. Centralizado aqui pra n\u00e3o duplicar
  * em cada lugar que cria `ChatMessage.toolCall`. Default 'info'.
  */
+/**
+ * Tools cujo efeito é uma side-effect visível (overlay sobe, route push,
+ * sheet abre) sem texto bubble como resposta principal. Para essas, atrasamos
+ * a side-effect em 1.5s depois do setMessages para que o `ToolCallIndicator`
+ * inline (eyebrow `··· USANDO X ···`) tenha tempo de registrar antes da UI
+ * shift — o usuário vê "Assistente está usando view_menu..." antes do
+ * overlay subir, prevenindo sensação de "engasgo".
+ */
+const SILENT_PATH_TOOLS = new Set<string>([
+  'view_menu',
+  'call_waiter',
+  'request_table_merge',
+  'open_payment_screen',
+]);
+
+/**
+ * Tools cuja resposta principal é o próprio texto do bubble (perguntas livres,
+ * info do restaurante, busca/comparação de pratos). O eyebrow `··· USANDO X ···`
+ * AINDA aparece pra elas (decisão V20: user quer ver toda tool dispatchada),
+ * mas o `dispatchToolCall` skipa o stub bubble "OK" extra — sem isso, "qual o
+ * horário?" criava DOIS bubbles: a resposta certa + "OK" duplicado embaixo.
+ */
+const TEXT_ONLY_TOOLS = new Set<string>([
+  'ask_about_restaurant',
+  'search_dish',
+  'check_allergens',
+  'compare_dishes',
+  'view_order',
+  'view_courtesy',
+]);
+
 function categorizeToolName(name: string): ToolCategory {
   if (name === 'view_menu' || name === 'search_dish' || name === 'check_allergens' || name === 'compare_dishes') return 'menu';
   if (name === 'add_to_order' || name === 'view_order' || name === 'place_order') return 'order';
@@ -651,6 +682,22 @@ export default function AssistentePage() {
     call: AssistantToolCall,
   ): Promise<void> => {
     const name = call.name;
+    // Round C (chat UX polish) — para tools text-only (ask_about_restaurant,
+    // search_dish, etc.), a aiMsg principal já carregou o texto da resposta.
+    // Não precisamos do stub bubble "OK" nem de side-effect; early-return
+    // mantém o transcript limpo (só o bubble texto + eyebrow `··· USANDO X ···`
+    // que vem do `eyebrowTool` em sendMessage, sem stub duplicado).
+    if (TEXT_ONLY_TOOLS.has(name)) return;
+    // Round D (chat UX polish) — para tools silent-path (overlay/route sem
+    // bubble texto como resposta principal), esperamos 1.5s ANTES de disparar
+    // o efeito. O `setMessages` em `sendMessage` já enfileirou o aiMsg com
+    // `toolCall`, então o `ToolCallIndicator` (eyebrow `··· USANDO X ···`)
+    // renderiza nesta janela e o usuário vê "Assistente está usando view_menu..."
+    // antes do overlay subir — previne sensação de "engasgo" (efeito instantâneo
+    // dava impressão de IA sem trabalho intermediário).
+    if (SILENT_PATH_TOOLS.has(name)) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
     // 1) Tools the FE owns end-to-end.
     if (name === 'request_table_merge') {
       const enriched = await tableMerge.handleToolCall({
@@ -873,6 +920,10 @@ export default function AssistentePage() {
       // aiMsg pra que o render mostre o indicador ANTES do bubble texto,
       // dentro do mesmo `<div>` esquerdo. Antes ficava num bloco global
       // no rodapé (`lastToolName`) que quebrava o layout.
+      // Pagamento é navegação primária. Se o LLM também tiver emitido
+      // call_waiter no mesmo turno, removemos o chamado (open_payment_screen
+      // vai pra frente). Sort garante que o handler de pagamento dispara
+      // antes de qualquer outro side-effect.
       const displayToolCalls = res.toolCalls?.some((tc) => tc.name === 'open_payment_screen')
         ? res.toolCalls
             .filter((tc) => tc.name !== 'call_waiter')
@@ -884,15 +935,23 @@ export default function AssistentePage() {
                   : 0,
             )
         : (res.toolCalls ?? []);
+      // Round C (chat UX polish) — eyebrow `··· USANDO X ···` aparece pra
+      // TODAS as tools dispatchadas (silent-path, card visual ou text-only).
+      // Decisão V20: o user quer ver explicitamente o que a IA tá fazendo em
+      // qualquer caso — transparência > minimalismo. `dispatchToolCall` ainda
+      // skipa o stub bubble "OK" pras text-only tools (a resposta principal já
+      // carrega o texto), mas o eyebrow continua marcado pra que o user saiba
+      // qual ferramenta foi acionada.
       const firstTool = displayToolCalls.length > 0 ? displayToolCalls[0] : null;
+      const eyebrowTool = firstTool;
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         role: res.wasBlocked ? 'blocked' : 'ai',
         content: res.response,
         linkedItems: res.linkedItems && res.linkedItems.length > 0 ? res.linkedItems : undefined,
         selectedIds: [],
-        toolCall: firstTool
-          ? { name: firstTool.name, category: categorizeToolName(firstTool.name) }
+        toolCall: eyebrowTool
+          ? { name: eyebrowTool.name, category: categorizeToolName(eyebrowTool.name) }
           : undefined,
         // LGPD notice flow · the AI service signals this via `toolHint`.
         // We do NOT paraphrase the canonical text — it lives in
@@ -909,6 +968,11 @@ export default function AssistentePage() {
             : undefined,
       };
       setMessages((prev) => [...prev, aiMsg]);
+      // Round D (chat UX polish): assim que o aiMsg entra no transcript, o
+      // typing-dots indicator deixa de fazer sentido — o `ToolCallIndicator`
+      // inline já assume o papel de "IA está agindo". Sem isso, durante os
+      // 1.5s do delay silent-path teríamos eyebrow + dots simultaneamente.
+      setLoading(false);
 
       // K-1 fix (round 3): chips canon das tools dispatchadas têm
       // prioridade sobre `res.suggestions` (que é o trio estático ou
