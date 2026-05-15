@@ -13,6 +13,7 @@ import {
 import type { Request } from 'express';
 import { IsString, MaxLength, MinLength } from 'class-validator';
 import { SessionGuard } from '../../common/guards/session.guard';
+import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { Tenant } from '../../common/decorators/tenant.decorator';
 import { CustomersService } from '../customers/customers.service';
 import { CustomerStaffMessagesService } from './customer-staff-messages.service';
@@ -160,5 +161,38 @@ export class CustomerStaffMessagesController {
   async deleteAll(@Req() req: Request) {
     const customerId = await this.resolveCallerCustomerId(req);
     return this.service.deleteAll(customerId);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Staff-side endpoints (round 22)
+  //
+  // Manager precisa ver as mensagens dos clientes enviadas via
+  // `send_message_to_manager`. As rotas abaixo são protegidas por
+  // `StaffOnlyGuard` (x-staff-key header) e usam o tenant do path-param
+  // — NÃO carregam `recognition_token` cookie.
+  // ───────────────────────────────────────────────────────────────────────
+
+  @Get('staff/threads')
+  @UseGuards(StaffOnlyGuard)
+  async listStaffThreads(@Tenant() tenantId: string) {
+    return this.service.listInboundForTenant(tenantId);
+  }
+
+  @Get('staff/threads/:threadId/messages')
+  @UseGuards(StaffOnlyGuard)
+  async getStaffThreadMessages(
+    @Param() p: ThreadIdParamDto,
+    @Tenant() tenantId: string,
+  ) {
+    return this.service.getThreadMessagesForStaff(p.threadId, tenantId);
+  }
+
+  @Post('staff/threads/:threadId/read')
+  @UseGuards(StaffOnlyGuard)
+  async markStaffRead(
+    @Param() p: ThreadIdParamDto,
+    @Tenant() tenantId: string,
+  ) {
+    return this.service.markReadByStaff(p.threadId, tenantId);
   }
 }

@@ -11,8 +11,10 @@ canonical routes were validated against the corresponding NestJS controllers:
     (apps/api/src/modules/chat-history/chat-history.controller.ts L49)
   - delete_all_chats    → DELETE /:slug/chat-history?customerId=…
     (apps/api/src/modules/chat-history/chat-history.controller.ts L60)
-  - send_message_to_manager → POST /:slug/staff-messages
-    (apps/api/src/modules/staff-messages/staff-messages.controller.ts L56)
+  - send_message_to_manager → NO direct HTTP call (round 22)
+    A persistência roda server-side em apps/api `AssistantService`, que
+    chama `CustomerStaffMessagesService.appendOutbound()` depois da
+    dispatch. A tool retorna apenas message+chips+action_payload pro FE.
 
 `view_courtesy` is intentionally a silent navigation tool now — there is
 no `/courtesy` endpoint on apps/api. We assert it does NOT call api_client.
@@ -95,11 +97,19 @@ def test_delete_all_chats_hits_canonical_route():
 
 
 # ─────────────────────────────────────────────────────────────
-# send_message_to_manager → POST /:slug/staff-messages (P0 #7 + #6)
+# send_message_to_manager → in-process via AssistantService (round 22)
+#
+# Antes a tool hitava `POST /:slug/staff-messages` direto (P0 #6/7) sem
+# auth de staff → 401 silencioso. A persistência foi movida pro
+# AssistantService no apps/api, que tem tenantId/customerId/sessionId
+# resolvidos e chama `CustomerStaffMessagesService.appendOutbound()`
+# direto. A tool em si só monta o turno do chat (message + chips +
+# action_payload) — NÃO bate em HTTP nenhum.
 # ─────────────────────────────────────────────────────────────
 
 
-def test_send_message_to_manager_hits_canonical_route():
+def test_send_message_to_manager_does_not_call_api():
+    """Round 22: tool não faz HTTP. Persistência é server-side no apps/api."""
     api = RecordingApiClient(default={"id": "msg-1"})
     ctx = ToolContext(
         tenant_id="my-rest",
@@ -112,23 +122,26 @@ def test_send_message_to_manager_hits_canonical_route():
         ctx,
     )
     assert result.error is None
-    assert len(api.calls) == 1
-    method, path, body = api.calls[0]
-    assert method == "POST"
-    assert path == "/my-rest/staff-messages"
-    assert body["body"] == "preciso de mais guardanapos"
-    assert body["senderStaffId"] == "staff-9"
+    assert len(api.calls) == 0, (
+        "send_message_to_manager não pode bater em HTTP — apps/api "
+        "AssistantService faz appendOutbound in-process depois da dispatch."
+    )
+    assert "Mensagem enviada" in (result.message or "")
+    # action_payload carrega o texto pra que tooling downstream (incluindo
+    # o AssistantService que faz o persist) tenha acesso direto sem
+    # reparsear arguments.
+    assert result.action_payload["text"] == "preciso de mais guardanapos"
+    assert result.action_payload["messageSent"] is True
 
 
-def test_send_message_to_manager_skips_call_without_api_client():
-    """When api_client is None (P0 #7), the tool returns a soft message instead of crashing."""
+def test_send_message_to_manager_works_without_api_client():
+    """api_client None (P0 #7) — tool retorna mensagem mesmo assim."""
     ctx = ToolContext(tenant_id="my-rest", waiter_id="staff-9", api_client=None)
     result = dispatch_tool(
         "send_message_to_manager",
         {"text": "hi"},
         ctx,
     )
-    # Tool returns the success message + payload, just doesn't make HTTP call.
     assert result.error is None
     assert "Mensagem enviada" in (result.message or "")
 

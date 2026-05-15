@@ -549,6 +549,19 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(`session:${sessionId}`).emit(event, data);
   }
 
+  /**
+   * Generic tenant-room emitter — every staff dashboard joined to
+   * `tenant:<slug>` receives the event. Used by features that don't have
+   * a specific room-routing helper (`emitCustomerStaffMessage`, etc.) and
+   * want a fanout to "all staff for this restaurant".
+   *
+   * Distinct from `emitToSession` (single table's customer-side socket)
+   * and the per-role helpers (`tenant:<slug>:waiter`, `:kitchen`).
+   */
+  emitToTenant(slug: string, event: string, data: unknown) {
+    this.server.to(`tenant:${slug}`).emit(event, data);
+  }
+
   // ───────────────────────────────────────────────────────────────────────
   // Phase 2 / B2 emit helpers — one per WsEvent variant in shared-types.
   //

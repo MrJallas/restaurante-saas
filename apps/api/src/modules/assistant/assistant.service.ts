@@ -349,6 +349,42 @@ export class AssistantService {
         normalizedTools,
       );
 
+      // Round 22 fix · `send_message_to_manager` server-side handoff.
+      //
+      // Antes a tool (ai-service `services/tools/send_message_to_manager.py`)
+      // tentava `POST /:tenant/staff-messages` direto via `ctx.api_client`
+      // — endpoint protegido por `StaffOnlyGuard` que o ai-service não
+      // autentica. O catch silencioso retornava `ToolResult(error=…)` ou
+      // success enganoso, dependendo do path; manager nunca recebia a
+      // mensagem e o customer via "Mensagem enviada" sem nada acontecer.
+      //
+      // Trocamos por dispatch in-process: o AssistantService já tem
+      // tenantId (`_schemaName`) + customerId + tableSessionId resolvidos
+      // e o `CustomerStaffMessagesService` faz upsert do thread + grava
+      // em `staff_messages` (Mongo) + emite WS pra inbox staff. Mesma
+      // soft-fail posture do chat-history dual-write logo abaixo —
+      // erro aqui não derruba a resposta da IA pro customer.
+      if (safeCustomerId && this.customerStaffMessages) {
+        for (const tc of normalizedTools) {
+          if (tc.name !== 'send_message_to_manager') continue;
+          const args = (tc.arguments ?? {}) as Record<string, unknown>;
+          const text = typeof args.text === 'string' ? args.text.trim() : '';
+          if (!text) continue;
+          try {
+            await this.customerStaffMessages.appendOutbound({
+              tenantId: _schemaName,
+              customerId: safeCustomerId,
+              tableSessionId,
+              content: text,
+            });
+          } catch (err) {
+            this.logger.warn(
+              `Falha ao persistir send_message_to_manager em Mongo: ${(err as Error).message}`,
+            );
+          }
+        }
+      }
+
       // P1 #B-6 fix (round 3): dual-write pra Mongo `chat_messages`.
       // Best-effort — Postgres remains source of truth e o appendTurn
       // engole exceptions internamente (Mongo offline → log + skip).
