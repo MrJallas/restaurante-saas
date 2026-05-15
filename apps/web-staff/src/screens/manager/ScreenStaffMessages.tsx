@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import {
   useG,
   G_FONT,
+  MONO_FONT,
   Icon,
   MTopBar,
   MBottomNav,
@@ -16,7 +17,11 @@ import {
   GIconBtn,
 } from '../../components/manager';
 import { manager } from '../../lib/api/manager';
-import type { StaffMessageThreadDto, StaffMessageDto } from '@restaurant/shared-types';
+import type {
+  StaffMessageThreadDto,
+  StaffMessageDto,
+  StaffInboundThreadDto,
+} from '@restaurant/shared-types';
 import { useManagerEvents } from '../../hooks/useManagerEvents';
 
 export interface ScreenStaffMessagesProps {
@@ -33,18 +38,30 @@ export function ScreenStaffMessages({ dark, tenantSlug, managerId }: ScreenStaff
   const router = useRouter();
   const api = manager(tenantSlug);
   const [threads, setThreads] = useState<StaffMessageThreadDto[]>([]);
+  const [customerThreads, setCustomerThreads] = useState<StaffInboundThreadDto[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = async () => {
     if (!managerId) {
       setThreads([]);
+      setCustomerThreads([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const r = await api.staffMessages.listThreads({ staffId: managerId });
-      setThreads(r);
+      // Round 22: dual fetch — staff↔staff threads (legacy inbox) +
+      // customer→staff threads (`send_message_to_manager` tool dispatch).
+      // Em paralelo pra evitar o waterfall que o sequencial criaria; um
+      // falhando não derruba o outro (Promise.allSettled).
+      const [staffRes, customerRes] = await Promise.allSettled([
+        api.staffMessages.listThreads({ staffId: managerId }),
+        api.customerInbox.listThreads(),
+      ]);
+      setThreads(staffRes.status === 'fulfilled' ? staffRes.value : []);
+      setCustomerThreads(
+        customerRes.status === 'fulfilled' ? customerRes.value : [],
+      );
     } finally {
       setLoading(false);
     }
@@ -56,13 +73,21 @@ export function ScreenStaffMessages({ dark, tenantSlug, managerId }: ScreenStaff
 
   // Refresh on incoming messages and on read-receipts so the unread-count
   // badge stays in sync when another device marks a thread as read.
+  // Round 22: `staff_messages.customer_replied` é o evento emitido pelo
+  // appendOutbound quando o customer manda via `send_message_to_manager`.
   useManagerEvents(tenantSlug, (e) => {
-    if (e.event === 'staff_message.received' || e.event === 'staff_message.read') {
+    if (
+      e.event === 'staff_message.received' ||
+      e.event === 'staff_message.read' ||
+      e.event === 'staff_messages.customer_replied'
+    ) {
       refresh();
     }
   });
 
-  const totalUnread = threads.reduce((s, t) => s + t.unreadCount, 0);
+  const totalUnread =
+    threads.reduce((s, t) => s + t.unreadCount, 0) +
+    customerThreads.reduce((s, t) => s + t.unreadCount, 0);
 
   return (
     <div
@@ -90,7 +115,106 @@ export function ScreenStaffMessages({ dark, tenantSlug, managerId }: ScreenStaff
           </div>
         )}
 
+        {/* Customer→manager threads (round 22) — render acima do bloco
+           staff↔staff. Categoria visualmente distinta via badge "CLIENTE"
+           pra não confundir o operacional do manager. */}
+        {!loading && customerThreads.length > 0 && (
+          <div style={{ padding: '14px 16px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div
+              style={{
+                fontFamily: MONO_FONT,
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: 1.5,
+                textTransform: 'uppercase',
+                color: C.faint,
+                padding: '4px 4px 2px',
+              }}
+            >
+              Mensagens de clientes
+            </div>
+            {customerThreads.map((t) => (
+              <button
+                key={t.threadId}
+                onClick={() =>
+                  router.push(
+                    `/manager/mensagens/cliente/${encodeURIComponent(t.threadId)}`,
+                  )
+                }
+                aria-label={`Mensagem de cliente · ${t.unreadCount} não lidas`}
+                style={{
+                  all: 'unset',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                  padding: 12,
+                  borderRadius: 12,
+                  border: `1px solid ${C.borderSoft}`,
+                  background: t.unreadCount > 0 ? C.bg : C.surface,
+                  boxSizing: 'border-box',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: C.ink,
+                      letterSpacing: -0.1,
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Cliente · Mesa {t.tableSessionId.slice(0, 6)}
+                  </span>
+                  {t.unreadCount > 0 && (
+                    <MPill tone="info" dark={dark}>
+                      {t.unreadCount} novas
+                    </MPill>
+                  )}
+                </div>
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    color: C.mute,
+                    fontWeight: 500,
+                    lineHeight: 1.4,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                  }}
+                >
+                  {t.preview}
+                </div>
+                <div style={{ fontSize: 11, color: C.faint, fontWeight: 600 }}>
+                  {new Date(t.lastMessageAt).toLocaleString('pt-BR')}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
         <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {!loading && customerThreads.length > 0 && (
+            <div
+              style={{
+                fontFamily: MONO_FONT,
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: 1.5,
+                textTransform: 'uppercase',
+                color: C.faint,
+                padding: '4px 4px 2px',
+              }}
+            >
+              Equipe
+            </div>
+          )}
           {loading ? (
             <div style={{ textAlign: 'center', padding: 28, color: C.faint, fontSize: 13 }}>
               Carregando…

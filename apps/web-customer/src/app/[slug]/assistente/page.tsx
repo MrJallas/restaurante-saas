@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { apiPost, apiGet } from '../../../lib/api';
 import { clearDeliveredContinuationHint } from '../../../lib/continuationHints';
+import { listMessages, listThreads } from '../../../lib/api/chat-history';
+import type { ChatMessageDto } from '@restaurant/shared-types';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
@@ -303,6 +305,37 @@ type ToolCategory =
  * no `ToolCallIndicator` inline. Centralizado aqui pra n\u00e3o duplicar
  * em cada lugar que cria `ChatMessage.toolCall`. Default 'info'.
  */
+/**
+ * Tools cujo efeito é uma side-effect visível (overlay sobe, route push,
+ * sheet abre) sem texto bubble como resposta principal. Para essas, atrasamos
+ * a side-effect em 1.5s depois do setMessages para que o `ToolCallIndicator`
+ * inline (eyebrow `··· USANDO X ···`) tenha tempo de registrar antes da UI
+ * shift — o usuário vê "Assistente está usando view_menu..." antes do
+ * overlay subir, prevenindo sensação de "engasgo".
+ */
+const SILENT_PATH_TOOLS = new Set<string>([
+  'view_menu',
+  'call_waiter',
+  'request_table_merge',
+  'open_payment_screen',
+]);
+
+/**
+ * Tools cuja resposta principal é o próprio texto do bubble (perguntas livres,
+ * info do restaurante, busca/comparação de pratos). O eyebrow `··· USANDO X ···`
+ * AINDA aparece pra elas (decisão V20: user quer ver toda tool dispatchada),
+ * mas o `dispatchToolCall` skipa o stub bubble "OK" extra — sem isso, "qual o
+ * horário?" criava DOIS bubbles: a resposta certa + "OK" duplicado embaixo.
+ */
+const TEXT_ONLY_TOOLS = new Set<string>([
+  'ask_about_restaurant',
+  'search_dish',
+  'check_allergens',
+  'compare_dishes',
+  'view_order',
+  'view_courtesy',
+]);
+
 function categorizeToolName(name: string): ToolCategory {
   if (name === 'view_menu' || name === 'search_dish' || name === 'check_allergens' || name === 'compare_dishes') return 'menu';
   if (name === 'add_to_order' || name === 'view_order' || name === 'confirm_order' || name === 'place_order' || name === 'remove_from_cart' || name === 'change_order' || name === 'cancel_order') return 'order';
@@ -312,6 +345,57 @@ function categorizeToolName(name: string): ToolCategory {
   if (name === 'delete_chat' || name === 'delete_all_chats') return 'destructive';
   if (name === 'request_table_merge' || name === 'late_arrival') return 'session';
   return 'info';
+}
+
+/**
+ * Mapeia mensagens persistidas no Mongo (DTO) pro shape interno do chat
+ * ativo. Usado por A (continuar conversa antiga via `?threadId=`) e D
+ * (auto-hidrate da thread do dia ao voltar pro /assistente).
+ *
+ * - `assistant` → 'ai' + toolCall opcional (1º elemento de toolCalls[]).
+ * - `manager`   → 'staff' (StaffBubble assinada; nome padrão "Renata"
+ *                 quando metadata.staffName ausente).
+ * - `system`    → dobrado em 'ai' (chat ativo não tem role 'system';
+ *                 conteúdo geralmente é um system notice curto).
+ * - `user`      → 'user'.
+ */
+function mapHistoryToChat(msgs: ChatMessageDto[]): ChatMessage[] {
+  return msgs.map((m, i) => {
+    const id = `history-${m.messageId ?? i}`;
+    if (m.role === 'user') {
+      return { id, role: 'user', content: m.content };
+    }
+    if (m.role === 'manager') {
+      const meta = (m.metadata ?? {}) as Record<string, unknown>;
+      const rawName = typeof meta.staffName === 'string' && meta.staffName.length > 0
+        ? meta.staffName
+        : 'Renata';
+      const firstName = rawName.split(' ')[0] || 'Renata';
+      return {
+        id,
+        role: 'staff',
+        content: m.content,
+        staffName: firstName,
+        staffInitial: (firstName[0] ?? 'R').toUpperCase(),
+        staffRole: typeof meta.staffRole === 'string' ? meta.staffRole : 'Gerente',
+        staffCreatedAt: m.createdAt,
+      };
+    }
+    // assistant + system (system folded into ai pra renderizar como bubble
+    // ai quando vem do histórico — chat ativo não suporta system role).
+    const firstTool = Array.isArray(m.toolCalls) && m.toolCalls.length > 0
+      ? m.toolCalls[0]
+      : null;
+    const toolName = firstTool && typeof firstTool.name === 'string' ? firstTool.name : null;
+    return {
+      id,
+      role: 'ai',
+      content: m.content,
+      toolCall: toolName
+        ? { name: toolName, category: categorizeToolName(toolName) }
+        : undefined,
+    };
+  });
 }
 
 function normalize(text: string): string {
@@ -373,6 +457,11 @@ export default function AssistentePage() {
   const slug = params.slug as string;
   const prefill = searchParams.get('prefill') ?? '';
   const itemId = searchParams.get('itemId') ?? '';
+  // Round 22 §A — quando presente, fetcha mensagens dessa thread e
+  // hidrata o chat ativo (skip landing). User vem clicando "Continuar
+  // nessa conversa" em `/chat-history/:threadId`. Sem o param o /assistente
+  // segue o flow normal (landing → 1ª msg → chat).
+  const threadIdParam = searchParams.get('threadId') ?? '';
 
   useEffect(() => {
     if (!getSessionToken()) {
@@ -427,8 +516,14 @@ export default function AssistentePage() {
   // input). Bubbles de chat só aparecem quando o customer envia a 1ª
   // mensagem nesta sessão. Voltar pra `/assistente` (ex.: vindo de
   // /cardapio) recomeça em landing — histórico completo fica em
-  // `/chat-history`. Com prefill, já entra direto em chat (skip landing).
-  const [chatStarted, setChatStarted] = useState<boolean>(!!prefill);
+  // `/chat-history`. Com prefill ou `?threadId=`, já entra direto em chat
+  // (skip landing) — round 22 §A/§D.
+  const [chatStarted, setChatStarted] = useState<boolean>(!!prefill || !!threadIdParam);
+  // Round 22 §A/§D — true enquanto fetcha mensagens persistidas (do
+  // ?threadId= ou da última thread do dia). Mostra um loader inline
+  // em vez da landing/bubbles durante essa janela curta. Sai pra false
+  // depois do fetch (sucesso, 404, ou erro de rede — sempre).
+  const [historyLoading, setHistoryLoading] = useState<boolean>(!!threadIdParam);
   const [landingGreeting, setLandingGreeting] = useState<string | null>(null);
   // suggestions agora carrega chips canônicos (ChipCanon) em vez de só
   // strings — herdamos do backend `res.chips` quando uma tool dispatched
@@ -447,8 +542,15 @@ export default function AssistentePage() {
   // (mesmo endpoint que a Mesa Home consome). Histórico completo fica em
   // `/chat-history` (rota dedicada). Quando customer envia 1ª mensagem,
   // o greeting vira a 1ª bubble do assistant + vai a user msg + resposta.
+  //
+  // Round 22 §A/§D — quando temos `?threadId=` (continuação explícita)
+  // pulamos o fetch da continuation API: o usuário vai ver bubbles direto.
+  // Para o flow D (auto-hidrate da thread do dia), a continuation API
+  // ainda roda em paralelo — se a hidratação encontrar thread, ela
+  // sobrescreve `messages` e a landing some; se não encontrar, mantemos
+  // o greeting carregado pra landing.
   useEffect(() => {
-    if (!slug || prefill || !session.sessionId || chatStarted) return; // prefill: já vai em chat mode
+    if (!slug || prefill || threadIdParam || !session.sessionId || chatStarted) return;
     const load = async () => {
       try {
         const res = await apiPost<ContinuationPostResponse>(`/${slug}/continuation`, {
@@ -472,12 +574,84 @@ export default function AssistentePage() {
   }, [
     slug,
     prefill,
+    threadIdParam,
     chatStarted,
     session.sessionId,
     session.customerId,
     session.isReturning,
+    session.customerName,
     draftItems.length,
   ]);
+
+  // Round 22 §A — fetcha mensagens da thread escolhida via `?threadId=`
+  // e hidrata o chat ativo. Backend valida ownership pelo cookie
+  // recognition_token; thread alheia retorna 404 e nós caímos no flow
+  // normal (landing) silenciosamente. Não bloqueia o user — input fica
+  // disponível pra mandar novas msgs (que entram na thread do dia atual,
+  // bucketing por data; continuar tecnicamente "diff thread" é OK pelo
+  // canon de day-bucket).
+  useEffect(() => {
+    if (!slug || !threadIdParam) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const msgs = await listMessages(slug, threadIdParam);
+        if (cancelled) return;
+        if (msgs.length > 0) {
+          setMessages(mapHistoryToChat(msgs));
+          setChatStarted(true);
+        } else {
+          // Thread vazia → cai pra landing.
+          setChatStarted(false);
+        }
+      } catch {
+        // 404 (thread não é sua) / 401 (cookie ausente) / 503 (mongo) →
+        // cair no flow normal de landing.
+        if (!cancelled) setChatStarted(false);
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, threadIdParam]);
+
+  // Round 22 §D — hidrate auto da thread do dia atual quando user volta
+  // pro /assistente SEM `?threadId=` (e sem prefill). Evita começar do
+  // zero quando o cliente sai pro /cardapio e volta — sentido natural
+  // de "voltei pra continuar a conversa onde parei". Thread do dia tem
+  // shape `${tenantId}:${customerId}:${YYYY-MM-DD}` por canon do
+  // appendTurn — buscamos pelo sufixo `:today`.
+  //
+  // Gate: precisa customerId resolvido e chat ainda não iniciado. Após
+  // 1ª msg do customer (chatStarted=true), o effect não dispara de novo
+  // (deps mudam mas early-return cobre). Erros são silenciosos — cai
+  // no flow normal de landing.
+  useEffect(() => {
+    if (!slug || threadIdParam || prefill) return;
+    if (!session.customerId) return;
+    if (chatStarted) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const threads = await listThreads(slug, session.customerId!);
+        if (cancelled || threads.length === 0) return;
+        const today = new Date().toISOString().slice(0, 10);
+        const todayThread = threads.find((t) => t.threadId.endsWith(`:${today}`));
+        if (!todayThread) return;
+        const msgs = await listMessages(slug, todayThread.threadId);
+        if (cancelled || msgs.length === 0) return;
+        setMessages(mapHistoryToChat(msgs));
+        setChatStarted(true);
+      } catch {
+        /* ignore — segue pra landing */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, threadIdParam, prefill, session.customerId, chatStarted]);
 
   useEffect(() => {
     // Nas primeiras mensagens o "smooth" faz o chat animar de baixo pra cima
@@ -643,6 +817,22 @@ export default function AssistentePage() {
     call: AssistantToolCall,
   ): Promise<void> => {
     const name = call.name;
+    // Round C (chat UX polish) — para tools text-only (ask_about_restaurant,
+    // search_dish, etc.), a aiMsg principal já carregou o texto da resposta.
+    // Não precisamos do stub bubble "OK" nem de side-effect; early-return
+    // mantém o transcript limpo (só o bubble texto + eyebrow `··· USANDO X ···`
+    // que vem do `eyebrowTool` em sendMessage, sem stub duplicado).
+    if (TEXT_ONLY_TOOLS.has(name)) return;
+    // Round D (chat UX polish) — para tools silent-path (overlay/route sem
+    // bubble texto como resposta principal), esperamos 1.5s ANTES de disparar
+    // o efeito. O `setMessages` em `sendMessage` já enfileirou o aiMsg com
+    // `toolCall`, então o `ToolCallIndicator` (eyebrow `··· USANDO X ···`)
+    // renderiza nesta janela e o usuário vê "Assistente está usando view_menu..."
+    // antes do overlay subir — previne sensação de "engasgo" (efeito instantâneo
+    // dava impressão de IA sem trabalho intermediário).
+    if (SILENT_PATH_TOOLS.has(name)) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
     // 1) Tools the FE owns end-to-end.
     if (name === 'request_table_merge') {
       const enriched = await tableMerge.handleToolCall({
@@ -686,11 +876,18 @@ export default function AssistentePage() {
     // entrada/principal) — repassamos como query param ?tab= pro iframe
     // do cardápio, que já entende "bebidas" como filtro de tab.
     if (name === 'view_menu') {
-      const cat = (call.arguments?.category as string | undefined)?.toLowerCase().trim();
-      const tab = cat === 'bebida' || cat === 'bebidas' || cat === 'drink' || cat === 'drinks'
-        ? 'bebidas'
-        : undefined;
-      openMenuOverlay({ tab });
+      const category =
+        typeof call.arguments?.category === 'string'
+          ? call.arguments.category
+          : null;
+      openMenuOverlay(category);
+      return;
+    }
+
+    // Pagamento é navegação primária. Se o LLM também tiver emitido
+    // call_waiter no mesmo turno, o batch dispatcher abaixo remove o chamado.
+    if (name === 'open_payment_screen') {
+      push(`/${slug}/pagamento`);
       return;
     }
 
@@ -807,7 +1004,6 @@ export default function AssistentePage() {
       'split_bill',
       'pay_individual',
       'pay_full',
-      'open_payment_screen',
       'delete_chat',
       'delete_all_chats',
       'view_courtesy',
@@ -961,15 +1157,38 @@ export default function AssistentePage() {
       // aiMsg pra que o render mostre o indicador ANTES do bubble texto,
       // dentro do mesmo `<div>` esquerdo. Antes ficava num bloco global
       // no rodapé (`lastToolName`) que quebrava o layout.
-      const firstTool = res.toolCalls && res.toolCalls.length > 0 ? res.toolCalls[0] : null;
+      // Pagamento é navegação primária. Se o LLM também tiver emitido
+      // call_waiter no mesmo turno, removemos o chamado (open_payment_screen
+      // vai pra frente). Sort garante que o handler de pagamento dispara
+      // antes de qualquer outro side-effect.
+      const displayToolCalls = res.toolCalls?.some((tc) => tc.name === 'open_payment_screen')
+        ? res.toolCalls
+            .filter((tc) => tc.name !== 'call_waiter')
+            .sort((a, b) =>
+              a.name === 'open_payment_screen'
+                ? -1
+                : b.name === 'open_payment_screen'
+                  ? 1
+                  : 0,
+            )
+        : (res.toolCalls ?? []);
+      // Round C (chat UX polish) — eyebrow `··· USANDO X ···` aparece pra
+      // TODAS as tools dispatchadas (silent-path, card visual ou text-only).
+      // Decisão V20: o user quer ver explicitamente o que a IA tá fazendo em
+      // qualquer caso — transparência > minimalismo. `dispatchToolCall` ainda
+      // skipa o stub bubble "OK" pras text-only tools (a resposta principal já
+      // carrega o texto), mas o eyebrow continua marcado pra que o user saiba
+      // qual ferramenta foi acionada.
+      const firstTool = displayToolCalls.length > 0 ? displayToolCalls[0] : null;
+      const eyebrowTool = firstTool;
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         role: res.wasBlocked ? 'blocked' : 'ai',
         content: res.response,
         linkedItems: res.linkedItems && res.linkedItems.length > 0 ? res.linkedItems : undefined,
         selectedIds: [],
-        toolCall: firstTool
-          ? { name: firstTool.name, category: categorizeToolName(firstTool.name) }
+        toolCall: eyebrowTool
+          ? { name: eyebrowTool.name, category: categorizeToolName(eyebrowTool.name) }
           : undefined,
         // LGPD notice flow · the AI service signals this via `toolHint`.
         // We do NOT paraphrase the canonical text — it lives in
@@ -986,6 +1205,11 @@ export default function AssistentePage() {
             : undefined,
       };
       setMessages((prev) => [...prev, aiMsg]);
+      // Round D (chat UX polish): assim que o aiMsg entra no transcript, o
+      // typing-dots indicator deixa de fazer sentido — o `ToolCallIndicator`
+      // inline já assume o papel de "IA está agindo". Sem isso, durante os
+      // 1.5s do delay silent-path teríamos eyebrow + dots simultaneamente.
+      setLoading(false);
 
       // K-1 fix (round 3): chips canon das tools dispatchadas têm
       // prioridade sobre `res.suggestions` (que é o trio estático ou
@@ -1009,8 +1233,8 @@ export default function AssistentePage() {
       // Round 3 Cat 4 (V20 chat): atualiza eyebrow `··· USANDO X ···`
       // baseado na primeira tool dispatched neste turno. Limpamos no
       // próximo turno do user (handler do submit).
-      if (res.toolCalls && res.toolCalls.length > 0) {
-        setLastToolName(res.toolCalls[0].name);
+      if (displayToolCalls.length > 0) {
+        setLastToolName(displayToolCalls[0].name);
       } else {
         setLastToolName(null);
       }
@@ -1019,8 +1243,8 @@ export default function AssistentePage() {
       // Fired AFTER the bubble is in the DOM so the order in the transcript
       // is `bubble → tool effect`. Errors are caught per-call inside dispatch
       // — one failing tool doesn't poison the whole turn.
-      if (res.toolCalls && res.toolCalls.length > 0) {
-        for (const tc of res.toolCalls) {
+      if (displayToolCalls.length > 0) {
+        for (const tc of displayToolCalls) {
           try {
             await dispatchToolCall(tc);
           } catch (e) {
@@ -1184,12 +1408,24 @@ export default function AssistentePage() {
     >
       <div className="flex flex-1 flex-col">
         <div className="gpu-layer flex flex-1 flex-col gap-3.5 overflow-auto px-[22px] pb-4 pt-3">
+          {/* Round 22 §A/§D — loader inline enquanto hidrata o histórico
+              persistido. Some logo que listMessages resolve (sucesso ou
+              erro). Sem ele teríamos um flash da landing antes do chat
+              aparecer (ruim em conexões 4G lentas). */}
+          {historyLoading && (
+            <div
+              data-testid="assistente-history-loading"
+              className="flex flex-1 items-center justify-center"
+            >
+              <div className="text-[13px] text-mute">Carregando conversa…</div>
+            </div>
+          )}
           {/* Round 4 §C-NEW-8: landing view (idle) · 2 PillButtons grandes
               acima do greeting do LLM, alinhado ao layout da Mesa Home.
               Ao 1º send do customer, chatStarted vira true e essa view
               é substituída pelos bubbles de chat (que pre-pendam o
               greeting como 1º AI message). */}
-          {!chatStarted && (
+          {!chatStarted && !historyLoading && (
             <div
               data-testid="assistente-landing"
               className="flex flex-1 flex-col justify-center gap-7"

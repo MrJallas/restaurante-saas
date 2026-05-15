@@ -3,8 +3,6 @@
 import { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 import { recordContinuationHint } from '../lib/continuationHints';
 
-type MenuOverlayTab = 'comida' | 'bebidas';
-
 interface UIStateContextValue {
   drawerOpen: boolean;
   openDrawer: () => void;
@@ -21,12 +19,12 @@ interface UIStateContextValue {
   // (Drawer, search engines, etc).
   //
   // Round 21 §G: tool `view_menu` agora pode passar `category` (ex:
-  // 'bebidas'). FE mapeia pra `tab=bebidas` na URL do iframe, e o
-  // cardapio/page abre na aba correta — fix do bug "user pediu bebidas
-  // e veio cardápio completo".
+  // 'bebidas'). FE propaga via `?category=…` no embed → /cardapio
+  // auto-seleciona o tab/categoria correto — fix do bug "user pediu
+  // bebidas e veio cardápio completo".
   menuOverlayOpen: boolean;
-  menuOverlayTab: MenuOverlayTab | null;
-  openMenuOverlay: (opts?: { tab?: MenuOverlayTab }) => void;
+  menuOverlayCategory: string | null;
+  openMenuOverlay: (category?: string | null) => void;
   closeMenuOverlay: () => void;
 }
 
@@ -36,21 +34,21 @@ export function UIStateProvider({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [callWaiterSheetOpen, setCallWaiterSheetOpen] = useState(false);
   const [menuOverlayOpen, setMenuOverlayOpen] = useState(false);
-  const [menuOverlayTab, setMenuOverlayTab] = useState<MenuOverlayTab | null>(null);
+  const [menuOverlayCategory, setMenuOverlayCategory] = useState<string | null>(null);
 
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const toggleDrawer = useCallback(() => setDrawerOpen((s) => !s), []);
   const openCallWaiterSheet = useCallback(() => setCallWaiterSheetOpen(true), []);
   const closeCallWaiterSheet = useCallback(() => setCallWaiterSheetOpen(false), []);
-  const openMenuOverlay = useCallback((opts?: { tab?: MenuOverlayTab }) => {
-    setMenuOverlayTab(opts?.tab ?? null);
+  const openMenuOverlay = useCallback((category?: string | null) => {
+    setMenuOverlayCategory(category ?? null);
     setMenuOverlayOpen(true);
   }, []);
   const closeMenuOverlay = useCallback(() => {
     recordContinuationHint('viu_menu');
     setMenuOverlayOpen(false);
-    setMenuOverlayTab(null);
+    setMenuOverlayCategory(null);
   }, []);
 
   const value = useMemo(
@@ -63,7 +61,7 @@ export function UIStateProvider({ children }: { children: ReactNode }) {
       openCallWaiterSheet,
       closeCallWaiterSheet,
       menuOverlayOpen,
-      menuOverlayTab,
+      menuOverlayCategory,
       openMenuOverlay,
       closeMenuOverlay,
     }),
@@ -76,7 +74,7 @@ export function UIStateProvider({ children }: { children: ReactNode }) {
       openCallWaiterSheet,
       closeCallWaiterSheet,
       menuOverlayOpen,
-      menuOverlayTab,
+      menuOverlayCategory,
       openMenuOverlay,
       closeMenuOverlay,
     ],

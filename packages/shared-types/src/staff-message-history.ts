@@ -140,3 +140,27 @@ export interface StaffMessageHistoryCustomerSendResponse {
   threadId: string;
   createdAt: string;
 }
+
+/**
+ * Staff-side thread DTO returned by
+ * `GET /:slug/customer-staff-messages/staff/threads`. Round 22.
+ *
+ * Difference vs `StaffMessageHistoryThreadDto` (que é per-customer):
+ *  - inclui `customerId` (manager precisa identificar o autor)
+ *  - inclui `unreadCount` (mensagens fromRole='customer' sem readAt)
+ *  - NÃO traz a flag `deletedByUser` — staff vê todos os threads
+ *    ativos independente de o customer ter limpado o histórico dele.
+ */
+export interface StaffInboundThreadDto {
+  threadId: string;
+  customerId: string;
+  tableSessionId: string;
+  startedAt: string;
+  lastMessageAt: string;
+  messageCount: number;
+  unreadCount: number;
+  lastStaffName: string | null;
+  lastStaffRole: StaffMessageHistoryRoleLabel | null;
+  preview: string;
+  expiresAt: string;
+}

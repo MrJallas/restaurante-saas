@@ -29,14 +29,20 @@ interface MenuOverlayProps {
   onClose: () => void;
   slug: string;
   /**
-   * Round 21 §G: quando view_menu tool da IA dispatcha com
-   * `category=bebida`, abrimos a sheet direto na aba "Bebidas" (em vez
-   * de "Comida" default). Iframe recebe `?embed=1&tab=bebidas`.
+   * Round 21 §G: quando view_menu tool da IA dispatcha com `category=…`,
+   * propagamos a categoria pra abrir o /cardapio na aba certa. Iframe
+   * recebe `?embed=1&category=<raw>` + `&tab=bebidas` quando o regex
+   * de bebida bate. cardapio/page.tsx lê ambos pra setar tab inicial.
    */
-  tab?: 'comida' | 'bebidas' | null;
+  category?: string | null;
 }
 
-export function MenuOverlay({ open, onClose, slug, tab }: MenuOverlayProps) {
+function isDrinkCategory(category?: string | null): boolean {
+  if (!category) return false;
+  return /bebida|drink|vinho|cerveja|suco|água|agua|refrigerante/i.test(category);
+}
+
+export function MenuOverlay({ open, onClose, slug, category }: MenuOverlayProps) {
   const sheetHeightFn = useCallback(() => {
     if (typeof window === 'undefined') return 720;
     // 88dvh é o canon V20 pra overlay "quase fullscreen" com backdrop visível.
@@ -69,12 +75,13 @@ export function MenuOverlay({ open, onClose, slug, tab }: MenuOverlayProps) {
   if (!open) return null;
 
   // Embed URL — `?embed=1` faz o /cardapio renderizar sem AppShell.
-  // Round 21 §G: passa `tab=bebidas` quando IA pediu view_menu(category=bebida).
-  // cardapio/page.tsx (linha 60) já lê `searchParams.get('tab')` pra setar
-  // initialTab — fix entrega categoria certa pra user de cara.
-  const embedSrc = tab
-    ? `/${slug}/cardapio?embed=1&tab=${tab}`
-    : `/${slug}/cardapio?embed=1`;
+  // Round 21 §G: quando view_menu(category=…) chega, propagamos `tab=bebidas`
+  // se a categoria casa com bebidas + `category=<raw>` pra cardapio/page.tsx
+  // selecionar a aba/categoria correta de cara.
+  const embedParams = new URLSearchParams({ embed: '1' });
+  if (isDrinkCategory(category)) embedParams.set('tab', 'bebidas');
+  if (category) embedParams.set('category', category);
+  const embedSrc = `/${slug}/cardapio?${embedParams.toString()}`;
 
   return (
     <div
@@ -100,6 +107,7 @@ export function MenuOverlay({ open, onClose, slug, tab }: MenuOverlayProps) {
         className="absolute inset-x-0 bottom-0 z-10 flex h-[88dvh] flex-col rounded-t-[22px] border-[1.5px] border-b-0 border-ink bg-bg pb-safe shadow-[0_-8px_32px_rgba(0,0,0,0.10)] animate-slide-up-overlay select-none [-webkit-user-select:none] [-webkit-touch-callout:none]"
         style={{
           transform: dragY ? `translateY(${dragY}px)` : undefined,
+          animation: dragY > 0 || isDragging ? 'none' : undefined,
           transition: isDragging
             ? undefined
             : 'transform 220ms cubic-bezier(.2,.8,.2,1)',

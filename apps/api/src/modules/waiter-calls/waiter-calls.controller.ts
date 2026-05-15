@@ -6,6 +6,7 @@ import {
   Body,
   Param,
   Req,
+  Delete,
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
@@ -93,6 +94,17 @@ export class WaiterCallsController {
   }
 
   /**
+   * Customer-facing active call check. Used before opening the "choose
+   * reason" sheet so a second tap shows the waiting state instead of
+   * creating another call.
+   */
+  @Get('active')
+  @UseGuards(SessionGuard)
+  async getActiveCall(@Session() session: SessionData) {
+    return this.waiterCallsService.getActiveCall(session.sessionId);
+  }
+
+  /**
    * Customer polls this to get the waiter's name + ETA once the call has
    * been acknowledged by staff, and to know when it resolves.
    */
@@ -112,6 +124,15 @@ export class WaiterCallsController {
   @Patch(':callId/cancel')
   @UseGuards(SessionGuard)
   async cancelCall(
+    @Session() session: SessionData,
+    @Param('callId') callId: string,
+  ) {
+    return this.waiterCallsService.cancelCall(callId, session.sessionId);
+  }
+
+  @Delete(':callId')
+  @UseGuards(SessionGuard)
+  async deleteCall(
     @Session() session: SessionData,
     @Param('callId') callId: string,
   ) {

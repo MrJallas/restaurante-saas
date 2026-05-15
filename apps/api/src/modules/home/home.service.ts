@@ -98,7 +98,7 @@ export class HomeService {
 
     if (customerId) {
       const customers = await this.tenantConn.query(
-        'SELECT name, created_at FROM customers WHERE id = $1',
+        'SELECT name, created_at, total_visits FROM customers WHERE id = $1',
         [customerId],
       );
       if ((customers as unknown[]).length > 0) {
@@ -116,7 +116,11 @@ export class HomeService {
           ? row.created_at
           : new Date(row.created_at as string);
         const ageMs = Date.now() - createdAt.getTime();
-        if (ageMs > 30 * 60 * 1000) {
+        const totalVisits =
+          typeof row.total_visits === 'number'
+            ? row.total_visits
+            : Number(row.total_visits ?? 0);
+        if (ageMs > 30 * 60 * 1000 || totalVisits > 1) {
           isReturning = true;
         }
       }

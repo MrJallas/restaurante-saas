@@ -25,6 +25,9 @@ import type {
   StaffMessageDto,
   StaffMessageThreadDto,
   StaffMessageSendDto,
+  StaffInboundThreadDto,
+  StaffMessageHistoryMessageDto,
+  StaffMessageHistoryReadResponse,
   ZonePauseDto,
   ZonePauseCreateDto,
   ZonePauseEndDto,
@@ -94,6 +97,32 @@ export const staffMessagesApi = (slug: string) => ({
     staffGet<ThreadWithMessagesDto>(`/${slug}/staff-messages/threads/${threadId}`),
   markRead: (messageId: string, body: { staffId: string }) =>
     staffPost<{ ok: true }>(`/${slug}/staff-messages/${messageId}/read`, body),
+});
+
+// ─────────────────────────────────────────────────────────────
+// Customer→staff inbox (round 22)
+//
+// Sibling of `staffMessagesApi` (staff↔staff). Surfaces customer-
+// initiated messages — hoje só via `send_message_to_manager` tool,
+// possivelmente waiter/host UI no futuro. As mensagens vivem em
+// `staff_threads` + `staff_messages` (Mongo · 30d TTL), separados
+// do `staff_messages` postgres do staff↔staff path.
+// ─────────────────────────────────────────────────────────────
+
+export const customerInboxApi = (slug: string) => ({
+  listThreads: () =>
+    staffGet<StaffInboundThreadDto[]>(
+      `/${slug}/customer-staff-messages/staff/threads`,
+    ),
+  getThread: (threadId: string) =>
+    staffGet<StaffMessageHistoryMessageDto[]>(
+      `/${slug}/customer-staff-messages/staff/threads/${threadId}/messages`,
+    ),
+  markRead: (threadId: string) =>
+    staffPost<StaffMessageHistoryReadResponse>(
+      `/${slug}/customer-staff-messages/staff/threads/${threadId}/read`,
+      {},
+    ),
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -517,6 +546,7 @@ export function manager(slug: string) {
     tableMerge: tableMergeApi(slug),
     complaints: complaintsApi(slug),
     staffMessages: staffMessagesApi(slug),
+    customerInbox: customerInboxApi(slug),
     zonePauses: zonePauseApi(slug),
     sessionFlags: sessionFlagsApi(slug),
     customerVip: customerVipApi(slug),

@@ -50,11 +50,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     # ── order/menu ───────────────────────────────────────────
     _function(
         "view_menu",
-        "Abre a tela do cardápio para o cliente. Use quando o cliente pedir para ver o menu, cardápio ou opções.",
+        "Abre a tela do cardápio para o cliente. Use quando o cliente pedir para ver o menu, cardápio ou opções. Se houver filtro como bebidas, sobremesas ou entradas, preencha category.",
         {
             "category": {
                 "type": "string",
-                "description": "Categoria opcional para filtrar (entrada, principal, sobremesa, bebida).",
+                "description": "Categoria opcional para filtrar (Entradas, Pratos, Sobremesas, Bebidas).",
             },
         },
     ),
@@ -144,14 +144,14 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     ),
     _function(
         "open_payment_screen",
-        "Abre a tela de pagamento genérica (cliente escolhe depois entre dividir/individual/total).",
+        "Abre a tela de pagamento genérica (cliente escolhe depois entre dividir/individual/total). Use para pagar conta, fechar a conta, pedir a conta ou trazer a conta. Não combine com call_waiter.",
         {},
     ),
 
     # ── staff/communication ──────────────────────────────────
     _function(
         "call_waiter",
-        "Chama um garçom para a mesa do cliente.",
+        "Chama um garçom para a mesa do cliente para ajuda/atendimento. Não use para pagar, fechar, pedir ou trazer a conta; nesses casos use open_payment_screen.",
         {
             "reason": {
                 "type": "string",

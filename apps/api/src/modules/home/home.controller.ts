@@ -22,7 +22,10 @@ export class HomeController {
   @Get()
   @UseGuards(SessionGuard)
   async getHome(@Session() session: SessionData, @Req() req: TenantRequest) {
-    const customerId = await this.callerResolver.tryGetCustomerId(req);
+    const customerId =
+      (await this.callerResolver.tryGetCustomerId(req)) ??
+      session.customerId ??
+      null;
     const draftCount = Number(req.headers['x-draft-order-count'] ?? 0);
     const kindHint = Array.isArray(req.headers['x-continuation-kind-hint'])
       ? req.headers['x-continuation-kind-hint'][0]

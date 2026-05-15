@@ -55,27 +55,33 @@ def test_tools_dispatch_endpoint_injects_api_client(monkeypatch):
     """
     P0 #7 acceptance: the `/tools/dispatch` endpoint wires api_client into
     ToolContext. We use a recording client + patch the singleton, then
-    dispatch send_message_to_manager and assert the HTTP call shape.
+    dispatch `request_table_merge` (a tool that DOES use api_client) and
+    assert the HTTP call shape.
+
+    Round 22: switched from send_message_to_manager (which no longer uses
+    api_client — persist é server-side no apps/api AssistantService) pra
+    request_table_merge, que continua sendo HTTP-dispatched no AI side.
     """
     from fastapi.testclient import TestClient
 
-    api = RecordingApiClient(default={"id": "msg-1"})
+    api = RecordingApiClient(default={"id": "merge-1"})
     monkeypatch.setattr(main, "_api_client", api)
     client = TestClient(main.app)
 
     res = client.post(
         "/tools/dispatch",
         json={
-            "name": "send_message_to_manager",
-            "args": {"text": "olá gerência"},
+            "name": "request_table_merge",
+            "args": {"targetTable": "5"},
             "tenantId": "tenant-x",
-            "waiterId": "staff-1",
+            "customerId": "cust-1",
+            "sessionId": "sess-1",
         },
     )
     assert res.status_code == 200, res.text
-    # The api_client recorded the staff-messages POST.
     assert len(api.calls) == 1
     method, path, body = api.calls[0]
     assert method == "POST"
-    assert path == "/tenant-x/staff-messages"
-    assert body["body"] == "olá gerência"
+    assert path == "/tenant-x/table-merge-requests"
+    assert body["targetTableLabel"] == "5"
+    assert body["originTableSessionId"] == "sess-1"
