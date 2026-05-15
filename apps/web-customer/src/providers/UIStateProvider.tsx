@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
+import { recordContinuationHint } from '../lib/continuationHints';
 
 type MenuOverlayTab = 'comida' | 'bebidas';
 
@@ -47,6 +48,7 @@ export function UIStateProvider({ children }: { children: ReactNode }) {
     setMenuOverlayOpen(true);
   }, []);
   const closeMenuOverlay = useCallback(() => {
+    recordContinuationHint('viu_menu');
     setMenuOverlayOpen(false);
     setMenuOverlayTab(null);
   }, []);

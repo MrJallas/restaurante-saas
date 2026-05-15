@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { apiGet } from '../../../lib/api';
+import { recordContinuationHint } from '../../../lib/continuationHints';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
@@ -67,6 +68,12 @@ export default function CardapioPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<MenuItem[] | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!isEmbed) {
+      recordContinuationHint('viu_menu');
+    }
+  }, [isEmbed]);
 
   useEffect(() => {
     if (!slug) return;

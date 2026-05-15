@@ -1,3 +1,5 @@
+name: restaurant-saas
+
 services:
   # Round 10 (B-NEW-43): postgres/redis/mongo NÃO publicam portas no host.
   # `expose:` declara a porta na network interna do compose; serviços
@@ -83,6 +85,9 @@ services:
       QR_HMAC_SECRET: change-me-in-prod
       STAFF_API_KEY: ${STAFF_API_KEY:-dev-staff-api-key-change-in-prod}
       AI_SERVICE_URL: http://ai-service:8000
+      # Keep API waits slightly above ai-service's local LLM timeout so
+      # LMStudio responses can finish during simulator/dev runs.
+      AI_SERVICE_TIMEOUT_MS: ${AI_SERVICE_TIMEOUT_MS:-95000}
       # Round 7 (B-NEW-25): apps/api passa este header em chamadas pro
       # ai-service. Mesmo valor que o ai-service env carrega.
       AI_SERVICE_API_KEY: ${AI_SERVICE_API_KEY:-dev-ai-service-key-change-in-prod}

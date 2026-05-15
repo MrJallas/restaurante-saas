@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { apiPost } from '../../../../lib/api';
+import { recordContinuationHint } from '../../../../lib/continuationHints';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
 import { PillButton } from '../../../../components/ui/PillButton';
@@ -20,6 +21,10 @@ export default function PagamentoFeedbackPage() {
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
+
+  useEffect(() => {
+    recordContinuationHint('pagou');
+  }, []);
 
   const toggleTag = (t: string) => {
     setSelectedTags((prev) =>

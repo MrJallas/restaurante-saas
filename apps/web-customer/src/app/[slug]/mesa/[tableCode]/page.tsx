@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { apiPost, apiGet } from '../../../../lib/api';
+import { clearDeliveredContinuationHint } from '../../../../lib/continuationHints';
 import { setSessionToken } from '../../../../lib/storage';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
@@ -38,6 +39,13 @@ interface ParticipantsResponse {
 
 interface HomeData {
   heroMessage: string;
+  continuationMessage?: {
+    id?: string;
+    kind?: string;
+    template?: string;
+    rendered?: string;
+    subtitle?: string | null;
+  } | null;
   restaurantName: string;
   tableLabel: string;
   highlights: {
@@ -144,6 +152,7 @@ export default function MesaPage() {
           console.warn('[mesa] /home retornou heroMessage vazio — caindo no fallback estático', { home });
         }
         setHomeData(home);
+        clearDeliveredContinuationHint(home?.continuationMessage?.kind);
         setPageState('home');
       } catch (err) {
         if (cancelled) return;
@@ -269,6 +278,7 @@ export default function MesaPage() {
             );
             if (cancelled) return;
             setHomeData(home);
+            clearDeliveredContinuationHint(home?.continuationMessage?.kind);
             transitionTo('home');
             return;
           } catch {
@@ -346,6 +356,7 @@ export default function MesaPage() {
         const url = cid ? `/${slug}/home?customerId=${cid}` : `/${slug}/home`;
         const home = await apiGet<HomeData>(url);
         setHomeData(home);
+        clearDeliveredContinuationHint(home?.continuationMessage?.kind);
         setPageState('home');
       } catch {
         setPageState('home');
@@ -440,6 +451,7 @@ export default function MesaPage() {
               : `/${slug}/home`;
             const home = await apiGet<HomeData>(url);
             setHomeData(home);
+            clearDeliveredContinuationHint(home?.continuationMessage?.kind);
           } catch {
             /* ignore */
           }
@@ -476,11 +488,23 @@ export default function MesaPage() {
   const firstName = customerName?.split(' ')[0] ?? 'visitante';
 
   const heroMessage = homeData?.heroMessage ?? defaultHeroMessage(firstName, restaurantName);
-
   const returningHighlight =
     isReturning && lastItems.length > 0
       ? buildReturningMessage(firstName, lastItems)
       : null;
+  const continuationMessage = homeData?.continuationMessage;
+  const continuationText =
+    typeof continuationMessage?.rendered === 'string' && continuationMessage.rendered.trim()
+      ? continuationMessage.rendered
+      : typeof continuationMessage?.template === 'string' && continuationMessage.template.trim()
+        ? continuationMessage.template
+        : null;
+  const homeHeroMessage = continuationText ?? returningHighlight ?? heroMessage;
+  const homeHeroKicker = continuationMessage?.subtitle
+    ? `Assistente · ${continuationMessage.subtitle}`
+    : isReturning
+      ? 'Assistente · reconheceu você'
+      : 'Assistente';
 
   return (
     <AppShell
@@ -547,8 +571,8 @@ export default function MesaPage() {
         </div>
 
         <HomeHero
-          message={returningHighlight ?? heroMessage}
-          kicker={isReturning ? 'Assistente · reconheceu você' : 'Assistente'}
+          message={homeHeroMessage}
+          kicker={homeHeroKicker}
         />
       </div>
 
