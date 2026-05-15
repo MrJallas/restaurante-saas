@@ -22,7 +22,10 @@ export class HomeController {
   @Get()
   @UseGuards(SessionGuard)
   async getHome(@Session() session: SessionData, @Req() req: Request) {
-    const customerId = await this.callerResolver.tryGetCustomerId(req);
+    const customerId =
+      (await this.callerResolver.tryGetCustomerId(req)) ??
+      session.customerId ??
+      null;
     return this.homeService.getHome(
       session.sessionId,
       customerId ?? undefined,

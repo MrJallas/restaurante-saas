@@ -694,11 +694,18 @@ export default function AssistentePage() {
     // entrada/principal) — repassamos como query param ?tab= pro iframe
     // do cardápio, que já entende "bebidas" como filtro de tab.
     if (name === 'view_menu') {
-      const cat = (call.arguments?.category as string | undefined)?.toLowerCase().trim();
-      const tab = cat === 'bebida' || cat === 'bebidas' || cat === 'drink' || cat === 'drinks'
-        ? 'bebidas'
-        : undefined;
-      openMenuOverlay({ tab });
+      const category =
+        typeof call.arguments?.category === 'string'
+          ? call.arguments.category
+          : null;
+      openMenuOverlay(category);
+      return;
+    }
+
+    // Pagamento é navegação primária. Se o LLM também tiver emitido
+    // call_waiter no mesmo turno, o batch dispatcher abaixo remove o chamado.
+    if (name === 'open_payment_screen') {
+      push(`/${slug}/pagamento`);
       return;
     }
 
@@ -713,7 +720,6 @@ export default function AssistentePage() {
       'split_bill',
       'pay_individual',
       'pay_full',
-      'open_payment_screen',
       'delete_chat',
       'delete_all_chats',
       'view_courtesy',
@@ -867,7 +873,18 @@ export default function AssistentePage() {
       // aiMsg pra que o render mostre o indicador ANTES do bubble texto,
       // dentro do mesmo `<div>` esquerdo. Antes ficava num bloco global
       // no rodapé (`lastToolName`) que quebrava o layout.
-      const firstTool = res.toolCalls && res.toolCalls.length > 0 ? res.toolCalls[0] : null;
+      const displayToolCalls = res.toolCalls?.some((tc) => tc.name === 'open_payment_screen')
+        ? res.toolCalls
+            .filter((tc) => tc.name !== 'call_waiter')
+            .sort((a, b) =>
+              a.name === 'open_payment_screen'
+                ? -1
+                : b.name === 'open_payment_screen'
+                  ? 1
+                  : 0,
+            )
+        : (res.toolCalls ?? []);
+      const firstTool = displayToolCalls.length > 0 ? displayToolCalls[0] : null;
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         role: res.wasBlocked ? 'blocked' : 'ai',
@@ -915,8 +932,8 @@ export default function AssistentePage() {
       // Round 3 Cat 4 (V20 chat): atualiza eyebrow `··· USANDO X ···`
       // baseado na primeira tool dispatched neste turno. Limpamos no
       // próximo turno do user (handler do submit).
-      if (res.toolCalls && res.toolCalls.length > 0) {
-        setLastToolName(res.toolCalls[0].name);
+      if (displayToolCalls.length > 0) {
+        setLastToolName(displayToolCalls[0].name);
       } else {
         setLastToolName(null);
       }
@@ -925,8 +942,8 @@ export default function AssistentePage() {
       // Fired AFTER the bubble is in the DOM so the order in the transcript
       // is `bubble → tool effect`. Errors are caught per-call inside dispatch
       // — one failing tool doesn't poison the whole turn.
-      if (res.toolCalls && res.toolCalls.length > 0) {
-        for (const tc of res.toolCalls) {
+      if (displayToolCalls.length > 0) {
+        for (const tc of displayToolCalls) {
           try {
             await dispatchToolCall(tc);
           } catch (e) {

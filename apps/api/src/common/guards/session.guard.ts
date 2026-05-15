@@ -8,6 +8,7 @@ export interface SessionData {
   tableCode: string;
   tableLabel: string;
   schemaName: string;
+  customerId?: string;
 }
 
 export interface SessionRequest {

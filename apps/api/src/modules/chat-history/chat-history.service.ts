@@ -173,12 +173,25 @@ export class ChatHistoryService {
       .collection<ThreadDoc>(THREADS_COLLECTION)
       .find({
         customerId,
-        tenantId,
         deletedByUser: { $ne: true },
       })
       .sort({ lastMessageAt: -1 })
       .limit(100)
       .toArray();
+
+    const legacyThreadIds = threads
+      .filter((t) => t.tenantId !== tenantId)
+      .map((t) => t.threadId);
+    if (legacyThreadIds.length > 0) {
+      await db.collection<ThreadDoc>(THREADS_COLLECTION).updateMany(
+        { threadId: { $in: legacyThreadIds }, customerId },
+        { $set: { tenantId } },
+      );
+      this.logger.warn(
+        `Normalized ${legacyThreadIds.length} legacy chat thread tenantId(s) for customer ${customerId}`,
+      );
+    }
+
     return threads.map((t) => ({
       threadId: t.threadId,
       startedAt: t.startedAt.toISOString(),

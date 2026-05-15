@@ -3,7 +3,6 @@ import {
   Get,
   Delete,
   Param,
-  Query,
   Req,
   UseGuards,
   HttpException,
@@ -12,6 +11,8 @@ import {
 import type { Request } from 'express';
 import { IsString } from 'class-validator';
 import { SessionGuard } from '../../common/guards/session.guard';
+import { Session } from '../../common/decorators/session.decorator';
+import type { SessionData } from '../../common/guards/session.guard';
 import { Tenant } from '../../common/decorators/tenant.decorator';
 import { ChatHistoryService } from './chat-history.service';
 import { CustomersService } from '../customers/customers.service';
@@ -56,11 +57,15 @@ export class ChatHistoryController {
    * quando ausente/inválido — endpoints chat-history exigem identificação
    * persistente do customer (não basta session de mesa).
    */
-  private async resolveCallerCustomerId(req: Request): Promise<string> {
+  private async resolveCallerCustomerId(
+    req: Request,
+    session?: SessionData,
+  ): Promise<string> {
     const token =
       (req as Request & { cookies?: Record<string, string> }).cookies
         ?.recognition_token ?? null;
     if (!token) {
+      if (session?.customerId) return session.customerId;
       throw new HttpException(
         'Identificação ausente. Faça login pra acessar seu histórico.',
         HttpStatus.UNAUTHORIZED,
@@ -78,15 +83,23 @@ export class ChatHistoryController {
 
   @Get('threads')
   @UseGuards(SessionGuard)
-  async listThreads(@Req() req: Request, @Tenant() tenantId: string) {
-    const customerId = await this.resolveCallerCustomerId(req);
+  async listThreads(
+    @Req() req: Request,
+    @Tenant() tenantId: string,
+    @Session() session: SessionData,
+  ) {
+    const customerId = await this.resolveCallerCustomerId(req, session);
     return this.service.listThreads(customerId, tenantId);
   }
 
   @Get('threads/:threadId/messages')
   @UseGuards(SessionGuard)
-  async listMessages(@Param() p: ThreadIdParam, @Req() req: Request) {
-    const customerId = await this.resolveCallerCustomerId(req);
+  async listMessages(
+    @Param() p: ThreadIdParam,
+    @Req() req: Request,
+    @Session() session: SessionData,
+  ) {
+    const customerId = await this.resolveCallerCustomerId(req, session);
     // Service retorna mensagens filtradas pra ESTE customerId; se thread
     // não pertence ao caller, throw 404 (não vaza existência).
     return this.service.listMessagesForCustomer(p.threadId, customerId);
@@ -94,16 +107,20 @@ export class ChatHistoryController {
 
   @Delete('threads/:threadId')
   @UseGuards(SessionGuard)
-  async deleteThread(@Param() p: ThreadIdParam, @Req() req: Request) {
-    const customerId = await this.resolveCallerCustomerId(req);
+  async deleteThread(
+    @Param() p: ThreadIdParam,
+    @Req() req: Request,
+    @Session() session: SessionData,
+  ) {
+    const customerId = await this.resolveCallerCustomerId(req, session);
     return this.service.deleteThread(p.threadId, customerId);
   }
 
   /** Bulk delete · alias for the LGPD erasure path. */
   @Delete()
   @UseGuards(SessionGuard)
-  async deleteAll(@Req() req: Request) {
-    const customerId = await this.resolveCallerCustomerId(req);
+  async deleteAll(@Req() req: Request, @Session() session: SessionData) {
+    const customerId = await this.resolveCallerCustomerId(req, session);
     return this.service.deleteAllForCustomer(customerId);
   }
 }

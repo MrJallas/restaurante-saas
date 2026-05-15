@@ -15,6 +15,8 @@ const VALID_REASONS = new Set([
   'other',
 ]);
 
+const ACTIVE_STATUSES = ['pending', 'acknowledged', 'accepted', 'enroute'];
+
 export interface CreateWaiterCallOptions {
   reason?: string;
   customerId?: string | null;
@@ -52,38 +54,19 @@ export class WaiterCallsService {
 
     const tableInfo = sessions[0];
 
-    // If there's already an active call for this table, reuse it so the
-    // customer can change their mind (different reason) without having to
-    // cancel first. A call that's already acknowledged is locked — the
-    // waiter is on their way and changing intent would be confusing.
+    // If there's already an active call for this table, return it instead of
+    // opening another one. The customer UI shows the "Aguardando garçom"
+    // state until the call is cancelled or resolved.
     const existing = (await this.tenantConn.query(
       `SELECT id, status, reason FROM waiter_calls
-       WHERE table_session_id = $1 AND status IN ('pending', 'acknowledged')
+       WHERE table_session_id = $1 AND status = ANY($2)
        ORDER BY created_at DESC
        LIMIT 1`,
-      [tableSessionId],
+      [tableSessionId, ACTIVE_STATUSES],
     )) as { id: string; status: string; reason: string }[];
 
     if (existing.length > 0) {
       const current = existing[0];
-      if (current.status === 'acknowledged') {
-        throw new BadRequestException(
-          'O garcom ja foi avisado. Aguarde ou fale direto com ele.',
-        );
-      }
-      // Pending: update reason if it changed, then return.
-      if (current.reason !== reason) {
-        await this.tenantConn.query(
-          `UPDATE waiter_calls SET reason = $2 WHERE id = $1`,
-          [current.id, reason],
-        );
-        this.eventsGateway.emitWaiterCall(slug, {
-          callId: current.id,
-          tableLabel: tableInfo.label,
-          tableCode: tableInfo.code,
-          reason,
-        });
-      }
       const refreshed = (await this.tenantConn.query(
         `SELECT id, status, reason, created_at, assigned_waiter_name, eta_minutes
          FROM waiter_calls WHERE id = $1`,
@@ -149,6 +132,42 @@ export class WaiterCallsService {
    * Customer-facing polling endpoint. Returns the status + the waiter's name
    * and ETA once the staff app has acknowledged the call.
    */
+  async getActiveCall(tableSessionId: string) {
+    const rows = (await this.tenantConn.query(
+      `SELECT id, status, reason, created_at, acknowledged_at, resolved_at,
+              cancelled_at, assigned_waiter_name, eta_minutes
+       FROM waiter_calls
+       WHERE table_session_id = $1 AND status = ANY($2)
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [tableSessionId, ACTIVE_STATUSES],
+    )) as Array<{
+      id: string;
+      status: string;
+      reason: string;
+      created_at: string;
+      acknowledged_at: string | null;
+      resolved_at: string | null;
+      cancelled_at: string | null;
+      assigned_waiter_name: string | null;
+      eta_minutes: number | null;
+    }>;
+
+    if (!rows.length) return null;
+    const call = rows[0];
+    return {
+      callId: call.id,
+      status: call.status,
+      reason: call.reason,
+      createdAt: call.created_at,
+      acknowledgedAt: call.acknowledged_at,
+      resolvedAt: call.resolved_at,
+      cancelledAt: call.cancelled_at,
+      waiterName: call.assigned_waiter_name ?? undefined,
+      etaMinutes: call.eta_minutes ?? undefined,
+    };
+  }
+
   async getCall(callId: string, tableSessionId: string) {
     const rows = (await this.tenantConn.query(
       `SELECT id, status, reason, created_at, acknowledged_at, resolved_at,
@@ -277,10 +296,8 @@ export class WaiterCallsService {
     if (call.status === 'cancelled') {
       return { callId, status: 'cancelled' };
     }
-    if (call.status !== 'pending') {
-      throw new BadRequestException(
-        'O garcom ja foi avisado e nao pode mais ser cancelado.',
-      );
+    if (!ACTIVE_STATUSES.includes(call.status)) {
+      return { callId, status: call.status };
     }
 
     await this.tenantConn.query(

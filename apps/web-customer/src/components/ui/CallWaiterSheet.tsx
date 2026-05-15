@@ -22,10 +22,14 @@
 
 import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiPost } from '../../lib/api';
+import { apiGet, apiPost } from '../../lib/api';
 import { useSession } from '../../hooks/useSession';
 import { useSheetDrag } from '../../hooks/useSheetDrag';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import {
+  ScreenCustomerWaiterCallWaiting,
+  type ActiveWaiterCall,
+} from '../../screens/customer-host-flows/ScreenCustomerWaiterCallWaiting';
 
 export type CallWaiterReason =
   | 'bring_menu'
@@ -114,11 +118,12 @@ interface CallWaiterSheetProps {
 
 interface WaiterCallResponse {
   callId: string;
+  status?: string;
+  reason?: string;
+  createdAt?: string;
   waiterName?: string;
   etaMinutes?: number;
 }
-
-const DISMISS_THRESHOLD = 0.6;
 
 export function CallWaiterSheet({
   open,
@@ -132,6 +137,8 @@ export function CallWaiterSheet({
   const [selected, setSelected] = useState<CallWaiterReason | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [checkingActive, setCheckingActive] = useState(false);
+  const [activeCall, setActiveCall] = useState<ActiveWaiterCall | null>(null);
 
   const sheetHeightFn = useCallback(() => {
     if (typeof window === 'undefined') return 520;
@@ -155,6 +162,34 @@ export function CallWaiterSheet({
     setSubmitting(false);
     setErrorMsg(null);
   }, [open]);
+
+  // Poll do chamado ativo a cada 5s — quando o user reabre a sheet
+  // sem ter cancelado, mostramos `ScreenCustomerWaiterCallWaiting` em
+  // vez de redisparar o flow de motivos (evita criar 2º chamado).
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+
+    const loadActive = async (showLoading: boolean) => {
+      if (showLoading) setCheckingActive(true);
+      try {
+        const call = await apiGet<ActiveWaiterCall | null>(`/${slug}/waiter-calls/active`);
+        if (cancelled) return;
+        setActiveCall(call);
+      } catch {
+        if (!cancelled) setActiveCall(null);
+      } finally {
+        if (!cancelled && showLoading) setCheckingActive(false);
+      }
+    };
+
+    loadActive(true);
+    const timer = window.setInterval(() => loadActive(false), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [open, slug]);
 
   // Body scroll lock via hook centralizado. Round 21 §H fix: contador
   // global de consumers em vez de restaurar `prev` capturado (que dava
@@ -181,6 +216,18 @@ export function CallWaiterSheet({
         visitId: visitId || undefined,
         customerId: customerId || undefined,
       });
+      if (res.status && res.status !== 'cancelled' && res.status !== 'resolved') {
+        setActiveCall({
+          callId: res.callId,
+          status: res.status,
+          reason: res.reason ?? selected,
+          createdAt: res.createdAt ?? new Date().toISOString(),
+          waiterName: res.waiterName,
+          etaMinutes: res.etaMinutes,
+        });
+        setSubmitting(false);
+        return;
+      }
       if (onSuccessNavigate) {
         onSuccessNavigate(res.callId, selected);
       } else {
@@ -222,6 +269,7 @@ export function CallWaiterSheet({
         className="absolute inset-x-0 bottom-0 z-10 flex max-h-[78dvh] flex-col select-none rounded-t-[22px] border-[1.5px] border-b-0 border-ink bg-bg px-[22px] pb-safe pt-3 shadow-[0_-8px_32px_rgba(0,0,0,0.10)] animate-slide-up-overlay [-webkit-user-select:none] [-webkit-touch-callout:none]"
         style={{
           transform: dragY ? `translateY(${dragY}px)` : undefined,
+          animation: dragY > 0 || isDragging ? 'none' : undefined,
           transition: isDragging
             ? undefined
             : 'transform 220ms cubic-bezier(.2,.8,.2,1)',
@@ -241,72 +289,91 @@ export function CallWaiterSheet({
           <div className="h-[4px] w-10 rounded-[3px] bg-border-soft opacity-60" />
         </div>
 
-        {eyebrow && (
-          <span className="mb-1 block font-mono text-[10px] uppercase tracking-[1.5px] text-mute">
-            {eyebrow}
-          </span>
-        )}
-        <h2 className="mb-1 text-[22px] font-semibold tracking-[-0.02em] text-ink">
-          Por que você precisa do garçom?
-        </h2>
-        <p className="mb-[18px] text-[13px] text-mute text-pretty">
-          Escolha o motivo. Vou avisar e te dar o tempo estimado.
-        </p>
-
-        <div data-scroll-area="true" className="flex flex-col gap-2.5 overflow-y-auto pb-1">
-          {REASONS.map((r) => {
-            const sel = selected === r.key;
-            return (
-              <button
-                key={r.key}
-                type="button"
-                onClick={() => setSelected(r.key)}
-                className={`flex items-center gap-3 rounded-[14px] border-[1.3px] px-3.5 py-3 text-left transition-colors ${
-                  sel ? 'border-ink bg-surface' : 'border-border-soft bg-bg'
-                }`}
-                aria-pressed={sel}
-              >
-                <span className="shrink-0 text-ink">{r.icon}</span>
-                <span className="flex-1">
-                  <span className="block text-[14.5px] font-medium leading-tight text-ink">{r.label}</span>
-                  <span className="mt-[1px] block text-[12px] text-mute">{r.sub}</span>
-                </span>
-                <span className="shrink-0 text-[14px] text-faint">›</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {errorMsg && (
-          <div
-            role="alert"
-            className="mt-2 rounded-[10px] border border-danger/40 bg-danger/10 px-3 py-2 text-[13px] text-danger"
-          >
-            {errorMsg}
+        {checkingActive && (
+          <div className="py-10 text-center text-[13px] text-mute">
+            Verificando chamado…
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={handleConfirm}
-          disabled={!selected || submitting}
-          className={`mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-5 py-3.5 text-[14.5px] font-medium tracking-[-0.005em] transition-colors active:scale-[0.99] disabled:cursor-not-allowed ${
-            selected && !submitting
-              ? 'bg-ink text-white'
-              : 'bg-faint text-white/80'
-          }`}
-          data-testid="call-waiter-confirm"
-        >
-          {submitting ? 'Chamando…' : 'Confirmar chamado'}
-          {!submitting && <span aria-hidden>→</span>}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-1.5 w-full p-2.5 text-[12px] text-mute underline underline-offset-[3px]"
-        >
-          Cancelar
-        </button>
+        {!checkingActive && activeCall && (
+          <ScreenCustomerWaiterCallWaiting
+            slug={slug}
+            call={activeCall}
+            onCancelled={setActiveCall}
+            onRequestNew={() => setActiveCall(null)}
+          />
+        )}
+
+        {!checkingActive && !activeCall && (
+          <>
+            {eyebrow && (
+              <span className="mb-1 block font-mono text-[10px] uppercase tracking-[1.5px] text-mute">
+                {eyebrow}
+              </span>
+            )}
+            <h2 className="mb-1 text-[22px] font-semibold tracking-[-0.02em] text-ink">
+              Por que você precisa do garçom?
+            </h2>
+            <p className="mb-[18px] text-[13px] text-mute text-pretty">
+              Escolha o motivo. Vou avisar e te dar o tempo estimado.
+            </p>
+
+            <div data-scroll-area="true" className="flex flex-col gap-2.5 overflow-y-auto pb-1">
+              {REASONS.map((r) => {
+                const sel = selected === r.key;
+                return (
+                  <button
+                    key={r.key}
+                    type="button"
+                    onClick={() => setSelected(r.key)}
+                    className={`flex items-center gap-3 rounded-[14px] border-[1.3px] px-3.5 py-3 text-left transition-colors ${
+                      sel ? 'border-ink bg-surface' : 'border-border-soft bg-bg'
+                    }`}
+                    aria-pressed={sel}
+                  >
+                    <span className="shrink-0 text-ink">{r.icon}</span>
+                    <span className="flex-1">
+                      <span className="block text-[14.5px] font-medium leading-tight text-ink">{r.label}</span>
+                      <span className="mt-[1px] block text-[12px] text-mute">{r.sub}</span>
+                    </span>
+                    <span className="shrink-0 text-[14px] text-faint">›</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {errorMsg && (
+              <div
+                role="alert"
+                className="mt-2 rounded-[10px] border border-danger/40 bg-danger/10 px-3 py-2 text-[13px] text-danger"
+              >
+                {errorMsg}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={!selected || submitting}
+              className={`mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-5 py-3.5 text-[14.5px] font-medium tracking-[-0.005em] transition-colors active:scale-[0.99] disabled:cursor-not-allowed ${
+                selected && !submitting
+                  ? 'bg-ink text-white'
+                  : 'bg-faint text-white/80'
+              }`}
+              data-testid="call-waiter-confirm"
+            >
+              {submitting ? 'Chamando…' : 'Confirmar chamado'}
+              {!submitting && <span aria-hidden>→</span>}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-1.5 w-full p-2.5 text-[12px] text-mute underline underline-offset-[3px]"
+            >
+              Cancelar
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

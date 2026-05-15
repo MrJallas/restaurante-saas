@@ -40,6 +40,20 @@ function inferKind(cat: Category): 'food' | 'drink' {
   return drinkKeywords.some((k) => cat.name.toLowerCase().includes(k)) ? 'drink' : 'food';
 }
 
+function normalizeCategory(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function categoryLooksLikeDrink(value: string): boolean {
+  return /bebida|drink|vinho|cerveja|suco|agua|refrigerante/.test(
+    normalizeCategory(value),
+  );
+}
+
 export default function CardapioPage() {
   const params = useParams();
   const router = useRouter();
@@ -59,7 +73,12 @@ export default function CardapioPage() {
   // chrome próprio). `?embed=1` faz o page renderizar só o conteúdo,
   // economizando refator do component em duas formas (rota + overlay).
   const isEmbed = searchParams.get('embed') === '1';
-  const initialTab: Tab = searchParams.get('tab') === 'bebidas' ? 'drink' : 'food';
+  const requestedCategory = searchParams.get('category');
+  const initialTab: Tab =
+    searchParams.get('tab') === 'bebidas' ||
+    (requestedCategory ? categoryLooksLikeDrink(requestedCategory) : false)
+      ? 'drink'
+      : 'food';
   const [tab, setTab] = useState<Tab>(initialTab);
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -128,6 +147,18 @@ export default function CardapioPage() {
 
   const currentCategories = tab === 'food' ? foodCategories : drinkCategories;
   const currentItems = tab === 'food' ? foodItems : drinkItems;
+
+  useEffect(() => {
+    if (!requestedCategory || categories.length === 0) return;
+    const wanted = normalizeCategory(requestedCategory);
+    const match = categories.find((cat) => {
+      const normalized = normalizeCategory(cat.name);
+      return normalized === wanted || normalized.includes(wanted) || wanted.includes(normalized);
+    });
+    if (!match) return;
+    setTab(inferKind(match));
+    setActiveCategory(match.id);
+  }, [categories, requestedCategory]);
 
   const filteredByCategory = activeCategory
     ? currentItems.filter((it) => it.category_id === activeCategory)

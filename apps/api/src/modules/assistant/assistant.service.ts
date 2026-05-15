@@ -143,19 +143,16 @@ function normalizeForMatch(text: string): string {
 function extractLinkedItems(
   responseText: string,
   menuItems: MenuItemRow[],
+  toolCalls: Array<Record<string, unknown>> = [],
 ): LinkedItem[] {
   const haystack = normalizeForMatch(responseText);
-  if (!haystack) return [];
 
   const seen = new Set<string>();
   const found: LinkedItem[] = [];
+  const byId = new Map(menuItems.map((item) => [item.id, item]));
 
-  for (const item of menuItems) {
-    const needle = normalizeForMatch(item.name);
-    if (needle.length < 4) continue; // too generic to trust a substring hit
-    const pos = haystack.indexOf(needle);
-    if (pos === -1) continue;
-    if (seen.has(item.id)) continue;
+  const pushItem = (item: MenuItemRow, position: number) => {
+    if (seen.has(item.id)) return;
     seen.add(item.id);
     found.push({
       id: item.id,
@@ -163,8 +160,44 @@ function extractLinkedItems(
       priceCents: item.price_cents,
       imageUrl: item.image_url,
       categoryName: item.category_name,
-      position: pos,
+      position,
     });
+  };
+
+  const candidateIds: string[] = [];
+  for (const tc of toolCalls) {
+    const args = (tc.arguments ?? {}) as Record<string, unknown>;
+    const result = (tc.result ?? {}) as Record<string, unknown>;
+    const actionPayload = (tc.actionPayload ??
+      result.actionPayload ??
+      {}) as Record<string, unknown>;
+    for (const val of [
+      args.itemId,
+      args.item_id,
+      args.menuItemId,
+      actionPayload.itemId,
+      actionPayload.menuItemId,
+    ]) {
+      if (typeof val === 'string' && val.length > 0) candidateIds.push(val);
+    }
+  }
+
+  candidateIds.forEach((id, index) => {
+    const item = byId.get(id);
+    if (item) pushItem(item, -1000 + index);
+  });
+
+  if (!haystack) {
+    found.sort((a, b) => a.position - b.position);
+    return found.slice(0, 4);
+  }
+
+  for (const item of menuItems) {
+    const needle = normalizeForMatch(item.name);
+    if (needle.length < 4) continue; // too generic to trust a substring hit
+    const pos = haystack.indexOf(needle);
+    if (pos === -1) continue;
+    pushItem(item, pos);
   }
 
   found.sort((a, b) => a.position - b.position);
@@ -310,7 +343,11 @@ export class AssistantService {
         contextualChips: toolChips,
       });
 
-      const linkedItems = extractLinkedItems(result.response, menuItems);
+      const linkedItems = extractLinkedItems(
+        result.response,
+        menuItems,
+        normalizedTools,
+      );
 
       // P1 #B-6 fix (round 3): dual-write pra Mongo `chat_messages`.
       // Best-effort — Postgres remains source of truth e o appendTurn

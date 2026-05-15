@@ -6,22 +6,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * Drag-to-dismiss hook pra bottom sheets, baseado no pattern do `vaul`
  * (https://github.com/emilkowalski/vaul/blob/main/src/index.tsx).
  *
- * **Versão anterior** (round 21 v1) tentou `addEventListener` nativo com
- * `passive: false` + `preventDefault` no `pointermove`. Em iOS Safari isso
- * é fragile: até Safari 26.2 (recente), preventDefault em pointer events
- * com listeners passivos coexistindo não funcionava de forma consistente.
- * Webkit blog: https://webkit.org/blog/17640/webkit-features-for-safari-26-2/
- *
- * **Pattern vaul** (que funciona em iOS produção, 13k stars):
- * 1. React JSX handlers (passive default — sem `preventDefault`)
- * 2. `setPointerCapture` no element TARGET do pointerdown (não no sheet pai)
- * 3. Fallback iOS: `window.addEventListener('touchend', ...)` once — iOS
- *    não dispara mouseUp/pointerup depois de scroll, esse fallback reseta
- * 4. Detectar text-selection (`window.getSelection().toString()`) e abortar
- *    o drag se o user está realmente selecionando texto
- * 5. CSS: `touch-action: none` no element draggable
- * 6. Sem `preventDefault` — o navegador gerencia scroll, e a gente só
- *    atualiza transform via CSS
+ * iOS Safari 26.x mudou comportamento em Pointer/Touch Events e ainda tem
+ * bugs próximos de `preventDefault()` + scroll. Por isso o caminho touch é
+ * nativo (`touchstart/move/end`, passive:false) e o caminho pointer fica para
+ * mouse/desktop. A UI continua controlada por transform CSS.
  *
  * **API novo**: caller spreada `{...bind}` no JSX. Mantém `dragY`,
  * `sheetRef`, `dragHandleRef`, `isDragging` pra compat.
@@ -38,9 +26,9 @@ interface UseSheetDragOptions {
 const DEAD_ZONE_PX = 4;
 const CLOSE_ANIMATION_MS = 200;
 
-function isIOS(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !('MSStream' in window);
+function hasNativeTouchEvents(): boolean {
+  if (typeof window === 'undefined') return false;
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 }
 
 export function useSheetDrag({
@@ -51,7 +39,13 @@ export function useSheetDrag({
   respectInternalScroll = true,
 }: UseSheetDragOptions) {
   const sheetRef = useRef<HTMLDivElement | null>(null);
+  const [sheetNode, setSheetNode] = useState<HTMLDivElement | null>(null);
   const dragHandleRef = useRef<HTMLDivElement | null>(null);
+
+  const setSheetRef = useCallback((node: HTMLDivElement | null) => {
+    sheetRef.current = node;
+    setSheetNode(node);
+  }, []);
 
   const [dragY, setDragYState] = useState(0);
   const dragYRef = useRef(0);
@@ -65,6 +59,8 @@ export function useSheetDrag({
   const dragStartY = useRef<number | null>(null);
   const draggingRef = useRef(false);
   const isAllowedToDragRef = useRef(true);
+  const activeInputRef = useRef<'pointer' | 'touch' | null>(null);
+  const activeTouchIdRef = useRef<number | null>(null);
 
   // Keep options stable in refs so handlers don't re-bind unnecessarily.
   const onDismissRef = useRef(onDismiss);
@@ -88,62 +84,65 @@ export function useSheetDrag({
     return scrollEl.scrollTop <= 0;
   }, [respectInternalScroll]);
 
-  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (isInteractive(e.target)) return;
-    if (!isInScrollableAtTop(e.target)) return;
+  const resetDragState = useCallback((resetPosition: boolean) => {
+    dragStartY.current = null;
+    draggingRef.current = false;
+    isAllowedToDragRef.current = true;
+    activeInputRef.current = null;
+    activeTouchIdRef.current = null;
+    setIsDragging(false);
+    if (resetPosition) setDragY(0);
+  }, [setDragY]);
+
+  const canStartDrag = useCallback((target: EventTarget | null): boolean => {
+    if (isInteractive(target)) return false;
+    if (!isInScrollableAtTop(target)) return false;
 
     // Abort if user is selecting text (vaul pattern §shouldDrag).
     const highlightedText = window.getSelection()?.toString();
-    if (highlightedText && highlightedText.length > 0) return;
+    if (highlightedText && highlightedText.length > 0) return false;
 
-    dragStartY.current = e.clientY;
-    draggingRef.current = false;
-    isAllowedToDragRef.current = true;
-
-    // CRÍTICO: setPointerCapture no TARGET (não no sheet pai). Sem isso,
-    // se o pointer sai do target original durante drag, perdemos os
-    // pointermove. iOS Safari precisa pra sustentar drag passando handle.
-    try {
-      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-    } catch {
-      /* pode falhar se target não suporta — não crítico */
-    }
-
-    // iOS fallback (vaul §onPress line 273): iOS não dispara mouseUp depois
-    // de scroll, então touchend no window é um failsafe pra resetar estado
-    // mesmo se pointerup for "perdido" pelo sistema.
-    if (isIOS()) {
-      const resetOnTouchEnd = () => {
-        isAllowedToDragRef.current = false;
-      };
-      window.addEventListener('touchend', resetOnTouchEnd, { once: true });
-    }
+    return true;
   }, [isInteractive, isInScrollableAtTop]);
 
-  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragStartY.current === null) return;
-    if (!isAllowedToDragRef.current) return;
+  const startDrag = useCallback((
+    clientY: number,
+    target: EventTarget | null,
+    input: 'pointer' | 'touch',
+  ): boolean => {
+    if (!canStartDrag(target)) return false;
+    dragStartY.current = clientY;
+    draggingRef.current = false;
+    isAllowedToDragRef.current = true;
+    activeInputRef.current = input;
+    return true;
+  }, [canStartDrag]);
 
-    const delta = e.clientY - dragStartY.current;
-    if (!draggingRef.current && Math.abs(delta) < DEAD_ZONE_PX) return;
+  const updateDrag = useCallback((
+    clientY: number,
+    options: { allowUpwardScroll: boolean },
+  ): boolean => {
+    if (dragStartY.current === null) return false;
+    if (!isAllowedToDragRef.current) return false;
+
+    const delta = clientY - dragStartY.current;
+    if (!draggingRef.current && Math.abs(delta) < DEAD_ZONE_PX) return false;
+
+    if (!draggingRef.current && delta < 0 && options.allowUpwardScroll) {
+      resetDragState(false);
+      return false;
+    }
 
     if (!draggingRef.current) {
       draggingRef.current = true;
       setIsDragging(true);
     }
 
-    // Só drag pra baixo. NÃO chama preventDefault — deixa o navegador
-    // gerenciar scroll/UI gestures. O `touch-action: none` no draggable
-    // element é o que evita scroll competir.
-    if (delta > 0) {
-      setDragY(delta);
-    } else {
-      setDragY(0);
-    }
-  }, [setDragY]);
+    setDragY(delta > 0 ? delta : 0);
+    return true;
+  }, [resetDragState, setDragY]);
 
-  const handlePointerEnd = useCallback(() => {
+  const finishDrag = useCallback(() => {
     if (dragStartY.current === null) return;
 
     const heightPx = sheetHeightPxRef.current() || 720;
@@ -155,29 +154,103 @@ export function useSheetDrag({
       setDragY(0);
     }
 
-    dragStartY.current = null;
-    draggingRef.current = false;
-    setIsDragging(false);
-  }, [dismissThreshold, setDragY]);
+    resetDragState(false);
+  }, [dismissThreshold, resetDragState, setDragY]);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch' && hasNativeTouchEvents()) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (!startDrag(e.clientY, e.target, 'pointer')) return;
+
+    try {
+      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    } catch {
+      /* pode falhar se target não suporta — não crítico */
+    }
+  }, [startDrag]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (activeInputRef.current !== 'pointer') return;
+    updateDrag(e.clientY, { allowUpwardScroll: false });
+  }, [updateDrag]);
+
+  const handlePointerEnd = useCallback(() => {
+    if (activeInputRef.current !== 'pointer') return;
+    finishDrag();
+  }, [finishDrag]);
+
+  useEffect(() => {
+    const sheet = sheetNode;
+    if (!sheet || !hasNativeTouchEvents()) return;
+
+    const findTouch = (touches: TouchList): Touch | null => {
+      const id = activeTouchIdRef.current;
+      if (id === null) return null;
+      for (let i = 0; i < touches.length; i += 1) {
+        const touch = touches.item(i);
+        if (touch?.identifier === id) return touch;
+      }
+      return null;
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (activeInputRef.current !== null || e.touches.length !== 1) return;
+      const touch = e.touches.item(0);
+      if (!touch) return;
+      if (!startDrag(touch.clientY, e.target, 'touch')) return;
+      activeTouchIdRef.current = touch.identifier;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (activeInputRef.current !== 'touch') return;
+      const touch = findTouch(e.touches);
+      if (!touch) return;
+      const didDrag = updateDrag(touch.clientY, { allowUpwardScroll: true });
+      if (didDrag) e.preventDefault();
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (activeInputRef.current !== 'touch') return;
+      if (findTouch(e.touches)) return;
+      finishDrag();
+    };
+
+    const handleTouchCancel = () => {
+      if (activeInputRef.current !== 'touch') return;
+      resetDragState(true);
+    };
+
+    sheet.addEventListener('touchstart', handleTouchStart, { passive: true });
+    sheet.addEventListener('touchmove', handleTouchMove, { passive: false });
+    sheet.addEventListener('touchend', handleTouchEnd, { passive: true });
+    sheet.addEventListener('touchcancel', handleTouchCancel, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
+    window.addEventListener('touchcancel', handleTouchCancel, { passive: true, capture: true });
+
+    return () => {
+      sheet.removeEventListener('touchstart', handleTouchStart);
+      sheet.removeEventListener('touchmove', handleTouchMove);
+      sheet.removeEventListener('touchend', handleTouchEnd);
+      sheet.removeEventListener('touchcancel', handleTouchCancel);
+      window.removeEventListener('touchend', handleTouchEnd, { capture: true });
+      window.removeEventListener('touchcancel', handleTouchCancel, { capture: true });
+    };
+  }, [finishDrag, resetDragState, sheetNode, startDrag, updateDrag]);
 
   // Reset state on unmount.
   useEffect(() => {
     return () => {
-      dragStartY.current = null;
-      draggingRef.current = false;
-      isAllowedToDragRef.current = true;
-      dragYRef.current = 0;
+      resetDragState(false);
     };
-  }, []);
+  }, [resetDragState]);
 
   return {
     dragY,
-    sheetRef,
+    sheetRef: setSheetRef,
     dragHandleRef,
     isDragging,
-    // Handlers pro JSX. Caller spread `{...bind}` no element draggable.
-    // Voltamos pra JSX handlers (vs native addEventListener) porque vaul
-    // mostrou que isso é suficiente em iOS produção + evita complexidade.
+    // Pointer handlers continuam para mouse/desktop. Touch devices usam os
+    // listeners nativos acima para poder chamar preventDefault em touchmove.
     bind: {
       onPointerDown: handlePointerDown,
       onPointerMove: handlePointerMove,
