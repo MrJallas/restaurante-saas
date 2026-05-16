@@ -7,7 +7,9 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { MongoService } from '../../infra/mongo/mongo.service';
+import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { EventsGateway } from '../websocket/events.gateway';
+import { AlertsService } from '../alerts/alerts.service';
 import type {
   StaffMessageHistoryFromRole,
   StaffMessageHistoryRoleLabel,
@@ -97,7 +99,9 @@ export class CustomerStaffMessagesService {
 
   constructor(
     private readonly mongo: MongoService,
+    private readonly tenantConn: TenantConnectionProvider,
     @Optional() private readonly events?: EventsGateway,
+    @Optional() private readonly alerts?: AlertsService,
   ) {}
 
   /**
@@ -343,10 +347,148 @@ export class CustomerStaffMessagesService {
       }
     }
 
+    if (this.alerts) {
+      try {
+        await this.alerts.create({
+          sev: 'info',
+          kind: 'customer_message_to_manager',
+          title: 'Mensagem de cliente para gerente',
+          sub: `Mesa ${input.tableSessionId.slice(0, 6)} · ${preview}`,
+          actions: [
+            {
+              label: 'Abrir mensagens',
+              route: `/manager/mensagens?slug=${input.tenantId}`,
+              kind: 'primary',
+            },
+          ],
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Falha ao criar alerta de mensagem para gerente: ${(err as Error).message}`,
+        );
+      }
+    }
+
     return {
       messageId: doc.messageId,
       threadId,
       createdAt: now.toISOString(),
+    };
+  }
+
+  async appendStaffReply(
+    threadId: string,
+    tenantId: string,
+    staffId: string,
+    content: string,
+  ): Promise<StaffMessageHistoryMessageDto> {
+    if (!content || !content.trim()) {
+      throw new HttpException(
+        'Mensagem não pode ser vazia.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (content.length > 2000) {
+      throw new HttpException(
+        'Mensagem muito longa (máx 2000 caracteres).',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const db = this.requireDb();
+    await this.ensureIndexes();
+
+    const thread = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .findOne({ threadId });
+    if (!thread || thread.tenantId !== tenantId) {
+      throw new HttpException('Thread não encontrada.', HttpStatus.NOT_FOUND);
+    }
+
+    const staffRows = (await this.tenantConn.query(
+      `SELECT name, role FROM staff WHERE id = $1 AND is_active = true LIMIT 1`,
+      [staffId],
+    )) as Array<{ name: string; role: string }>;
+    if (!staffRows.length) {
+      throw new HttpException(
+        'staff não encontrado ou inativo.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    const roleLabel = this.mapStaffRoleLabel(staffRows[0].role);
+    const now = new Date();
+    const expiresAt = new Date(
+      now.getTime() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000,
+    );
+    const trimmed = content.trim();
+
+    const doc: MessageDoc = {
+      messageId: randomUUID(),
+      threadId,
+      customerId: thread.customerId,
+      tenantId,
+      fromRole: 'staff',
+      fromName: staffRows[0].name,
+      fromRoleLabel: roleLabel,
+      content: trimmed,
+      createdAt: now,
+      readAt: null,
+      expiresAt,
+    };
+
+    await db.collection<MessageDoc>(MESSAGES_COLLECTION).insertOne(doc);
+    await db.collection<ThreadDoc>(THREADS_COLLECTION).updateOne(
+      { threadId },
+      {
+        $set: {
+          lastMessageAt: now,
+          lastStaffName: staffRows[0].name,
+          lastStaffRole: roleLabel,
+          preview: trimmed.slice(0, 80),
+          expiresAt,
+          deletedByUser: false,
+          deletedAt: null,
+        },
+        $inc: { messageCount: 1 },
+      },
+    );
+
+    const wsPayload = {
+      threadId,
+      messageId: doc.messageId,
+      tableSessionId: thread.tableSessionId,
+      customerId: thread.customerId,
+      staffId,
+      staffName: staffRows[0].name,
+      content: trimmed,
+      createdAt: now.toISOString(),
+    };
+    try {
+      this.events?.emitToSession(
+        thread.tableSessionId,
+        'staff_messages.staff_replied',
+        wsPayload,
+      );
+      this.events?.emitToTenant(
+        tenantId,
+        'staff_messages.staff_replied',
+        wsPayload,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Falha ao emitir WS staff reply: ${(err as Error).message}`,
+      );
+    }
+
+    return {
+      messageId: doc.messageId,
+      fromRole: doc.fromRole,
+      fromName: doc.fromName,
+      fromRoleLabel: doc.fromRoleLabel,
+      content: doc.content,
+      createdAt: doc.createdAt.toISOString(),
+      readAt: null,
     };
   }
 
@@ -403,36 +545,67 @@ export class CustomerStaffMessagesService {
       .toArray();
     if (threads.length === 0) return [];
 
-    // Unread agg: messages `fromRole='customer'` sem readAt — "nova
-    // mensagem do cliente" do ponto de vista do staff.
-    const unreadAgg = await db
+    const threadIds = threads.map((t) => t.threadId);
+    const messageAgg = await db
       .collection<MessageDoc>(MESSAGES_COLLECTION)
-      .aggregate<{ _id: string; count: number }>([
+      .aggregate<{
+        _id: string;
+        count: number;
+        unreadCount: number;
+        last: MessageDoc;
+      }>([
         {
           $match: {
             tenantId,
-            fromRole: 'customer',
-            $or: [{ readAt: null }, { readAt: { $exists: false } }],
+            threadId: { $in: threadIds },
           },
         },
-        { $group: { _id: '$threadId', count: { $sum: 1 } } },
+        { $sort: { createdAt: -1 } },
+        {
+          $group: {
+            _id: '$threadId',
+            count: { $sum: 1 },
+            unreadCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$fromRole', 'customer'] },
+                      { $eq: [{ $ifNull: ['$readAt', null] }, null] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            last: { $first: '$$ROOT' },
+          },
+        },
       ])
       .toArray();
-    const unreadByThread = new Map(unreadAgg.map((r) => [r._id, r.count]));
+    const statsByThread = new Map(messageAgg.map((r) => [r._id, r]));
 
-    return threads.map((t) => ({
-      threadId: t.threadId,
-      customerId: t.customerId,
-      tableSessionId: t.tableSessionId,
-      startedAt: t.startedAt.toISOString(),
-      lastMessageAt: t.lastMessageAt.toISOString(),
-      messageCount: t.messageCount,
-      unreadCount: unreadByThread.get(t.threadId) ?? 0,
-      lastStaffName: t.lastStaffName ?? null,
-      lastStaffRole: t.lastStaffRole ?? null,
-      preview: t.preview ?? '',
-      expiresAt: t.expiresAt.toISOString(),
-    }));
+    return threads
+      .map((t) => {
+        const stats = statsByThread.get(t.threadId);
+        if (!stats) return null;
+        return {
+          threadId: t.threadId,
+          customerId: t.customerId,
+          tableSessionId: t.tableSessionId,
+          startedAt: t.startedAt.toISOString(),
+          lastMessageAt: stats.last.createdAt.toISOString(),
+          messageCount: stats.count,
+          unreadCount: stats.unreadCount,
+          lastStaffName: t.lastStaffName ?? null,
+          lastStaffRole: t.lastStaffRole ?? null,
+          preview: stats.last.content ?? t.preview ?? '',
+          expiresAt: t.expiresAt.toISOString(),
+        };
+      })
+      .filter((t): t is StaffInboundThreadDto => t !== null)
+      .sort((a, b) => Date.parse(b.lastMessageAt) - Date.parse(a.lastMessageAt));
   }
 
   /**
@@ -645,5 +818,21 @@ export class CustomerStaffMessagesService {
       );
     }
     return db;
+  }
+
+  private mapStaffRoleLabel(role: string): StaffMessageHistoryRoleLabel {
+    switch (role) {
+      case 'waiter':
+        return 'garçom';
+      case 'host':
+        return 'host';
+      case 'cook':
+      case 'bartender':
+        return 'cozinha';
+      case 'manager':
+      case 'cashier':
+      default:
+        return 'gerente';
+    }
   }
 }

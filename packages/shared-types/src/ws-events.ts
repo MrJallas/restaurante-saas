@@ -403,6 +403,11 @@ export interface WsHostVipFlagged {
   };
 }
 
+export interface WsAlertCreated {
+  event: 'alert.created';
+  payload: Record<string, unknown>;
+}
+
 // ─── Discriminated union ───
 
 /**
@@ -436,7 +441,8 @@ export type WsEvent =
   | WsHostTableLiberated
   | WsHostSwapRequested
   | WsHostSwapStateChanged
-  | WsHostVipFlagged;
+  | WsHostVipFlagged
+  | WsAlertCreated;
 
 /** String-literal name of each `WsEvent` variant — useful for room-routing. */
 export type WsEventName = WsEvent['event'];

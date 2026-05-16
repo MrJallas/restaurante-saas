@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { RedisModule } from '../../infra/redis/redis.module';
 import { CustomersModule } from '../customers/customers.module';
 import { WebsocketModule } from '../websocket/websocket.module';
+import { AlertsModule } from '../alerts/alerts.module';
+import { TenantModule } from '../tenant/tenant.module';
+import { CallerResolverModule } from '../../common/services/caller-resolver.module';
 import { CustomerStaffMessagesController } from './customer-staff-messages.controller';
 import { CustomerStaffMessagesService } from './customer-staff-messages.service';
 
@@ -16,7 +19,14 @@ import { CustomerStaffMessagesService } from './customer-staff-messages.service'
  * in the controller (cookie → customerId).
  */
 @Module({
-  imports: [RedisModule, CustomersModule, WebsocketModule],
+  imports: [
+    RedisModule,
+    CustomersModule,
+    WebsocketModule,
+    AlertsModule,
+    TenantModule,
+    CallerResolverModule,
+  ],
   controllers: [CustomerStaffMessagesController],
   providers: [CustomerStaffMessagesService],
   exports: [CustomerStaffMessagesService],

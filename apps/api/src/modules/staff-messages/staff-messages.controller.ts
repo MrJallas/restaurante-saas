@@ -55,13 +55,15 @@ class SendMessageDto {
 }
 
 class ReadDto {
+  @IsOptional()
   @IsUUID()
-  staffId!: string;
+  staffId?: string;
 }
 
 class StaffQueryDto {
+  @IsOptional()
   @IsUUID()
-  staffId!: string;
+  staffId?: string;
 }
 
 @Controller(':slug/staff-messages')

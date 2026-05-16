@@ -86,6 +86,11 @@ export interface StaffMessageThread {
 
 export interface StaffMessageThreadDto {
   threadId: string;
+  subject?: string | null;
+  isBroadcast?: boolean;
+  kind?: string;
+  shiftId?: string | null;
+  workDate?: string | null;
   lastMessagePreview: string;
   lastMessageAt: string;
   unreadCount: number;
@@ -97,9 +102,11 @@ export interface StaffMessageThreadDto {
  * flow). For complaint responses, use `POST /staff/complaints/:id/respond`.
  */
 export interface StaffMessageSendDto {
-  tableSessionId: string;
-  customerId: string;
-  content: string;
+  recipientStaffId?: string;
+  threadId?: string;
+  body: string;
+  subject?: string;
+  isBroadcast?: boolean;
   kind?: StaffMessageKind;
   metadata?: StaffMessageMetadata;
 }
