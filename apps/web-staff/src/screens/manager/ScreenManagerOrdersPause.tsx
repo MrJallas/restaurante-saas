@@ -10,7 +10,7 @@
 // On End-now:
 //   • POST /staff/zone-pauses/:id/end → list refreshes; if all gone → Summary
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -58,7 +58,7 @@ export function ScreenManagerOrdersPause({
 }: ScreenManagerOrdersPauseProps) {
   const C = useG(!!dark);
   const router = useRouter();
-  const api = manager(tenantSlug);
+  const api = useMemo(() => manager(tenantSlug), [tenantSlug]);
   const [waiterId, setWaiterId] = useState<string>(preselectedWaiterId ?? '');
   const [duration, setDuration] = useState<ZonePauseDurationMinutes>(5);
   const [reason, setReason] = useState('');
@@ -67,10 +67,10 @@ export function ScreenManagerOrdersPause({
   const [busy, setBusy] = useState(false);
   const [, setTick] = useState(0);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     const r = await api.zonePauses.list({ active: true }).catch(() => []);
     setPauses(r);
-  };
+  }, [api]);
 
   useEffect(() => {
     refresh();
@@ -80,7 +80,7 @@ export function ScreenManagerOrdersPause({
       clearInterval(i);
       clearInterval(r);
     };
-  }, [tenantSlug]);
+  }, [refresh]);
 
   // Try fetching staff for the picker (P1 #14, #32)
   useEffect(() => {

@@ -55,7 +55,7 @@ export function ScreenStaffMessages({ dark, tenantSlug, managerId }: ScreenStaff
     }
   }, [managerId]);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     try {
       // Round 22: dual fetch — staff↔staff threads (legacy inbox) +
@@ -78,11 +78,11 @@ export function ScreenStaffMessages({ dark, tenantSlug, managerId }: ScreenStaff
     } finally {
       setLoading(false);
     }
-  };
+  }, [api, resolvedManagerId]);
 
   useEffect(() => {
     refresh();
-  }, [tenantSlug, resolvedManagerId]);
+  }, [refresh]);
 
   // Refresh on incoming messages and on read-receipts so the unread-count
   // badge stays in sync when another device marks a thread as read.
