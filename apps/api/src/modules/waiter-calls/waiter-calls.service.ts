@@ -213,9 +213,16 @@ export class WaiterCallsService {
   async acknowledgeCall(
     callId: string,
     slug: string,
+    staffId: string,
     staffName?: string,
     etaMinutes?: number,
   ) {
+    const staffRows = (await this.tenantConn.query(
+      `SELECT name FROM staff WHERE id = $1 AND is_active = true`,
+      [staffId],
+    )) as Array<{ name: string }>;
+    const effectiveStaffName = staffName ?? staffRows[0]?.name ?? null;
+
     // Round 5 (B-NEW-14): UPDATE atômico em vez de SELECT-then-UPDATE.
     // Antes: 2 garçons clicando "atender" simultaneamente passavam pelo
     // SELECT (status=pending), ambos UPDATE — segundo sobrescrevia
@@ -230,11 +237,12 @@ export class WaiterCallsService {
       `UPDATE waiter_calls
        SET status = 'acknowledged',
            acknowledged_at = now(),
-           assigned_waiter_name = COALESCE($2, assigned_waiter_name),
-           eta_minutes = COALESCE($3, eta_minutes)
+           acknowledged_by = $2,
+           assigned_waiter_name = COALESCE($3, assigned_waiter_name),
+           eta_minutes = COALESCE($4, eta_minutes)
        WHERE id = $1 AND status = 'pending'
        RETURNING id, table_session_id`,
-      [callId, staffName ?? null, etaMinutes ?? null],
+      [callId, staffId, effectiveStaffName, etaMinutes ?? null],
     )) as { id: string; table_session_id: string }[];
 
     if (!updated.length) {
@@ -258,7 +266,7 @@ export class WaiterCallsService {
     return {
       callId,
       status: 'acknowledged',
-      waiterName: staffName,
+      waiterName: effectiveStaffName ?? undefined,
       etaMinutes,
     };
   }

@@ -9,7 +9,12 @@ import { ScreenWaiterCalls } from '../../../screens/waiter/ScreenWaiterCalls';
 function CallsInner() {
   const params = useSearchParams();
   const dark = params.get('dark') === '1';
-  return <ScreenWaiterCalls dark={dark} />;
+  const tenantSlug =
+    params.get('tenant') ||
+    process.env.NEXT_PUBLIC_TENANT_SLUG ||
+    process.env.NEXT_PUBLIC_DEFAULT_TENANT ||
+    'restaurant_dev';
+  return <ScreenWaiterCalls dark={dark} tenantSlug={tenantSlug} />;
 }
 
 export default function WaiterCallsPage() {
