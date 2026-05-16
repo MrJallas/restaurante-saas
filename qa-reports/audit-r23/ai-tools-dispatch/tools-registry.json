@@ -1,0 +1,283 @@
+{
+  "count": 39,
+  "staff_tools_requiring_text": [
+    "staff_broadcast",
+    "staff_pause_zone",
+    "staff_respond_complaint"
+  ],
+  "tools": [
+    {
+      "name": "view_menu",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": true
+    },
+    {
+      "name": "search_dish",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "check_allergens",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "compare_dishes",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "recommend_dish",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "add_to_order",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "view_order",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": true
+    },
+    {
+      "name": "confirm_order",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "split_bill",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": true
+    },
+    {
+      "name": "pay_individual",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": true
+    },
+    {
+      "name": "pay_full",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": true
+    },
+    {
+      "name": "open_payment_screen",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": true
+    },
+    {
+      "name": "call_waiter",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "send_message_to_manager",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": true,
+      "router": false
+    },
+    {
+      "name": "send_complaint",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": true
+    },
+    {
+      "name": "request_table_merge",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "delete_chat",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "delete_all_chats",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "lgpd_data_request",
+      "audience": "customer",
+      "silent": true,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "show_lgpd_notice",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "view_courtesy",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "ask_about_restaurant",
+      "audience": "customer",
+      "silent": true,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "rate_visit",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": true
+    },
+    {
+      "name": "request_check",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "late_arrival_request",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "change_order",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "cancel_order",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "remove_from_cart",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "view_chat_history",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": true
+    },
+    {
+      "name": "explain_dish",
+      "audience": "customer",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "staff_broadcast",
+      "audience": "staff",
+      "silent": false,
+      "requiresText": true,
+      "router": false
+    },
+    {
+      "name": "staff_assign_call",
+      "audience": "staff",
+      "silent": true,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "staff_resolve_call",
+      "audience": "staff",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "staff_pause_zone",
+      "audience": "staff",
+      "silent": false,
+      "requiresText": true,
+      "router": false
+    },
+    {
+      "name": "staff_unpause_zone",
+      "audience": "staff",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "staff_mark_vip",
+      "audience": "staff",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "staff_unmark_vip",
+      "audience": "staff",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    },
+    {
+      "name": "staff_respond_complaint",
+      "audience": "staff",
+      "silent": false,
+      "requiresText": true,
+      "router": false
+    },
+    {
+      "name": "staff_resolve_complaint",
+      "audience": "staff",
+      "silent": false,
+      "requiresText": false,
+      "router": false
+    }
+  ]
+}

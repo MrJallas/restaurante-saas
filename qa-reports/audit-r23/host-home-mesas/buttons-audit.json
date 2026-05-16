@@ -1,0 +1,150 @@
+{
+  "audit_meta": {
+    "branch": "fix/customer-tools-and-continuation",
+    "tenant": "restaurant_dev",
+    "persona": {
+      "staffId": "a4c89ca7-86e6-4072-9432-449118a62fd4",
+      "staffRole": "host",
+      "name": "Renata Host"
+    },
+    "viewport": { "width": 390, "height": 844 },
+    "captured_at": "2026-05-15T20h"
+  },
+  "screens": [
+    {
+      "route": "/host",
+      "screen": "ScreenHostHome",
+      "buttons_total": 16,
+      "buttons_with_handler": 16,
+      "missing_aria": 15,
+      "disabled": 0,
+      "details": [
+        {
+          "idx": 0,
+          "text": "",
+          "aria": "Notificações",
+          "onClick": "() => router.push(\"/host/notifications\")"
+        },
+        {
+          "idx": "1..10",
+          "text": "Liberar",
+          "aria": null,
+          "onClick": "() => onLiberate?.(t.number)",
+          "note": "10 botões Liberar (1 por mesa livre). Nenhum tem aria-label individualizado por mesa — só texto 'Liberar'. Acessibilidade poderia mencionar número da mesa."
+        },
+        {
+          "idx": 11,
+          "text": "Mesas",
+          "onClick": "() => onTabChange?.('tables')",
+          "nav": "bottom-nav active"
+        },
+        {
+          "idx": 12,
+          "text": "Espera",
+          "onClick": "() => onTabChange?.('waitlist')",
+          "nav": "bottom-nav → /host/waitlist"
+        },
+        {
+          "idx": 13,
+          "text": "Reservas",
+          "onClick": "() => onTabChange?.('reserva')",
+          "nav": "bottom-nav → /host/reservations"
+        },
+        {
+          "idx": 14,
+          "text": "Avisos",
+          "onClick": "() => onTabChange?.('inbox')",
+          "nav": "bottom-nav → /host?#inbox (anchor scroll, mesmo screen)"
+        },
+        {
+          "idx": 15,
+          "text": "Eu",
+          "onClick": "() => onTabChange?.('me')",
+          "nav": "bottom-nav → /host/profile"
+        }
+      ]
+    },
+    {
+      "route": "/host/waitlist",
+      "screen": "ScreenHostWaitlist",
+      "buttons_total": 11,
+      "buttons_with_handler": 11,
+      "missing_aria": 9,
+      "disabled": 0,
+      "details": [
+        { "idx": 0, "aria": "Voltar", "text": "" },
+        { "idx": 1, "aria": "Adicionar", "text": "" },
+        { "idx": 2, "text": "Todas", "filter_chip": true },
+        { "idx": 3, "text": "1–2", "filter_chip": true, "tested": true, "result": "filtra entradas com party 1-2 corretamente" },
+        { "idx": 4, "text": "3–4", "filter_chip": true },
+        { "idx": 5, "text": "5+", "filter_chip": true },
+        { "idx": "6..10", "text": "Mesas/Espera/Reservas/Avisos/Eu", "nav": "bottom-nav" }
+      ]
+    },
+    {
+      "route": "/host/reservations",
+      "screen": "ScreenHostReservations",
+      "buttons_total": 10,
+      "details": [
+        { "idx": 0, "aria": "Voltar" },
+        { "idx": 1, "aria": "Adicionar" },
+        { "idx": 2, "text": "Todas" },
+        { "idx": 3, "text": "Aguardadas" },
+        { "idx": 4, "text": "Chegaram" },
+        { "idx": "5..9", "text": "bottom-nav" }
+      ]
+    },
+    {
+      "route": "/host/swap?fromTableId=<M02>",
+      "screen": "ScreenHostTableSwap",
+      "buttons_total": "12+ (depende de mesas livres)",
+      "key_findings": {
+        "source_chips_count": 2,
+        "source_chips": ["Mesa 1 · 2 pessoa(s)", "Mesa 2 · 1 pessoa(s)"],
+        "fromTableId_param_does_not_preselect": true,
+        "target_list_count": 10,
+        "cta_initial_state": "disabled (opacity 0.55, cursor not-allowed)",
+        "cta_after_target_pick_only": "still disabled — precisa de source também",
+        "cta_after_source_and_target_pick": "enabled (opacity 1, cursor pointer)"
+      }
+    },
+    {
+      "route": "/host/liberate/[tableId]",
+      "screen": "ScreenHostTableLiberate",
+      "buttons_total": 4,
+      "details": [
+        { "idx": 0, "aria": "Voltar" },
+        { "idx": 1, "text": "-", "function": "decrement party" },
+        { "idx": 2, "text": "+", "function": "increment party" },
+        { "idx": 3, "text": "Liberar mesa", "cta": true, "enabled": true }
+      ]
+    },
+    {
+      "route": "/host/late-arrival/[id]",
+      "screen": "ScreenHostLateArrival",
+      "buttons_total": 3,
+      "details": [
+        { "idx": 0, "aria": "Voltar" },
+        { "idx": 1, "text": "Rejeitar", "enabled": true },
+        { "idx": 2, "text": "Aprovar entrada", "enabled": true, "cta": true }
+      ],
+      "issue": "render incomplete — Mesa undefined, requester name vazio (API contract drift)"
+    },
+    {
+      "route": "/host/notifications",
+      "screen": "(inline, sem screen)",
+      "state": "empty + pill 'manager-only endpoint' (graceful 403)"
+    },
+    {
+      "route": "/host/profile",
+      "screen": "ScreenHostProfile",
+      "buttons_total": "7 list-tile buttons + 1 logout",
+      "items": ["Mensagens", "Histórico de turnos", "Notificações", "Segurança e senha", "Aparência", "Sair do app"]
+    },
+    {
+      "route": "/host/mensagens",
+      "screen": "(inbox)",
+      "state": "empty + tabs Todas/Não-lidas + search icon"
+    }
+  ]
+}
