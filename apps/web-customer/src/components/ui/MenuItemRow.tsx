@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { memo } from 'react';
 import { FoodPlaceholder } from './FoodPlaceholder';
 
@@ -35,11 +36,16 @@ export const MenuItemRow = memo(function MenuItemRow({ item, compact, onClick }:
     >
       {!compact &&
         (item.imageUrl ? (
-          <img
-            src={item.imageUrl}
-            alt=""
-            className="h-[84px] w-[84px] shrink-0 rounded-[12px] object-cover"
-          />
+          <span className="relative h-[84px] w-[84px] shrink-0 overflow-hidden rounded-[12px]">
+            <Image
+              src={item.imageUrl}
+              alt=""
+              fill
+              sizes="84px"
+              className="object-cover"
+              unoptimized
+            />
+          </span>
         ) : (
           <FoodPlaceholder
             label="foto"
