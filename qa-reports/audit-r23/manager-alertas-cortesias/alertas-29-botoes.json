@@ -1,0 +1,79 @@
+{
+  "page": "/manager/alertas",
+  "screen_component": "apps/web-staff/src/screens/manager/ScreenManagerAlertsAll.tsx",
+  "audit_persona": {
+    "staffId": "8bd06156-1fe5-4c18-a82d-43d38287ed4a",
+    "staffRole": "manager",
+    "name": "Erica"
+  },
+  "total_buttons": 29,
+  "rubric_match": "round 19 ≈29 buttons CONFIRMED (2 topbar + 4 filter + 6 alerts × 3 actions + 5 bottomnav)",
+  "buckets": {
+    "topbar": 2,
+    "filter_tabs": 4,
+    "alert_card_actions": 18,
+    "bottom_nav": 5
+  },
+  "buttons": [
+    {
+      "idx": 0,
+      "aria_label": "Voltar",
+      "kind": "navigation",
+      "destination": "/manager/operacoes",
+      "placebo": false
+    },
+    {
+      "idx": 1,
+      "aria_label": "Buscar",
+      "kind": "stub_toast",
+      "toast_expected": "Buscar alertas · em desenvolvimento (Onda 4 backend).",
+      "placebo": true,
+      "notes": "showStub() callback. No backend endpoint."
+    },
+    { "idx": 2, "text": "Todos · 6", "kind": "filter_tab", "verified_pressed_after_click": true, "visible_cards_after_click": 6, "placebo": false },
+    { "idx": 3, "text": "Críticos · 2", "kind": "filter_tab", "verified_pressed_after_click": true, "visible_cards_after_click_pristine": 2, "placebo": false },
+    { "idx": 4, "text": "Médios · 3", "kind": "filter_tab", "verified_pressed_after_click": true, "visible_cards_after_click": 3, "placebo": false },
+    { "idx": 5, "text": "Cozinha · 2", "kind": "filter_tab", "verified_pressed_after_click": true, "visible_cards_after_click": 2, "placebo": false },
+    { "idx": 6, "card": 1, "alert_kind": "kitchen-slow", "text": "Avisar cozinha", "kind": "stub_toast", "toast_verified": "Avisar cozinha · em desenvolvimento (Onda 4 backend).", "placebo": true },
+    { "idx": 7, "card": 1, "alert_kind": "kitchen-slow", "text": "Contactar cliente", "kind": "stub_toast", "toast_verified": "Contactar cliente · em desenvolvimento (Onda 4 backend).", "placebo": true },
+    { "idx": 8, "card": 1, "alert_kind": "kitchen-slow", "text": "Dispensar", "kind": "local_state", "behavior_verified": "Removes card from setAlerts (6→5)", "placebo": "partial-local-only" },
+    { "idx": 9, "card": 2, "alert_kind": "waiter-late", "text": "Realocar mesa", "kind": "stub_toast", "toast_verified": "Realocar mesa · em desenvolvimento (Onda 4 backend).", "placebo": true },
+    { "idx": 10, "card": 2, "alert_kind": "waiter-late", "text": "Chamar Henrique", "kind": "stub_toast", "toast_verified": "Chamar Henrique · em desenvolvimento (Onda 4 backend).", "placebo": true },
+    { "idx": 11, "card": 2, "alert_kind": "waiter-late", "text": "Dispensar", "kind": "local_state", "placebo": "partial-local-only" },
+    { "idx": 12, "card": 3, "alert_kind": "table-cold", "text": "Entregar agora", "kind": "stub_toast", "toast_verified": "Entregar agora · em desenvolvimento (Onda 4 backend).", "placebo": true },
+    { "idx": 13, "card": 3, "alert_kind": "table-cold", "text": "Avisar Caleb", "kind": "stub_toast", "toast_verified": "Avisar Caleb · em desenvolvimento (Onda 4 backend).", "placebo": true },
+    { "idx": 14, "card": 3, "alert_kind": "table-cold", "text": "Dispensar", "kind": "local_state", "placebo": "partial-local-only" },
+    { "idx": 15, "card": 4, "alert_kind": "kitchen-queue", "text": "Pausar pedidos", "kind": "stub_toast", "toast_verified": "Pausar pedidos · em desenvolvimento (Onda 4 backend).", "placebo": true },
+    { "idx": 16, "card": 4, "alert_kind": "kitchen-queue", "text": "Ver fila", "kind": "stub_toast", "toast_verified": "Ver fila · em desenvolvimento (Onda 4 backend).", "placebo": true, "notes": "Should plausibly link to /manager/kitchen-reorder; instead is a toast stub." },
+    { "idx": 17, "card": 4, "alert_kind": "kitchen-queue", "text": "Dispensar", "kind": "local_state", "placebo": "partial-local-only" },
+    { "idx": 18, "card": 5, "alert_kind": "payment-stuck", "text": "Levar maquininha", "kind": "stub_toast", "toast_verified": "Levar maquininha · em desenvolvimento (Onda 4 backend).", "placebo": true },
+    { "idx": 19, "card": 5, "alert_kind": "payment-stuck", "text": "Pagar pelo app", "kind": "stub_toast", "toast_verified": "Pagar pelo app · em desenvolvimento (Onda 4 backend).", "placebo": true },
+    { "idx": 20, "card": 5, "alert_kind": "payment-stuck", "text": "Dispensar", "kind": "local_state", "placebo": "partial-local-only" },
+    { "idx": 21, "card": 6, "alert_kind": "low-stock", "text": "Avisar bar", "kind": "stub_toast", "toast_verified": "Avisar bar · em desenvolvimento (Onda 4 backend).", "placebo": true },
+    { "idx": 22, "card": 6, "alert_kind": "low-stock", "text": "Esconder do menu", "kind": "stub_toast", "toast_verified": "Esconder do menu · em desenvolvimento (Onda 4 backend).", "placebo": true },
+    { "idx": 23, "card": 6, "alert_kind": "low-stock", "text": "Dispensar", "kind": "local_state", "placebo": "partial-local-only" },
+    { "idx": 24, "aria_label": "Painel", "kind": "navigation", "destination": "/manager", "placebo": false },
+    { "idx": 25, "aria_label": "Operação", "kind": "navigation", "destination": "/manager/operacoes", "badge": "6 alerts", "placebo": false },
+    { "idx": 26, "aria_label": "Equipe", "kind": "navigation", "destination": "/manager/equipe", "placebo": false },
+    { "idx": 27, "aria_label": "Financeiro", "kind": "navigation", "destination": "/manager/financeiro", "placebo": false },
+    { "idx": 28, "aria_label": "Eu", "kind": "navigation", "destination": "/manager/configuracoes", "placebo": false, "notes": "Label 'Eu' but route is /manager/configuracoes." }
+  ],
+  "summary": {
+    "real_functional_navigation_or_filter": 11,
+    "placebos_pure_stub_toasts": 13,
+    "placebos_partial_local_state_only": 6,
+    "behavior_tests_verified": {
+      "filterTabs": "Filter Críticos shows 1 (post-dismiss) / 2 (pristine); reactive counts work",
+      "dismissAction": "Verified: 6 cards → 5 after one Dispensar click",
+      "stubToasts": "12/12 action buttons verified emitting setStubMsg toast with exact 'X · em desenvolvimento (Onda 4 backend).' text",
+      "stubToastAutoDismiss": "Auto-clears after 2800ms (line 70 in source)"
+    },
+    "backend_endpoints_missing": [
+      "POST /alerts/:id/dismiss",
+      "POST /alerts/:id/action",
+      "GET /alerts?severity=...&kind=...",
+      "GET /alerts/resolved?date=today"
+    ],
+    "data_source": "DEFAULT_ALERTS mock array in ScreenManagerAlertsAll.tsx (lines 44-51); RESOLVED_HISTORY (lines 53-58). No fetch on mount."
+  }
+}

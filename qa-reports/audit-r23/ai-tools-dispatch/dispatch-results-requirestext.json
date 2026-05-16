@@ -1,0 +1,78 @@
+[
+  {
+    "name": "send_message_to_manager",
+    "status": 200,
+    "body": {
+      "name": "send_message_to_manager",
+      "silent": false,
+      "requiresText": true,
+      "router": false,
+      "result": {
+        "message": "Mensagem enviada ao gerente.",
+        "chips": [
+          {"id": "view_menu", "label": "Ver cardápio", "action": "navigate", "payload": "cardapio"},
+          {"id": "view_order", "label": "Ver pedido", "action": "send", "payload": "ver meu pedido"},
+          {"id": "call_waiter", "label": "Chamar garçom", "action": "send", "payload": "chamar o garçom"}
+        ],
+        "silent": false,
+        "actionPayload": {"messageSent": true, "toSessionId": null, "text": "Mensagem teste do QA r23"},
+        "routerTarget": null,
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "staff_broadcast",
+    "status": 200,
+    "body": {
+      "name": "staff_broadcast",
+      "silent": false,
+      "requiresText": true,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {"code": "api_error", "message": "POST /staff/broadcasts → 404"}
+      }
+    }
+  },
+  {
+    "name": "staff_pause_zone",
+    "status": 200,
+    "body": {
+      "name": "staff_pause_zone",
+      "silent": false,
+      "requiresText": true,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {"code": "missing_waiter"}
+      }
+    }
+  },
+  {
+    "name": "staff_respond_complaint",
+    "status": 200,
+    "body": {
+      "name": "staff_respond_complaint",
+      "silent": false,
+      "requiresText": true,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {"code": "api_error", "message": "POST /staff/complaints/00000000-0000-0000-0000-000000000000/messages → 404"}
+      }
+    }
+  }
+]

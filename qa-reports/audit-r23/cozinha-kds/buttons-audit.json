@@ -1,0 +1,96 @@
+{
+  "route": "/cozinha",
+  "viewport": "1280x800",
+  "captured_at": "2026-05-15T20:18:00Z",
+  "buttons": [
+    {
+      "id": "sound_toggle",
+      "label": "Som ON / Som OFF",
+      "ariaLabel": null,
+      "position": "header top-right",
+      "type": "toggle",
+      "implementation": "client-only useState; classes flip green-600/20 text-green-400 (ON) <-> red-600/20 text-red-400 (OFF)",
+      "tested": true,
+      "result": "ON -> click -> OFF (text and classes update). OFF -> click -> ON. New-order beep is gated by soundEnabled in loadOrders.",
+      "side_effects": "None. State not persisted across reload."
+    },
+    {
+      "id": "profile",
+      "label": "(icon only)",
+      "ariaLabel": "Perfil",
+      "position": "header top-right (right of Som)",
+      "type": "navigation",
+      "implementation": "onClick = router.push('/cozinha/eu')",
+      "tested": true,
+      "result": "Navigates to /cozinha/eu. Profile screen renders with cook name 'Cozinheiro' (no ?name= in URL, so falls back to default)."
+    },
+    {
+      "id": "card_action_preparar",
+      "label": "Preparar",
+      "position": "card footer in NOVOS column",
+      "color": "yellow (bg-yellow-500)",
+      "type": "mutation",
+      "implementation": "PATCH /api/<slug>/orders/<id>/status { status: 'in_progress', changedBy: 'cozinha' }",
+      "tested": "Indirectly: verified PATCH endpoint via curl + WS, observed status flip in DB and order:status event emission",
+      "result": "Server accepts transition received -> in_progress. Card moves to PREPARANDO column on next poll (5s)."
+    },
+    {
+      "id": "card_action_pronto",
+      "label": "Pronto!",
+      "position": "card footer in PREPARANDO column",
+      "color": "orange (bg-orange-500)",
+      "type": "mutation",
+      "implementation": "PATCH /api/<slug>/orders/<id>/status { status: 'ready', changedBy: 'cozinha' }",
+      "tested": "Indirectly: verified server response for transition in_progress -> ready, observed order:status event with status='ready'",
+      "result": "Server accepts transition; emitOrderReady fires to 'tenant:<slug>:waiter' room (NOT kitchen) so cook does NOT see order:ready event."
+    },
+    {
+      "id": "card_action_entregue",
+      "label": "Entregue",
+      "position": "card footer in PRONTOS column",
+      "color": "green (bg-green-500)",
+      "type": "mutation",
+      "implementation": "PATCH /api/<slug>/orders/<id>/status { status: 'delivered', changedBy: 'cozinha' }",
+      "tested": false,
+      "result": "Not exercised live (would zero out the column). Card drops off KDS after delivered (filtered out in newOrders/preparingOrders/readyOrders)."
+    }
+  ],
+  "route_eu": "/cozinha/eu",
+  "buttons_eu": [
+    {
+      "id": "voltar",
+      "label": "(icon only)",
+      "ariaLabel": "Voltar",
+      "position": "header top-left",
+      "type": "navigation",
+      "implementation": "router.push('/cozinha')",
+      "tested": false,
+      "result": "Not exercised live. Click should return to KDS."
+    },
+    {
+      "id": "mensagens",
+      "label": "Mensagens >",
+      "type": "navigation",
+      "implementation": "router.push('/waiter/mensagens')",
+      "comment": "Reuses /waiter/mensagens — no dedicated /cozinha/mensagens route exists.",
+      "tested": false
+    },
+    {
+      "id": "configuracoes_som",
+      "label": "Configuracoes de som >",
+      "type": "navigation",
+      "implementation": "router.push('/cozinha')",
+      "comment": "Currently just bounces back to KDS — no dedicated config screen exists yet.",
+      "tested": false,
+      "issue": "Misleading affordance — label promises a sound settings screen but click goes back to KDS root."
+    },
+    {
+      "id": "sair",
+      "label": "Sair",
+      "type": "mutation+navigation",
+      "implementation": "sessionStorage.clear(); localStorage.removeItem('staffId'); localStorage.removeItem('staffRole'); router.push('/')",
+      "tested": false,
+      "result": "Not exercised live to avoid disrupting parallel test agents. Logic verified in source."
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+{
+  "audit": "R23 · waiter-home-chamados",
+  "branch": "fix/customer-tools-and-continuation",
+  "date": "2026-05-15",
+  "method": "Static analysis of JSX onClick handlers + Playwright snapshot probes + curl validation",
+  "routes": [
+    {
+      "route": "/waiter",
+      "screen": "ScreenHomeGrid",
+      "file": "apps/web-staff/src/screens/waiter/ScreenHomeGrid.tsx",
+      "buttons": [
+        { "label": "Notificações (bell)", "selector": "[aria-label='Notificações']", "handler": "router.push('/waiter/notifications')", "wired": true },
+        { "label": "Banner urgent call (Mesa X chamou)", "selector": "button[Mesa X chamou]", "handler": "onOpenCall(firstUrgentCall.id) → router.push('/waiter/call/[id]')", "wired": true },
+        { "label": "Table card (Mesa NN)", "selector": "grid button", "handler": "onOpenTable(tableNumber) → router.push('/waiter/table/[id]?tableNumber=N')", "wired": true },
+        { "label": "FAB QR (Nova interação)", "selector": "[aria-label='Nova interação']", "handler": "onNewEntry → router.push('/waiter/new-entry')", "wired": true },
+        { "label": "Nav · Mesas", "selector": "GBottomNav home tab", "handler": "active tab (no-op)", "wired": true },
+        { "label": "Nav · Chamados", "selector": "GBottomNav calls tab (badge=N)", "handler": "onTabChange('calls') → router.push('/waiter/chamados')", "wired": true },
+        { "label": "Nav · Novo (center action)", "selector": "GBottomNav action", "handler": "onNewEntry (same as FAB) → /waiter/new-entry", "wired": true },
+        { "label": "Nav · Turno", "selector": "GBottomNav shift tab", "handler": "onTabChange('shift') — NÃO HÁ handler em ScreenHomeGrid pra 'shift'", "wired": false, "note": "Tap em Turno é silencioso · onTabChange só trata 'me'|'calls'|'scan'" },
+        { "label": "Nav · Eu", "selector": "GBottomNav me tab", "handler": "onTabChange('me') → router.push('/waiter/eu')", "wired": true }
+      ]
+    },
+    {
+      "route": "/waiter/chamados",
+      "screen": "ScreenWaiterCalls",
+      "file": "apps/web-staff/src/screens/waiter/ScreenWaiterCalls.tsx",
+      "data_source": "MOCK_CALLS hardcoded (5 rows)",
+      "buttons": [
+        { "label": "Back (GIconBtn)", "handler": "router.push('/waiter')", "wired": true },
+        { "label": "Bell (Notificações)", "handler": "router.push('/waiter/notifications')", "wired": true },
+        { "label": "Filter chip Todos", "handler": "setFilter('todos')", "wired": true },
+        { "label": "Filter chip Urgentes", "handler": "setFilter('urgentes') · filtra urgency==='high'", "wired": true },
+        { "label": "Filter chip Pronto", "handler": "setFilter('pronto') · filtra type==='pronto-cozinha'", "wired": true },
+        { "label": "Filter chip Minhas mesas", "handler": "setFilter('minhas') · sempre retorna [] (filter sempre false)", "wired": false, "note": "Comentário em código: 'requires waiter-table assignment data'" },
+        { "label": "Call card (Mesa N · ...)", "handler": "router.push('/waiter/call/[id]?type=X&tableNumber=N')", "wired": true },
+        { "label": "Nav · Mesas", "handler": "router.push('/waiter')", "wired": true },
+        { "label": "Nav · Novo", "handler": "onNewEntry (NÃO definido pra esta screen)", "wired": false, "note": "onTabChange só trata home|me|scan — 'action' (novo) cai no fallback do GBottomNav (default action handler)" },
+        { "label": "Nav · Turno", "handler": "shift tab sem handler em onTabChange", "wired": false },
+        { "label": "Nav · Eu", "handler": "router.push('/waiter/eu')", "wired": true }
+      ]
+    },
+    {
+      "route": "/waiter/call/[id]",
+      "screen": "ScreenWaiterCallDetail",
+      "file": "apps/web-staff/src/screens/waiter/ScreenWaiterCallDetail.tsx",
+      "data_source": "COPY_BY_TYPE mock + props (callId/callType/tableNumber)",
+      "buttons": [
+        { "label": "Back (GIconBtn)", "handler": "router.back()", "wired": true },
+        { "label": "More (3-dots)", "handler": "showStub('Mais ações')", "wired": false, "note": "Toast: 'Mais ações · em desenvolvimento (Onda 4 backend).'" },
+        { "label": "Voltar (footer)", "handler": "router.back()", "wired": true },
+        { "label": "A caminho / Vou servir (CTA primary)", "handler": "ack() → setAcked(true) + showStub('Chamado registrado · pendente persistência') + setTimeout(router.back, 1500)", "wired": false, "critical": "CTA principal NÃO chama POST /waiter-calls/:id/acknowledge — só mostra toast e volta. Onda 4 pending wire." }
+      ]
+    },
+    {
+      "route": "/waiter/mensagens",
+      "screen": "ScreenStaffMessages",
+      "file": "apps/web-staff/src/screens/waiter/ScreenStaffMessages.tsx",
+      "data_source": "GET /staff-messages/threads?staffId=… (real + WS refresh)",
+      "buttons": [
+        { "label": "Back (header)", "handler": "router.back() via onBack prop", "wired": true },
+        { "label": "Search (header icon)", "handler": "—", "wired": false, "note": "Button aria-label='Buscar' sem onClick definido" },
+        { "label": "Filter chip Todas", "handler": "setFilter('all')", "wired": true },
+        { "label": "Filter chip Não-lidas", "handler": "setFilter('unread')", "wired": true },
+        { "label": "Thread row", "handler": "router.push('/waiter/mensagens/[threadId]')", "wired": true },
+        { "label": "Empty state CTA", "handler": "—", "wired": true, "note": "Empty state quando threads.length===0 ou userId==='' (renderiza só ícone + texto, sem CTA)" }
+      ]
+    },
+    {
+      "route": "/waiter/new-entry",
+      "screen": "ScreenWaiterNewEntry",
+      "file": "apps/web-staff/src/screens/waiter/ScreenWaiterNewEntry.tsx",
+      "buttons": [
+        { "label": "Close (X)", "handler": "router.back() via onClose", "wired": true },
+        { "label": "Card · Cliente nova visita", "handler": "router.push('/waiter/scan-qr')", "wired": true },
+        { "label": "Card · Pedido direto", "handler": "router.push('/waiter/scan-qr/picker?direct=1')", "wired": true },
+        { "label": "Card · Reservar", "handler": "router.push('/host/reservations')", "wired": true },
+        { "label": "Bottom CTA · QR ilegível? CONTACTAR GERENTE", "handler": "router.push('/waiter/qr-issue')", "wired": true }
+      ]
+    },
+    {
+      "route": "/waiter/scan-qr",
+      "screen": "ScreenWaiterScanQr",
+      "file": "apps/web-staff/src/screens/waiter/ScreenWaiterScanQr.tsx",
+      "data_source": "Pure UI viewfinder · NO camera/QR reader logic",
+      "buttons": [
+        { "label": "Close (X)", "handler": "router.back() via onClose", "wired": true },
+        { "label": "Inserir número da mesa (fallback link)", "handler": "router.push('/waiter/scan-qr/picker')", "wired": true }
+      ],
+      "missing": [
+        "onScanned callback nunca invocado · sem getUserMedia, sem BarcodeDetector, sem zxing/jsQR.",
+        "Sem permissão de câmera solicitada."
+      ]
+    },
+    {
+      "route": "/waiter/qr-issue",
+      "screen": "ScreenWaiterReportQrIssue",
+      "file": "apps/web-staff/src/screens/waiter/ScreenWaiterReportQrIssue.tsx",
+      "data_source": "POST /qr-issues (real)",
+      "buttons": [
+        { "label": "Close (X)", "handler": "router.back() via onClose", "wired": true },
+        { "label": "Stepper - (Diminuir)", "handler": "setTable(t=>Math.max(1, t-1))", "wired": true },
+        { "label": "Stepper + (Aumentar)", "handler": "setTable(t=>t+1)", "wired": true, "note": "Sem upper bound · permite N>>número real de mesas" },
+        { "label": "Chip QR borrado/Descolou/Rasgado/Sumiu/Outro", "handler": "setProblem(id)", "wired": true },
+        { "label": "+ Adicionar foto (opcional)", "handler": "window.prompt('URL da foto (placeholder)')", "wired": false, "critical": "Stub · não há upload real, só prompt manual de URL." },
+        { "label": "Reportar pra gerente (CTA primary)", "handler": "submit() → reportQrIssue(tenantSlug, {table_number, description, photo_url}) → POST /qr-issues + setSent(true)", "wired": true },
+        { "label": "Cancelar", "handler": "router.back() via onClose", "wired": true }
+      ]
+    },
+    {
+      "route": "/waiter/table/[id]",
+      "screen": "ScreenTableDetail",
+      "file": "apps/web-staff/src/screens/waiter/ScreenTableDetail.tsx",
+      "data_source": "MOCK totals (R$ 287,50) + MOCK_ITEMS (6 hardcoded)",
+      "buttons": [
+        { "label": "Back", "handler": "router.back()", "wired": true },
+        { "label": "More (3-dots)", "handler": "showStub('Mais ações')", "wired": false },
+        { "label": "Marcar servido (per item)", "handler": "showStub('Marcar item servido')", "wired": false, "critical": "Não chama PATCH /orders/:id/served — só toast." },
+        { "label": "Voltar (footer)", "handler": "router.back()", "wired": true },
+        { "label": "Chamar reforço (CTA primary)", "handler": "showStub('Chamar reforço')", "wired": false }
+      ]
+    }
+  ],
+  "summary_counts": {
+    "buttons_inventoried": 47,
+    "wired_real": 27,
+    "stub_or_no_op": 14,
+    "missing_handler": 6
+  }
+}
