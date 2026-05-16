@@ -148,13 +148,20 @@ export function ScreenManagerHomeA({
   // Quando endpoint /alerts shipar (canvas docs/features/alerts.md), o
   // dismiss vai virar PATCH /alerts/:id/dismiss. Por ora UI-only.
   const [alerts, setAlerts] = useState(DEFAULT_ALERTS);
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
-  const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
-  };
   const dismissAlert = (id: number) => {
     setAlerts((prev) => prev.filter((a) => a.id !== id));
+  };
+  const runAlertAction = (action: string) => {
+    const label = action.toLowerCase();
+    if (label.includes('cozinha') || label.includes('fila')) {
+      router.push(`/manager/kitchen-reorder?slug=${tenantSlug}`);
+    } else if (label.includes('cliente') || label.includes('mensagem')) {
+      router.push(`/manager/mensagens?slug=${tenantSlug}`);
+    } else if (label.includes('garçom') || label.includes('garcom') || label.includes('equipe')) {
+      router.push(`/manager/equipe?slug=${tenantSlug}`);
+    } else {
+      router.push(`/manager/alertas?slug=${tenantSlug}`);
+    }
   };
 
   const refreshAll = useMemo(
@@ -488,7 +495,7 @@ export function ScreenManagerHomeA({
                     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                       <button
                         type="button"
-                        onClick={() => showStub(a.actions[0])}
+                        onClick={() => runAlertAction(a.actions[0])}
                         style={{
                           all: 'unset',
                           cursor: 'pointer',
@@ -504,7 +511,7 @@ export function ScreenManagerHomeA({
                       </button>
                       <button
                         type="button"
-                        onClick={() => showStub(a.actions[1])}
+                        onClick={() => runAlertAction(a.actions[1])}
                         style={{
                           all: 'unset',
                           cursor: 'pointer',
@@ -698,30 +705,6 @@ export function ScreenManagerHomeA({
 
       <MBottomNav active="home" dark={dark} onTo={(r) => router.push(r)} alerts={alerts.length} />
 
-      {stubMsg && (
-        <div
-          role="status"
-          style={{
-            position: 'fixed',
-            left: '50%',
-            bottom: 90,
-            transform: 'translateX(-50%)',
-            zIndex: 80,
-            padding: '12px 18px',
-            borderRadius: 999,
-            background: C.ink,
-            color: C.bg,
-            fontSize: 13,
-            fontWeight: 600,
-            letterSpacing: -0.1,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-            maxWidth: 'calc(100vw - 32px)',
-            textAlign: 'center',
-          }}
-        >
-          {stubMsg}
-        </div>
-      )}
     </div>
   );
 }

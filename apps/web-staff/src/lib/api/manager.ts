@@ -85,16 +85,24 @@ export interface ThreadWithMessagesDto {
 }
 
 export const staffMessagesApi = (slug: string) => ({
-  send: (body: StaffMessageSendDto) =>
-    staffPost<StaffMessageDto>(`/${slug}/staff-messages`, body),
+  send: (body: StaffMessageSendDto, params?: { staffId?: string }) =>
+    staffApi<StaffMessageDto>(`/${slug}/staff-messages`, {
+      method: 'POST',
+      headers: params?.staffId ? { 'x-staff-id': params.staffId } : undefined,
+      body: JSON.stringify(body),
+    }),
   // P1 #18 — backend `StaffQueryDto` requires `staffId` UUID; without it
   // we used to get a 400. Caller must thread the current viewer's staffId.
   listThreads: (params: { staffId: string }) =>
-    staffGet<StaffMessageThreadDto[]>(
+    staffApi<StaffMessageThreadDto[]>(
       `/${slug}/staff-messages/threads?staffId=${encodeURIComponent(params.staffId)}`,
+      { method: 'GET', headers: { 'x-staff-id': params.staffId } },
     ),
-  getThread: (threadId: string) =>
-    staffGet<ThreadWithMessagesDto>(`/${slug}/staff-messages/threads/${threadId}`),
+  getThread: (threadId: string, params?: { staffId?: string }) =>
+    staffApi<ThreadWithMessagesDto>(`/${slug}/staff-messages/threads/${threadId}`, {
+      method: 'GET',
+      headers: params?.staffId ? { 'x-staff-id': params.staffId } : undefined,
+    }),
   markRead: (messageId: string, body: { staffId: string }) =>
     staffPost<{ ok: true }>(`/${slug}/staff-messages/${messageId}/read`, body),
 });
@@ -122,6 +130,11 @@ export const customerInboxApi = (slug: string) => ({
     staffPost<StaffMessageHistoryReadResponse>(
       `/${slug}/customer-staff-messages/staff/threads/${threadId}/read`,
       {},
+    ),
+  sendReply: (threadId: string, body: { content: string }) =>
+    staffPost<StaffMessageHistoryMessageDto>(
+      `/${slug}/customer-staff-messages/staff/threads/${threadId}/messages`,
+      body,
     ),
 });
 
@@ -376,6 +389,53 @@ export const alertsApi = (slug: string) => ({
 });
 
 // ─────────────────────────────────────────────────────────────
+// Kitchen queue / reorder
+// ─────────────────────────────────────────────────────────────
+
+export interface KitchenQueueOrderItem {
+  id: string;
+  name: string;
+  quantity: number;
+  subtotalCents: number;
+  notes?: string | null;
+}
+
+export interface KitchenQueueOrder {
+  id: string;
+  status: string;
+  billing_mode: string;
+  total_cents: number;
+  notes?: string | null;
+  visit_id: string | null;
+  table_session_id: string;
+  table_label: string;
+  table_number: number;
+  created_at: string;
+  updated_at: string;
+  wait_minutes: number;
+  meta_minutes: number;
+  priority_rank: string;
+  priority_reason: string | null;
+  priority_requested_by: string | null;
+  priority_updated_at: string | null;
+  items: KitchenQueueOrderItem[];
+}
+
+export const kitchenApi = (slug: string) => ({
+  queue: () =>
+    staffGet<{ orders: KitchenQueueOrder[] }>(`/${slug}/kitchen/queue`).then(
+      (r) => r.orders ?? [],
+    ),
+  reorder: (body: { orderIds: string[]; reason?: string }) =>
+    staffPost<{
+      ok: true;
+      updatedOrderIds: string[];
+      reason: string | null;
+      updatedAt: string;
+    }>(`/${slug}/kitchen/reorder`, body),
+});
+
+// ─────────────────────────────────────────────────────────────
 // Staff roster — wraps the `{ staff: [...] }` envelope from the
 // API so callers receive a flat array. Centralised here so every
 // screen (Staff, Home, OrdersPause, Funcionarios) gets the same
@@ -410,6 +470,18 @@ export interface UpdateStaffPayload extends Partial<CreateStaffPayload> {
   isActive?: boolean;
 }
 
+export interface StaffPerformance {
+  staffId: string;
+  period: 'today' | '7d' | '30d' | string;
+  kpis: {
+    ordersServed: number;
+    totalRevenue: number;
+    avgResponseSec: number;
+    sessionsHandled: number;
+    callsAnswered: number;
+  };
+}
+
 export const staffRosterApi = (slug: string) => ({
   list: (params?: { role?: string; activeOnly?: boolean }) => {
     const search = new URLSearchParams();
@@ -420,6 +492,11 @@ export const staffRosterApi = (slug: string) => ({
       `/${slug}/staff${query ? `?${query}` : ''}`,
     ).then((r) => r.staff ?? []);
   },
+  get: (id: string) => staffGet<StaffRosterEntry>(`/${slug}/staff/${id}`),
+  performance: (id: string, period: 'today' | '7d' | '30d') =>
+    staffGet<StaffPerformance>(
+      `/${slug}/staff/${id}/performance?period=${encodeURIComponent(period)}`,
+    ),
   create: (payload: CreateStaffPayload) =>
     staffPost<StaffRosterEntry>(`/${slug}/staff`, payload),
   update: (id: string, payload: UpdateStaffPayload) =>
@@ -557,6 +634,7 @@ export function manager(slug: string) {
     shifts: shiftsApi(slug),
     assistant: assistantApi(slug),
     alerts: alertsApi(slug),
+    kitchen: kitchenApi(slug),
     me: managerMe(slug),
   };
 }

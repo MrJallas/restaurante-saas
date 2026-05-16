@@ -11,6 +11,12 @@ function CookProfileInner() {
   const router = useRouter();
   const params = useSearchParams();
   const cookName = params.get('name') ?? 'Cozinheiro';
+  const tenantSlug =
+    params.get('tenant') ||
+    params.get('slug') ||
+    process.env.NEXT_PUBLIC_TENANT_SLUG ||
+    'restaurant_dev';
+  const cookId = params.get('cookId') || params.get('staffId') || '';
   const initials = (params.get('initials') ??
     cookName.split(' ').map((p) => p[0]).slice(0, 2).join('')).toUpperCase();
   const shift = params.get('shift') ?? '17:00 — 23:00';
@@ -73,7 +79,11 @@ function CookProfileInner() {
           <ActionRow
             icon={<MessageSquare className="h-4 w-4" />}
             label="Mensagens"
-            onClick={() => router.push('/waiter/mensagens')}
+            onClick={() =>
+              router.push(
+                `/cozinha/mensagens?tenant=${tenantSlug}${cookId ? `&cookId=${cookId}` : ''}`,
+              )
+            }
           />
           <ActionRow
             icon={<Volume2 className="h-4 w-4" />}
