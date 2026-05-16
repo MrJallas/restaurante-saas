@@ -141,6 +141,11 @@ export class HostController {
   ) {
     const staffId = this.callerResolver.requireStaffId(req);
     const created = await this.service.createSwapRequest({ ...body, staffId }, slug);
+    await this.service.updateSwapRequest(
+      created.id,
+      { status: 'in_progress', staffId },
+      slug,
+    );
     const finalized = await this.service.updateSwapRequest(
       created.id,
       { status: 'completed', staffId },

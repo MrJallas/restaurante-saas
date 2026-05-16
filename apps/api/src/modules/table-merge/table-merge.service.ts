@@ -123,12 +123,9 @@ export class TableMergeService {
       ],
     )) as Array<Record<string, unknown>>;
 
-    const result = this.mapRow(rows[0]);
+    const result = await this.getById(rows[0].id as string);
 
     if (slug && this.events) {
-      // TODO(payload): tableNumber + host names + party sizes require joins
-      // with table_sessions/visits/customers. Defaulting to 0 / '' so the
-      // contract is satisfied; FE re-fetches via REST for full data.
       this.events.emitTableMergeCreated(
         slug,
         result.requestingCustomerId,
@@ -137,12 +134,12 @@ export class TableMergeService {
           requestId: result.id,
           originSessionId: result.sourceTableSessionId,
           targetSessionId: result.targetTableSessionId,
-          originTableNumber: 0,
-          targetTableNumber: 0,
-          originHostName: '',
-          targetHostName: null,
-          originPartySize: 0,
-          targetPartySize: 0,
+          originTableNumber: result.originTableNumber,
+          targetTableNumber: result.targetTableNumber,
+          originHostName: result.originHostName,
+          targetHostName: result.targetHostName,
+          originPartySize: result.originPartySize,
+          targetPartySize: result.targetPartySize,
           expiresAt: result.ttlExpiresAt,
         },
       );
@@ -541,23 +538,80 @@ export class TableMergeService {
     const params: unknown[] = [];
     let i = 1;
     if (filters.status) {
-      where.push(`status = $${i++}`);
+      where.push(`mr.status = $${i++}`);
       params.push(filters.status);
     }
     if (filters.tableSessionId) {
       where.push(
-        `(source_table_session_id = $${i} OR target_table_session_id = $${i})`,
+        `(mr.source_table_session_id = $${i} OR mr.target_table_session_id = $${i})`,
       );
       params.push(filters.tableSessionId);
       i++;
     }
-    const sql = `SELECT * FROM table_merge_requests
+    const sql = `SELECT mr.*,
+                        CAST(NULLIF(regexp_replace(src_t.code, '[^0-9]', '', 'g'), '') AS INT) AS origin_table_number,
+                        CAST(NULLIF(regexp_replace(tgt_t.code, '[^0-9]', '', 'g'), '') AS INT) AS target_table_number,
+                        src_c.name AS origin_host_name,
+                        tgt_c.name AS target_host_name,
+                        (SELECT COUNT(*)::int
+                           FROM session_participants sp
+                          WHERE sp.table_session_id = mr.source_table_session_id
+                            AND sp.status = 'approved'
+                            AND sp.left_at IS NULL) AS origin_party_size,
+                        (SELECT COUNT(*)::int
+                           FROM session_participants sp
+                          WHERE sp.table_session_id = mr.target_table_session_id
+                            AND sp.status = 'approved'
+                            AND sp.left_at IS NULL) AS target_party_size
+                   FROM table_merge_requests mr
+              LEFT JOIN table_sessions src_ts ON src_ts.id = mr.source_table_session_id
+              LEFT JOIN table_sessions tgt_ts ON tgt_ts.id = mr.target_table_session_id
+              LEFT JOIN tables src_t ON src_t.id = src_ts.table_id
+              LEFT JOIN tables tgt_t ON tgt_t.id = tgt_ts.table_id
+              LEFT JOIN customers src_c ON src_c.id = src_ts.host_customer_id
+              LEFT JOIN customers tgt_c ON tgt_c.id = tgt_ts.host_customer_id
                  ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-                 ORDER BY created_at DESC LIMIT 100`;
+                 ORDER BY mr.created_at DESC LIMIT 100`;
     const rows = (await this.tenantConn.query(sql, params)) as Array<
       Record<string, unknown>
     >;
     return rows.map((r) => this.mapRow(r));
+  }
+
+  async getById(id: string) {
+    const rows = (await this.tenantConn.query(
+      `SELECT mr.*,
+              CAST(NULLIF(regexp_replace(src_t.code, '[^0-9]', '', 'g'), '') AS INT) AS origin_table_number,
+              CAST(NULLIF(regexp_replace(tgt_t.code, '[^0-9]', '', 'g'), '') AS INT) AS target_table_number,
+              src_c.name AS origin_host_name,
+              tgt_c.name AS target_host_name,
+              (SELECT COUNT(*)::int
+                 FROM session_participants sp
+                WHERE sp.table_session_id = mr.source_table_session_id
+                  AND sp.status = 'approved'
+                  AND sp.left_at IS NULL) AS origin_party_size,
+              (SELECT COUNT(*)::int
+                 FROM session_participants sp
+                WHERE sp.table_session_id = mr.target_table_session_id
+                  AND sp.status = 'approved'
+                  AND sp.left_at IS NULL) AS target_party_size
+         FROM table_merge_requests mr
+    LEFT JOIN table_sessions src_ts ON src_ts.id = mr.source_table_session_id
+    LEFT JOIN table_sessions tgt_ts ON tgt_ts.id = mr.target_table_session_id
+    LEFT JOIN tables src_t ON src_t.id = src_ts.table_id
+    LEFT JOIN tables tgt_t ON tgt_t.id = tgt_ts.table_id
+    LEFT JOIN customers src_c ON src_c.id = src_ts.host_customer_id
+    LEFT JOIN customers tgt_c ON tgt_c.id = tgt_ts.host_customer_id
+        WHERE mr.id = $1`,
+      [id],
+    )) as Array<Record<string, unknown>>;
+    if (!rows.length) {
+      throw new HttpException(
+        'Pedido de juncao nao encontrado.',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return this.mapRow(rows[0]);
   }
 
   private mapRow(row: Record<string, unknown>) {
@@ -570,8 +624,15 @@ export class TableMergeService {
       decidedByCustomerId:
         (row.decided_by_customer_id as string | null) ?? null,
       status: row.status as string,
+      originTableNumber: Number(row.origin_table_number ?? 0),
+      targetTableNumber: Number(row.target_table_number ?? 0),
+      originHostName: (row.origin_host_name as string | null) ?? '',
+      targetHostName: (row.target_host_name as string | null) ?? null,
+      originPartySize: Number(row.origin_party_size ?? 0),
+      targetPartySize: Number(row.target_party_size ?? 0),
       message: (row.message as string | null) ?? null,
       ttlExpiresAt: row.ttl_expires_at as string,
+      expiresAt: row.ttl_expires_at as string,
       cooldownEndsAt: (row.cooldown_expires_at as string | null) ?? null,
       decidedAt: (row.decided_at as string | null) ?? null,
       // P1 #28 — surface dual-consent timestamps so FE can show "esperando

@@ -24,6 +24,7 @@ export default function HostApproveMergePage() {
   const router = useRouter();
   const slug = params?.slug ?? '';
   const requestId = search?.get('requestId') ?? null;
+  const skipTypewriter = search?.get('cold') === '1';
 
   const { sessionId, customerId } = useSession();
 
@@ -99,5 +100,5 @@ export default function HostApproveMergePage() {
     );
   }
 
-  return <ScreenCustomerHostApproveMerge slug={slug} request={request} />;
+  return <ScreenCustomerHostApproveMerge slug={slug} request={request} skipTypewriter={skipTypewriter} />;
 }
