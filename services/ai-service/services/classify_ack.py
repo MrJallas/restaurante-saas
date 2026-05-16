@@ -74,6 +74,11 @@ _ALLOW_LIST_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b(conta|fechar|pagar|pago|pagamento|fechamento)\b", re.IGNORECASE),
     # Order modification verbs · "trocar pedido", "cancelar item", "mudar a bebida"
     re.compile(r"\b(trocar|cancelar|mudar|alterar|modificar)\s+(o\s+|a\s+|os\s+|as\s+|um\s+|uma\s+)?(pedido|prato|item|bebida|comida|sobremesa)\b", re.IGNORECASE),
+    # Order status / ETA · "quanto tempo demora o pedido?" is core restaurant
+    # scope. Video R23 @02:51 showed the classifier bouncing this as
+    # out-of-scope even though continuation chips advertise the same phrase.
+    re.compile(r"\b(quanto\s+tempo|demora|vai\s+demorar|cad[eê]|status|andamento|previs[aã]o|quando)\b.*\b(pedido|comida|prato|cozinha)\b", re.IGNORECASE),
+    re.compile(r"\b(pedido|comida|prato|cozinha)\b.*\b(quanto\s+tempo|demora|vai\s+demorar|cad[eê]|status|andamento|previs[aã]o|quando)\b", re.IGNORECASE),
     # Allergen/restriction questions · "tem glúten?", "é sem lactose?",
     # "tem opção vegana?". The `vegan[ao]?` covers both gendered Portuguese
     # forms (vegano/vegana). "vegetarian[ao]?" same idea.

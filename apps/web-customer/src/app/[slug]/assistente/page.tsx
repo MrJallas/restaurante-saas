@@ -1,10 +1,12 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { apiPost, apiGet } from '../../../lib/api';
 import { clearDeliveredContinuationHint } from '../../../lib/continuationHints';
-import { listMessages, listThreads } from '../../../lib/api/chat-history';
+import { recordCustomerEvent } from '../../../lib/customerEvents';
+import { listMessages } from '../../../lib/api/chat-history';
 import type { ChatMessageDto } from '@restaurant/shared-types';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
@@ -20,6 +22,10 @@ import { ToolCallIndicator } from '../../../components/ui/ToolCallIndicator';
 import { SuggestionChip } from '../../../components/ui/SuggestionChip';
 import { PillButton } from '../../../components/ui/PillButton';
 import { HomeHero } from '../../../components/home/HomeHero';
+import {
+  CommandPicker,
+  type CommandModeChoice,
+} from '../../../components/cardapio/CommandPicker';
 import { useUIState } from '../../../providers/UIStateProvider';
 import {
   OverlaySalonMap,
@@ -183,6 +189,20 @@ interface MenuItemToolPayload {
   categoryName?: string;
 }
 
+interface PendingOrderItem {
+  id: string;
+  name: string;
+  priceCents: number;
+  quantity: number;
+  note?: string;
+}
+
+interface PendingOrderAdd {
+  items: PendingOrderItem[];
+  sourceMessageId?: string;
+  openReviewAfterAdd?: boolean;
+}
+
 // Fallback chips — só aparecem em idle (antes do primeiro turno) ou
 // quando a tool dispatched não retornou chips canônicos. Backend devolve
 // `chips` quando vier de uma tool com chips populated; aí esses defaults
@@ -200,8 +220,61 @@ const DEFAULT_SUGGESTIONS: ChipCanon[] = [
  * de uma string final pra navigate (path) ou send (texto pra digitar).
  */
 function chipText(chip: ChipCanon): string {
-  if (typeof chip.payload === 'string' && chip.payload.length > 0) return chip.payload;
-  return chip.label;
+  const normalized = normalizeChipCopy(chip);
+  if (typeof normalized.payload === 'string' && normalized.payload.length > 0) return normalized.payload;
+  return normalized.label;
+}
+
+function chipCopyKey(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function normalizeChipCopy(chip: ChipCanon): ChipCanon {
+  const payload = typeof chip.payload === 'string' ? chip.payload : '';
+  const copy = chipCopyKey(`${chip.id} ${chip.label} ${payload}`);
+
+  if (
+    chip.id === 'complaint-text' ||
+    (chip.action === 'expand' &&
+      (/\b(contar|conta)\b.*\b(rolou|gerencia|gerente)\b/.test(copy) ||
+        /\b(reclamacao|reclamar)\b/.test(copy)))
+  ) {
+    return {
+      ...chip,
+      action: 'expand',
+      label: 'Registrar reclamação formal',
+      payload: 'Descreva o problema para registrar a reclamação...',
+    };
+  }
+
+  if (
+    chip.action === 'expand' &&
+    /\b(mensagem|recado|comunicar)\b/.test(copy) &&
+    /\b(gerencia|gerente)\b/.test(copy)
+  ) {
+    return {
+      ...chip,
+      label: 'Enviar mensagem ao gerente',
+      payload: 'Escreva a mensagem que o gerente deve receber...',
+    };
+  }
+
+  return chip;
+}
+
+function chipNavigationDestination(slug: string, payload: string): string {
+  const raw = payload.trim();
+  const ratingMatch = raw.match(/^avaliar[:/](.+)$/);
+  if (ratingMatch?.[1]) {
+    return `/${slug}/orders/${encodeURIComponent(ratingMatch[1])}/rating`;
+  }
+  if (raw === 'avaliar' || raw === '/avaliar') {
+    return `/${slug}/pagamento/feedback`;
+  }
+  return raw.startsWith('/') ? raw : `/${slug}/${raw}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -315,9 +388,13 @@ type ToolCategory =
  */
 const SILENT_PATH_TOOLS = new Set<string>([
   'view_menu',
+  'view_order',
   'call_waiter',
   'request_table_merge',
   'open_payment_screen',
+  'pay_individual',
+  'pay_full',
+  'split_bill',
 ]);
 
 /**
@@ -332,7 +409,6 @@ const TEXT_ONLY_TOOLS = new Set<string>([
   'search_dish',
   'check_allergens',
   'compare_dishes',
-  'view_order',
   'view_courtesy',
 ]);
 
@@ -349,15 +425,9 @@ function categorizeToolName(name: string): ToolCategory {
 
 /**
  * Mapeia mensagens persistidas no Mongo (DTO) pro shape interno do chat
- * ativo. Usado por A (continuar conversa antiga via `?threadId=`) e D
- * (auto-hidrate da thread do dia ao voltar pro /assistente).
- *
- * - `assistant` → 'ai' + toolCall opcional (1º elemento de toolCalls[]).
- * - `manager`   → 'staff' (StaffBubble assinada; nome padrão "Renata"
- *                 quando metadata.staffName ausente).
- * - `system`    → dobrado em 'ai' (chat ativo não tem role 'system';
- *                 conteúdo geralmente é um system notice curto).
- * - `user`      → 'user'.
+ * ativo. Usado somente no fluxo explícito de continuar conversa a partir
+ * de `/chat-history/:threadId`; entrada direta em `/assistente` nunca
+ * reidrata histórico antigo.
  */
 function mapHistoryToChat(msgs: ChatMessageDto[]): ChatMessage[] {
   return msgs.map((m, i) => {
@@ -381,8 +451,6 @@ function mapHistoryToChat(msgs: ChatMessageDto[]): ChatMessage[] {
         staffCreatedAt: m.createdAt,
       };
     }
-    // assistant + system (system folded into ai pra renderizar como bubble
-    // ai quando vem do histórico — chat ativo não suporta system role).
     const firstTool = Array.isArray(m.toolCalls) && m.toolCalls.length > 0
       ? m.toolCalls[0]
       : null;
@@ -396,6 +464,15 @@ function mapHistoryToChat(msgs: ChatMessageDto[]): ChatMessage[] {
         : undefined,
     };
   });
+}
+
+function newAssistantConversationId(): string {
+  const cryptoApi =
+    typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+    return cryptoApi.randomUUID();
+  }
+  return `client-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function normalize(text: string): string {
@@ -457,10 +534,8 @@ export default function AssistentePage() {
   const slug = params.slug as string;
   const prefill = searchParams.get('prefill') ?? '';
   const itemId = searchParams.get('itemId') ?? '';
-  // Round 22 §A — quando presente, fetcha mensagens dessa thread e
-  // hidrata o chat ativo (skip landing). User vem clicando "Continuar
-  // nessa conversa" em `/chat-history/:threadId`. Sem o param o /assistente
-  // segue o flow normal (landing → 1ª msg → chat).
+  // Continuação explícita: só o menu de conversas arquivadas passa
+  // `threadId`. Entrada normal em `/assistente` fica sempre nova.
   const threadIdParam = searchParams.get('threadId') ?? '';
 
   useEffect(() => {
@@ -511,44 +586,48 @@ export default function AssistentePage() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(!!prefill);
-  // Round 4 §C-NEW-8 — `/assistente` agora abre numa "landing" tipo Mesa
-  // Home (eyebrow ASSISTENTE + greeting da continuation API + chips +
-  // input). Bubbles de chat só aparecem quando o customer envia a 1ª
-  // mensagem nesta sessão. Voltar pra `/assistente` (ex.: vindo de
-  // /cardapio) recomeça em landing — histórico completo fica em
-  // `/chat-history`. Com prefill ou `?threadId=`, já entra direto em chat
-  // (skip landing) — round 22 §A/§D.
+  // `/assistente` sem `threadId` sempre abre uma conversa ativa nova por
+  // visita. Histórico salvo no Mongo só volta ao chat ativo pelo menu de
+  // conversas, quando o usuário escolhe continuar aquele thread.
   const [chatStarted, setChatStarted] = useState<boolean>(!!prefill || !!threadIdParam);
-  // Round 22 §A/§D — true enquanto fetcha mensagens persistidas (do
-  // ?threadId= ou da última thread do dia). Mostra um loader inline
-  // em vez da landing/bubbles durante essa janela curta. Sai pra false
-  // depois do fetch (sucesso, 404, ou erro de rede — sempre).
   const [historyLoading, setHistoryLoading] = useState<boolean>(!!threadIdParam);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [landingGreeting, setLandingGreeting] = useState<string | null>(null);
   // suggestions agora carrega chips canônicos (ChipCanon) em vez de só
   // strings — herdamos do backend `res.chips` quando uma tool dispatched
   // emitiu chips reativos. Fallback é DEFAULT_SUGGESTIONS (idle state).
   const [suggestions, setSuggestions] = useState<ChipCanon[]>(DEFAULT_SUGGESTIONS);
   const [chipBusy, setChipBusy] = useState(false);
+  const [continuationRefreshKey, setContinuationRefreshKey] = useState(0);
+  const [expandedInputPlaceholder, setExpandedInputPlaceholder] = useState<string | null>(null);
+  const [pendingOrderAdd, setPendingOrderAdd] = useState<PendingOrderAdd | null>(null);
   // Round 3 Cat 4 (V20 chat): última tool dispatched neste turno — usa
   // pra renderizar a eyebrow `··· USANDO ADD_TO_ORDER ···` antes do
   // bubble do assistente.
   const [lastToolName, setLastToolName] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoSentRef = useRef(false);
+  const conversationIdRef = useRef<string | null>(null);
+  if (!conversationIdRef.current) {
+    conversationIdRef.current = newAssistantConversationId();
+  }
 
-  // Round 4 §C-NEW-8 — em vez de carregar histórico inteiro como bubbles,
-  // /assistente abre num "landing" com greeting da continuation API
-  // (mesmo endpoint que a Mesa Home consome). Histórico completo fica em
-  // `/chat-history` (rota dedicada). Quando customer envia 1ª mensagem,
-  // o greeting vira a 1ª bubble do assistant + vai a user msg + resposta.
-  //
-  // Round 22 §A/§D — quando temos `?threadId=` (continuação explícita)
-  // pulamos o fetch da continuation API: o usuário vai ver bubbles direto.
-  // Para o flow D (auto-hidrate da thread do dia), a continuation API
-  // ainda roda em paralelo — se a hidratação encontrar thread, ela
-  // sobrescreve `messages` e a landing some; se não encontrar, mantemos
-  // o greeting carregado pra landing.
+  useEffect(() => {
+    if (!slug || !session.sessionId) return;
+    recordCustomerEvent(slug, 'assistant_opened', {
+      source: threadIdParam ? 'thread' : prefill ? 'prefill' : 'landing',
+    });
+  }, [slug, session.sessionId, threadIdParam, prefill]);
+
+  useEffect(() => {
+    const refresh = () => setContinuationRefreshKey((key) => key + 1);
+    window.addEventListener('customer:continuation-refresh', refresh);
+    return () => window.removeEventListener('customer:continuation-refresh', refresh);
+  }, []);
+
+  // A tela ativa não hidrata chat antigo por padrão. O histórico completo
+  // fica em `/chat-history`; aqui carregamos só o greeting de continuation
+  // para a landing normal antes da primeira mensagem da nova conversa.
   useEffect(() => {
     if (!slug || prefill || threadIdParam || !session.sessionId || chatStarted) return;
     const load = async () => {
@@ -581,18 +660,16 @@ export default function AssistentePage() {
     session.isReturning,
     session.customerName,
     draftItems.length,
+    continuationRefreshKey,
   ]);
 
-  // Round 22 §A — fetcha mensagens da thread escolhida via `?threadId=`
-  // e hidrata o chat ativo. Backend valida ownership pelo cookie
-  // recognition_token; thread alheia retorna 404 e nós caímos no flow
-  // normal (landing) silenciosamente. Não bloqueia o user — input fica
-  // disponível pra mandar novas msgs (que entram na thread do dia atual,
-  // bucketing por data; continuar tecnicamente "diff thread" é OK pelo
-  // canon de day-bucket).
+  // Continuação explícita pelo menu de conversas com IA. Esse é o único
+  // caminho que reidrata Mongo no chat ativo; entrar direto no assistente
+  // não procura thread antiga nem thread do dia.
   useEffect(() => {
     if (!slug || !threadIdParam) return;
     let cancelled = false;
+    setActiveThreadId(null);
     (async () => {
       try {
         const msgs = await listMessages(slug, threadIdParam);
@@ -600,14 +677,16 @@ export default function AssistentePage() {
         if (msgs.length > 0) {
           setMessages(mapHistoryToChat(msgs));
           setChatStarted(true);
+          setActiveThreadId(threadIdParam);
         } else {
-          // Thread vazia → cai pra landing.
           setChatStarted(false);
+          setActiveThreadId(null);
         }
       } catch {
-        // 404 (thread não é sua) / 401 (cookie ausente) / 503 (mongo) →
-        // cair no flow normal de landing.
-        if (!cancelled) setChatStarted(false);
+        if (!cancelled) {
+          setChatStarted(false);
+          setActiveThreadId(null);
+        }
       } finally {
         if (!cancelled) setHistoryLoading(false);
       }
@@ -616,42 +695,6 @@ export default function AssistentePage() {
       cancelled = true;
     };
   }, [slug, threadIdParam]);
-
-  // Round 22 §D — hidrate auto da thread do dia atual quando user volta
-  // pro /assistente SEM `?threadId=` (e sem prefill). Evita começar do
-  // zero quando o cliente sai pro /cardapio e volta — sentido natural
-  // de "voltei pra continuar a conversa onde parei". Thread do dia tem
-  // shape `${tenantId}:${customerId}:${YYYY-MM-DD}` por canon do
-  // appendTurn — buscamos pelo sufixo `:today`.
-  //
-  // Gate: precisa customerId resolvido e chat ainda não iniciado. Após
-  // 1ª msg do customer (chatStarted=true), o effect não dispara de novo
-  // (deps mudam mas early-return cobre). Erros são silenciosos — cai
-  // no flow normal de landing.
-  useEffect(() => {
-    if (!slug || threadIdParam || prefill) return;
-    if (!session.customerId) return;
-    if (chatStarted) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const threads = await listThreads(slug, session.customerId!);
-        if (cancelled || threads.length === 0) return;
-        const today = new Date().toISOString().slice(0, 10);
-        const todayThread = threads.find((t) => t.threadId.endsWith(`:${today}`));
-        if (!todayThread) return;
-        const msgs = await listMessages(slug, todayThread.threadId);
-        if (cancelled || msgs.length === 0) return;
-        setMessages(mapHistoryToChat(msgs));
-        setChatStarted(true);
-      } catch {
-        /* ignore — segue pra landing */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [slug, threadIdParam, prefill, session.customerId, chatStarted]);
 
   useEffect(() => {
     // Nas primeiras mensagens o "smooth" faz o chat animar de baixo pra cima
@@ -738,6 +781,68 @@ export default function AssistentePage() {
         content,
       },
     ]);
+  };
+
+  const pendingOrderTotalCents = useMemo(
+    () =>
+      pendingOrderAdd?.items.reduce(
+        (sum, item) => sum + item.priceCents * item.quantity,
+        0,
+      ) ?? 0,
+    [pendingOrderAdd],
+  );
+
+  const queueOrderAdd = (
+    itemsToAdd: PendingOrderItem[],
+    options?: { sourceMessageId?: string; openReviewAfterAdd?: boolean },
+  ) => {
+    if (itemsToAdd.length === 0 || pendingOrderAdd) return;
+    setPendingOrderAdd({
+      items: itemsToAdd,
+      sourceMessageId: options?.sourceMessageId,
+      openReviewAfterAdd: options?.openReviewAfterAdd,
+    });
+  };
+
+  const closePendingOrderAdd = () => {
+    setPendingOrderAdd(null);
+    setPlacingOrder(false);
+  };
+
+  const confirmPendingOrderAdd = (mode: CommandModeChoice) => {
+    if (!pendingOrderAdd) return;
+    pendingOrderAdd.items.forEach((item) => {
+      addItem({
+        menuItemId: item.id,
+        name: item.name,
+        priceCents: item.priceCents,
+        quantity: item.quantity,
+        note: item.note,
+        commandMode: mode,
+      });
+    });
+    if (pendingOrderAdd.sourceMessageId) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === pendingOrderAdd.sourceMessageId ? { ...m, orderPlaced: true } : m,
+        ),
+      );
+    }
+    const label =
+      pendingOrderAdd.items.length === 1
+        ? pendingOrderAdd.items[0].name
+        : `${pendingOrderAdd.items.length} itens`;
+    appendToolFeedback(
+      `${label} ${pendingOrderAdd.items.length === 1 ? 'foi adicionado' : 'foram adicionados'} à ${
+        mode === 'individual' ? 'sua comanda' : 'comanda da mesa'
+      }.`,
+    );
+    const shouldOpenReview = pendingOrderAdd.openReviewAfterAdd;
+    setPendingOrderAdd(null);
+    setPlacingOrder(false);
+    if (shouldOpenReview) {
+      push(`/${slug}/pedido/revisar`);
+    }
   };
 
   const resolveToolMenuItem = async (
@@ -887,7 +992,42 @@ export default function AssistentePage() {
     // Pagamento é navegação primária. Se o LLM também tiver emitido
     // call_waiter no mesmo turno, o batch dispatcher abaixo remove o chamado.
     if (name === 'open_payment_screen') {
+      if (draftItems.length > 0) {
+        appendToolFeedback('Antes de pagar, confirme seu pedido para abrir a conta.');
+        push(`/${slug}/pedido/revisar`);
+        return;
+      }
       push(`/${slug}/pagamento`);
+      return;
+    }
+
+    if (name === 'pay_full') {
+      if (draftItems.length > 0) {
+        appendToolFeedback('Antes de pagar, confirme seu pedido para abrir a conta.');
+        push(`/${slug}/pedido/revisar`);
+        return;
+      }
+      push(`/${slug}/pagamento?mode=table`);
+      return;
+    }
+
+    if (name === 'pay_individual') {
+      if (draftItems.length > 0) {
+        appendToolFeedback('Antes de pagar, confirme seu pedido para abrir a conta.');
+        push(`/${slug}/pedido/revisar`);
+        return;
+      }
+      push(`/${slug}/pagamento?mode=individual`);
+      return;
+    }
+
+    if (name === 'split_bill') {
+      if (draftItems.length > 0) {
+        appendToolFeedback('Antes de dividir a conta, confirme seu pedido.');
+        push(`/${slug}/pedido/revisar`);
+        return;
+      }
+      push(`/${slug}/pagamento/dividir`);
       return;
     }
 
@@ -906,19 +1046,23 @@ export default function AssistentePage() {
         stringValue(args.notes) ??
         stringValue(args.note) ??
         undefined;
-      addItem({
-        menuItemId: item.id,
+      queueOrderAdd([{
+        id: item.id,
         name: item.name,
         priceCents: item.priceCents,
         quantity,
         note,
-        commandMode: session.customerId ? 'individual' : 'table',
-      });
+      }]);
       return;
     }
 
     if (name === 'view_order') {
-      appendToolFeedback(draftSummaryText());
+      if (draftItems.length > 0) {
+        appendToolFeedback(draftSummaryText());
+        push(`/${slug}/pedido/revisar`);
+        return;
+      }
+      push(`/${slug}/pedido`);
       return;
     }
 
@@ -1001,9 +1145,6 @@ export default function AssistentePage() {
       'search_dish',
       'check_allergens',
       'compare_dishes',
-      'split_bill',
-      'pay_individual',
-      'pay_full',
       'delete_chat',
       'delete_all_chats',
       'view_courtesy',
@@ -1030,52 +1171,28 @@ export default function AssistentePage() {
   };
 
   /**
-   * Core order placement: adiciona itens ao draft, cria o pedido e leva pro
-   * countdown de 15s. Usado tanto pelo botao "Sim, pedir" quanto pelo fluxo
-   * por chat ("quero os dois").
+   * Core order placement vindo da IA: antes de adicionar qualquer item,
+   * abre a mesma escolha de comanda do cardápio. Só depois do cliente
+   * escolher individual/mesa os itens entram no draft.
    */
   const placeOrderForItems = async (picked: LinkedItem[], sourceMessageId: string) => {
-    if (placingOrder || picked.length === 0) return;
+    if (placingOrder || pendingOrderAdd || picked.length === 0) return;
     setPlacingOrder(true);
-
-    const mode: 'individual' | 'table' = session.customerId ? 'individual' : 'table';
-    picked.forEach((it) => {
-      addItem({
-        menuItemId: it.id,
+    queueOrderAdd(
+      picked.map((it) => ({
+        id: it.id,
         name: it.name,
         priceCents: it.priceCents,
         quantity: 1,
-        commandMode: mode,
-      });
-    });
-
-    try {
-      const res = await apiPost<{ id: string }>(`/${slug}/orders`, {
-        billingMode: mode,
-        visitId: session.visitId || undefined,
-        customerId: session.customerId || undefined,
-        items: picked.map((it) => ({ menuItemId: it.id, quantity: 1 })),
-      });
-      setMessages((prev) =>
-        prev.map((m) => (m.id === sourceMessageId ? { ...m, orderPlaced: true } : m)),
-      );
-      push(`/${slug}/pedido/confirmando?orderId=${res.id}`);
-    } catch {
-      setPlacingOrder(false);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `err-${Date.now()}`,
-          role: 'ai',
-          content: 'Não consegui enviar seu pedido agora. Tente de novo em instantes.',
-        },
-      ]);
-    }
+      })),
+      { sourceMessageId, openReviewAfterAdd: true },
+    );
   };
 
   const sendMessage = async (text: string, options?: { skipUserBubble?: boolean }) => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    setExpandedInputPlaceholder(null);
 
     // Round 4 §C-NEW-8: 1ª mensagem do customer triggera transição
     // landing→chat. O greeting que estava na landing vira o 1º AI bubble,
@@ -1134,7 +1251,7 @@ export default function AssistentePage() {
           {
             id: `ai-${Date.now()}`,
             role: 'ai',
-            content: `Perfeito! Já estou pedindo ${names} para você.`,
+            content: `Perfeito. Escolha em qual comanda eu coloco ${names}.`,
           },
         ]);
         await placeOrderForItems(picked, lastAiWithItems.id);
@@ -1149,6 +1266,8 @@ export default function AssistentePage() {
         message: trimmed,
         customerId: session.customerId || undefined,
         itemId: itemId || undefined,
+        conversationId: activeThreadId ? undefined : conversationIdRef.current ?? undefined,
+        continueThreadId: activeThreadId ?? undefined,
       });
 
       // V20 canon F04_Chat: ToolCallIndicator + bubble texto + chips
@@ -1309,7 +1428,7 @@ export default function AssistentePage() {
   };
 
   const confirmLinkedOrder = async (messageId: string) => {
-    if (placingOrder) return;
+    if (placingOrder || pendingOrderAdd) return;
     const msg = messages.find((m) => m.id === messageId);
     if (!msg || !msg.linkedItems || !msg.selectedIds || msg.selectedIds.length === 0) return;
 
@@ -1406,8 +1525,8 @@ export default function AssistentePage() {
       activeHref={`/${slug}/assistente`}
       noMainPadding
     >
-      <div className="flex flex-1 flex-col">
-        <div className="gpu-layer flex flex-1 flex-col gap-3.5 overflow-auto px-[22px] pb-4 pt-3">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="gpu-layer flex min-h-0 flex-1 flex-col gap-3.5 overflow-auto px-[22px] pb-4 pt-3">
           {/* Round 22 §A/§D — loader inline enquanto hidrata o histórico
               persistido. Some logo que listMessages resolve (sucesso ou
               erro). Sem ele teríamos um flash da landing antes do chat
@@ -1553,11 +1672,13 @@ export default function AssistentePage() {
                         >
                           <div className="relative aspect-[4/3] w-full bg-surface">
                             {it.imageUrl ? (
-                              <img
+                              <Image
                                 src={it.imageUrl}
                                 alt={it.name}
-                                className="h-full w-full object-cover"
-                                loading="lazy"
+                                fill
+                                sizes="148px"
+                                className="object-cover"
+                                unoptimized
                               />
                             ) : (
                               <div className="flex h-full w-full items-center justify-center text-[22px] text-faint">
@@ -1608,10 +1729,10 @@ export default function AssistentePage() {
                       <button
                         type="button"
                         onClick={() => confirmLinkedOrder(msg.id)}
-                        disabled={placingOrder}
+                        disabled={placingOrder || !!pendingOrderAdd}
                         className="flex-1 rounded-full bg-ink px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-60"
                       >
-                        {placingOrder ? 'Enviando…' : 'Sim, pedir'}
+                        {pendingOrderAdd ? 'Escolhendo…' : placingOrder ? 'Enviando…' : 'Sim, pedir'}
                       </button>
                       <button
                         type="button"
@@ -1660,33 +1781,34 @@ export default function AssistentePage() {
             {/* Round 3 Cat 1 / Cat 13: usa SuggestionChip em vez do
                 <button> plano. Chip canônico (action: send|navigate|expand)
                 permite contextual input expand pra send_complaint etc. */}
-            {suggestions.map((chip) => (
-              <SuggestionChip
-                key={chip.id}
-                chip={chip}
-                disabled={loading || chipBusy}
-                onTap={async (c) => {
-                  if (chipBusy) return;
-                  setChipBusy(true);
-                  try {
-                    const txt = chipText(c as ChipCanon);
-                    if (c.action === 'navigate') {
-                      const dest = txt.startsWith('/') ? txt : `/${slug}/${txt}`;
-                      router.push(dest);
-                    } else if (c.action === 'expand') {
-                      // 'expand' cai no fallback `send` — sem primitivo
-                      // dedicado, o payload do chip vira mensagem direta.
-                      await sendMessage(txt);
-                    } else {
-                      // 'send' default
-                      await sendMessage(txt);
+            {suggestions.map((chip) => {
+              const normalizedChip = normalizeChipCopy(chip);
+              return (
+                <SuggestionChip
+                  key={chip.id}
+                  chip={normalizedChip}
+                  disabled={loading || chipBusy}
+                  onTap={async (c) => {
+                    if (chipBusy) return;
+                    setChipBusy(true);
+                    try {
+                      const txt = chipText(c as ChipCanon);
+                      if (c.action === 'navigate') {
+                        router.push(chipNavigationDestination(slug, txt));
+                      } else if (c.action === 'expand') {
+                        setExpandedInputPlaceholder(txt);
+                        setLastToolName(lastToolName ?? 'send_message_to_manager');
+                      } else {
+                        // 'send' default
+                        await sendMessage(txt);
+                      }
+                    } finally {
+                      setTimeout(() => setChipBusy(false), 800);
                     }
-                  } finally {
-                    setTimeout(() => setChipBusy(false), 800);
-                  }
-                }}
-              />
-            ))}
+                  }}
+                />
+              );
+            })}
           </div>
         </div>
 
@@ -1697,10 +1819,11 @@ export default function AssistentePage() {
             // quando uma tool acabou de rodar — sinaliza que o próximo
             // input vai pra mesa (host/staff) e não mais pra IA conversar.
             placeholder={
-              lastToolName === 'send_complaint' ||
+              expandedInputPlaceholder ??
+              (lastToolName === 'send_complaint' ||
               lastToolName === 'send_message_to_manager'
                 ? 'Mensagem para a casa'
-                : 'Pergunte alguma coisa...'
+                : 'Pergunte alguma coisa...')
             }
             value={input}
             onChange={setInput}
@@ -1713,6 +1836,13 @@ export default function AssistentePage() {
       {/* Salon-map overlay · driven by the LLM tool `request_table_merge`
           when no `targetTable` is provided. Tap on a table resolves the
           pending tool-call promise (see `useTableMerge`). */}
+      <CommandPicker
+        open={pendingOrderAdd !== null}
+        priceCents={pendingOrderTotalCents}
+        onClose={closePendingOrderAdd}
+        onConfirm={confirmPendingOrderAdd}
+      />
+
       <OverlaySalonMap
         open={tableMerge.overlayOpen}
         tables={salonTables}

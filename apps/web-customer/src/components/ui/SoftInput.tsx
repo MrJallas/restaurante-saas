@@ -1,6 +1,7 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { useMemo, useState } from 'react';
+import type { FormEvent, KeyboardEvent } from 'react';
 import { PlayIcon } from './PlayIcon';
 
 interface SoftInputProps {
@@ -9,8 +10,11 @@ interface SoftInputProps {
   defaultValue?: string;
   onChange?: (v: string) => void;
   onSubmit?: (v: string) => void;
+  onFocusChange?: (focused: boolean) => void;
   onPlayClick?: () => void;
   disabled?: boolean;
+  multiline?: boolean;
+  scrollOnFocus?: boolean;
   /**
    * Limite de caracteres no input. Bate com o @MaxLength do DTO no
    * backend pra que o usuario veja o limite na UI antes de submeter
@@ -32,8 +36,11 @@ export function SoftInput({
   defaultValue,
   onChange,
   onSubmit,
+  onFocusChange,
   onPlayClick,
   disabled,
+  multiline = false,
+  scrollOnFocus = true,
   maxLength,
 }: SoftInputProps) {
   const [internal, setInternal] = useState(defaultValue ?? '');
@@ -45,18 +52,50 @@ export function SoftInput({
     onChange?.(v);
   };
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
+  const submitCurrent = () => {
     const trimmed = (current ?? '').trim();
     if (!trimmed) return;
     onSubmit?.(trimmed);
     if (!isControlled) setInternal('');
   };
 
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    submitCurrent();
+  };
+
+  const handleTextKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    e.preventDefault();
+    submitCurrent();
+  };
+
+  const multilineRows = useMemo(() => {
+    const text = current ?? '';
+    if (text.length > 96 || text.includes('\n')) return 3;
+    if (text.length > 48) return 2;
+    return 1;
+  }, [current]);
+
+  const fieldClassName =
+    'relative flex-1 bg-transparent text-[16px] font-normal leading-[1.35] tracking-[-0.01em] text-ink outline-none placeholder:text-mute';
+
+  const handleFocus = (el: HTMLElement) => {
+    onFocusChange?.(true);
+    if (!scrollOnFocus) return;
+    // Scroll suave ate o bottom assim que o teclado abre. rAF evita
+    // disputar frame com o resize do visualViewport.
+    requestAnimationFrame(() =>
+      el.scrollIntoView({ block: 'end', behavior: 'smooth' }),
+    );
+  };
+
   return (
     <form
       onSubmit={handleSubmit}
-      className="relative flex items-center gap-3 rounded-full border border-transparent bg-surface p-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-colors duration-150 focus-within:border-ink/20"
+      className={`relative flex items-center gap-3 border border-transparent bg-surface p-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-colors duration-150 focus-within:border-ink/20 ${
+        multiline ? 'rounded-[28px]' : 'rounded-full'
+      }`}
     >
       {/* Botao de audio so aparece quando o consumidor passa onPlayClick.
           Deixar visivel sem handler era pegadinha de UX — bug-hunter
@@ -73,28 +112,41 @@ export function SoftInput({
           <PlayIcon size={42} />
         </button>
       )}
-      <input
-        type="text"
-        inputMode="text"
-        value={current ?? ''}
-        onChange={(e) => handleChange(e.target.value)}
-        placeholder={placeholder}
-        disabled={disabled}
-        autoComplete="off"
-        autoCorrect="off"
-        autoCapitalize="sentences"
-        spellCheck={false}
-        maxLength={maxLength}
-        // Scroll suave ate o bottom assim que o teclado abre. rAF evita
-        // disputar frame com o resize do visualViewport.
-        onFocus={(e) => {
-          const el = e.currentTarget;
-          requestAnimationFrame(() =>
-            el.scrollIntoView({ block: 'end', behavior: 'smooth' }),
-          );
-        }}
-        className="relative flex-1 bg-transparent text-[16px] font-normal tracking-[-0.01em] text-ink outline-none placeholder:text-mute"
-      />
+      {multiline ? (
+        <textarea
+          value={current ?? ''}
+          onChange={(e) => handleChange(e.target.value)}
+          onKeyDown={handleTextKeyDown}
+          placeholder={placeholder}
+          disabled={disabled}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="sentences"
+          spellCheck={false}
+          maxLength={maxLength}
+          rows={multilineRows}
+          onFocus={(e) => handleFocus(e.currentTarget)}
+          onBlur={() => onFocusChange?.(false)}
+          className={`${fieldClassName} max-h-[112px] min-h-[42px] resize-none py-[10px]`}
+        />
+      ) : (
+        <input
+          type="text"
+          inputMode="text"
+          value={current ?? ''}
+          onChange={(e) => handleChange(e.target.value)}
+          placeholder={placeholder}
+          disabled={disabled}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="sentences"
+          spellCheck={false}
+          maxLength={maxLength}
+          onFocus={(e) => handleFocus(e.currentTarget)}
+          onBlur={() => onFocusChange?.(false)}
+          className={fieldClassName}
+        />
+      )}
       <button
         type="submit"
         disabled={disabled || !(current ?? '').trim()}

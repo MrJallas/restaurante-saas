@@ -40,7 +40,12 @@ export function UIStateProvider({ children }: { children: ReactNode }) {
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const toggleDrawer = useCallback(() => setDrawerOpen((s) => !s), []);
   const openCallWaiterSheet = useCallback(() => setCallWaiterSheetOpen(true), []);
-  const closeCallWaiterSheet = useCallback(() => setCallWaiterSheetOpen(false), []);
+  const closeCallWaiterSheet = useCallback(() => {
+    setCallWaiterSheetOpen(false);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('customer:continuation-refresh'));
+    }
+  }, []);
   const openMenuOverlay = useCallback((category?: string | null) => {
     setMenuOverlayCategory(category ?? null);
     setMenuOverlayOpen(true);

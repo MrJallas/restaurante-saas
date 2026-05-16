@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { apiGet } from '../../../../lib/api';
 import { recordContinuationHint } from '../../../../lib/continuationHints';
+import { recordCustomerEvent } from '../../../../lib/customerEvents';
 import { useNav } from '../../../../hooks/useNav';
 import { useDraftOrder } from '../../../../providers/DraftOrderProvider';
 import { FoodDetail, FoodDetailData } from '../../../../components/cardapio/FoodDetail';
@@ -59,6 +60,15 @@ export default function ItemDetailPage() {
   useEffect(() => {
     recordContinuationHint('viu_menu');
   }, []);
+
+  useEffect(() => {
+    if (!slug || !itemId || !item) return;
+    recordCustomerEvent(slug, 'item_viewed', {
+      itemId,
+      itemName: item?.name ?? null,
+      category: item?.category_name ?? null,
+    });
+  }, [slug, itemId, item]);
 
   useEffect(() => {
     if (!slug || !itemId) return;

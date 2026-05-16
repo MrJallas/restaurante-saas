@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { apiGet, apiPost } from '../../../lib/api';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
@@ -48,6 +48,7 @@ const SERVICE_RATE = 0.1;
 export default function PagamentoPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { push } = useNav();
   const { tableLabel, visitId } = useSession();
   const slug = params.slug as string;
@@ -64,6 +65,12 @@ export default function PagamentoPage() {
   const [method, setMethod] = useState<Method>('pix');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const requestedMode =
+    searchParams.get('mode') === 'individual' ? 'individual' : 'table';
+
+  useEffect(() => {
+    setMode(requestedMode);
+  }, [requestedMode]);
 
   useEffect(() => {
     if (!slug) return;

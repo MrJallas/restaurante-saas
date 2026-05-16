@@ -6,8 +6,16 @@ typically calls this when the customer says "vê meu pedido", "o que tá no
 carrinho", etc.
 """
 
+import re
 from typing import Any
 from .types import ToolContext, ToolResult
+
+_CHANGE_ORDER_RE = re.compile(r"\b(mudar|modificar|alterar|trocar|ajustar)\b.*\b(pedido|item|prato|bebida)\b", re.IGNORECASE)
+_ORDER_STATUS_RE = re.compile(
+    r"\b(quanto\s+tempo|demora|vai\s+demorar|cad[eê]|status|andamento|previs[aã]o|quando)\b.*\b(pedido|comida|prato|cozinha)\b|"
+    r"\b(pedido|comida|prato|cozinha)\b.*\b(quanto\s+tempo|demora|vai\s+demorar|cad[eê]|status|andamento|previs[aã]o|quando)\b",
+    re.IGNORECASE,
+)
 
 
 def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -19,8 +27,16 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         {"id": "request_check", "label": "Pedir conta", "action": "send", "payload": "quero pagar a conta"},
     ]
 
+    raw = ctx.raw_message or ""
+    if _CHANGE_ORDER_RE.search(raw):
+        message = "Vou abrir seu pedido para você ajustar."
+    elif _ORDER_STATUS_RE.search(raw):
+        message = "Vou mostrar seu pedido e o status dele."
+    else:
+        message = "Claro, vou mostrar seu pedido."
+
     return ToolResult(
-        message="Claro, vou mostrar seu pedido.",
+        message=message,
         chips=chips,
         router_target="ScreenCustomerOrderReview",
         action_payload={"showDraftOrder": True, "clientState": True},

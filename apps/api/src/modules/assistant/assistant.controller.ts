@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsUUID,
+  Matches,
   MaxLength,
 } from 'class-validator';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
@@ -30,6 +31,23 @@ class SendMessageDto {
   @IsOptional()
   @IsUUID()
   customerId?: string;
+
+  // ID de conversa gerado pelo cliente por abertura do assistente. Ele
+  // separa visitas normais no Mongo; sem isso, o fallback legado agrupa
+  // por dia.
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  conversationId?: string;
+
+  // Continuação explícita vinda do menu de conversas arquivadas. O service
+  // só usa se o thread existir e pertencer ao customer resolvido pelo cookie.
+  @IsOptional()
+  @IsString()
+  @MaxLength(220)
+  @Matches(/^[A-Za-z0-9_:-]+$/)
+  continueThreadId?: string;
 }
 
 class StaffToCustomerDto {
@@ -64,6 +82,8 @@ export class AssistantController {
       callerCustomerId,
       dto.message,
       session.schemaName,
+      dto.conversationId,
+      dto.continueThreadId,
     );
   }
 

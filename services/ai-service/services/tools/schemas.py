@@ -102,7 +102,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     ),
     _function(
         "add_to_order",
-        "Adiciona um item ao pedido do cliente. Use quando o cliente quiser pedir um prato específico ('quero o X', 'me traz Y').",
+        "Adiciona um item ao pedido do cliente. Use quando o cliente quiser pedir um item específico do cardápio ('quero o X', 'me traz Y'), incluindo água/bebidas vendidas no menu.",
         {
             "itemId": {"type": "string", "description": "ID do prato a adicionar."},
             "quantity": {"type": "integer", "description": "Quantidade (default 1).", "minimum": 1},
@@ -151,7 +151,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     # ── staff/communication ──────────────────────────────────
     _function(
         "call_waiter",
-        "Chama um garçom para a mesa do cliente para ajuda/atendimento. Não use para pagar, fechar, pedir ou trazer a conta; nesses casos use open_payment_screen.",
+        "Chama um garçom para a mesa do cliente para ajuda/atendimento. Não use para pagar, fechar, pedir, trazer a conta, nem para água/bebida vendida no cardápio; nesses casos use open_payment_screen ou add_to_order.",
         {
             "reason": {
                 "type": "string",
