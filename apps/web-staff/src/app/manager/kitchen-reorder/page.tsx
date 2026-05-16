@@ -9,7 +9,8 @@ import { ScreenManagerKitchenReorder } from '../../../screens/manager/ScreenMana
 function KitchenReorderInner() {
   const params = useSearchParams();
   const dark = params.get('dark') === '1';
-  return <ScreenManagerKitchenReorder dark={dark} />;
+  const slug = params.get('slug') || process.env.NEXT_PUBLIC_TENANT_SLUG || 'demo';
+  return <ScreenManagerKitchenReorder dark={dark} tenantSlug={slug} />;
 }
 
 export default function ManagerKitchenReorderPage() {

@@ -5,16 +5,12 @@
 // State-machine select → sent → accepted. Manager seleciona pedidos
 // pra puxar pra frente, adiciona motivo, cozinha confirma.
 //
-// Backend (TODO Onda 4):
+// Onda 4:
 //   • GET /kitchen/queue → fila atual
 //   • POST /kitchen/reorder → puxa pedidos selecionados
-//   • WebSocket pra accepted state
-//
-// Por enquanto mock inline + state-machine local. Botão Confirmar
-// transita pra "sent" e depois "accepted" via setTimeout — simula o
-// fluxo real.
+//   • KDS recebe kitchen:reorder via WS e reordena no próximo refresh
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -27,6 +23,7 @@ import {
   GButton,
   Icon,
 } from '../../components/manager';
+import { manager, type KitchenQueueOrder } from '../../lib/api/manager';
 
 interface QueueItem {
   id: string;
@@ -37,15 +34,8 @@ interface QueueItem {
   late: boolean;
   waiterInit: string;
   waiterName: string;
+  priorityReason?: string | null;
 }
-
-const QUEUE: QueueItem[] = [
-  { id: '#142', table: 14, items: 'Risoto cogumelos', minutes: 22, meta: 12, late: true, waiterInit: 'OM', waiterName: 'Olivia M.' },
-  { id: '#143', table: 7, items: 'Filé + risoto · 2 pratos', minutes: 18, meta: 12, late: true, waiterInit: 'CS', waiterName: 'Caleb S.' },
-  { id: '#144', table: 9, items: 'Pizza margherita', minutes: 15, meta: 18, late: false, waiterInit: 'HL', waiterName: 'Henrique L.' },
-  { id: '#145', table: 12, items: 'Salada césar · 2', minutes: 8, meta: 8, late: false, waiterInit: 'CS', waiterName: 'Caleb S.' },
-  { id: '#146', table: 5, items: 'Tagliatelle · 1 prato', minutes: 5, meta: 14, late: false, waiterInit: 'OM', waiterName: 'Olivia M.' },
-];
 
 type ReorderState = 'select' | 'sent' | 'accepted';
 
@@ -76,27 +66,112 @@ const heroByState = {
   },
 } as const;
 
-export function ScreenManagerKitchenReorder({ dark = false }: { dark?: boolean }) {
+function initials(label: string): string {
+  return label
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || 'CZ';
+}
+
+function mapQueueOrder(order: KitchenQueueOrder): QueueItem {
+  const names = order.items
+    .map((item) => `${item.name}${item.quantity > 1 ? ` · ${item.quantity}` : ''}`)
+    .slice(0, 3)
+    .join(' + ');
+  const table = order.table_number || Number(String(order.table_label).replace(/\D/g, '')) || 0;
+  const late = order.wait_minutes > order.meta_minutes;
+  return {
+    id: order.id,
+    table,
+    items: names || 'Pedido sem itens',
+    minutes: order.wait_minutes,
+    meta: order.meta_minutes,
+    late,
+    waiterInit: initials(order.table_label || 'Mesa'),
+    waiterName: order.table_label || `Mesa ${table}`,
+    priorityReason: order.priority_reason,
+  };
+}
+
+export function ScreenManagerKitchenReorder({
+  dark = false,
+  tenantSlug = process.env.NEXT_PUBLIC_TENANT_SLUG || 'restaurant_dev',
+}: {
+  dark?: boolean;
+  tenantSlug?: string;
+}) {
   const C = useG(dark);
   const router = useRouter();
+  const api = useMemo(() => manager(tenantSlug), [tenantSlug]);
 
   const [state, setState] = useState<ReorderState>('select');
-  const [selected, setSelected] = useState<Record<string, boolean>>({
-    '#142': true,
-    '#143': true,
-  });
-  const [reason, setReason] = useState(
-    'Mesa 14 está há 22 min esperando · cliente comemorando aniversário.',
-  );
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const hero = heroByState[state];
-  const selectedItems = QUEUE.filter((q) => selected[q.id]);
+  useEffect(() => {
+    let alive = true;
+    api.kitchen.queue()
+      .then((orders) => {
+        if (!alive) return;
+        const mapped = orders.map(mapQueueOrder);
+        setQueue(mapped);
+        setSelected((prev) => {
+          if (Object.keys(prev).length > 0) return prev;
+          const next: Record<string, boolean> = {};
+          mapped.filter((q) => q.late).slice(0, 3).forEach((q) => {
+            next[q.id] = true;
+          });
+          return next;
+        });
+        const firstLate = mapped.find((q) => q.late);
+        if (firstLate) {
+          setReason(
+            `Mesa ${firstLate.table} está há ${firstLate.minutes} min esperando · acima da meta da cozinha.`,
+          );
+        }
+        setErrorMsg(null);
+      })
+      .catch((err) => {
+        if (alive) setErrorMsg(err instanceof Error ? err.message : 'Erro ao carregar fila.');
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [api]);
 
-  const onConfirm = () => {
+  const lateCount = queue.filter((q) => q.late).length;
+  const heroBase = heroByState[state];
+  const hero = state === 'select'
+    ? {
+        ...heroBase,
+        title: `Fila com ${queue.length} pedidos · ${lateCount} ${lateCount === 1 ? 'passou' : 'passaram'} da meta`,
+      }
+    : heroBase;
+  const selectedItems = queue.filter((q) => selected[q.id]);
+
+  const onConfirm = async () => {
     if (selectedItems.length === 0) return;
     setState('sent');
-    // Mock: cozinha responde em 3s
-    setTimeout(() => setState('accepted'), 3000);
+    setErrorMsg(null);
+    try {
+      await api.kitchen.reorder({
+        orderIds: selectedItems.map((item) => item.id),
+        reason: reason.trim() || undefined,
+      });
+      setState('accepted');
+    } catch (err) {
+      setState('select');
+      setErrorMsg(err instanceof Error ? err.message : 'Erro ao avisar cozinha.');
+    }
   };
   const onCancel = () => setState('select');
 
@@ -122,7 +197,7 @@ export function ScreenManagerKitchenReorder({ dark = false }: { dark?: boolean }
           <GIconBtn
             dark={dark}
             icon={Icon.back(20)}
-            onClick={() => router.push('/manager/operacoes')}
+            onClick={() => router.push(`/manager/operacoes?slug=${tenantSlug}`)}
             ariaLabel="Voltar"
           />
         }
@@ -183,7 +258,17 @@ export function ScreenManagerKitchenReorder({ dark = false }: { dark?: boolean }
               >
                 Fila atual · toque pra selecionar
               </div>
-              {QUEUE.map((p) => {
+              {loading && (
+                <div style={{ padding: 18, color: C.faint, fontSize: 13 }}>
+                  Carregando fila…
+                </div>
+              )}
+              {!loading && queue.length === 0 && (
+                <div style={{ padding: 18, color: C.faint, fontSize: 13 }}>
+                  Nenhum pedido ativo na cozinha agora.
+                </div>
+              )}
+              {queue.map((p) => {
                 const sel = !!selected[p.id];
                 return (
                   <button
@@ -233,7 +318,7 @@ export function ScreenManagerKitchenReorder({ dark = false }: { dark?: boolean }
                       >
                         <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>
                           Mesa {p.table}{' '}
-                          <span style={{ color: C.faint, fontWeight: 600, fontSize: 12 }}>· {p.id}</span>
+                          <span style={{ color: C.faint, fontWeight: 600, fontSize: 12 }}>· #{p.id.slice(0, 8)}</span>
                         </div>
                         {p.late ? (
                           <MPill tone="danger" dark={dark}>
@@ -277,6 +362,11 @@ export function ScreenManagerKitchenReorder({ dark = false }: { dark?: boolean }
                         </span>
                         {p.waiterName} · meta {p.meta} min
                       </div>
+                      {p.priorityReason && (
+                        <div style={{ fontSize: 11, color: '#7A3010', fontWeight: 700, marginTop: 4 }}>
+                          Já priorizado · {p.priorityReason}
+                        </div>
+                      )}
                     </div>
                   </button>
                 );
@@ -371,7 +461,7 @@ export function ScreenManagerKitchenReorder({ dark = false }: { dark?: boolean }
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>
                     Mesa {p.table}{' '}
-                    <span style={{ color: C.faint, fontWeight: 600, fontSize: 12 }}>· {p.id}</span>
+                    <span style={{ color: C.faint, fontWeight: 600, fontSize: 12 }}>· #{p.id.slice(0, 8)}</span>
                   </div>
                   <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, marginTop: 3 }}>
                     {p.items}
@@ -396,6 +486,24 @@ export function ScreenManagerKitchenReorder({ dark = false }: { dark?: boolean }
                 <span style={{ color: C.ink, fontWeight: 700 }}>Motivo enviado.</span> {reason}
               </div>
             )}
+          </div>
+        )}
+
+        {errorMsg && (
+          <div
+            role="alert"
+            style={{
+              margin: '14px 16px 0',
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: '#FFF7E6',
+              border: '1px solid #F0DCB6',
+              color: '#7A4D10',
+              fontSize: 12.5,
+              fontWeight: 600,
+            }}
+          >
+            {errorMsg}
           </div>
         )}
       </div>
@@ -427,7 +535,7 @@ export function ScreenManagerKitchenReorder({ dark = false }: { dark?: boolean }
           </GButton>
         )}
         {state === 'accepted' && (
-          <GButton dark={dark} full kind="primary" onClick={() => router.push('/manager/operacoes')}>
+          <GButton dark={dark} full kind="primary" onClick={() => router.push(`/manager/operacoes?slug=${tenantSlug}`)}>
             Voltar pra Operação
           </GButton>
         )}

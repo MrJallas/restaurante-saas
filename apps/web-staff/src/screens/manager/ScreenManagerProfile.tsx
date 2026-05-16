@@ -14,7 +14,6 @@ import {
   useG,
   G_FONT,
   Icon,
-  MAppHeader,
   MBottomNav,
   MAvatar,
   MSection,

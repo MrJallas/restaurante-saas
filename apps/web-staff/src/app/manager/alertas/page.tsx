@@ -9,7 +9,8 @@ import { ScreenManagerAlertsAll } from '../../../screens/manager/ScreenManagerAl
 function AlertsAllInner() {
   const params = useSearchParams();
   const dark = params.get('dark') === '1';
-  return <ScreenManagerAlertsAll dark={dark} />;
+  const slug = params.get('slug') || process.env.NEXT_PUBLIC_TENANT_SLUG || 'demo';
+  return <ScreenManagerAlertsAll dark={dark} tenantSlug={slug} />;
 }
 
 export default function ManagerAlertsAllPage() {
