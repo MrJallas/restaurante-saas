@@ -219,8 +219,12 @@ export async function runCustomerStaffMessagesContract(): Promise<void> {
   // 2. Service happy path: manager sends → customer reads → deletes.
   // ──────────────────────────────────────────────────────────────────
   const mongo = buildFakeMongo();
+  const tenantConn = {
+    query: async () => [],
+  };
   const service = new CustomerStaffMessagesService(
     mongo as unknown as import('../../infra/mongo/mongo.service').MongoService,
+    tenantConn as unknown as import('../tenant/tenant-connection.provider').TenantConnectionProvider,
   );
 
   const tenantId = 'tenant_x';

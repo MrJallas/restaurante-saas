@@ -8,6 +8,8 @@
 //   • lgpd.request_fulfilled
 //   • complaint.received / .responded / .read / .resolved
 //   • staff_message.received / .read
+//   • staff_messages.customer_replied
+//   • alert.created
 //   • zone_pause.started / .ended
 //   • session.flag_changed
 //
@@ -76,6 +78,8 @@ const MANAGER_EVENT_NAMES: WsEventName[] = [
   'complaint.resolved',
   'staff_message.received',
   'staff_message.read',
+  'staff_messages.customer_replied',
+  'alert.created',
   'zone_pause.started',
   'zone_pause.ended',
   'session.flag_changed',
@@ -103,7 +107,7 @@ function readStaffId(): string | undefined {
 export function useManagerEvents(
   tenantSlug: string,
   onEvent: (event: WsEvent) => void,
-  options: { enabled?: boolean } = {},
+  options: { enabled?: boolean; staffId?: string } = {},
 ): { isConnected: boolean } {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
@@ -118,7 +122,7 @@ export function useManagerEvents(
     if (!wsUrl) return;
 
     const staffKey = process.env.NEXT_PUBLIC_STAFF_API_KEY ?? undefined;
-    const staffId = readStaffId();
+    const staffId = options.staffId || readStaffId();
 
     let socket: Socket;
     try {
@@ -126,10 +130,12 @@ export function useManagerEvents(
         path: '/socket.io/',
         transports: ['websocket'],
         reconnection: true,
+        autoConnect: false,
         auth: {
           staffKey,
           staffId,
           tenantSlug,
+          staffRole: 'manager',
           role: 'manager',
         },
       });
@@ -150,6 +156,10 @@ export function useManagerEvents(
 
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
+    socket.connect();
+    if (socket.connected) {
+      handleConnect();
+    }
 
     // Subscribe to every event name the manager cares about. The gateway
     // emits the typed payload directly (no envelope), so we wrap it in the
@@ -170,7 +180,7 @@ export function useManagerEvents(
         // ignore
       }
     };
-  }, [tenantSlug, options.enabled]);
+  }, [tenantSlug, options.enabled, options.staffId]);
 
   return { isConnected };
 }

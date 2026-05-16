@@ -8,7 +8,14 @@ function ThreadInner() {
   const route = useParams<{ threadId: string }>();
   const params = useSearchParams();
   const slug = params.get('slug') || process.env.NEXT_PUBLIC_TENANT_SLUG || 'demo';
-  return <ScreenStaffMessageThread tenantSlug={slug} threadId={route.threadId} />;
+  const managerId = params.get('managerId') || params.get('staffId') || undefined;
+  return (
+    <ScreenStaffMessageThread
+      tenantSlug={slug}
+      threadId={decodeURIComponent(route.threadId)}
+      managerId={managerId}
+    />
+  );
 }
 
 export default function ManagerMessageThreadPage() {
