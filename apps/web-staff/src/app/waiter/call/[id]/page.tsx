@@ -18,10 +18,16 @@ function CallDetailInner() {
     t && (VALID_TYPES as readonly string[]).includes(t) ? (t as CallType) : undefined;
   const numRaw = params.get('tableNumber');
   const tableNumber = numRaw ? parseInt(numRaw, 10) : undefined;
+  const tenantSlug =
+    params.get('tenant') ||
+    process.env.NEXT_PUBLIC_TENANT_SLUG ||
+    process.env.NEXT_PUBLIC_DEFAULT_TENANT ||
+    'restaurant_dev';
   return (
     <ScreenWaiterCallDetail
       dark={dark}
       callId={route?.id ?? ''}
+      tenantSlug={tenantSlug}
       callType={callType}
       tableNumber={Number.isFinite(tableNumber as number) ? tableNumber : undefined}
     />

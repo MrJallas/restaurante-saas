@@ -5,14 +5,12 @@
 // Mostra detalhe de UM chamado (pediu-conta, chamou-garcom, pronto-cozinha).
 // CTAs: "A caminho" (acknowledge) / "Voltar".
 //
-// Backend: existe `GET /staff/calls` (lista) mas o detail é mock por
-// ora — wire real quando o waiter-calls module shipar GET /calls/:id.
-
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useG, G_FONT, MONO_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitives';
+import { acknowledgeCall } from '../../lib/api/waiter';
 
 type CallType = 'pediu-conta' | 'chamou-garcom' | 'pronto-cozinha' | 'mais-bebida';
 
@@ -65,6 +63,7 @@ const COPY_BY_TYPE: Record<CallType, CallCopy> = {
 export interface ScreenWaiterCallDetailProps {
   dark?: boolean;
   callId: string;
+  tenantSlug: string;
   callType?: CallType;
   tableNumber?: number;
   partySize?: number;
@@ -72,7 +71,8 @@ export interface ScreenWaiterCallDetailProps {
 
 export function ScreenWaiterCallDetail({
   dark = false,
-  callId: _callId,
+  callId,
+  tenantSlug,
   callType = 'chamou-garcom',
   tableNumber = 18,
   partySize = 4,
@@ -80,16 +80,27 @@ export function ScreenWaiterCallDetail({
   const C = useG(dark);
   const router = useRouter();
   const copy = COPY_BY_TYPE[callType];
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [acked, setAcked] = useState(false);
-  const showStub = (m: string) => {
-    setStubMsg(`${m} · em desenvolvimento (Onda 4 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
+  const [submitting, setSubmitting] = useState(false);
+  const showToast = (m: string) => {
+    setToastMsg(m);
+    setTimeout(() => setToastMsg(null), 2800);
   };
-  const ack = () => {
-    setAcked(true);
-    showStub('Chamado registrado · pendente persistência');
-    setTimeout(() => router.back(), 1500);
+  const ack = async () => {
+    if (acked || submitting) return;
+    setSubmitting(true);
+    try {
+      await acknowledgeCall(tenantSlug, callId);
+      setAcked(true);
+      showToast('Chamado registrado.');
+      setTimeout(() => router.back(), 700);
+    } catch (error) {
+      console.error('[waiter-call-detail] acknowledge failed', error);
+      showToast('Não foi possível registrar o atendimento.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -107,7 +118,7 @@ export function ScreenWaiterCallDetail({
         dark={dark}
         left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.back()} />}
         title="Chamado"
-        right={<GIconBtn dark={dark} icon={Icon.more(20)} onClick={() => showStub('Mais ações')} />}
+        right={<GIconBtn dark={dark} icon={Icon.more(20)} onClick={() => showToast('Mais ações indisponíveis.')} />}
       />
 
       <div style={{ flex: 1, overflow: 'auto' }}>
@@ -290,21 +301,6 @@ export function ScreenWaiterCallDetail({
               </div>
             ))}
           </div>
-          <div
-            style={{
-              margin: '12px 0',
-              padding: '10px 12px',
-              border: '1px dashed #F0DCB6',
-              borderRadius: 10,
-              background: '#FFF7E6',
-              fontSize: 11,
-              color: '#7A4D10',
-              fontWeight: 500,
-              fontFamily: MONO_FONT,
-            }}
-          >
-            DADOS MOCK · backend GET /calls/:id chega na Onda 4
-          </div>
         </div>
       </div>
 
@@ -322,13 +318,13 @@ export function ScreenWaiterCallDetail({
           Voltar
         </GButton>
         <div style={{ flex: 1 }}>
-          <GButton kind="primary" dark={dark} full onClick={ack} disabled={acked}>
-            {acked ? 'Registrado…' : copy.primary}
+          <GButton kind="primary" dark={dark} full onClick={ack} disabled={acked || submitting}>
+            {submitting ? 'Registrando…' : acked ? 'Registrado…' : copy.primary}
           </GButton>
         </div>
       </div>
 
-      {stubMsg && (
+      {toastMsg && (
         <div
           role="status"
           style={{
@@ -348,7 +344,7 @@ export function ScreenWaiterCallDetail({
             textAlign: 'center',
           }}
         >
-          {stubMsg}
+          {toastMsg}
         </div>
       )}
     </div>

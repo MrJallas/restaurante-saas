@@ -150,11 +150,14 @@ export class WaiterCallsController {
     @Param('callId') callId: string,
     @Param('slug') slug: string,
     @Body() dto: AcknowledgeCallDto = {},
+    @Req() req: Request,
   ) {
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
     return this.waiterCallsService.acknowledgeCall(
       callId,
       slug,
-      dto.waiterName,
+      staffId,
+      undefined,
       dto.etaMinutes,
     );
   }

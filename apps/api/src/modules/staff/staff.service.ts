@@ -149,6 +149,120 @@ export class StaffService {
     );
   }
 
+  async getTableDetail(tableRef: string) {
+    const ref = tableRef.trim();
+    if (!ref) {
+      throw new BadRequestException('Mesa obrigatoria.');
+    }
+    const isUuid = /^[0-9a-f-]{36}$/i.test(ref);
+    const numeric = /^\d+$/.test(ref) ? Number(ref) : null;
+
+    const params: unknown[] = [ref];
+    let where = `ts.id::text = $1 OR t.code = $1 OR t.label = $1`;
+    if (isUuid) {
+      where = `ts.id = $1::uuid OR t.id = $1::uuid OR t.code = $1 OR t.label = $1`;
+    }
+    if (numeric !== null) {
+      params.push(numeric);
+      where += ` OR CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT) = $2
+                 OR CAST(NULLIF(regexp_replace(t.label, '[^0-9]', '', 'g'), '') AS INT) = $2`;
+    }
+
+    const sessions = (await this.tenantConn.query(
+      `
+      SELECT ts.id, ts.status, ts.created_at, ts.closed_at,
+             t.id AS table_id, t.code AS table_code, t.label AS table_label,
+             t.capacity,
+             COALESCE(participants.cnt, 0)::int AS party_size,
+             COALESCE(orders_total.total_cents, 0)::int AS total_cents,
+             COALESCE(payments_total.paid_cents, 0)::int AS paid_cents,
+             COALESCE(payments_total.processing_cents, 0)::int AS processing_cents,
+             COALESCE(payments_total.paid_count, 0)::int AS paid_count,
+             COALESCE(payments_total.processing_count, 0)::int AS processing_count
+        FROM table_sessions ts
+        JOIN tables t ON t.id = ts.table_id
+        LEFT JOIN (
+          SELECT table_session_id, COUNT(*) AS cnt
+            FROM session_participants
+           WHERE left_at IS NULL AND status = 'approved'
+           GROUP BY table_session_id
+        ) participants ON participants.table_session_id = ts.id
+        LEFT JOIN (
+          SELECT table_session_id, SUM(total_cents)::int AS total_cents
+            FROM orders
+           WHERE status NOT IN ('cancelled', 'pending_confirmation')
+           GROUP BY table_session_id
+        ) orders_total ON orders_total.table_session_id = ts.id
+        LEFT JOIN (
+          SELECT table_session_id,
+                 SUM(CASE WHEN status IN ('confirmed', 'paid') THEN amount_cents ELSE 0 END)::int AS paid_cents,
+                 SUM(CASE WHEN status = 'pending' THEN amount_cents ELSE 0 END)::int AS processing_cents,
+                 COUNT(*) FILTER (WHERE status IN ('confirmed', 'paid'))::int AS paid_count,
+                 COUNT(*) FILTER (WHERE status = 'pending')::int AS processing_count
+            FROM payments
+           GROUP BY table_session_id
+        ) payments_total ON payments_total.table_session_id = ts.id
+       WHERE (${where})
+         AND ts.status = 'active'
+         AND ts.closed_at IS NULL
+       ORDER BY ts.created_at DESC
+       LIMIT 1
+      `,
+      params,
+    )) as Array<{
+      id: string;
+      status: string;
+      created_at: string;
+      closed_at: string | null;
+      table_id: string;
+      table_code: string;
+      table_label: string;
+      capacity: number;
+      party_size: number;
+      total_cents: number;
+      paid_cents: number;
+      processing_cents: number;
+      paid_count: number;
+      processing_count: number;
+    }>;
+
+    if (!sessions.length) {
+      throw new NotFoundException('Mesa ativa nao encontrada.');
+    }
+    const session = sessions[0];
+
+    const orders = (await this.tenantConn.query(
+      `
+      SELECT o.id, o.status, o.billing_mode, o.total_cents, o.notes,
+             o.created_at, o.updated_at,
+             json_agg(
+               json_build_object(
+                 'id', oi.id,
+                 'name', mi.name,
+                 'quantity', oi.quantity,
+                 'notes', oi.notes,
+                 'subtotalCents', oi.subtotal_cents,
+                 'createdAt', oi.created_at
+               )
+               ORDER BY oi.created_at ASC
+             ) AS items
+        FROM orders o
+        JOIN order_items oi ON oi.order_id = o.id
+        JOIN menu_items mi ON mi.id = oi.menu_item_id
+       WHERE o.table_session_id = $1
+         AND o.status NOT IN ('cancelled', 'pending_confirmation')
+       GROUP BY o.id
+       ORDER BY o.created_at DESC
+      `,
+      [session.id],
+    )) as unknown[];
+
+    return {
+      session,
+      orders,
+    };
+  }
+
   async getById(id: string) {
     const rows = (await this.tenantConn.query(
       `SELECT id, name, role, is_active, cpf, phone, email, default_shift,
