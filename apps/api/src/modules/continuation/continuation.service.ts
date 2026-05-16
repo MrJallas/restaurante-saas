@@ -6,11 +6,8 @@ import { aiConfig } from '../../config/ai.config';
  * `kind` derived from DB state for a given table session. Priority order
  * top-to-bottom: first match wins.
  *
- * Note: `viu_cardapio` is declared in the spec but the schema has no
- * `customer_events`/`menu_view` table to feed it — so this proxy never
- * emits it from DB derivation. The type is preserved so callers can pin
- * the upstream segment manually if a future migration adds menu-view
- * tracking. The AI service pool key is `viu_menu`; we forward the alias.
+ * `viu_cardapio` is fed by customer_events (`menu_viewed`/`item_viewed`).
+ * The AI service pool key is `viu_menu`; we forward the alias.
  */
 export type ContinuationKind =
   | 'pos_reclamacao'
@@ -111,12 +108,12 @@ export class ContinuationService {
    *   1. complaint < 10 min  → pos_reclamacao
    *   2. payment paid_at < 10 min → pagou
    *   3. active order < 30 min → abriu_pedido
-   *   4. waiter_call < 5 min → chamou_garcom
-   *   5. any prior event for this session → voltou_sem_acao
-   *   6. nothing → first_time
+   *   4. explicit/recent menu event < 10 min → viu_cardapio
+   *   5. waiter_call < 5 min → chamou_garcom
+   *   6. any prior event for this session → voltou_sem_acao
+   *   7. nothing → first_time
    *
-   * `viu_cardapio` is intentionally omitted — no DB signal exists yet (see
-   * type doc). Slot population is opportunistic; missing slots are passed
+   * Slot population is opportunistic; missing slots are passed
    * as null and the AI service renders a sensible fallback (C-NEW-4).
    */
   private async deriveKindAndSlots(
@@ -260,6 +257,35 @@ export class ContinuationService {
       };
     }
 
+    if (clientHint === 'viu_menu') {
+      return { kind: 'viu_cardapio', slots: baseSlots };
+    }
+
+    const menuEventRows = (await this.tenantConn.query(
+      `SELECT event_type,
+              COALESCE(
+                metadata->>'itemName',
+                metadata->>'item_name',
+                metadata->>'name'
+              ) AS item_name
+         FROM customer_events
+        WHERE table_session_id = $1
+          AND event_type IN ('menu_viewed', 'item_viewed')
+          AND created_at >= now() - INTERVAL '10 minutes'
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [tableSessionId],
+    )) as { event_type: string; item_name: string | null }[];
+    if (menuEventRows.length > 0) {
+      return {
+        kind: 'viu_cardapio',
+        slots: {
+          ...baseSlots,
+          last_item_seen: menuEventRows[0].item_name,
+        },
+      };
+    }
+
     // ── Priority 4: waiter call within 5 min ─────────────────────────
     const waiterRows = (await this.tenantConn.query(
       `SELECT EXTRACT(EPOCH FROM (now() - created_at))::int AS age_sec
@@ -284,37 +310,6 @@ export class ContinuationService {
       return { kind: 'chamou_garcom', slots: baseSlots };
     }
 
-    if (clientHint === 'viu_menu') {
-      return { kind: 'viu_cardapio', slots: baseSlots };
-    }
-
-    // ── Priority 4.5: assistant_messages mentioning menu/cardapio < 10 min ──
-    // Round 19 (C3 fix): viu_cardapio kind antes nunca emitia (sem signal DB).
-    // Heuristic: cliente mandou mensagem na IA mencionando "cardapio"/"menu"
-    // /"prato"/"comida" nos últimos 10min → assume está bisbilhotando o menu.
-    // Não é perfeito (depende de keyword) mas captura o 80% dos casos sem
-    // exigir customer_events table nova.
-    const menuMentionRows = (await this.tenantConn.query(
-      `SELECT 1
-         FROM assistant_messages
-        WHERE table_session_id = $1
-          AND created_at >= now() - INTERVAL '10 minutes'
-          AND (
-            user_message ILIKE '%cardap%'
-            OR user_message ILIKE '%menu%'
-            OR user_message ILIKE '%prato%'
-            OR user_message ILIKE '%comida%'
-            OR user_message ILIKE '%sobremes%'
-            OR user_message ILIKE '%bebida%'
-            OR user_message ILIKE '%vinho%'
-          )
-        LIMIT 1`,
-      [tableSessionId],
-    )) as unknown[];
-    if (menuMentionRows.length > 0) {
-      return { kind: 'viu_cardapio', slots: baseSlots };
-    }
-
     // ── Priority 5 vs 6: any prior event → voltou_sem_acao, else first_time
     // "Prior event" = at least one order/payment/waiter_call/complaint
     // for this session, regardless of age (the recent ones above already
@@ -327,6 +322,8 @@ export class ContinuationService {
            SELECT id FROM payments WHERE table_session_id = $1
            UNION ALL
            SELECT id FROM waiter_calls WHERE table_session_id = $1
+           UNION ALL
+           SELECT id FROM customer_events WHERE table_session_id = $1
          ) ev
         LIMIT 1`,
       [tableSessionId],

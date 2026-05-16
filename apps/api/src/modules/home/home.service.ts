@@ -294,6 +294,23 @@ export class HomeService {
       };
     }
 
+    if (hint === 'viu_menu') {
+      return { kind: 'viu_menu' };
+    }
+
+    const menuEventRows = (await this.tenantConn.query(
+      `SELECT 1
+         FROM customer_events
+        WHERE table_session_id = $1
+          AND event_type IN ('menu_viewed', 'item_viewed')
+          AND created_at >= now() - INTERVAL '10 minutes'
+        LIMIT 1`,
+      [input.sessionId],
+    )) as unknown[];
+    if (menuEventRows.length > 0) {
+      return { kind: 'viu_menu' };
+    }
+
     const waiterRows = (await this.tenantConn.query(
       `SELECT 1
          FROM waiter_calls
@@ -307,10 +324,6 @@ export class HomeService {
     )) as unknown[];
     if (waiterRows.length > 0 || hint === 'chamou_garcom') {
       return { kind: 'chamou_garcom' };
-    }
-
-    if (hint === 'viu_menu') {
-      return { kind: 'viu_menu' };
     }
 
     if (input.isReturning || hint === 'voltou_sem_acao') {
