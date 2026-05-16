@@ -5,20 +5,23 @@
 // está ativa agora (garcom-screens-b.jsx :: ScreenStaffMessageThread).
 
 import * as React from 'react';
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { getThread, sendStaffMessage, listMyZonePauses } from '../../lib/api/waiter';
+import { useWaiterEvents } from '../../hooks/useWaiterEvents';
+import { useHostEvents } from '../../hooks/useHostEvents';
 import type {
   StaffMessageDto,
   StaffMessageThreadDto,
+  WsEvent,
   ZonePauseDto,
 } from '@restaurant/shared-types';
 
 interface ScreenStaffMessageThreadProps {
   tenantSlug: string;
   threadId: string;
-  role?: 'waiter' | 'host';
+  role?: 'waiter' | 'host' | 'cook';
   myUserId: string;
   onBack?: () => void;
 }
@@ -41,35 +44,66 @@ function fmtTimeLeft(endsAt: string): string {
   return `${mm}:${ss}`;
 }
 
+function getStaffEventThreadId(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const p = payload as { threadId?: unknown; message?: { threadId?: unknown } };
+  if (typeof p.threadId === 'string') return p.threadId;
+  if (typeof p.message?.threadId === 'string') return p.message.threadId;
+  return null;
+}
+
 export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> = ({
   tenantSlug, threadId, role = 'waiter', myUserId, onBack,
 }) => {
-  const dark = false;
+  const dark = role === 'cook';
   const C = useG(dark);
   const [thread, setThread] = useState<StaffMessageThreadDto | null>(null);
   const [messages, setMessages] = useState<StaffMessageDto[]>([]);
   const [pauses, setPauses] = useState<ZonePauseDto[]>([]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const waiterEvents = useWaiterEvents(role === 'waiter' || role === 'cook'
+    ? { tenantSlug, waiterId: myUserId }
+    : { tenantSlug: '' });
+  const hostEvents = useHostEvents(role === 'host'
+    ? { tenantSlug, hostId: myUserId }
+    : { tenantSlug: '' });
+
+  const loadThread = useCallback(async () => {
+    try {
+      const res = await getThread(tenantSlug, threadId, myUserId);
+      setThread(res.thread);
+      setMessages(res.messages);
+    } catch {
+      setThread(null);
+      setMessages([]);
+    }
+  }, [tenantSlug, threadId, myUserId]);
 
   useEffect(() => {
-    let alive = true;
-    getThread(tenantSlug, threadId)
-      .then((res) => {
-        if (!alive) return;
-        setThread(res.thread);
-        setMessages(res.messages);
-      })
-      .catch(() => {
-        if (alive) {
-          setThread(null);
-          setMessages([]);
-        }
-      });
-    return () => {
-      alive = false;
+    void loadThread();
+  }, [loadThread]);
+
+  useEffect(() => {
+    if (!myUserId) return;
+    const handler = (event: WsEvent) => {
+      if (
+        event.event !== 'staff_message.received'
+        && event.event !== 'staff_message.read'
+      ) {
+        return;
+      }
+      if (getStaffEventThreadId(event.payload) === threadId) {
+        void loadThread();
+      }
     };
-  }, [tenantSlug, threadId]);
+    const off1 = waiterEvents.on(handler);
+    const off2 = hostEvents.on(handler);
+    return () => {
+      off1();
+      off2();
+    };
+  }, [threadId, myUserId, loadThread, waiterEvents, hostEvents]);
 
   // Zone-pause banner only for waiter
   useEffect(() => {
@@ -91,6 +125,9 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
     () => pauses.find((p) => p.active && new Date(p.endsAt).getTime() > Date.now()),
     [pauses],
   );
+  const sentBubbleBg = dark ? '#F4F4F5' : C.ink;
+  const sentBubbleInk = dark ? '#111827' : '#fff';
+  const sentMetaInk = dark ? 'rgba(255, 255, 255, 0.62)' : C.faint;
 
   async function send() {
     const content = draft.trim();
@@ -101,7 +138,7 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
         recipientId: thread.threadId,
         threadId: thread.threadId,
         content,
-      });
+      }, myUserId);
       setMessages((prev) => [...prev, msg]);
       setDraft('');
     } catch {
@@ -120,7 +157,7 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
   return (
     <div
       style={{
-        height: '100%', height: '100vh',
+        height: '100vh',
         display: 'flex', flexDirection: 'column',
         background: C.bg, fontFamily: G_FONT, color: C.ink,
       }}
@@ -148,7 +185,7 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>
-            {thread?.threadId ?? threadId}
+            {thread?.subject ?? thread?.threadId ?? threadId}
           </div>
           <div
             style={{
@@ -225,10 +262,13 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
                 <div style={{ maxWidth: '78%' }}>
                   <div
                     style={{
-                      background: C.ink, color: '#fff',
+                      background: sentBubbleBg,
+                      color: sentBubbleInk,
                       padding: '10px 14px', borderRadius: 14,
                       borderBottomRightRadius: 4,
-                      fontSize: 14, fontWeight: 500, letterSpacing: -0.15,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      letterSpacing: 0,
                       lineHeight: 1.45, whiteSpace: 'pre-wrap',
                     }}
                   >
@@ -237,7 +277,10 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
                   <div
                     style={{
                       marginTop: 4, textAlign: 'right',
-                      fontSize: 9, fontWeight: 700, color: C.faint, letterSpacing: 0.6,
+                      fontSize: 9.5,
+                      fontWeight: 700,
+                      color: sentMetaInk,
+                      letterSpacing: 0,
                       fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
                     }}
                   >
@@ -262,7 +305,7 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
                     border: `1px solid ${C.borderSoft}`,
                     padding: '10px 14px', borderRadius: 14,
                     borderBottomLeftRadius: 4,
-                    fontSize: 14, fontWeight: 500, letterSpacing: -0.15,
+                    fontSize: 14, fontWeight: 500, letterSpacing: 0,
                     lineHeight: 1.45, whiteSpace: 'pre-wrap',
                   }}
                 >
@@ -296,6 +339,7 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
         />
         <button
           type="button"
+          aria-label="Enviar mensagem"
           onClick={send}
           disabled={!draft.trim() || sending}
           style={{

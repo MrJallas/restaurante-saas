@@ -17,6 +17,8 @@ Responda "sim" se a mensagem é sobre:
   Estas perguntas NUNCA são off-topic — são exatamente o caso de uso da
   tool `ask_about_restaurant`. Se o assistente bloquear essas, é regression.
 - Pedidos, status de pedidos, conta, pagamento, dividir conta
+- Tempo/status/andamento do pedido ("quanto tempo demora o pedido?",
+  "cadê meu pedido?", "quando fica pronto?")
 - Elogios/reclamações sobre a comida ou serviço
 - Dúvidas sobre o restaurante (qualquer coisa sobre o estabelecimento)
 - Fome, sede, vontade de comer/beber, estado do apetite ("estou com fome", "tô com sede", "bateu a fome")
@@ -40,6 +42,8 @@ EXEMPLOS DE PERGUNTAS QUE DEVEM RETORNAR "sim" (regression do round 3):
 - "aceitam cartão?" → sim
 - "tem estacionamento?" → sim
 - "qual a política de cancelamento?" → sim
+- "quanto tempo demora o pedido?" → sim
+- "cadê meu pedido?" → sim
 
 EXEMPLOS DE PEDIDOS DE GARÇOM QUE DEVEM RETORNAR "sim" (round 4 #C-NEW-2):
 - "preciso de mais água" → sim

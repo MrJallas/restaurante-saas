@@ -118,6 +118,12 @@ export class StaffController {
     return this.staffService.listActiveTables(sessionId);
   }
 
+  @Get('tables/:tableRef/detail')
+  @UseGuards(StaffOnlyGuard)
+  async tableDetail(@Param('tableRef') tableRef: string) {
+    return this.staffService.getTableDetail(tableRef);
+  }
+
   /**
    * Round 18 (Onda 4 batch 2): KPIs agregados pra
    * `ScreenManagerStaffDetail` (canvas /manager/equipe/[id]).

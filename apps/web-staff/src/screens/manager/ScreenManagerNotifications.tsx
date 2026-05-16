@@ -66,7 +66,7 @@ export function ScreenManagerNotifications({
 }: ScreenManagerNotificationsProps) {
   const C = useG(dark);
   const router = useRouter();
-  const api = manager(tenantSlug);
+  const api = useMemo(() => manager(tenantSlug), [tenantSlug]);
 
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,8 +94,7 @@ export function ScreenManagerNotifications({
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantSlug]);
+  }, [api, tenantSlug]);
 
   useEffect(() => {
     refresh();
@@ -141,13 +140,34 @@ export function ScreenManagerNotifications({
     }
   }
 
-  function handleAction(alert: AlertRow, action: AlertActionDescriptor) {
-    if (action.route) {
-      router.push(action.route);
+  async function handleAction(alert: AlertRow, action: AlertActionDescriptor) {
+    const label = action.label.toLowerCase();
+    const route =
+      action.route ??
+      (alert.kind.includes('kitchen') || label.includes('cozinha') || label.includes('fila')
+        ? `/manager/kitchen-reorder?slug=${tenantSlug}`
+        : alert.kind.includes('payment') || label.includes('pag')
+          ? `/manager/financeiro?slug=${tenantSlug}`
+          : label.includes('garçom') || label.includes('garcom') || label.includes('equipe')
+            ? `/manager/equipe?slug=${tenantSlug}`
+            : null);
+
+    if (route) {
+      router.push(route);
       return;
     }
-    // Backend action-resolver ainda não wireado · placeholder visível.
-    setStubMsg(`Ação ${action.label} · em desenvolvimento`);
+
+    setPendingId(alert.id);
+    const before = alerts;
+    setAlerts((prev) => prev.filter((a) => a.id !== alert.id));
+    try {
+      await api.alerts.resolve(alert.id);
+    } catch {
+      setAlerts(before);
+      refresh();
+    } finally {
+      setPendingId(null);
+    }
   }
 
   const backTo = persona === 'host' ? '/host' : '/manager';

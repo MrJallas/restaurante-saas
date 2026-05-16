@@ -67,6 +67,9 @@ def test_returns_none_for_empty():
     "trocar pedido",
     "quero cancelar o item",
     "mudar a bebida",
+    "quanto tempo demora o pedido?",
+    "cadê meu pedido?",
+    "qual o status do meu pedido?",
     # Allergen
     "tem glúten?",
     "esse prato é sem lactose?",

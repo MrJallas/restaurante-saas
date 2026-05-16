@@ -64,12 +64,12 @@ export function MenuDrawer({
 
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.position = prev.position;
-      document.body.style.top = prev.top;
-      document.body.style.left = prev.left;
-      document.body.style.right = prev.right;
-      document.body.style.width = prev.width;
-      document.body.style.overflow = prev.overflow;
+      document.body.style.position = prev.position || '';
+      document.body.style.top = prev.top || '';
+      document.body.style.left = prev.left || '';
+      document.body.style.right = prev.right || '';
+      document.body.style.width = prev.width || '';
+      document.body.style.overflow = prev.overflow || '';
       // Restaura o scroll sem `behavior: smooth` pra evitar "fly-back".
       window.scrollTo(0, scrollY);
     };
@@ -214,12 +214,12 @@ export function MenuDrawer({
             sub="Pedir atendimento"
           />
           <DrawerLink
-            href={`/${slug}/pagamento`}
+            href={`/${slug}/conta`}
             onNavigate={closeDrawer}
             icon="$"
             label="Pagar conta"
             sub="Fechar a conta"
-            active={activeHref?.includes('/pagamento')}
+            active={activeHref?.includes('/pagamento') || activeHref?.includes('/conta')}
           />
 
           <div className="mx-[22px] my-3.5 h-px bg-border-soft" />

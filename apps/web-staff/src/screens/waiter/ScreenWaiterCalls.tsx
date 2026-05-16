@@ -4,15 +4,13 @@
 // unificada de chamados do salão pro waiter (table-calls + manager-msgs
 // + cozinha-ready). Tap em card → /waiter/call/[id].
 //
-// Backend: existe `GET /staff/calls` (waiter-calls module). Pra Onda 3
-// vou usar mock visual; quando wirar a API real, basta substituir
-// MOCK_CALLS por fetch.
-
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useG, G_FONT, MONO_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GIconBtn, GBottomNav } from '../../components/waiter/Primitives';
+import { listPendingCalls, type WaiterCallSummary } from '../../lib/api/waiter';
 
 type CallType = 'pediu-conta' | 'chamou-garcom' | 'pronto-cozinha' | 'mais-bebida';
 type Urgency = 'high' | 'med' | 'low';
@@ -20,22 +18,14 @@ type Urgency = 'high' | 'med' | 'low';
 interface CallRow {
   id: string;
   type: CallType;
-  tableNumber: number;
-  partySize: number;
+  tableNumber?: number;
+  partySize?: number;
   sub: string;
   ts: string;
   urgency: Urgency;
 }
 
-const MOCK_CALLS: CallRow[] = [
-  { id: 'c1', type: 'pediu-conta', tableNumber: 3, partySize: 5, sub: 'R$ 612,40 · maquininha', ts: 'há 1 min', urgency: 'high' },
-  { id: 'c2', type: 'chamou-garcom', tableNumber: 18, partySize: 4, sub: 'Sem motivo informado', ts: 'há 30s', urgency: 'high' },
-  { id: 'c3', type: 'pronto-cozinha', tableNumber: 12, partySize: 4, sub: 'Risoto + Filé · 2 pratos', ts: 'há 2 min', urgency: 'high' },
-  { id: 'c4', type: 'mais-bebida', tableNumber: 7, partySize: 2, sub: 'Aperol Spritz · sem azeitona', ts: 'há 4 min', urgency: 'med' },
-  { id: 'c5', type: 'chamou-garcom', tableNumber: 9, partySize: 3, sub: 'Cliente acionou app', ts: 'há 5 min', urgency: 'low' },
-];
-
-const COPY: Record<CallType, { label: string; tint: string; icon: (s?: number) => React.ReactNode }> = {
+const COPY: Record<CallType, { label: string; tint: string; icon: (s?: number) => ReactNode }> = {
   'pediu-conta': { label: 'Pediu a conta', tint: '#C43A3A', icon: Icon.receipt },
   'chamou-garcom': { label: 'Chamou garçom', tint: '#D98E2B', icon: Icon.hand },
   'pronto-cozinha': { label: 'Pronto · cozinha', tint: '#2F7D4F', icon: Icon.check },
@@ -44,12 +34,88 @@ const COPY: Record<CallType, { label: string; tint: string; icon: (s?: number) =
 
 type Filter = 'todos' | 'urgentes' | 'pronto' | 'minhas';
 
-export function ScreenWaiterCalls({ dark = false }: { dark?: boolean }) {
+const REASON_LABEL: Record<string, string> = {
+  bring_menu: 'Trazer cardápio',
+  place_order: 'Anotar pedido',
+  serve_drink: 'Trazer bebida',
+  ask_bill: 'Cliente pediu a conta',
+  other: 'Sem motivo informado',
+};
+
+function typeFromReason(reason?: string | null): CallType {
+  if (reason === 'ask_bill') return 'pediu-conta';
+  if (reason === 'serve_drink') return 'mais-bebida';
+  return 'chamou-garcom';
+}
+
+function tableNumberFromCode(row: WaiterCallSummary): number | undefined {
+  const raw = row.table_code || row.table_label || '';
+  const match = raw.match(/\d+/);
+  return match ? Number(match[0]) : undefined;
+}
+
+function relativeTime(value: string): string {
+  const created = new Date(value).getTime();
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - created) / 1000));
+  if (diffSeconds < 60) return `há ${Math.max(diffSeconds, 1)}s`;
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `há ${diffMinutes} min`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  return `há ${diffHours} h`;
+}
+
+function urgencyFromCreatedAt(value: string): Urgency {
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (diffSeconds >= 180) return 'high';
+  if (diffSeconds >= 60) return 'med';
+  return 'low';
+}
+
+function mapCall(row: WaiterCallSummary): CallRow {
+  return {
+    id: row.id,
+    type: typeFromReason(row.reason),
+    tableNumber: tableNumberFromCode(row),
+    sub: row.note || REASON_LABEL[row.reason || 'other'] || 'Sem motivo informado',
+    ts: relativeTime(row.created_at),
+    urgency: urgencyFromCreatedAt(row.created_at),
+  };
+}
+
+export function ScreenWaiterCalls({ dark = false, tenantSlug }: { dark?: boolean; tenantSlug: string }) {
   const C = useG(dark);
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>('todos');
+  const [calls, setCalls] = useState<CallRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const filtered = MOCK_CALLS.filter((c) => {
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (showLoading = false) => {
+      if (showLoading) setLoading(true);
+      try {
+        const rows = await listPendingCalls(tenantSlug);
+        if (cancelled) return;
+        setCalls(rows.map(mapCall));
+        setErrorMsg(null);
+      } catch (error) {
+        console.error('[waiter-calls] list failed', error);
+        if (!cancelled) setErrorMsg('Não foi possível carregar os chamados.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load(true);
+    const intervalId = window.setInterval(() => load(false), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [tenantSlug]);
+
+  const filtered = calls.filter((c) => {
     if (filter === 'urgentes') return c.urgency === 'high';
     if (filter === 'pronto') return c.type === 'pronto-cozinha';
     if (filter === 'minhas') return false; // requires waiter-table assignment data
@@ -59,15 +125,16 @@ export function ScreenWaiterCalls({ dark = false }: { dark?: boolean }) {
   const open = (c: CallRow) => {
     const qs = new URLSearchParams({
       type: c.type,
-      tableNumber: String(c.tableNumber),
-    }).toString();
-    router.push(`/waiter/call/${c.id}?${qs}`);
+      tenant: tenantSlug,
+    });
+    if (c.tableNumber) qs.set('tableNumber', String(c.tableNumber));
+    router.push(`/waiter/call/${c.id}?${qs.toString()}`);
   };
 
   const tabs: { id: Filter; lbl: string; count: number }[] = [
-    { id: 'todos', lbl: 'Todos', count: MOCK_CALLS.length },
-    { id: 'urgentes', lbl: 'Urgentes', count: MOCK_CALLS.filter((c) => c.urgency === 'high').length },
-    { id: 'pronto', lbl: 'Pronto', count: MOCK_CALLS.filter((c) => c.type === 'pronto-cozinha').length },
+    { id: 'todos', lbl: 'Todos', count: calls.length },
+    { id: 'urgentes', lbl: 'Urgentes', count: calls.filter((c) => c.urgency === 'high').length },
+    { id: 'pronto', lbl: 'Pronto', count: calls.filter((c) => c.type === 'pronto-cozinha').length },
     { id: 'minhas', lbl: 'Minhas mesas', count: 0 },
   ];
 
@@ -84,13 +151,13 @@ export function ScreenWaiterCalls({ dark = false }: { dark?: boolean }) {
     >
       <GAppHeader
         dark={dark}
-        left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.push('/waiter')} />}
+        left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.push(`/waiter?tenant=${tenantSlug}`)} />}
         title="Chamados"
         right={
           <GIconBtn
             dark={dark}
             icon={Icon.bell(20)}
-            onClick={() => router.push('/waiter/notifications')}
+            onClick={() => router.push(`/waiter/notifications?tenant=${tenantSlug}`)}
             ariaLabel="Notificações"
           />
         }
@@ -131,7 +198,33 @@ export function ScreenWaiterCalls({ dark = false }: { dark?: boolean }) {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '8px 16px 24px' }}>
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div
+            style={{
+              padding: 32,
+              border: `1px dashed ${C.borderSoft}`,
+              borderRadius: 12,
+              textAlign: 'center',
+              color: C.faint,
+              fontSize: 13,
+            }}
+          >
+            Carregando chamados...
+          </div>
+        ) : errorMsg ? (
+          <div
+            style={{
+              padding: 32,
+              border: `1px dashed ${C.borderSoft}`,
+              borderRadius: 12,
+              textAlign: 'center',
+              color: C.faint,
+              fontSize: 13,
+            }}
+          >
+            {errorMsg}
+          </div>
+        ) : filtered.length === 0 ? (
           <div
             style={{
               padding: 32,
@@ -205,7 +298,7 @@ export function ScreenWaiterCalls({ dark = false }: { dark?: boolean }) {
                         marginTop: 2,
                       }}
                     >
-                      Mesa {c.tableNumber} · {c.partySize}p
+                      Mesa {c.tableNumber ?? '-'}{c.partySize ? ` · ${c.partySize}p` : ''}
                     </div>
                     <div
                       style={{
@@ -226,30 +319,15 @@ export function ScreenWaiterCalls({ dark = false }: { dark?: boolean }) {
             })}
           </div>
         )}
-        <div
-          style={{
-            margin: '14px 0',
-            padding: '10px 12px',
-            border: '1px dashed #F0DCB6',
-            borderRadius: 10,
-            background: '#FFF7E6',
-            fontSize: 11,
-            color: '#7A4D10',
-            fontWeight: 500,
-            fontFamily: MONO_FONT,
-          }}
-        >
-          DADOS MOCK · backend GET /staff/calls real chega na Onda 4
-        </div>
       </div>
 
       <GBottomNav
         active="calls"
         dark={dark}
         onTabChange={(id) => {
-          if (id === 'home') router.push('/waiter');
-          else if (id === 'me') router.push('/waiter/eu');
-          else if (id === 'scan') router.push('/waiter/scan-qr');
+          if (id === 'home') router.push(`/waiter?tenant=${tenantSlug}`);
+          else if (id === 'me') router.push(`/waiter/eu?tenant=${tenantSlug}`);
+          else if (id === 'scan') router.push(`/waiter/scan-qr?tenant=${tenantSlug}`);
         }}
       />
     </div>

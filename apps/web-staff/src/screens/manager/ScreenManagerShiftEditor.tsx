@@ -27,7 +27,7 @@
 // `DELETE /staff/member/remove-shift` ainda nao existem. Mock data
 // inline ate o backend shipar.
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -42,7 +42,6 @@ import {
 import {
   manager,
   type ShiftMemberEntry,
-  type ShiftWithMembers,
 } from '../../lib/api/manager';
 import { staffGet } from '../../lib/api';
 
@@ -173,7 +172,7 @@ export function ScreenManagerShiftEditor({
       : undefined) ??
     process.env.NEXT_PUBLIC_TENANT_SLUG ??
     'demo';
-  const api = manager(slug);
+  const api = useMemo(() => manager(slug), [slug]);
 
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [staffRoster, setStaffRoster] = useState<StaffRosterEntry[]>([]);
@@ -187,7 +186,7 @@ export function ScreenManagerShiftEditor({
   const workDate = todayISO();
   const currentLabel = currentShiftLabel();
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     try {
       setErrorMsg(null);
       const data = await api.shifts.list(workDate);
@@ -218,7 +217,7 @@ export function ScreenManagerShiftEditor({
       setErrorMsg((e as Error).message || 'Erro ao carregar turnos.');
       setLoading(false);
     }
-  };
+  }, [api, currentLabel, defaultExpanded, workDate]);
 
   useEffect(() => {
     refresh();
@@ -226,8 +225,7 @@ export function ScreenManagerShiftEditor({
     staffGet<{ staff: StaffRosterEntry[] }>(`/${slug}/staff?activeOnly=true`)
       .then((r) => setStaffRoster(r.staff ?? []))
       .catch(() => setStaffRoster([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
+  }, [refresh, slug]);
 
   const toggle = (id: string) =>
     setOpen((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -309,8 +307,6 @@ export function ScreenManagerShiftEditor({
       setBusy(false);
     }
   };
-
-  const dirty = false; // Round 18: persistência é live; não precisa do "dirty" model.
 
   return (
     <div
@@ -634,7 +630,9 @@ function ShiftCard({
               </div>
             </div>
           ) : (
-            sh.members.map((m) => <MemberRow key={m.id} C={C} m={m} onMore={() => onMoreFor(m)} />)
+            sh.members.map((m) => (
+              <MemberRow key={m.assignmentId} C={C} m={m} onMore={() => onMoreFor(m)} />
+            ))
           )}
           <button
             type="button"

@@ -252,6 +252,26 @@ export interface WsStaffMessageRead {
   };
 }
 
+/**
+ * Customer replied to a staff thread via the in-app inbox (`POST
+ * /customer-staff-messages/threads/:threadId/messages`) OR via the AI
+ * dispatch of `send_message_to_manager` (round 22).
+ *
+ * Routed to BOTH `session:<tableSessionId>` (customer's own UI in
+ * parallel tabs/devices) AND `tenant:<slug>` (manager inbox badge).
+ */
+export interface WsStaffMessagesCustomerReplied {
+  event: 'staff_messages.customer_replied';
+  payload: {
+    threadId: string;
+    messageId: string;
+    tableSessionId: string;
+    customerId: string;
+    content: string;
+    createdAt: string;
+  };
+}
+
 // ─── Zone pause ───
 
 export interface WsZonePauseStarted {
@@ -383,6 +403,11 @@ export interface WsHostVipFlagged {
   };
 }
 
+export interface WsAlertCreated {
+  event: 'alert.created';
+  payload: Record<string, unknown>;
+}
+
 // ─── Discriminated union ───
 
 /**
@@ -409,13 +434,15 @@ export type WsEvent =
   | WsComplaintResolved
   | WsStaffMessageReceived
   | WsStaffMessageRead
+  | WsStaffMessagesCustomerReplied
   | WsZonePauseStarted
   | WsZonePauseEnded
   | WsSessionFlagChanged
   | WsHostTableLiberated
   | WsHostSwapRequested
   | WsHostSwapStateChanged
-  | WsHostVipFlagged;
+  | WsHostVipFlagged
+  | WsAlertCreated;
 
 /** String-literal name of each `WsEvent` variant — useful for room-routing. */
 export type WsEventName = WsEvent['event'];

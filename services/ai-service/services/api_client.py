@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +49,22 @@ def make_http_api_client(base_url: str, timeout: float = 10.0) -> Callable[..., 
     """
     import httpx
 
-    client = httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout)
+    clean_base_url = base_url.rstrip("/")
+    parsed_base = urlparse(clean_base_url)
+    base_parts = [part for part in parsed_base.path.split("/") if part]
+    base_tenant = (
+        base_parts[-1]
+        if len(base_parts) >= 2 and base_parts[-2] == "api"
+        else None
+    )
+    client = httpx.Client(base_url=clean_base_url, timeout=timeout)
 
     def _call(method: str, path: str, body: Any = None) -> Any:
         normalised = path if path.startswith("/") else f"/{path}"
+        if base_tenant and normalised == f"/{base_tenant}":
+            normalised = "/"
+        elif base_tenant and normalised.startswith(f"/{base_tenant}/"):
+            normalised = normalised[len(f"/{base_tenant}"):]
         try:
             res = client.request(
                 method=method.upper(),

@@ -93,7 +93,7 @@ export function useHostEvents({
     if (!wsUrl) return;
 
     const staffKey = process.env.NEXT_PUBLIC_STAFF_API_KEY ?? undefined;
-    const staffId = readStaffId() ?? hostId;
+    const staffId = hostId ?? readStaffId();
 
     let socket: Socket;
     try {
@@ -101,10 +101,12 @@ export function useHostEvents({
         path: '/socket.io/',
         transports: ['websocket'],
         reconnection: true,
+        autoConnect: false,
         auth: {
           staffKey,
           staffId,
           tenantSlug,
+          staffRole: 'host',
           role: 'host',
         },
       });
@@ -121,6 +123,10 @@ export function useHostEvents({
     socket.on('connect', handleConnect);
     socket.on('disconnect', () => setConnected(false));
     socket.on('connect_error', () => setConnected(false));
+    socket.connect();
+    if (socket.connected) {
+      handleConnect();
+    }
 
     const subscribed =
       eventsRef.current && eventsRef.current.length > 0

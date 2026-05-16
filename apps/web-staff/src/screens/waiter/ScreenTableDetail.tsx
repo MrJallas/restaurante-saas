@@ -3,21 +3,12 @@
 // ScreenTableDetail — waiter detail screen pra UMA mesa.
 // Canvas: garcom-screens-b.jsx:9 (V12 with payment progress + timeline).
 //
-// Pra Onda 3 (round 18), versão pragmática:
-//   • Hero card preto com total da conta + progresso de pagamento (mock)
+// Onda 4:
+//   • Hero card preto com total da conta + progresso de pagamento real
 //   • Lista de itens pendentes/servidos
-//   • CTAs: "Chamar atendimento" (stub) · "Marcar todos servidos" (stub)
-//
-// Backend (TODO Onda 4):
-//   • GET /tables/:id → mesa + pessoas + tempo aberto
-//   • GET /tables/:id/orders → lista itens
-//   • GET /tables/:id/payments → progresso pagamento
-//   • PATCH /orders/:id/served → marca item servido
-//
-// Por enquanto mock data inline. Quando o backend shipar, FE só troca
-// o useState mock por useEffect com fetch + setMock(...).
+//   • PATCH /orders/:id/status → marca pedido pronto como entregue
 
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -26,11 +17,17 @@ import {
 } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitives';
+import {
+  getWaiterTableDetail,
+  updateOrderStatus,
+  type WaiterTableDetail,
+} from '../../lib/api/waiter';
 
 type ItemStatus = 'preparando' | 'pronto' | 'servido';
 
 interface Item {
   id: string;
+  orderId: string;
   qty: number;
   name: string;
   note?: string;
@@ -38,43 +35,87 @@ interface Item {
   status: ItemStatus;
 }
 
-const MOCK_ITEMS: Item[] = [
-  { id: 'i1', qty: 1, name: 'Risoto de camarão', note: 'sem cebola', station: 'Cozinha', status: 'pronto' },
-  { id: 'i2', qty: 1, name: 'Bruschetta caprese', station: 'Cozinha', status: 'pronto' },
-  { id: 'i3', qty: 2, name: 'Filé ao vinho', note: 'um mal passado · um ao ponto', station: 'Cozinha', status: 'pronto' },
-  { id: 'i4', qty: 2, name: 'Aperol Spritz', note: 'sem azeitona', station: 'Bar', status: 'preparando' },
-  { id: 'i5', qty: 1, name: 'Suco de limão', station: 'Bar', status: 'preparando' },
-  { id: 'i6', qty: 4, name: 'Couvert da casa', station: 'Cozinha', status: 'servido' },
-];
-
 export interface ScreenTableDetailProps {
   dark?: boolean;
+  tenantSlug: string;
   tableId: string;
   tableNumber?: number;
 }
 
 export function ScreenTableDetail({
   dark = false,
-  tableId: _tableId,
-  tableNumber = 12,
+  tenantSlug,
+  tableId,
+  tableNumber,
 }: ScreenTableDetailProps) {
   const C = useG(dark);
   const router = useRouter();
+  const [detail, setDetail] = useState<WaiterTableDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [stubMsg, setStubMsg] = useState<string | null>(null);
-  const showStub = (m: string) => {
-    setStubMsg(`${m} · em desenvolvimento (Onda 4 backend).`);
+
+  const showMsg = (m: string) => {
+    setStubMsg(m);
     setTimeout(() => setStubMsg(null), 2800);
   };
 
-  // Mock totals
-  const totalConta = 287.5;
-  const totalPago = 143.76;
-  const restante = totalConta - totalPago;
-  const pessoas = 4;
-  const pagaram = 2;
-  const processando = 1;
+  const load = useCallback(async () => {
+    if (!tenantSlug || !tableId) return;
+    setLoading(true);
+    try {
+      const data = await getWaiterTableDetail(tenantSlug, tableId);
+      setDetail(data);
+    } catch (err) {
+      showMsg(err instanceof Error ? err.message : 'Erro ao carregar mesa.');
+      setDetail(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [tenantSlug, tableId]);
 
-  const pendentes = MOCK_ITEMS.filter((i) => i.status !== 'servido');
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const session = detail?.session;
+  const parsedTableNumber = Number(
+    String(session?.table_label ?? session?.table_code ?? '').replace(/[^0-9]/g, ''),
+  );
+  const resolvedTableNumber =
+    tableNumber ??
+    (Number.isFinite(parsedTableNumber) && parsedTableNumber > 0 ? parsedTableNumber : 0);
+  const openedMin = session
+    ? Math.max(0, Math.floor((Date.now() - new Date(session.created_at).getTime()) / 60000))
+    : 0;
+
+  const items = useMemo<Item[]>(() => {
+    const statusFromOrder = (status: string): ItemStatus => {
+      if (status === 'ready') return 'pronto';
+      if (status === 'delivered') return 'servido';
+      return 'preparando';
+    };
+    return (detail?.orders ?? []).flatMap((order) =>
+      order.items.map((item) => ({
+        id: item.id,
+        orderId: order.id,
+        qty: item.quantity,
+        name: item.name,
+        note: item.notes ?? undefined,
+        station: 'Cozinha',
+        status: statusFromOrder(order.status),
+      })),
+    );
+  }, [detail]);
+
+  const totalConta = (session?.total_cents ?? 0) / 100;
+  const totalPago = (session?.paid_cents ?? 0) / 100;
+  const restante = Math.max(0, totalConta - totalPago);
+  const pessoas = session?.party_size || session?.capacity || 1;
+  const pagaram = session?.paid_count ?? 0;
+  const processando = session?.processing_count ?? 0;
+
+  const pendentes = items.filter((i) => i.status !== 'servido');
 
   const fmt = (v: number) => v.toFixed(2).replace('.', ',');
 
@@ -82,6 +123,20 @@ export function ScreenTableDetail({
     pronto: { bg: '#E8F3EC', fg: '#1E8C5A', label: 'Pronto · servir' },
     preparando: { bg: '#FDF3D8', fg: '#7A4D10', label: 'Preparando' },
     servido: { bg: '#F4F0E8', fg: '#666', label: 'Servido' },
+  };
+
+  const markDelivered = async (orderId: string) => {
+    if (!tenantSlug || updatingOrderId) return;
+    setUpdatingOrderId(orderId);
+    try {
+      await updateOrderStatus(tenantSlug, orderId, 'delivered');
+      await load();
+      showMsg('Pedido marcado como entregue.');
+    } catch (err) {
+      showMsg(err instanceof Error ? err.message : 'Erro ao atualizar pedido.');
+    } finally {
+      setUpdatingOrderId(null);
+    }
   };
 
   return (
@@ -98,9 +153,9 @@ export function ScreenTableDetail({
       <GAppHeader
         dark={dark}
         left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.back()} />}
-        title={`Mesa ${tableNumber}`}
-        sub={`${pessoas} PESSOAS · ABERTA HÁ 42 MIN`}
-        right={<GIconBtn dark={dark} icon={Icon.more(20)} onClick={() => showStub('Mais ações')} />}
+        title={`Mesa ${resolvedTableNumber || '—'}`}
+        sub={`${pessoas} PESSOAS · ABERTA HÁ ${openedMin} MIN`}
+        right={<GIconBtn dark={dark} icon={Icon.more(20)} onClick={load} />}
       />
 
       <div style={{ flex: 1, overflow: 'auto' }}>
@@ -135,7 +190,7 @@ export function ScreenTableDetail({
               lineHeight: 1.05,
             }}
           >
-            R$ {fmt(totalConta)}
+            {loading ? 'Carregando…' : `R$ ${fmt(totalConta)}`}
           </div>
           <div
             style={{
@@ -145,7 +200,7 @@ export function ScreenTableDetail({
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            R$ {fmt(totalConta / pessoas)} por pessoa · {pessoas} pessoas
+            R$ {fmt(totalConta / Math.max(1, pessoas))} por pessoa · {pessoas} pessoas
           </div>
 
           <div
@@ -179,7 +234,7 @@ export function ScreenTableDetail({
               <div
                 style={{
                   height: '100%',
-                  width: `${(totalPago / totalConta) * 100}%`,
+                  width: `${totalConta > 0 ? Math.min(100, (totalPago / totalConta) * 100) : 0}%`,
                   background: C.bg,
                   borderRadius: 99,
                 }}
@@ -241,7 +296,21 @@ export function ScreenTableDetail({
             Itens · {pendentes.length} pendente{pendentes.length === 1 ? '' : 's'}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {MOCK_ITEMS.map((item) => {
+            {items.length === 0 && !loading && (
+              <div
+                style={{
+                  padding: 18,
+                  border: `1px dashed ${C.borderSoft}`,
+                  borderRadius: 12,
+                  color: C.faint,
+                  fontSize: 13,
+                  textAlign: 'center',
+                }}
+              >
+                Nenhum pedido ativo nesta mesa.
+              </div>
+            )}
+            {items.map((item) => {
               const st = statusTint[item.status];
               return (
                 <div
@@ -320,10 +389,11 @@ export function ScreenTableDetail({
                     <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
                       <button
                         type="button"
-                        onClick={() => showStub('Marcar como servido')}
+                        onClick={() => markDelivered(item.orderId)}
+                        disabled={updatingOrderId === item.orderId}
                         style={{
                           all: 'unset',
-                          cursor: 'pointer',
+                          cursor: updatingOrderId === item.orderId ? 'wait' : 'pointer',
                           padding: '6px 12px',
                           borderRadius: 8,
                           background: C.ink,
@@ -332,28 +402,13 @@ export function ScreenTableDetail({
                           fontWeight: 700,
                         }}
                       >
-                        Marcar servido
+                        {updatingOrderId === item.orderId ? 'Atualizando…' : 'Marcar entregue'}
                       </button>
                     </div>
                   )}
                 </div>
               );
             })}
-          </div>
-          <div
-            style={{
-              margin: '12px 0',
-              padding: '10px 12px',
-              border: '1px dashed #F0DCB6',
-              borderRadius: 10,
-              background: '#FFF7E6',
-              fontSize: 11,
-              color: '#7A4D10',
-              fontWeight: 500,
-              fontFamily: MONO_FONT,
-            }}
-          >
-            DADOS MOCK · backend de orders+payments chega na Onda 4
           </div>
         </div>
       </div>
@@ -372,8 +427,8 @@ export function ScreenTableDetail({
           Voltar
         </GButton>
         <div style={{ flex: 1 }}>
-          <GButton kind="primary" dark={dark} full onClick={() => showStub('Chamar reforço')}>
-            Chamar reforço
+          <GButton kind="primary" dark={dark} full onClick={load}>
+            Atualizar mesa
           </GButton>
         </div>
       </div>

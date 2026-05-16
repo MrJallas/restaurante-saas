@@ -329,16 +329,25 @@ export class ComplaintsService {
     const params: unknown[] = [];
     let i = 1;
     if (filters.status) {
-      where.push(`status = $${i++}`);
+      where.push(`c.status = $${i++}`);
       params.push(filters.status);
     }
     if (filters.assignedManagerId) {
-      where.push(`assigned_manager_id = $${i++}`);
+      where.push(`c.assigned_manager_id = $${i++}`);
       params.push(filters.assignedManagerId);
     }
-    const sql = `SELECT * FROM complaints
+    const sql = `SELECT c.*,
+                        COALESCE(o.table_session_id, v.table_session_id) AS table_session_id,
+                        CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT) AS table_number,
+                        cust.name AS customer_name
+                   FROM complaints c
+              LEFT JOIN orders o ON o.id = c.order_id
+              LEFT JOIN visits v ON v.id = COALESCE(c.visit_id, o.visit_id)
+              LEFT JOIN table_sessions ts ON ts.id = COALESCE(o.table_session_id, v.table_session_id)
+              LEFT JOIN tables t ON t.id = ts.table_id
+              LEFT JOIN customers cust ON cust.id = c.customer_id
                  ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-                 ORDER BY submitted_at DESC LIMIT 100`;
+                 ORDER BY c.submitted_at DESC LIMIT 100`;
     const rows = (await this.tenantConn.query(sql, params)) as Array<
       Record<string, unknown>
     >;
@@ -346,23 +355,42 @@ export class ComplaintsService {
   }
 
   private mapRow(row: Record<string, unknown>) {
+    const rawStatus = row.status as string;
+    const dtoStatus =
+      rawStatus === 'closed' || rawStatus === 'resolved'
+        ? 'resolved'
+        : rawStatus === 'responded'
+          ? 'responded'
+          : 'created';
     return {
       id: row.id as string,
+      tableSessionId: (row.table_session_id as string | null) ?? '',
+      tableNumber: Number(row.table_number ?? 0),
       orderId: (row.order_id as string | null) ?? null,
       orderRatingId: (row.order_rating_id as string | null) ?? null,
       customerId: (row.customer_id as string | null) ?? null,
+      customerName: (row.customer_name as string | null) ?? 'Cliente',
       visitId: (row.visit_id as string | null) ?? null,
       rating: (row.rating as number | null) ?? null,
-      problemType: (row.problem_type as string | null) ?? null,
+      problemType: (row.problem_type as string | null) ?? 'outro',
       text: row.text as string,
+      description: row.text as string,
       attachedImageUrl: (row.attached_image_url as string | null) ?? null,
-      status: row.status as string,
+      status: dtoStatus,
+      rawStatus,
       assignedManagerId: (row.assigned_manager_id as string | null) ?? null,
       responseText: (row.response_text as string | null) ?? null,
       responseAt: (row.response_at as string | null) ?? null,
       submittedAt: row.submitted_at as string,
+      createdAt: row.submitted_at as string,
+      respondedAt: (row.response_at as string | null) ?? null,
+      respondedBy: (row.assigned_manager_id as string | null) ?? null,
       closedAt: (row.closed_at as string | null) ?? null,
       resolvedAt: (row.resolved_at as string | null) ?? null,
+      resolvedBy:
+        rawStatus === 'closed' || rawStatus === 'resolved'
+          ? ((row.assigned_manager_id as string | null) ?? null)
+          : null,
     };
   }
 }

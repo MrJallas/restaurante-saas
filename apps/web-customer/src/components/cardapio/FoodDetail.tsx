@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useState } from 'react';
 import { PillButton } from '../ui/PillButton';
 import { FoodPlaceholder } from '../ui/FoodPlaceholder';
@@ -42,10 +43,14 @@ export function FoodDetail({ item, onBack, onAskAI, onAdd, isAdding }: FoodDetai
       <div className="flex-1 overflow-y-auto overscroll-contain">
         <div className="relative">
           {item.imageUrl ? (
-            <img
+            <Image
               src={item.imageUrl}
               alt=""
+              width={1200}
+              height={700}
+              sizes="100vw"
               className="h-[280px] w-full object-cover"
+              unoptimized
             />
           ) : (
             <FoodPlaceholder

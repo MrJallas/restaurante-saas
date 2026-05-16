@@ -18,14 +18,8 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if not item_id:
         return ToolResult(error={"code": "missing_item", "message": "itemId obrigatório"})
 
-    if ctx.api_client:
-        try:
-            ctx.api_client("DELETE", f"/customer/cart/items/{item_id}", None)
-        except Exception as e:
-            return ToolResult(error={"code": "api_error", "message": str(e)})
-
     return ToolResult(
-        message="Removi do pedido. Algo mais?",
+        message="Vou atualizar seu pedido. Algo mais?",
         chips=_chips_after_remove(),
-        action_payload={"cartUpdated": True, "removedItemId": item_id},
+        action_payload={"cartUpdated": True, "removedItemId": item_id, "itemId": item_id},
     )

@@ -6,6 +6,7 @@ import {
   Body,
   Param,
   Req,
+  Delete,
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
@@ -93,6 +94,17 @@ export class WaiterCallsController {
   }
 
   /**
+   * Customer-facing active call check. Used before opening the "choose
+   * reason" sheet so a second tap shows the waiting state instead of
+   * creating another call.
+   */
+  @Get('active')
+  @UseGuards(SessionGuard)
+  async getActiveCall(@Session() session: SessionData) {
+    return this.waiterCallsService.getActiveCall(session.sessionId);
+  }
+
+  /**
    * Customer polls this to get the waiter's name + ETA once the call has
    * been acknowledged by staff, and to know when it resolves.
    */
@@ -118,6 +130,15 @@ export class WaiterCallsController {
     return this.waiterCallsService.cancelCall(callId, session.sessionId);
   }
 
+  @Delete(':callId')
+  @UseGuards(SessionGuard)
+  async deleteCall(
+    @Session() session: SessionData,
+    @Param('callId') callId: string,
+  ) {
+    return this.waiterCallsService.cancelCall(callId, session.sessionId);
+  }
+
   // Acknowledge e resolve sao acoes de staff — antes publicas, agora
   // exigem `x-staff-key` (StaffOrSessionGuard tambem aceita session
   // pra admin/owner que possa estar em sessao normal). Sem auth, qualquer
@@ -129,11 +150,14 @@ export class WaiterCallsController {
     @Param('callId') callId: string,
     @Param('slug') slug: string,
     @Body() dto: AcknowledgeCallDto = {},
+    @Req() req: Request,
   ) {
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
     return this.waiterCallsService.acknowledgeCall(
       callId,
       slug,
-      dto.waiterName,
+      staffId,
+      undefined,
       dto.etaMinutes,
     );
   }

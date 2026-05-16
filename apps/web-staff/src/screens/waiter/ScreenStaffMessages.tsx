@@ -15,7 +15,7 @@ import { useHostEvents } from '../../hooks/useHostEvents';
 
 interface ScreenStaffMessagesProps {
   tenantSlug: string;
-  role?: 'waiter' | 'host';
+  role?: 'waiter' | 'host' | 'cook';
   userId: string;
   onBack?: () => void;
   onOpenThread?: (threadId: string) => void;
@@ -33,17 +33,17 @@ function fmtTime(iso: string): string {
 export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
   tenantSlug, role = 'waiter', userId, onBack, onOpenThread,
 }) => {
-  const dark = false;
+  const dark = role === 'cook';
   const C = useG(dark);
   const [threads, setThreads] = useState<StaffMessageThreadDto[]>([]);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
-  const waiterEvents = useWaiterEvents(role === 'waiter'
+  const waiterEvents = useWaiterEvents(role === 'waiter' || role === 'cook'
     ? { tenantSlug, waiterId: userId }
-    : { tenantSlug });
+    : { tenantSlug: '' });
   const hostEvents = useHostEvents(role === 'host'
     ? { tenantSlug, hostId: userId }
-    : { tenantSlug });
+    : { tenantSlug: '' });
 
   useEffect(() => {
     let alive = true;
@@ -94,7 +94,7 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
   return (
     <div
       style={{
-        height: '100%', height: '100vh',
+        height: '100vh',
         display: 'flex', flexDirection: 'column',
         background: C.surface, fontFamily: G_FONT, color: C.ink, position: 'relative',
       }}
@@ -246,8 +246,7 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
                   flexShrink: 0, fontSize: 13, fontWeight: 700, letterSpacing: 0.5,
                 }}
               >
-                {/* avatar fallback · pegaria iniciais do peer no DTO real */}
-                ··
+                {(t.subject ?? 'MS').slice(0, 2).toUpperCase()}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div
@@ -263,7 +262,7 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150,
                       }}
                     >
-                      {t.threadId.slice(0, 16)}
+                      {t.subject || (t.kind === 'shift_group' ? 'Turno' : 'Mensagem')}
                     </span>
                   </div>
                   <span

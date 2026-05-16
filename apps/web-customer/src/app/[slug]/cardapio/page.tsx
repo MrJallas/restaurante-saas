@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { apiGet } from '../../../lib/api';
+import { recordContinuationHint } from '../../../lib/continuationHints';
+import { recordCustomerEvent } from '../../../lib/customerEvents';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
@@ -40,6 +42,20 @@ function inferKind(cat: Category): 'food' | 'drink' {
   return drinkKeywords.some((k) => cat.name.toLowerCase().includes(k)) ? 'drink' : 'food';
 }
 
+function normalizeCategory(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function categoryLooksLikeDrink(value: string): boolean {
+  return /bebida|drink|vinho|cerveja|suco|agua|refrigerante/.test(
+    normalizeCategory(value),
+  );
+}
+
 export default function CardapioPage() {
   const params = useParams();
   const router = useRouter();
@@ -59,7 +75,12 @@ export default function CardapioPage() {
   // chrome próprio). `?embed=1` faz o page renderizar só o conteúdo,
   // economizando refator do component em duas formas (rota + overlay).
   const isEmbed = searchParams.get('embed') === '1';
-  const initialTab: Tab = searchParams.get('tab') === 'bebidas' ? 'drink' : 'food';
+  const requestedCategory = searchParams.get('category');
+  const initialTab: Tab =
+    searchParams.get('tab') === 'bebidas' ||
+    (requestedCategory ? categoryLooksLikeDrink(requestedCategory) : false)
+      ? 'drink'
+      : 'food';
   const [tab, setTab] = useState<Tab>(initialTab);
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -67,6 +88,17 @@ export default function CardapioPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<MenuItem[] | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!isEmbed) {
+      recordContinuationHint('viu_menu');
+    }
+    recordCustomerEvent(slug, 'menu_viewed', {
+      embedded: isEmbed,
+      category: requestedCategory ?? null,
+      tab,
+    });
+  }, [isEmbed, requestedCategory, slug, tab]);
 
   useEffect(() => {
     if (!slug) return;
@@ -128,6 +160,18 @@ export default function CardapioPage() {
 
   const currentCategories = tab === 'food' ? foodCategories : drinkCategories;
   const currentItems = tab === 'food' ? foodItems : drinkItems;
+
+  useEffect(() => {
+    if (!requestedCategory || categories.length === 0) return;
+    const wanted = normalizeCategory(requestedCategory);
+    const match = categories.find((cat) => {
+      const normalized = normalizeCategory(cat.name);
+      return normalized === wanted || normalized.includes(wanted) || wanted.includes(normalized);
+    });
+    if (!match) return;
+    setTab(inferKind(match));
+    setActiveCategory(match.id);
+  }, [categories, requestedCategory]);
 
   const filteredByCategory = activeCategory
     ? currentItems.filter((it) => it.category_id === activeCategory)

@@ -1,0 +1,67 @@
+{
+  "audit": "r23-sub-15",
+  "screen": "ScreenManagerProfile (/manager/configuracoes)",
+  "source_file": "apps/web-staff/src/screens/manager/ScreenManagerProfile.tsx",
+  "screenshot": "screenshots/05-configuracoes-manager.png",
+  "expected_rows_per_spec": 12,
+  "observed_rows": 9,
+  "delta": "-3 (rows owner-only escondidas porque role default = 'manager')",
+  "role_resolution": {
+    "default_in_source": "manager",
+    "url_param": "name only (no role)",
+    "implication": "Manager Erica NÃO consegue ver as 12 linhas via URL. Só vê 12 se a prop role='owner' for hardcoded ou populada via fonte autenticada que ainda não existe."
+  },
+  "sections_visible_for_manager": [
+    { "section": "Mensagens", "rows": [
+      { "label": "Mensagens", "sub": "Histórico", "onClick": "router.push('/manager/mensagens')", "kind": "real-nav" }
+    ]},
+    { "section": "Operação", "rows": [
+      { "label": "Encerrar turno", "sub": "Vai gerar resumo · você sai do app", "onClick": "showStub('Encerrar turno')", "kind": "stub-toast" },
+      { "label": "Histórico de turnos", "sub": "Vendas, mesas e desempenho dos turnos passados", "onClick": "showStub('Histórico de turnos')", "kind": "stub-toast" },
+      { "label": "Equipe e turnos", "sub": "Mesma tela da aba Equipe · turnos do dia inclusos", "onClick": "router.push('/manager/equipe')", "kind": "real-nav" },
+      { "label": "Cortesias", "sub": "Histórico · criar manualmente", "onClick": "router.push('/manager/cortesias')", "kind": "real-nav" }
+    ]},
+    { "section": "Conta", "rows": [
+      { "label": "Notificações", "sub": "Avisos do turno · push · sons · lock screen", "onClick": "showStub('Notificações')", "kind": "stub-toast" },
+      { "label": "Segurança e senha", "sub": "Trocar senha · 2FA · sessões ativas", "onClick": "showStub('Segurança e senha')", "kind": "stub-toast" },
+      { "label": "Aparência", "sub": "Modo claro · escuro · automático", "onClick": "showStub('Aparência')", "kind": "stub-toast" }
+    ]}
+  ],
+  "sections_hidden_for_manager": {
+    "section": "Estabelecimento · só donos",
+    "gate": "isOwner === true",
+    "rows": [
+      { "label": "Configuração de mesas", "sub": "Número, capacidade, setores · imprimir QR codes", "onClick": "showStub('Configuração de mesas')", "kind": "stub-toast" },
+      { "label": "Horários do restaurante", "sub": "Abertura, fechamento, dias da semana", "onClick": "showStub('Horários do restaurante')", "kind": "stub-toast" },
+      { "label": "Cardápio", "sub": "Editar pratos, preços, fotos, categorias", "onClick": "showStub('Cardápio')", "kind": "stub-toast" },
+      { "label": "Plano e cobrança", "sub": "Plano atual · histórico · método de pagamento", "onClick": "showStub('Plano e cobrança')", "kind": "stub-toast" }
+    ]
+  },
+  "logout_button": {
+    "label": "Sair do app",
+    "kind": "logout",
+    "behaviour": "sessionStorage.clear() + localStorage.removeItem('staffId'/'staffRole') + router.push('/')"
+  },
+  "summary": {
+    "click_kinds": { "real-nav": 3, "stub-toast": 6, "logout": 1, "total_visible": 9 },
+    "stub-toast_pattern": "showStub('<label>') → toast '<label> · em desenvolvimento (Onda 3 backend).' por 2.8s",
+    "round_18_onda_2a_compliance": "OK · todas as 9 rows visíveis têm onClick wirado (3 real + 6 stub). Nenhuma row é silent-click. Comentário no source linha 70-75: 'Antes 9 de 13 rows não tinham onClick — clique silencioso. Agora toast curto explica que está em desenvolvimento.'",
+    "real_vs_mock_breakdown": {
+      "real": ["Mensagens", "Equipe e turnos", "Cortesias"],
+      "stub": ["Encerrar turno", "Histórico de turnos", "Notificações", "Segurança e senha", "Aparência"],
+      "owner-only-stub": ["Configuração de mesas", "Horários do restaurante", "Cardápio", "Plano e cobrança"]
+    }
+  },
+  "issues": [
+    {
+      "severity": "medium",
+      "title": "12 rows não acessíveis para manager",
+      "detail": "Spec afirma 12 rows mas role default na prop = 'manager'. App.tsx (page.tsx) não passa role nem lê de URL/profile. Erica (staffId=8bd06156-…) vê só 9. Pra ver 12 a prop role='owner' precisa ser populada de um campo do banco — não há esse wiring."
+    },
+    {
+      "severity": "low",
+      "title": "6 stub-toasts disfarçam ausência de backend",
+      "detail": "Pattern é honesto (toast 'em desenvolvimento (Onda 3 backend)'), mas para roteiros de QA tem que ser claro que 6 das 9 rows visíveis NÃO chamam endpoint."
+    }
+  ]
+}

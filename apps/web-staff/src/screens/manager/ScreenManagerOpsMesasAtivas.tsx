@@ -79,12 +79,6 @@ export function ScreenManagerOpsMesasAtivas({ dark, tenantSlug: _tenantSlug }: S
   const backHref = slugQs ? `/manager/operacoes?slug=${slugQs}` : '/manager/operacoes';
 
   const sections = FALLBACK_SECTIONS;
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
-
-  const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 4 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
-  };
 
   const occ = sections.reduce((s, sec) => s + sec.tables.length, 0);
   const free = TOTAL_TABLES - occ;
@@ -291,8 +285,6 @@ export function ScreenManagerOpsMesasAtivas({ dark, tenantSlug: _tenantSlug }: S
       </div>
 
       <MBottomNav active="ops" dark={dark} onTo={(r) => router.push(r)} />
-
-      {stubMsg && <StubToast C={C}>{stubMsg}</StubToast>}
     </div>
   );
 }
@@ -401,33 +393,6 @@ function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.
         Como esse número é calculado
       </div>
       <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>{children}</div>
-    </div>
-  );
-}
-
-function StubToast({ C, children }: { C: ReturnType<typeof useG>; children: React.ReactNode }) {
-  return (
-    <div
-      role="status"
-      style={{
-        position: 'fixed',
-        left: '50%',
-        bottom: 132,
-        transform: 'translateX(-50%)',
-        zIndex: 80,
-        padding: '12px 18px',
-        borderRadius: 999,
-        background: C.ink,
-        color: C.bg,
-        fontSize: 13,
-        fontWeight: 600,
-        letterSpacing: -0.1,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-        maxWidth: 'calc(100vw - 32px)',
-        textAlign: 'center',
-      }}
-    >
-      {children}
     </div>
   );
 }

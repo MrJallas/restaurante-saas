@@ -20,7 +20,7 @@
 // `/manager/compensate` route.
 
 import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
   useG,
   G_FONT,
@@ -174,7 +174,7 @@ export function ScreenManagerCompensateClient({
       />
 
       <div style={{ flex: 1, overflow: 'auto', padding: '0 0 100px' }}>
-        <Hero C={C} savedId={savedId} selectedTableNumber={selectedTableNumber} />
+        <Hero savedId={savedId} selectedTableNumber={selectedTableNumber} />
 
         {!savedId && (
           <>
@@ -370,11 +370,9 @@ export function ScreenManagerCompensateClient({
 }
 
 function Hero({
-  C,
   savedId,
   selectedTableNumber,
 }: {
-  C: ReturnType<typeof useG>;
   savedId: string | null;
   selectedTableNumber: number | null;
 }) {

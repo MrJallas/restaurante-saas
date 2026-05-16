@@ -45,6 +45,27 @@ export interface CreateOrderItemDto {
   customerId?: string | null;
 }
 
+export interface KitchenQueueItem {
+  id: string;
+  status: string;
+  billing_mode: string;
+  total_cents: number;
+  notes: string | null;
+  visit_id: string | null;
+  table_session_id: string;
+  table_label: string;
+  table_number: number;
+  created_at: string;
+  updated_at: string;
+  wait_minutes: number;
+  meta_minutes: number;
+  priority_rank: string;
+  priority_reason: string | null;
+  priority_requested_by: string | null;
+  priority_updated_at: string | null;
+  items: unknown[];
+}
+
 @Injectable()
 export class OrdersService {
   private readonly ordersLogger = new Logger(OrdersService.name);
@@ -167,6 +188,25 @@ export class OrdersService {
       extraMap = new Map(extras.map((e) => [e.id, e.price_cents]));
     }
 
+    let effectiveDefaultCustomerId = defaultCustomerId ?? null;
+    if (!effectiveDefaultCustomerId && visitId) {
+      const visitRows = (await this.tenantConn.query(
+        `SELECT customer_id
+           FROM visits
+          WHERE id = $1
+            AND table_session_id = $2
+          LIMIT 1`,
+        [visitId, tableSessionId],
+      )) as Array<{ customer_id: string | null }>;
+      effectiveDefaultCustomerId = visitRows[0]?.customer_id ?? null;
+    }
+
+    if (billingMode === 'individual' && !effectiveDefaultCustomerId) {
+      throw new BadRequestException(
+        'Nao foi possivel identificar o cliente desta comanda individual.',
+      );
+    }
+
     let totalCents = 0;
     const orderItemsData = items.map((item) => {
       const menuItem = menuItemMap.get(item.menuItemId)!;
@@ -190,7 +230,7 @@ export class OrdersService {
         // shared (null) unless the caller passes a customerId per-item.
         customerId:
           billingMode === 'individual'
-            ? (defaultCustomerId ?? null)
+            ? effectiveDefaultCustomerId
             : (item.customerId ?? null),
       };
     });
@@ -687,6 +727,9 @@ export class OrdersService {
       `
       SELECT o.id, o.status, o.billing_mode, o.total_cents, o.notes, o.visit_id,
              o.table_session_id, o.created_at, o.updated_at,
+             o.priority_rank, o.priority_reason, o.priority_requested_by,
+             o.priority_updated_at, t.label AS table_label,
+             CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT) AS table_number,
              json_agg(
                json_build_object(
                  'id', oi.id,
@@ -701,13 +744,117 @@ export class OrdersService {
                )
              ) as items
       FROM orders o
+      JOIN table_sessions ts ON ts.id = o.table_session_id
+      JOIN tables t ON t.id = ts.table_id
       JOIN order_items oi ON oi.order_id = o.id
       JOIN menu_items mi ON mi.id = oi.menu_item_id
       WHERE o.status NOT IN ('delivered', 'cancelled', 'pending_confirmation')
-      GROUP BY o.id
-      ORDER BY o.created_at ASC
+      GROUP BY o.id, t.label, t.code
+      ORDER BY o.priority_rank DESC, o.created_at ASC
       `,
     );
+  }
+
+  async getKitchenQueue(): Promise<KitchenQueueItem[]> {
+    await this.sweepAutoConfirm().catch(() => undefined);
+
+    return this.tenantConn.query(
+      `
+      SELECT o.id, o.status, o.billing_mode, o.total_cents, o.notes, o.visit_id,
+             o.table_session_id, o.created_at, o.updated_at,
+             EXTRACT(EPOCH FROM (now() - o.created_at))::int / 60 AS wait_minutes,
+             12 AS meta_minutes,
+             o.priority_rank::text AS priority_rank,
+             o.priority_reason,
+             o.priority_requested_by,
+             o.priority_updated_at,
+             t.label AS table_label,
+             COALESCE(
+               CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT),
+               CAST(NULLIF(regexp_replace(t.label, '[^0-9]', '', 'g'), '') AS INT),
+               0
+             ) AS table_number,
+             json_agg(
+               json_build_object(
+                 'id', oi.id,
+                 'menuItemId', oi.menu_item_id,
+                 'name', mi.name,
+                 'quantity', oi.quantity,
+                 'unitPriceCents', oi.unit_price_cents,
+                 'subtotalCents', oi.subtotal_cents,
+                 'notes', oi.notes,
+                 'customerId', oi.customer_id,
+                 'createdAt', oi.created_at
+               )
+               ORDER BY oi.created_at ASC
+             ) AS items
+      FROM orders o
+      JOIN table_sessions ts ON ts.id = o.table_session_id
+      JOIN tables t ON t.id = ts.table_id
+      JOIN order_items oi ON oi.order_id = o.id
+      JOIN menu_items mi ON mi.id = oi.menu_item_id
+      WHERE o.status NOT IN ('delivered', 'cancelled', 'pending_confirmation')
+      GROUP BY o.id, t.label, t.code
+      ORDER BY o.priority_rank DESC, o.created_at ASC
+      LIMIT 100
+      `,
+    ) as Promise<KitchenQueueItem[]>;
+  }
+
+  async reorderKitchenQueue(
+    orderIds: string[],
+    reason: string | null,
+    staffId: string,
+    slug?: string,
+  ) {
+    const uniqueIds = Array.from(new Set(orderIds));
+    if (!uniqueIds.length) {
+      throw new BadRequestException('Selecione pelo menos um pedido.');
+    }
+
+    const baseRank = BigInt(Date.now()) * 1000n;
+    const updated = await this.tenantConn.transaction(async (tx) => {
+      const rows: Array<{ id: string; priority_rank: string }> = [];
+      for (let i = 0; i < uniqueIds.length; i += 1) {
+        const rank = (baseRank + BigInt(uniqueIds.length - i)).toString();
+        const result = await tx.query(
+          `UPDATE orders
+              SET priority_rank = $1,
+                  priority_reason = $2,
+                  priority_requested_by = $3,
+                  priority_updated_at = now(),
+                  updated_at = now()
+            WHERE id = $4
+              AND status NOT IN ('delivered', 'cancelled', 'pending_confirmation')
+            RETURNING id, priority_rank::text`,
+          [rank, reason, staffId, uniqueIds[i]],
+        );
+        const returned = unwrapRows<{ id: string; priority_rank: string }>(
+          result,
+        );
+        if (returned[0]) rows.push(returned[0]);
+      }
+      return rows;
+    });
+
+    if (!updated.length) {
+      throw new NotFoundException('Nenhum pedido ativo encontrado para reordenar.');
+    }
+
+    if (slug && this.eventsGateway) {
+      this.eventsGateway.emitKitchenReorder(slug, {
+        orderIds: updated.map((r) => r.id),
+        reason,
+        requestedBy: staffId,
+      });
+    }
+
+    return {
+      ok: true,
+      updatedOrderIds: updated.map((r) => r.id),
+      reason,
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   async getBill(tableSessionId: string, mode: 'table' | 'individual', visitId?: string) {

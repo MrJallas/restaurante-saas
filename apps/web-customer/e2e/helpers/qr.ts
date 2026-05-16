@@ -10,11 +10,11 @@ import crypto from 'node:crypto';
  * rapida `psql -c "SELECT code, qr_hmac_secret FROM tables"`.
  */
 export const TABLE_SECRETS = {
-  M01: 'b5f0bf0d-c1f6-4b89-aeab-b243b09ceff9',
-  M02: 'a6a7205e-3085-4d66-91ed-6e56a9056944',
-  M03: '3fbb05ce-fb04-45fe-9291-a1b6f53fbfc3',
-  M04: '576dcda5-018a-4893-9388-9809cfd72705',
-  M05: '6d0a126d-c9fa-4a11-881e-0ef9a96d247d',
+  M01: '5e4cf4c2-58e9-44fe-a0c0-e3aa7a9f53eb',
+  M02: 'f071eda7-4c4b-4a40-b5eb-da957f000076',
+  M03: '3d8c052a-14f6-4632-9f6b-9527835d08d1',
+  M04: '85ef443a-f9bb-4205-a729-05a5f2652f26',
+  M05: '6068dff0-7ef8-4eb3-a042-b25e7d54f34a',
 } as const;
 
 export type TableCode = keyof typeof TABLE_SECRETS;

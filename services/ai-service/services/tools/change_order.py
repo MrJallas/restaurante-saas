@@ -15,20 +15,31 @@ def _chips_after_change() -> list[dict[str, Any]]:
 
 def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     order_id = args.get("orderId") or args.get("order_id")
-    changes = args.get("changes")  # {addItems?, removeItems?, notes?}
-    if not order_id or not changes:
-        return ToolResult(error={"code": "bad_args", "message": "preciso do pedido + mudanças"})
+    item_id = args.get("itemId") or args.get("item_id")
+    changes = args.get("changes") or {}
 
-    if ctx.api_client:
-        try:
-            res = ctx.api_client("PATCH", f"/customer/orders/{order_id}", changes)
-        except Exception as e:
-            return ToolResult(error={"code": "api_error", "message": str(e)})
-    else:
-        res = {}
+    if not isinstance(changes, dict):
+        return ToolResult(error={"code": "bad_args", "message": "changes precisa ser um objeto"})
+
+    quantity = args.get("quantity") or args.get("qty")
+    notes = args.get("notes") or args.get("note")
+    if quantity is not None:
+        changes["quantity"] = quantity
+    if notes is not None:
+        changes["notes"] = notes
+
+    if not order_id and not item_id:
+        return ToolResult(error={"code": "bad_args", "message": "preciso do item/pedido + mudanças"})
+    if not changes:
+        return ToolResult(error={"code": "bad_args", "message": "preciso das mudanças"})
 
     return ToolResult(
-        message="Atualizei seu pedido. Confere aí.",
+        message="Vou ajustar seu pedido. Confere aí.",
         chips=_chips_after_change(),
-        action_payload={"order": res},
+        action_payload={
+            "cartUpdated": True,
+            "orderId": order_id,
+            "itemId": item_id,
+            "changes": changes,
+        },
     )

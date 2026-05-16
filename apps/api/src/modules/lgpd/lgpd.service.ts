@@ -31,10 +31,11 @@ export class LgpdService {
       customerEmail?: string | null;
       kind: 'erasure' | 'export';
       notes?: string;
+      protocolNumber?: string;
     },
     slug?: string,
   ) {
-    const protocolNumber = generateProtocolNumber();
+    const protocolNumber = input.protocolNumber ?? generateProtocolNumber();
 
     const fulfilled = await this.tenantConn.transaction(async (tx) => {
       const inserted = (await tx.query(
@@ -60,6 +61,17 @@ export class LgpdService {
         const result = await this.chatHistory.deleteAllForCustomer(
           input.customerId,
         );
+        const assistantDelete = (await tx.query(
+          `WITH deleted AS (
+             DELETE FROM assistant_messages
+              WHERE customer_id = $1
+                AND COALESCE(from_role, 'ai') IN ('customer', 'ai', 'ack')
+              RETURNING id
+           )
+           SELECT COUNT(*)::int AS count FROM deleted`,
+          [input.customerId],
+        )) as Array<{ count: number }>;
+        const assistantDeletedCount = assistantDelete[0]?.count ?? 0;
         await tx.query(
           `UPDATE lgpd_requests
              SET status = 'fulfilled',
@@ -68,7 +80,7 @@ export class LgpdService {
                  updated_at = now()
            WHERE id = $2`,
           [
-            ` · erasure executed: deletedCount=${result.deletedCount} mongoAvailable=${result.mongoAvailable}`,
+            ` · erasure executed: mongoDeletedCount=${result.deletedCount} mongoAvailable=${result.mongoAvailable} assistantMessagesDeleted=${assistantDeletedCount}`,
             row.id,
           ],
         );

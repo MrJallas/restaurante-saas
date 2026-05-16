@@ -33,6 +33,9 @@ interface LateArrivalRow {
   ttl_expires_at: string;
   message: string | null;
   created_at: string;
+  table_number?: number | null;
+  requester_name?: string | null;
+  total_visits?: number | null;
 }
 
 @Injectable()
@@ -76,19 +79,16 @@ export class LateArrivalService {
       ],
     )) as LateArrivalRow[];
 
-    const result = this.mapRow(rows[0]);
+    const result = await this.getById(rows[0].id);
 
     if (slug && this.events && result.tableSessionId) {
-      // TODO(payload): tableNumber + requesterName + visitContext are not
-      // joined here yet — passing 0 / row-derived placeholders so subscribers
-      // still get a valid event shape. A subsequent enrichment query can fill
-      // these in if the FE needs them before subscribers query the REST API.
       this.events.emitLateArrivalCreated(slug, null, {
         requestId: result.id,
         tableSessionId: result.tableSessionId,
-        tableNumber: 0,
+        tableNumber: result.tableNumber,
         requesterCustomerId: result.customerId,
-        requesterName: '',
+        requesterName: result.requesterName,
+        visitContext: result.visitContext,
         expiresAt: result.ttlExpiresAt,
       });
     }
@@ -274,7 +274,15 @@ export class LateArrivalService {
    */
   async getById(id: string) {
     const rows = (await this.tenantConn.query(
-      `SELECT * FROM late_arrival_requests WHERE id = $1`,
+      `SELECT lar.*,
+              CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT) AS table_number,
+              c.name AS requester_name,
+              c.total_visits
+         FROM late_arrival_requests lar
+    LEFT JOIN table_sessions ts ON ts.id = lar.table_session_id
+    LEFT JOIN tables t ON t.id = ts.table_id
+    LEFT JOIN customers c ON c.id = lar.customer_id
+        WHERE lar.id = $1`,
       [id],
     )) as LateArrivalRow[];
     if (!rows.length) {
@@ -291,20 +299,27 @@ export class LateArrivalService {
     const params: unknown[] = [];
     let i = 1;
     if (filters.status) {
-      where.push(`status = $${i++}`);
+      where.push(`lar.status = $${i++}`);
       params.push(filters.status);
     }
     if (filters.visitId) {
-      where.push(`visit_id = $${i++}`);
+      where.push(`lar.visit_id = $${i++}`);
       params.push(filters.visitId);
     }
     if (filters.tableSessionId) {
-      where.push(`table_session_id = $${i++}`);
+      where.push(`lar.table_session_id = $${i++}`);
       params.push(filters.tableSessionId);
     }
-    const sql = `SELECT * FROM late_arrival_requests
+    const sql = `SELECT lar.*,
+                        CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT) AS table_number,
+                        c.name AS requester_name,
+                        c.total_visits
+                   FROM late_arrival_requests lar
+              LEFT JOIN table_sessions ts ON ts.id = lar.table_session_id
+              LEFT JOIN tables t ON t.id = ts.table_id
+              LEFT JOIN customers c ON c.id = lar.customer_id
                  ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-                 ORDER BY created_at DESC LIMIT 100`;
+                 ORDER BY lar.created_at DESC LIMIT 100`;
     const rows = (await this.tenantConn.query(sql, params)) as LateArrivalRow[];
     return rows.map((r) => this.mapRow(r));
   }
@@ -324,10 +339,19 @@ export class LateArrivalService {
       visitId: row.visit_id,
       tableSessionId: row.table_session_id,
       customerId: row.customer_id,
+      requestingCustomerId: row.customer_id,
+      tableNumber: Number(row.table_number ?? 0),
+      requesterName: row.requester_name ?? 'Cliente',
+      visitContext:
+        typeof row.total_visits === 'number' && row.total_visits > 1
+          ? `${row.total_visits}a visita`
+          : 'primeira visita',
       status: effectiveStatus,
       expectedArrivalAt: row.expected_arrival_at,
       ttlExpiresAt: row.ttl_expires_at,
+      expiresAt: row.ttl_expires_at,
       decidedAt: row.decided_at,
+      respondedAt: row.decided_at,
       message: row.message,
       escalationLevel: row.escalation_level,
       createdAt: row.created_at,

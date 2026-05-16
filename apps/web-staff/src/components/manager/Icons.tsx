@@ -4,8 +4,9 @@
 
 import type { ReactNode } from 'react';
 
-const make = (path: ReactNode, baseProps: Partial<{ strokeWidth: number; strokeLinecap: 'round' | 'butt' | 'square'; strokeLinejoin: 'round' | 'miter' | 'bevel' }> = {}) =>
-  (s = 22): ReactNode => (
+const make = (path: ReactNode, baseProps: Partial<{ strokeWidth: number; strokeLinecap: 'round' | 'butt' | 'square'; strokeLinejoin: 'round' | 'miter' | 'bevel' }> = {}) => {
+  function IconSvg(s = 22): ReactNode {
+    return (
     <svg
       width={s}
       height={s}
@@ -19,7 +20,10 @@ const make = (path: ReactNode, baseProps: Partial<{ strokeWidth: number; strokeL
     >
       {path}
     </svg>
-  );
+    );
+  }
+  return IconSvg;
+};
 
 export const Icon = {
   bell: make(

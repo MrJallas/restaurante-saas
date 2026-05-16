@@ -7,7 +7,9 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { MongoService } from '../../infra/mongo/mongo.service';
+import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { EventsGateway } from '../websocket/events.gateway';
+import { AlertsService } from '../alerts/alerts.service';
 import type {
   StaffMessageHistoryFromRole,
   StaffMessageHistoryRoleLabel,
@@ -17,6 +19,7 @@ import type {
   StaffMessageHistoryDeleteResponse,
   StaffMessageHistoryReadResponse,
   StaffMessageHistoryCustomerSendResponse,
+  StaffInboundThreadDto,
 } from '@restaurant/shared-types';
 
 /**
@@ -96,7 +99,9 @@ export class CustomerStaffMessagesService {
 
   constructor(
     private readonly mongo: MongoService,
+    private readonly tenantConn: TenantConnectionProvider,
     @Optional() private readonly events?: EventsGateway,
+    @Optional() private readonly alerts?: AlertsService,
   ) {}
 
   /**
@@ -295,26 +300,71 @@ export class CustomerStaffMessagesService {
     };
     await db.collection<MessageDoc>(MESSAGES_COLLECTION).insertOne(doc);
 
-    // Notify any future staff inbox listener. Best-effort: failure here
-    // doesn't roll back the Mongo write — the message is persisted and the
-    // staff can still poll the future inbox endpoint.
+    // Notify staff inbox listeners. Best-effort: failure here doesn't roll
+    // back the Mongo write — the message is persisted and the staff can
+    // still poll the inbox endpoint.
+    //
+    // Routing:
+    //  - `session:<tableSessionId>` para a UI do próprio customer fechar
+    //    a malha (sem isso a Round 18 customer-side bubble não atualiza
+    //    em outras abas/devices do mesmo customer).
+    //  - `tenant:<slug>` para staff dashboards (round 22 fix). Antes o
+    //    evento só ia pra session room → manager nunca recebia em
+    //    real-time mesmo a mensagem estando gravada em `staff_messages`.
     if (this.events) {
+      const wsPayload = {
+        threadId,
+        messageId: doc.messageId,
+        tableSessionId: input.tableSessionId,
+        customerId: input.customerId,
+        content: doc.content,
+        createdAt: now.toISOString(),
+      };
       try {
         this.events.emitToSession(
           input.tableSessionId,
           'staff_messages.customer_replied',
-          {
-            threadId,
-            messageId: doc.messageId,
-            tableSessionId: input.tableSessionId,
-            customerId: input.customerId,
-            content: doc.content,
-            createdAt: now.toISOString(),
-          },
+          wsPayload,
         );
       } catch (err) {
         this.logger.warn(
-          `Falha ao emitir WS customer reply: ${(err as Error).message}`,
+          `Falha ao emitir WS customer reply (session): ${(err as Error).message}`,
+        );
+      }
+      try {
+        // `tenantId` aqui é o schema name (ex: `restaurant_dev`) que casa
+        // com o slug usado pelas rooms staff. Ver assistant.service.ts
+        // round 21 §E onde a convenção foi firmada.
+        this.events.emitToTenant(
+          input.tenantId,
+          'staff_messages.customer_replied',
+          wsPayload,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Falha ao emitir WS customer reply (tenant): ${(err as Error).message}`,
+        );
+      }
+    }
+
+    if (this.alerts) {
+      try {
+        await this.alerts.create({
+          sev: 'info',
+          kind: 'customer_message_to_manager',
+          title: 'Mensagem de cliente para gerente',
+          sub: `Mesa ${input.tableSessionId.slice(0, 6)} · ${preview}`,
+          actions: [
+            {
+              label: 'Abrir mensagens',
+              route: `/manager/mensagens?slug=${input.tenantId}`,
+              kind: 'primary',
+            },
+          ],
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Falha ao criar alerta de mensagem para gerente: ${(err as Error).message}`,
         );
       }
     }
@@ -323,6 +373,122 @@ export class CustomerStaffMessagesService {
       messageId: doc.messageId,
       threadId,
       createdAt: now.toISOString(),
+    };
+  }
+
+  async appendStaffReply(
+    threadId: string,
+    tenantId: string,
+    staffId: string,
+    content: string,
+  ): Promise<StaffMessageHistoryMessageDto> {
+    if (!content || !content.trim()) {
+      throw new HttpException(
+        'Mensagem não pode ser vazia.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (content.length > 2000) {
+      throw new HttpException(
+        'Mensagem muito longa (máx 2000 caracteres).',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const db = this.requireDb();
+    await this.ensureIndexes();
+
+    const thread = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .findOne({ threadId });
+    if (!thread || thread.tenantId !== tenantId) {
+      throw new HttpException('Thread não encontrada.', HttpStatus.NOT_FOUND);
+    }
+
+    const staffRows = (await this.tenantConn.query(
+      `SELECT name, role FROM staff WHERE id = $1 AND is_active = true LIMIT 1`,
+      [staffId],
+    )) as Array<{ name: string; role: string }>;
+    if (!staffRows.length) {
+      throw new HttpException(
+        'staff não encontrado ou inativo.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    const roleLabel = this.mapStaffRoleLabel(staffRows[0].role);
+    const now = new Date();
+    const expiresAt = new Date(
+      now.getTime() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000,
+    );
+    const trimmed = content.trim();
+
+    const doc: MessageDoc = {
+      messageId: randomUUID(),
+      threadId,
+      customerId: thread.customerId,
+      tenantId,
+      fromRole: 'staff',
+      fromName: staffRows[0].name,
+      fromRoleLabel: roleLabel,
+      content: trimmed,
+      createdAt: now,
+      readAt: null,
+      expiresAt,
+    };
+
+    await db.collection<MessageDoc>(MESSAGES_COLLECTION).insertOne(doc);
+    await db.collection<ThreadDoc>(THREADS_COLLECTION).updateOne(
+      { threadId },
+      {
+        $set: {
+          lastMessageAt: now,
+          lastStaffName: staffRows[0].name,
+          lastStaffRole: roleLabel,
+          preview: trimmed.slice(0, 80),
+          expiresAt,
+          deletedByUser: false,
+          deletedAt: null,
+        },
+        $inc: { messageCount: 1 },
+      },
+    );
+
+    const wsPayload = {
+      threadId,
+      messageId: doc.messageId,
+      tableSessionId: thread.tableSessionId,
+      customerId: thread.customerId,
+      staffId,
+      staffName: staffRows[0].name,
+      content: trimmed,
+      createdAt: now.toISOString(),
+    };
+    try {
+      this.events?.emitToSession(
+        thread.tableSessionId,
+        'staff_messages.staff_replied',
+        wsPayload,
+      );
+      this.events?.emitToTenant(
+        tenantId,
+        'staff_messages.staff_replied',
+        wsPayload,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Falha ao emitir WS staff reply: ${(err as Error).message}`,
+      );
+    }
+
+    return {
+      messageId: doc.messageId,
+      fromRole: doc.fromRole,
+      fromName: doc.fromName,
+      fromRoleLabel: doc.fromRoleLabel,
+      content: doc.content,
+      createdAt: doc.createdAt.toISOString(),
+      readAt: null,
     };
   }
 
@@ -352,6 +518,160 @@ export class CustomerStaffMessagesService {
       preview: t.preview ?? '',
       expiresAt: t.expiresAt.toISOString(),
     }));
+  }
+
+  /**
+   * Staff-side listing of every customer-initiated thread in the tenant.
+   *
+   * Round 22 fix: o manager precisa ver as mensagens enviadas pelos
+   * customers via `send_message_to_manager`. Antes `listThreads()` era
+   * só per-customer (ownership-locked) — staff não tinha entrypoint.
+   *
+   * Retorna threads ordenadas por `lastMessageAt` desc com `unreadCount`
+   * (mensagens `fromRole='customer'` ainda sem `readAt`) agregado pro
+   * badge da inbox. Soft-deleted threads do customer aparecem aqui —
+   * staff continua vendo o histórico mesmo se o cliente apagou no
+   * lado dele (mesma política de auditoria que complaints/feedback).
+   */
+  async listInboundForTenant(
+    tenantId: string,
+  ): Promise<StaffInboundThreadDto[]> {
+    const db = this.requireDb();
+    const threads = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .find({ tenantId })
+      .sort({ lastMessageAt: -1 })
+      .limit(100)
+      .toArray();
+    if (threads.length === 0) return [];
+
+    const threadIds = threads.map((t) => t.threadId);
+    const messageAgg = await db
+      .collection<MessageDoc>(MESSAGES_COLLECTION)
+      .aggregate<{
+        _id: string;
+        count: number;
+        unreadCount: number;
+        last: MessageDoc;
+      }>([
+        {
+          $match: {
+            tenantId,
+            threadId: { $in: threadIds },
+          },
+        },
+        { $sort: { createdAt: -1 } },
+        {
+          $group: {
+            _id: '$threadId',
+            count: { $sum: 1 },
+            unreadCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$fromRole', 'customer'] },
+                      { $eq: [{ $ifNull: ['$readAt', null] }, null] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            last: { $first: '$$ROOT' },
+          },
+        },
+      ])
+      .toArray();
+    const statsByThread = new Map(messageAgg.map((r) => [r._id, r]));
+
+    return threads
+      .map((t) => {
+        const stats = statsByThread.get(t.threadId);
+        if (!stats) return null;
+        return {
+          threadId: t.threadId,
+          customerId: t.customerId,
+          tableSessionId: t.tableSessionId,
+          startedAt: t.startedAt.toISOString(),
+          lastMessageAt: stats.last.createdAt.toISOString(),
+          messageCount: stats.count,
+          unreadCount: stats.unreadCount,
+          lastStaffName: t.lastStaffName ?? null,
+          lastStaffRole: t.lastStaffRole ?? null,
+          preview: stats.last.content ?? t.preview ?? '',
+          expiresAt: t.expiresAt.toISOString(),
+        };
+      })
+      .filter((t): t is StaffInboundThreadDto => t !== null)
+      .sort((a, b) => Date.parse(b.lastMessageAt) - Date.parse(a.lastMessageAt));
+  }
+
+  /**
+   * Staff-side message read. No customer ownership check (staff is
+   * authoritative). Tenant scoping enforced — staff de outro restaurante
+   * com x-staff-key válida não vê threads alheias mesmo se enumerar
+   * o threadId.
+   */
+  async getThreadMessagesForStaff(
+    threadId: string,
+    tenantId: string,
+  ): Promise<StaffMessageHistoryMessageDto[]> {
+    const db = this.requireDb();
+    const thread = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .findOne({ threadId });
+    if (!thread || thread.tenantId !== tenantId) {
+      throw new HttpException('Thread não encontrada.', HttpStatus.NOT_FOUND);
+    }
+    const msgs = await db
+      .collection<MessageDoc>(MESSAGES_COLLECTION)
+      .find({ threadId })
+      .sort({ createdAt: 1 })
+      .toArray();
+    return msgs.map((m) => ({
+      messageId: m.messageId,
+      fromRole: m.fromRole,
+      fromName: m.fromName ?? null,
+      fromRoleLabel: m.fromRoleLabel ?? null,
+      content: m.content,
+      createdAt: m.createdAt.toISOString(),
+      readAt: m.readAt ? m.readAt.toISOString() : null,
+    }));
+  }
+
+  /**
+   * Mark every unread `customer`-authored message in the thread as read.
+   * Inverse direction de `markRead` (que é customer-side). Staff abre
+   * a thread → tudo do customer vira lido → `unreadCount` do
+   * `listInboundForTenant` zera.
+   */
+  async markReadByStaff(
+    threadId: string,
+    tenantId: string,
+  ): Promise<StaffMessageHistoryReadResponse> {
+    const db = this.requireDb();
+    const thread = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .findOne({ threadId });
+    if (!thread || thread.tenantId !== tenantId) {
+      throw new HttpException('Thread não encontrada.', HttpStatus.NOT_FOUND);
+    }
+    const res = await db
+      .collection<MessageDoc>(MESSAGES_COLLECTION)
+      .updateMany(
+        {
+          threadId,
+          fromRole: 'customer',
+          $or: [{ readAt: null }, { readAt: { $exists: false } }],
+        },
+        { $set: { readAt: new Date() } },
+      );
+    return {
+      threadId,
+      markedCount: res.modifiedCount ?? 0,
+    };
   }
 
   /**
@@ -498,5 +818,21 @@ export class CustomerStaffMessagesService {
       );
     }
     return db;
+  }
+
+  private mapStaffRoleLabel(role: string): StaffMessageHistoryRoleLabel {
+    switch (role) {
+      case 'waiter':
+        return 'garçom';
+      case 'host':
+        return 'host';
+      case 'cook':
+      case 'bartender':
+        return 'cozinha';
+      case 'manager':
+      case 'cashier':
+      default:
+        return 'gerente';
+    }
   }
 }

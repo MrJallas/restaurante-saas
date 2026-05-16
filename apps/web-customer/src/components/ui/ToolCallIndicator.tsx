@@ -78,6 +78,7 @@ export const ToolCallIndicator = memo(function ToolCallIndicator({
       role="status"
       aria-live="polite"
       aria-label={display ? `Executando ${display}` : 'Executando ferramenta'}
+      data-testid={name ? `tool-indicator-${name}` : 'tool-indicator'}
       className={`inline-flex items-center gap-2 py-1 ${bucketColor[category]}`}
     >
       <span className="inline-flex gap-[3px]" aria-hidden>

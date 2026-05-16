@@ -98,7 +98,7 @@ export function useWaiterEvents({
     if (!wsUrl) return;
 
     const staffKey = process.env.NEXT_PUBLIC_STAFF_API_KEY ?? undefined;
-    const staffId = readStaffId() ?? waiterId;
+    const staffId = waiterId ?? readStaffId();
 
     let socket: Socket;
     try {
@@ -106,10 +106,12 @@ export function useWaiterEvents({
         path: '/socket.io/',
         transports: ['websocket'],
         reconnection: true,
+        autoConnect: false,
         auth: {
           staffKey,
           staffId,
           tenantSlug,
+          staffRole: 'waiter',
           role: 'waiter',
         },
       });
@@ -126,6 +128,10 @@ export function useWaiterEvents({
     socket.on('connect', handleConnect);
     socket.on('disconnect', () => setConnected(false));
     socket.on('connect_error', () => setConnected(false));
+    socket.connect();
+    if (socket.connected) {
+      handleConnect();
+    }
 
     // Caller-selectable subset (defaults cover the waiter set above).
     const subscribed =

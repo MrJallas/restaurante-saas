@@ -1,0 +1,1073 @@
+[
+  {
+    "name": "view_menu",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "view_menu",
+      "silent": false,
+      "requiresText": false,
+      "router": true,
+      "result": {
+        "message": "Abre o cardápio pra você dar uma olhada.",
+        "chips": [
+          {
+            "id": "menu-pratos",
+            "label": "Pratos",
+            "action": "send",
+            "payload": "mostra os pratos principais"
+          },
+          {
+            "id": "menu-bebidas",
+            "label": "Bebidas",
+            "action": "send",
+            "payload": "mostra as bebidas"
+          },
+          {
+            "id": "menu-sobremesas",
+            "label": "Sobremesas",
+            "action": "send",
+            "payload": "mostra as sobremesas"
+          },
+          {
+            "id": "menu-recomenda",
+            "label": "Recomende você",
+            "action": "send",
+            "payload": "o que você recomenda hoje?"
+          }
+        ],
+        "silent": false,
+        "actionPayload": {},
+        "routerTarget": "ScreenCustomerMenu",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "search_dish",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "search_dish",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "missing_query",
+          "message": "o que você quer buscar?"
+        }
+      }
+    }
+  },
+  {
+    "name": "check_allergens",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "check_allergens",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "missing_items",
+          "message": "quais pratos você quer checar alérgenos?"
+        }
+      }
+    }
+  },
+  {
+    "name": "compare_dishes",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "compare_dishes",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "need_two_items",
+          "message": "preciso de pelo menos 2 pratos pra comparar"
+        }
+      }
+    }
+  },
+  {
+    "name": "recommend_dish",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "recommend_dish",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": "Olha o que tá saindo bem hoje: (peça mais detalhes que eu busco)",
+        "chips": [
+          {
+            "id": "rec-entrada",
+            "label": "Entrada",
+            "action": "send",
+            "payload": "me indica uma entrada"
+          },
+          {
+            "id": "rec-principal",
+            "label": "Prato principal",
+            "action": "send",
+            "payload": "me indica um prato principal"
+          },
+          {
+            "id": "rec-sobremesa",
+            "label": "Sobremesa",
+            "action": "send",
+            "payload": "me indica uma sobremesa"
+          }
+        ],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "add_to_order",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "add_to_order",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "missing_item",
+          "message": "itemId obrigatório"
+        }
+      }
+    }
+  },
+  {
+    "name": "view_order",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "view_order",
+      "silent": false,
+      "requiresText": false,
+      "router": true,
+      "result": {
+        "message": "Claro, vou mostrar seu pedido.",
+        "chips": [
+          {
+            "id": "add_more",
+            "label": "Pedir mais",
+            "action": "send",
+            "payload": "quero adicionar mais alguma coisa"
+          },
+          {
+            "id": "modify",
+            "label": "Modificar",
+            "action": "send",
+            "payload": "quero mudar meu pedido"
+          },
+          {
+            "id": "request_check",
+            "label": "Pedir conta",
+            "action": "send",
+            "payload": "quero pagar a conta"
+          }
+        ],
+        "silent": false,
+        "actionPayload": {
+          "showDraftOrder": true,
+          "clientState": true
+        },
+        "routerTarget": "ScreenCustomerOrderReview",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "confirm_order",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "confirm_order",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": "Vamos revisar seu pedido antes de enviar pra cozinha.",
+        "chips": [
+          {
+            "id": "view_order",
+            "label": "Acompanhar pedido",
+            "action": "navigate",
+            "payload": "pedido"
+          },
+          {
+            "id": "add_more",
+            "label": "Pedir mais",
+            "action": "send",
+            "payload": "quero pedir mais alguma coisa"
+          },
+          {
+            "id": "request_check",
+            "label": "Pedir conta",
+            "action": "send",
+            "payload": "quero pagar a conta"
+          }
+        ],
+        "silent": false,
+        "actionPayload": {
+          "confirmDraftOrder": true
+        },
+        "routerTarget": null,
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "split_bill",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "split_bill",
+      "silent": false,
+      "requiresText": false,
+      "router": true,
+      "result": {
+        "message": "Te levo pra tela de dividir a conta.",
+        "chips": [
+          {
+            "id": "equal",
+            "label": "Em partes iguais",
+            "action": "send",
+            "payload": "divide igual entre todos"
+          },
+          {
+            "id": "by_item",
+            "label": "Cada um o que pediu",
+            "action": "send",
+            "payload": "cada um paga o que pediu"
+          },
+          {
+            "id": "custom",
+            "label": "Custom",
+            "action": "send",
+            "payload": "quero personalizar a divisão"
+          }
+        ],
+        "silent": false,
+        "actionPayload": {
+          "mode": null,
+          "status": "not_implemented",
+          "tool": "split_bill"
+        },
+        "routerTarget": "ScreenCustomerSplitBill",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "pay_individual",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "pay_individual",
+      "silent": false,
+      "requiresText": false,
+      "router": true,
+      "result": {
+        "message": "Abro a tela pra você pagar só a sua parte.",
+        "chips": [
+          {
+            "id": "pay_pix",
+            "label": "Pagar com PIX",
+            "action": "send",
+            "payload": "quero pagar minha parte com pix"
+          },
+          {
+            "id": "pay_card",
+            "label": "Pagar com cartão",
+            "action": "send",
+            "payload": "quero pagar minha parte com cartão"
+          },
+          {
+            "id": "pay_full",
+            "label": "Pagar tudo",
+            "action": "send",
+            "payload": "quero pagar a conta toda"
+          }
+        ],
+        "silent": false,
+        "actionPayload": {
+          "status": "not_implemented",
+          "tool": "pay_individual"
+        },
+        "routerTarget": "ScreenCustomerPayIndividual",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "pay_full",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "pay_full",
+      "silent": false,
+      "requiresText": false,
+      "router": true,
+      "result": {
+        "message": "Abro a tela pra você pagar a conta toda da mesa.",
+        "chips": [
+          {
+            "id": "pay_pix",
+            "label": "Pagar com PIX",
+            "action": "send",
+            "payload": "quero pagar com pix"
+          },
+          {
+            "id": "pay_card",
+            "label": "Trocar pra cartão",
+            "action": "send",
+            "payload": "quero pagar com cartão"
+          },
+          {
+            "id": "split",
+            "label": "Dividir conta",
+            "action": "send",
+            "payload": "quero dividir a conta"
+          }
+        ],
+        "silent": false,
+        "actionPayload": {
+          "status": "not_implemented",
+          "tool": "pay_full"
+        },
+        "routerTarget": "ScreenCustomerPayFull",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "open_payment_screen",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "open_payment_screen",
+      "silent": false,
+      "requiresText": false,
+      "router": true,
+      "result": {
+        "message": "Abro a tela de pagamento pra você.",
+        "chips": [
+          {
+            "id": "pay_full",
+            "label": "Pagar tudo",
+            "action": "send",
+            "payload": "quero pagar a conta toda"
+          },
+          {
+            "id": "pay_individual",
+            "label": "Pagar minha parte",
+            "action": "send",
+            "payload": "quero pagar só a minha parte"
+          },
+          {
+            "id": "split",
+            "label": "Dividir conta",
+            "action": "send",
+            "payload": "quero dividir a conta"
+          }
+        ],
+        "silent": false,
+        "actionPayload": {
+          "status": "not_implemented",
+          "tool": "open_payment_screen"
+        },
+        "routerTarget": "ScreenCustomerPayment",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "call_waiter",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "call_waiter",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "api_error",
+          "message": "POST /waiter-calls → 401"
+        }
+      }
+    }
+  },
+  {
+    "name": "send_message_to_manager",
+    "is_staff": false,
+    "status": 400,
+    "error": {
+      "detail": {
+        "message": "tool send_message_to_manager requires non-empty 'text' arg",
+        "chip": "preciso de mais detalhes"
+      }
+    }
+  },
+  {
+    "name": "send_complaint",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "send_complaint",
+      "silent": false,
+      "requiresText": false,
+      "router": true,
+      "result": {
+        "message": "Vou te levar pra tela de reclamação onde você pode descrever direitinho o que rolou.",
+        "chips": [
+          {
+            "id": "complaint-text",
+            "label": "Contar o que rolou",
+            "action": "expand",
+            "payload": "Conta pra gerência..."
+          },
+          {
+            "id": "cancel",
+            "label": "Cancelar",
+            "action": "send",
+            "payload": "deixa pra lá"
+          }
+        ],
+        "silent": false,
+        "actionPayload": {
+          "prefillReason": null,
+          "complaintType": null
+        },
+        "routerTarget": "ScreenCustomerComplaintCompose",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "request_table_merge",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "request_table_merge",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "missing_target",
+          "message": "qual mesa você quer juntar?"
+        }
+      }
+    }
+  },
+  {
+    "name": "delete_chat",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "delete_chat",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "missing_thread_id",
+          "message": "qual conversa você quer apagar?"
+        }
+      }
+    }
+  },
+  {
+    "name": "delete_all_chats",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "delete_all_chats",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "api_error",
+          "message": "DELETE /restaurant_dev/chat-history?customerId=21a81205-4adf-41e3-86b5-baa8d3e339fb → 404"
+        }
+      }
+    }
+  },
+  {
+    "name": "lgpd_data_request",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "lgpd_data_request",
+      "silent": true,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "api_error",
+          "message": "POST /customer/lgpd-requests → 404"
+        }
+      }
+    }
+  },
+  {
+    "name": "show_lgpd_notice",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "show_lgpd_notice",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": "Você, como consumidor, tem direito por lei (LGPD) de pedir a exclusão dos seus dados a qualquer momento. Posso encaminhar sua solicitação pra gerência?",
+        "chips": [
+          {
+            "id": "lgpd-confirm",
+            "label": "Sim, quero excluir",
+            "action": "send",
+            "payload": {
+              "tool": "lgpd_data_request",
+              "args": {
+                "type": "erasure",
+                "consentMethod": "chip",
+                "chipLabel": "Sim, quero excluir"
+              }
+            },
+            "primary": true
+          },
+          {
+            "id": "lgpd-dismiss",
+            "label": "Não, não quero excluir",
+            "action": "send",
+            "payload": {
+              "tool": "dismiss",
+              "args": {
+                "chipLabel": "Não, não quero excluir"
+              }
+            },
+            "primary": false
+          }
+        ],
+        "silent": false,
+        "actionPayload": {
+          "messageType": "lgpd_notice"
+        },
+        "routerTarget": null,
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "view_courtesy",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "view_courtesy",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": "Não consegui consultar suas cortesias agora. Quer que eu chame o garçom pra confirmar?",
+        "chips": [
+          {
+            "id": "courtesy-call-waiter",
+            "label": "Chamar garçom",
+            "action": "send",
+            "payload": "chamar o garçom"
+          },
+          {
+            "id": "courtesy-view-order",
+            "label": "Ver pedido",
+            "action": "send",
+            "payload": "ver meu pedido"
+          }
+        ],
+        "silent": false,
+        "actionPayload": {
+          "status": "not_implemented",
+          "tool": "view_courtesy",
+          "fallbackChip": "chamar garçom"
+        },
+        "routerTarget": null,
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "ask_about_restaurant",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "ask_about_restaurant",
+      "silent": true,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": "Deixa eu ver o que sei sobre isso pra você.",
+        "chips": [
+          {
+            "id": "info-endereco",
+            "label": "Como chego aí",
+            "action": "send",
+            "payload": "qual o endereço?"
+          },
+          {
+            "id": "info-estacionamento",
+            "label": "Tem estacionamento",
+            "action": "send",
+            "payload": "tem estacionamento?"
+          },
+          {
+            "id": "info-wifi",
+            "label": "Vocês têm wifi",
+            "action": "send",
+            "payload": "tem wi-fi?"
+          }
+        ],
+        "silent": true,
+        "actionPayload": {
+          "status": "not_implemented",
+          "tool": "ask_about_restaurant",
+          "topic": null
+        },
+        "routerTarget": null,
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "rate_visit",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "rate_visit",
+      "silent": false,
+      "requiresText": false,
+      "router": true,
+      "result": {
+        "message": "Te mando pra tela de avaliação — leva 30 segundos.",
+        "chips": [],
+        "silent": false,
+        "actionPayload": {
+          "orderId": null
+        },
+        "routerTarget": "ScreenCustomerOrderRating",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "request_check",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "request_check",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "api_error",
+          "message": "POST /customer/check-requests → 404"
+        }
+      }
+    }
+  },
+  {
+    "name": "late_arrival_request",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "late_arrival_request",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "missing_target_table",
+          "message": "qual mesa você está chegando para se juntar?"
+        }
+      }
+    }
+  },
+  {
+    "name": "change_order",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "change_order",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "bad_args",
+          "message": "preciso do item/pedido + mudanças"
+        }
+      }
+    }
+  },
+  {
+    "name": "cancel_order",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "cancel_order",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": "Vou limpar esse pedido por aqui. Sem problema.",
+        "chips": [
+          {
+            "id": "view_menu",
+            "label": "Ver cardápio",
+            "action": "navigate",
+            "payload": "cardapio"
+          },
+          {
+            "id": "recommend",
+            "label": "Me recomenda algo",
+            "action": "send",
+            "payload": "o que você recomenda?"
+          },
+          {
+            "id": "call_waiter",
+            "label": "Chamar garçom",
+            "action": "send",
+            "payload": "chamar o garçom"
+          }
+        ],
+        "silent": false,
+        "actionPayload": {
+          "orderCancelled": true,
+          "clearDraftOrder": true,
+          "orderId": null
+        },
+        "routerTarget": null,
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "remove_from_cart",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "remove_from_cart",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "missing_item",
+          "message": "itemId obrigatório"
+        }
+      }
+    }
+  },
+  {
+    "name": "view_chat_history",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "view_chat_history",
+      "silent": false,
+      "requiresText": false,
+      "router": true,
+      "result": {
+        "message": "Abre o seu histórico de conversas — fica aqui por 30 dias.",
+        "chips": [
+          {
+            "id": "delete_all",
+            "label": "Apagar todas",
+            "action": "send",
+            "payload": "apagar todas as minhas conversas"
+          },
+          {
+            "id": "lgpd_request",
+            "label": "Pedido LGPD",
+            "action": "send",
+            "payload": "quero fazer um pedido LGPD"
+          },
+          {
+            "id": "back_to_chat",
+            "label": "Voltar ao chat",
+            "action": "navigate",
+            "payload": "assistente"
+          }
+        ],
+        "silent": false,
+        "actionPayload": {
+          "customerId": "21a81205-4adf-41e3-86b5-baa8d3e339fb"
+        },
+        "routerTarget": "ScreenCustomerChatHistory",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "explain_dish",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "explain_dish",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "missing_item",
+          "message": "qual prato?"
+        }
+      }
+    }
+  },
+  {
+    "name": "staff_broadcast",
+    "is_staff": true,
+    "status": 400,
+    "error": {
+      "detail": {
+        "message": "tool staff_broadcast requires non-empty 'text' arg",
+        "chip": "preciso de mais detalhes"
+      }
+    }
+  },
+  {
+    "name": "staff_assign_call",
+    "is_staff": true,
+    "status": 200,
+    "body": {
+      "name": "staff_assign_call",
+      "silent": true,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "bad_args"
+        }
+      }
+    }
+  },
+  {
+    "name": "staff_resolve_call",
+    "is_staff": true,
+    "status": 200,
+    "body": {
+      "name": "staff_resolve_call",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "missing_call_id"
+        }
+      }
+    }
+  },
+  {
+    "name": "staff_pause_zone",
+    "is_staff": true,
+    "status": 400,
+    "error": {
+      "detail": {
+        "message": "tool staff_pause_zone requires non-empty 'text' arg",
+        "chip": "preciso de mais detalhes"
+      }
+    }
+  },
+  {
+    "name": "staff_unpause_zone",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "staff_unpause_zone",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "missing_pause_id"
+        }
+      }
+    }
+  },
+  {
+    "name": "staff_mark_vip",
+    "is_staff": true,
+    "status": 200,
+    "body": {
+      "name": "staff_mark_vip",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "forbidden",
+          "message": "só manager"
+        }
+      }
+    }
+  },
+  {
+    "name": "staff_unmark_vip",
+    "is_staff": false,
+    "status": 200,
+    "body": {
+      "name": "staff_unmark_vip",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "forbidden"
+        }
+      }
+    }
+  },
+  {
+    "name": "staff_respond_complaint",
+    "is_staff": true,
+    "status": 400,
+    "error": {
+      "detail": {
+        "message": "tool staff_respond_complaint requires non-empty 'text' arg",
+        "chip": "preciso de mais detalhes"
+      }
+    }
+  },
+  {
+    "name": "staff_resolve_complaint",
+    "is_staff": true,
+    "status": 200,
+    "body": {
+      "name": "staff_resolve_complaint",
+      "silent": false,
+      "requiresText": false,
+      "router": false,
+      "result": {
+        "message": null,
+        "chips": [],
+        "silent": false,
+        "actionPayload": null,
+        "routerTarget": null,
+        "error": {
+          "code": "missing_complaint_id"
+        }
+      }
+    }
+  }
+]

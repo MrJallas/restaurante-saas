@@ -5,6 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import type { Db } from 'mongodb';
 import { MongoService } from '../../infra/mongo/mongo.service';
 
 const THREADS_COLLECTION = 'chat_threads';
@@ -18,6 +19,18 @@ const MESSAGES_COLLECTION = 'chat_messages';
  * caso contrário Mongo TTL index dropa o doc após 30d.
  */
 const DEFAULT_TTL_DAYS = 30;
+
+/**
+ * Round 22 §B — FIFO cap por customer. Mongo TTL ainda dropa após 30d,
+ * mas um cliente muito ativo (1 thread/dia) acumularia ~30 mesmo dentro
+ * do TTL; uma vez que entrarmos em uso real isso cresce indefinidamente.
+ * O cap dá controle previsível de storage independente do tempo.
+ *
+ * Aplicado apenas quando uma NOVA thread é criada (upsert resultou em
+ * insert) — assim a query de contagem roda no máximo 1× por dia por
+ * customer (day-bucket muda) em vez de cada turno.
+ */
+const FIFO_MAX_THREADS_PER_CUSTOMER = 80;
 
 interface ThreadDoc {
   threadId: string;
@@ -58,14 +71,17 @@ export class ChatHistoryService {
    * chamava esse método e a collection ficava em 0 docs apesar do flow
    * rodar.
    *
-   * @param ctx.threadId opcional — quando ausente, criamos uma nova thread
-   *   pelo par (tenantId, customerId, day-bucket). Customer com 5 idas no
-   *   mesmo dia compartilha thread; nova visita amanhã abre thread nova.
+   * @param ctx.continueThreadId opcional — usado só quando o cliente veio
+   *   do menu de conversas arquivadas e decidiu continuar aquele thread.
+   * @param ctx.conversationId opcional — id gerado no FE por abertura do
+   *   assistente; entrada normal em `/assistente` vira thread nova.
    */
   async appendTurn(ctx: {
     tenantId: string;
     customerId: string;
     sessionId: string;
+    conversationId?: string | null;
+    continueThreadId?: string | null;
     userMessage: string;
     assistantResponse: string;
     toolCalls?: unknown[] | null;
@@ -84,14 +100,35 @@ export class ChatHistoryService {
     try {
       const now = new Date();
       const expiresAt = new Date(now.getTime() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000);
-      // Day bucket: AAAA-MM-DD UTC. Cada visita cria thread nova quando
-      // muda o dia, mantendo turnos da mesma visita agrupados.
-      const dayBucket = now.toISOString().slice(0, 10);
-      const threadId = `${ctx.tenantId}:${ctx.customerId}:${dayBucket}`;
+      let threadId: string | null = null;
+
+      const requestedThreadId = ctx.continueThreadId?.trim();
+      if (requestedThreadId) {
+        const existingThread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({
+          threadId: requestedThreadId,
+          customerId: ctx.customerId,
+          tenantId: ctx.tenantId,
+          deletedByUser: { $ne: true },
+        });
+        if (existingThread) {
+          threadId = requestedThreadId;
+        } else {
+          this.logger.warn(
+            `Ignoring invalid continueThreadId for customer ${ctx.customerId}`,
+          );
+        }
+      }
+
+      if (!threadId) {
+        // Normal assistant opens use the per-visit conversation id from the
+        // FE. The day-bucket fallback is kept only for legacy callers.
+        const bucket = ctx.conversationId?.trim() || now.toISOString().slice(0, 10);
+        threadId = `${ctx.tenantId}:${ctx.customerId}:${bucket}`;
+      }
 
       // Upsert thread — incrementa messageCount em 2 (user + assistant).
       const previewSource = ctx.userMessage.slice(0, 80);
-      await db.collection<ThreadDoc>(THREADS_COLLECTION).updateOne(
+      const upsertResult = await db.collection<ThreadDoc>(THREADS_COLLECTION).updateOne(
         { threadId },
         {
           $setOnInsert: {
@@ -106,6 +143,18 @@ export class ChatHistoryService {
         },
         { upsert: true },
       );
+
+      // Round 22 §B · FIFO 80 cleanup quando uma nova thread foi criada.
+      // Só corre quando o day-bucket mudou (upsert virou insert), pra não
+      // fazer count em todo turno. Erros aqui são best-effort — log e
+      // continua (não falhar o append por causa do cleanup).
+      if (upsertResult.upsertedId) {
+        this.pruneOldestThreads(db, ctx.customerId).catch((err) => {
+          this.logger.warn(
+            `FIFO 80 prune falhou pra customer ${ctx.customerId}: ${(err as Error).message}`,
+          );
+        });
+      }
 
       // Append user + assistant docs in 1 ordered insertMany.
       const docs: MessageDoc[] = [
@@ -148,12 +197,25 @@ export class ChatHistoryService {
       .collection<ThreadDoc>(THREADS_COLLECTION)
       .find({
         customerId,
-        tenantId,
         deletedByUser: { $ne: true },
       })
       .sort({ lastMessageAt: -1 })
       .limit(100)
       .toArray();
+
+    const legacyThreadIds = threads
+      .filter((t) => t.tenantId !== tenantId)
+      .map((t) => t.threadId);
+    if (legacyThreadIds.length > 0) {
+      await db.collection<ThreadDoc>(THREADS_COLLECTION).updateMany(
+        { threadId: { $in: legacyThreadIds }, customerId },
+        { $set: { tenantId } },
+      );
+      this.logger.warn(
+        `Normalized ${legacyThreadIds.length} legacy chat thread tenantId(s) for customer ${customerId}`,
+      );
+    }
+
     return threads.map((t) => ({
       threadId: t.threadId,
       startedAt: t.startedAt.toISOString(),
@@ -255,6 +317,54 @@ export class ChatHistoryService {
       threadsMarked: threadsRes.modifiedCount ?? 0,
       mongoAvailable: true,
     };
+  }
+
+  /**
+   * Round 22 §B · FIFO 80 helper. Conta threads ativas do customer e dropa
+   * (hard delete + cascade nas mensagens) o mais antigo (sort startedAt ASC)
+   * quando excede o cap. Soft-mark NÃO é usado aqui — esse fluxo é storage
+   * cap, e threads soft-marked ainda contariam pro cap. Diff é claro vs.
+   * `deleteThread` (user-initiated, soft-mark pra audit) e LGPD erasure.
+   *
+   * "Ativas" = `deletedByUser !== true`. Threads que o customer já dropou
+   * via UI não atrapalham o FIFO — não conta nelas.
+   *
+   * Best-effort: erros aqui são caught pelo caller (appendTurn) e logados,
+   * não interrompem a persistência do turno.
+   */
+  private async pruneOldestThreads(
+    db: Db,
+    customerId: string,
+  ): Promise<void> {
+    const filter = { customerId, deletedByUser: { $ne: true } };
+    const count = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .countDocuments(filter);
+    if (count <= FIFO_MAX_THREADS_PER_CUSTOMER) return;
+
+    const excess = count - FIFO_MAX_THREADS_PER_CUSTOMER;
+    const oldest = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .find(filter)
+      .sort({ startedAt: 1 })
+      .limit(excess)
+      .project<{ threadId: string }>({ threadId: 1, _id: 0 })
+      .toArray();
+    const threadIds = oldest.map((t) => t.threadId);
+    if (threadIds.length === 0) return;
+
+    // Cascade nas mensagens primeiro (se threads sair antes, perdemos o
+    // link e mensagens ficam órfãs até o TTL de 30d expirar).
+    await db
+      .collection<MessageDoc>(MESSAGES_COLLECTION)
+      .deleteMany({ threadId: { $in: threadIds } });
+    await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .deleteMany({ threadId: { $in: threadIds } });
+
+    this.logger.warn(
+      `FIFO 80 · dropped ${threadIds.length} oldest thread(s) for customer ${customerId} (count=${count}, cap=${FIFO_MAX_THREADS_PER_CUSTOMER})`,
+    );
   }
 
   private requireDb() {

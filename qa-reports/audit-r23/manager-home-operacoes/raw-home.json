@@ -1,0 +1,216 @@
+{
+  "total": 19,
+  "withOnClick": 19,
+  "placebos": 0,
+  "items": [
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "Notificações",
+      "selector": "button[aria-label=\"Notificações\"]",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>router.push(\"/manager/notifications\")",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Cozinha\nReordenar fila",
+      "aria": "Cozinha · Reordenar fila",
+      "selector": "button[aria-label=\"Cozinha · Reordenar fila\"]",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>onTo === null || onTo === void 0 ? void 0 : onTo(t.to)",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Pausa\nPedidos novos",
+      "aria": "Pausa · Pedidos novos",
+      "selector": "button[aria-label=\"Pausa · Pedidos novos\"]",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>onTo === null || onTo === void 0 ? void 0 : onTo(t.to)",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Ver todos →",
+      "aria": null,
+      "selector": "button",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>router.push(\"/manager/alertas\")",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "Dispensar",
+      "selector": "button[aria-label=\"Dispensar\"]",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>dismissAlert(a.id)",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Avisar cozinha",
+      "aria": null,
+      "selector": "button",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>showStub(a.actions[0])",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Contactar cliente",
+      "aria": null,
+      "selector": "button",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>showStub(a.actions[1])",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "Dispensar",
+      "selector": "button[aria-label=\"Dispensar\"]",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>dismissAlert(a.id)",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Realocar mesa",
+      "aria": null,
+      "selector": "button",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>showStub(a.actions[0])",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Chamar garçom",
+      "aria": null,
+      "selector": "button",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>showStub(a.actions[1])",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "Dispensar",
+      "selector": "button[aria-label=\"Dispensar\"]",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>dismissAlert(a.id)",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Entregar agora",
+      "aria": null,
+      "selector": "button",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>showStub(a.actions[0])",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Avisar garçom",
+      "aria": null,
+      "selector": "button",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>showStub(a.actions[1])",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Ver mais →",
+      "aria": null,
+      "selector": "button",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>router.push(\"/manager/equipe\")",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Painel",
+      "aria": "Painel",
+      "selector": "button[aria-label=\"Painel\"]",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>onTo === null || onTo === void 0 ? void 0 : onTo(it.to)",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "3\nOperação",
+      "aria": "Operação",
+      "selector": "button[aria-label=\"Operação\"]",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>onTo === null || onTo === void 0 ? void 0 : onTo(it.to)",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Equipe",
+      "aria": "Equipe",
+      "selector": "button[aria-label=\"Equipe\"]",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>onTo === null || onTo === void 0 ? void 0 : onTo(it.to)",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Financeiro",
+      "aria": "Financeiro",
+      "selector": "button[aria-label=\"Financeiro\"]",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>onTo === null || onTo === void 0 ? void 0 : onTo(it.to)",
+      "hasOnClickAttr": true,
+      "disabled": false
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Eu",
+      "aria": "Eu",
+      "selector": "button[aria-label=\"Eu\"]",
+      "onClickFromProps": true,
+      "onClickIsNoop": false,
+      "onClickPreview": "()=>onTo === null || onTo === void 0 ? void 0 : onTo(it.to)",
+      "hasOnClickAttr": true,
+      "disabled": false
+    }
+  ]
+}

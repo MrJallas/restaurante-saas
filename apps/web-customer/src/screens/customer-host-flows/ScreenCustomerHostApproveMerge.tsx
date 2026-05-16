@@ -9,6 +9,7 @@ import {
   approveTableMerge,
   rejectTableMerge,
 } from '../../lib/api/customer-host';
+import { TypewriterBubble } from './TypewriterBubble';
 import type { TableMergeRequestDto } from '@restaurant/shared-types';
 
 interface ScreenCustomerHostApproveMergeProps {
@@ -21,6 +22,8 @@ interface ScreenCustomerHostApproveMergeProps {
   theirPartyNames?: string[];
   /** Where to navigate after deciding. Default: home. */
   onCloseHref?: string;
+  /** Skip typewriter on cold push/open. */
+  skipTypewriter?: boolean;
 }
 
 /**
@@ -40,6 +43,7 @@ export function ScreenCustomerHostApproveMerge({
   yourPartyNames = [],
   theirPartyNames = [],
   onCloseHref,
+  skipTypewriter = false,
 }: ScreenCustomerHostApproveMergeProps) {
   const router = useRouter();
   const { customerId, sessionId } = useSession();
@@ -139,6 +143,15 @@ export function ScreenCustomerHostApproveMerge({
           Vão virar uma mesa só com <b>{totalParty} pessoas</b> · uma comanda só
           · uma conta só.
         </p>
+
+        <div className="mt-4">
+          <TypewriterBubble
+            eyebrow={`Junção Mesa ${request.originTableNumber} → Mesa ${request.targetTableNumber} · agora`}
+            text={`${request.originHostName || 'A outra mesa'} pediu para juntar as mesas. Se você aceitar, os pedidos e a conta passam a ser tratados juntos.`}
+            skipAnimation={skipTypewriter}
+            urgent={!autoExpired}
+          />
+        </div>
 
         {/* Bloco · sua mesa */}
         <div className="mt-5 rounded-[14px] border border-border-soft bg-surface p-3.5">

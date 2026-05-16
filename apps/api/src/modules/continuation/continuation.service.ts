@@ -6,11 +6,8 @@ import { aiConfig } from '../../config/ai.config';
  * `kind` derived from DB state for a given table session. Priority order
  * top-to-bottom: first match wins.
  *
- * Note: `viu_cardapio` is declared in the spec but the schema has no
- * `customer_events`/`menu_view` table to feed it — so this proxy never
- * emits it from DB derivation. The type is preserved so callers can pin
- * the upstream segment manually if a future migration adds menu-view
- * tracking. The AI service pool key is `viu_menu`; we forward the alias.
+ * `viu_cardapio` is fed by customer_events (`menu_viewed`/`item_viewed`).
+ * The AI service pool key is `viu_menu`; we forward the alias.
  */
 export type ContinuationKind =
   | 'pos_reclamacao'
@@ -20,6 +17,19 @@ export type ContinuationKind =
   | 'viu_cardapio'
   | 'voltou_sem_acao'
   | 'first_time';
+
+type ContinuationClientKindHint =
+  | 'viu_menu'
+  | 'chamou_garcom'
+  | 'abriu_pedido'
+  | 'pagou'
+  | 'voltou_sem_acao';
+
+interface ContinuationSignals {
+  clientKindHint?: string | null;
+  hasDraftOrder?: boolean;
+  isReturning?: boolean;
+}
 
 interface DerivedContext {
   kind: ContinuationKind;
@@ -71,6 +81,7 @@ export class ContinuationService {
     tableSessionId: string,
     customerId: string | null,
     tenantSlug: string,
+    signals: ContinuationSignals = {},
   ): Promise<ContinuationResponse> {
     let derived: DerivedContext;
     try {
@@ -78,6 +89,7 @@ export class ContinuationService {
         tableSessionId,
         customerId,
         tenantSlug,
+        signals,
       );
     } catch (err) {
       this.logger.error(
@@ -96,18 +108,19 @@ export class ContinuationService {
    *   1. complaint < 10 min  → pos_reclamacao
    *   2. payment paid_at < 10 min → pagou
    *   3. active order < 30 min → abriu_pedido
-   *   4. waiter_call < 5 min → chamou_garcom
-   *   5. any prior event for this session → voltou_sem_acao
-   *   6. nothing → first_time
+   *   4. explicit/recent menu event < 10 min → viu_cardapio
+   *   5. waiter_call < 5 min → chamou_garcom
+   *   6. any prior event for this session → voltou_sem_acao
+   *   7. nothing → first_time
    *
-   * `viu_cardapio` is intentionally omitted — no DB signal exists yet (see
-   * type doc). Slot population is opportunistic; missing slots are passed
+   * Slot population is opportunistic; missing slots are passed
    * as null and the AI service renders a sensible fallback (C-NEW-4).
    */
   private async deriveKindAndSlots(
     tableSessionId: string,
     customerId: string | null,
     tenantSlug: string,
+    signals: ContinuationSignals,
   ): Promise<DerivedContext> {
     // Resolve table label first — useful for greeting copy regardless of
     // which kind wins. tables.label is the canonical column (the spec
@@ -160,6 +173,7 @@ export class ContinuationService {
       manager_name: null as string | null,
       avg_response_min: null as number | null,
     };
+    const clientHint = this.normalizeClientKindHint(signals.clientKindHint);
 
     // ── Priority 1: complaint within 10 min ──────────────────────────
     // Round 19 (C2 fix): also fetch manager name + avg response time pra
@@ -216,13 +230,20 @@ export class ContinuationService {
     if (payRows.length > 0) {
       return { kind: 'pagou', slots: baseSlots };
     }
+    if (clientHint === 'pagou') {
+      return { kind: 'pagou', slots: baseSlots };
+    }
+
+    if (signals.hasDraftOrder || clientHint === 'abriu_pedido') {
+      return { kind: 'abriu_pedido', slots: baseSlots };
+    }
 
     // ── Priority 3: active order within 30 min ───────────────────────
     const orderRows = (await this.tenantConn.query(
       `SELECT o.id, o.created_at
          FROM orders o
         WHERE o.table_session_id = $1
-          AND o.status IN ('placed','preparing','ready','delivered')
+          AND o.status NOT IN ('cancelled', 'delivered')
           AND o.created_at >= now() - INTERVAL '30 minutes'
         ORDER BY o.created_at DESC
         LIMIT 1`,
@@ -233,6 +254,35 @@ export class ContinuationService {
       return {
         kind: 'abriu_pedido',
         slots: { ...baseSlots, last_order_summary: summary },
+      };
+    }
+
+    if (clientHint === 'viu_menu') {
+      return { kind: 'viu_cardapio', slots: baseSlots };
+    }
+
+    const menuEventRows = (await this.tenantConn.query(
+      `SELECT event_type,
+              COALESCE(
+                metadata->>'itemName',
+                metadata->>'item_name',
+                metadata->>'name'
+              ) AS item_name
+         FROM customer_events
+        WHERE table_session_id = $1
+          AND event_type IN ('menu_viewed', 'item_viewed')
+          AND created_at >= now() - INTERVAL '10 minutes'
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [tableSessionId],
+    )) as { event_type: string; item_name: string | null }[];
+    if (menuEventRows.length > 0) {
+      return {
+        kind: 'viu_cardapio',
+        slots: {
+          ...baseSlots,
+          last_item_seen: menuEventRows[0].item_name,
+        },
       };
     }
 
@@ -256,32 +306,8 @@ export class ContinuationService {
         slots: { ...baseSlots, wait_minutes: waitMinutes },
       };
     }
-
-    // ── Priority 4.5: assistant_messages mentioning menu/cardapio < 10 min ──
-    // Round 19 (C3 fix): viu_cardapio kind antes nunca emitia (sem signal DB).
-    // Heuristic: cliente mandou mensagem na IA mencionando "cardapio"/"menu"
-    // /"prato"/"comida" nos últimos 10min → assume está bisbilhotando o menu.
-    // Não é perfeito (depende de keyword) mas captura o 80% dos casos sem
-    // exigir customer_events table nova.
-    const menuMentionRows = (await this.tenantConn.query(
-      `SELECT 1
-         FROM assistant_messages
-        WHERE table_session_id = $1
-          AND created_at >= now() - INTERVAL '10 minutes'
-          AND (
-            user_message ILIKE '%cardap%'
-            OR user_message ILIKE '%menu%'
-            OR user_message ILIKE '%prato%'
-            OR user_message ILIKE '%comida%'
-            OR user_message ILIKE '%sobremes%'
-            OR user_message ILIKE '%bebida%'
-            OR user_message ILIKE '%vinho%'
-          )
-        LIMIT 1`,
-      [tableSessionId],
-    )) as unknown[];
-    if (menuMentionRows.length > 0) {
-      return { kind: 'viu_cardapio', slots: baseSlots };
+    if (clientHint === 'chamou_garcom') {
+      return { kind: 'chamou_garcom', slots: baseSlots };
     }
 
     // ── Priority 5 vs 6: any prior event → voltou_sem_acao, else first_time
@@ -296,6 +322,8 @@ export class ContinuationService {
            SELECT id FROM payments WHERE table_session_id = $1
            UNION ALL
            SELECT id FROM waiter_calls WHERE table_session_id = $1
+           UNION ALL
+           SELECT id FROM customer_events WHERE table_session_id = $1
          ) ev
         LIMIT 1`,
       [tableSessionId],
@@ -322,7 +350,28 @@ export class ContinuationService {
       };
     }
 
+    if (signals.isReturning || clientHint === 'voltou_sem_acao') {
+      return { kind: 'voltou_sem_acao', slots: baseSlots };
+    }
+
     return { kind: 'first_time', slots: baseSlots };
+  }
+
+  private normalizeClientKindHint(
+    value?: string | null,
+  ): ContinuationClientKindHint | null {
+    if (!value) return null;
+    const kind = value.trim();
+    if (
+      kind === 'viu_menu' ||
+      kind === 'chamou_garcom' ||
+      kind === 'abriu_pedido' ||
+      kind === 'pagou' ||
+      kind === 'voltou_sem_acao'
+    ) {
+      return kind;
+    }
+    return null;
   }
 
   /** "2x Pizza Margherita, 1x Coca" — truncated to 80 chars. */

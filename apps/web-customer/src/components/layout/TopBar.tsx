@@ -25,7 +25,7 @@ export function TopBar({
     // visual garantem que o centro do touch target fica abaixo da ilha
     // em qualquer iPhone moderno.
     <header
-      className="sticky top-0 z-30 flex shrink-0 items-center justify-between border-b-[0.5px] border-border-soft bg-bg px-[22px] pb-3.5 pt-2"
+      className="sticky top-0 z-40 flex shrink-0 items-center justify-between border-b-[0.5px] border-border-soft bg-bg px-[22px] pb-3.5 pt-2"
       style={{ paddingTop: 'calc(max(env(safe-area-inset-top), 12px) + 8px)' }}
     >
       <div className="flex items-center gap-3">

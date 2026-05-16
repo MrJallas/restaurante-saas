@@ -527,6 +527,15 @@ def get_continuation(
     if not pool:
         return None
 
+    # Explicit `voltou_sem_acao` is used by tests and a few callers that render
+    # slots later. Keep the canonical last-item template available in that path;
+    # `render_continuation` already has the neutral fallback when last_item is
+    # actually missing.
+    if kind == "voltou_sem_acao" and not slots:
+        for entry in pool:
+            if "last_item" in (entry.get("slots") or []):
+                return entry
+
     # Round 19 (C1 fix) · filtra templates cujo `requires_slots` não está
     # totalmente populado em `slots`. Permite ter variants do mesmo kind:
     # uma "rica" exigindo customerName/managerName/etc, outra fallback sem

@@ -10,6 +10,7 @@ import { AiServiceClient, type AiToolCall } from '../../infra/ai/ai-service.clie
 import { RedisService } from '../../infra/redis/redis.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
 import { CustomerStaffMessagesService } from '../customer-staff-messages/customer-staff-messages.service';
+import { LgpdService } from '../lgpd/lgpd.service';
 import { EventsGateway } from '../websocket/events.gateway';
 
 const BLOCKED_RESPONSE =
@@ -54,6 +55,11 @@ export interface LinkedItem {
   position: number;
 }
 
+type AssistantHistoryMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
 /**
  * Normalise the AI service's tool_calls into the flat shape FE consumers
  * expect (`{ name, arguments, result, silent, router, routerTarget,
@@ -70,6 +76,7 @@ export interface LinkedItem {
  */
 function normalizeToolCalls(
   raw: AiToolCall[] | undefined,
+  menuItems: MenuItemRow[] = [],
 ): Array<Record<string, unknown>> {
   if (!raw || raw.length === 0) return [];
   return raw.map((tc) => {
@@ -82,6 +89,12 @@ function normalizeToolCalls(
     const flatArgs = (tc.args ?? fn?.arguments ?? {}) as Record<string, unknown>;
     const result = (tc.result ?? null) as Record<string, unknown> | null;
     const chips = Array.isArray(result?.chips) ? (result!.chips as unknown[]) : [];
+    const actionPayload = enrichToolActionPayload(
+      flatName,
+      flatArgs,
+      (result?.actionPayload ?? null) as Record<string, unknown> | null,
+      menuItems,
+    );
     return {
       ...tc,
       name: flatName,
@@ -95,10 +108,40 @@ function normalizeToolCalls(
         result && typeof result.routerTarget === 'string'
           ? result.routerTarget
           : undefined,
-      actionPayload: result?.actionPayload,
+      actionPayload,
       chips,
     };
   });
+}
+
+function enrichToolActionPayload(
+  toolName: string,
+  args: Record<string, unknown>,
+  payload: Record<string, unknown> | null,
+  menuItems: MenuItemRow[],
+): Record<string, unknown> | null {
+  if (toolName !== 'add_to_order') return payload;
+  const itemId =
+    typeof payload?.itemId === 'string'
+      ? payload.itemId
+      : typeof args.itemId === 'string'
+        ? args.itemId
+        : typeof args.menuItemId === 'string'
+          ? args.menuItemId
+          : null;
+  if (!itemId) return payload;
+
+  const item = menuItems.find((it) => it.id === itemId);
+  if (!item) return payload;
+
+  return {
+    ...(payload ?? {}),
+    itemId,
+    name: item.name,
+    priceCents: item.price_cents,
+    imageUrl: item.image_url,
+    categoryName: item.category_name,
+  };
 }
 
 /**
@@ -124,6 +167,275 @@ function aggregateChipsFromTools(
   return out.length > 0 ? out : null;
 }
 
+function chipsForAddToOrder(): Array<Record<string, unknown>> {
+  return [
+    { id: 'view_order', label: 'Ver pedido', action: 'send', payload: 'ver meu pedido' },
+    { id: 'add_more', label: 'Pedir mais', action: 'send', payload: 'quero pedir mais alguma coisa' },
+    { id: 'request_check', label: 'Pedir conta', action: 'send', payload: 'quero pagar a conta' },
+  ];
+}
+
+function isDirectWaterOrder(message: string): boolean {
+  const text = normalizeForMatch(message);
+  if (!/\bagua\b/.test(text)) return false;
+  return /\b(quero|queria|vou querer|me traz|traz|pede|pedir|adiciona|adicionar|coloca|manda|inclui)\b/.test(text);
+}
+
+function waterMenuItem(menuItems: MenuItemRow[]): MenuItemRow | null {
+  return (
+    menuItems.find((item) => {
+      const haystack = normalizeForMatch(`${item.name} ${item.category_name} ${(item.tags ?? []).join(' ')}`);
+      return /\bagua\b/.test(haystack);
+    }) ?? null
+  );
+}
+
+function rescueDirectWaterOrderTool(
+  message: string,
+  toolCalls: Array<Record<string, unknown>>,
+  menuItems: MenuItemRow[],
+): Array<Record<string, unknown>> {
+  if (!isDirectWaterOrder(message)) return toolCalls;
+  if (toolCalls.some((tc) => tc.name === 'add_to_order')) return toolCalls;
+
+  const item = waterMenuItem(menuItems);
+  if (!item) return toolCalls;
+
+  const chips = chipsForAddToOrder();
+  const actionPayload = {
+    orderUpdated: true,
+    cartUpdated: true,
+    itemId: item.id,
+    quantity: 1,
+    name: item.name,
+    priceCents: item.price_cents,
+    imageUrl: item.image_url,
+    categoryName: item.category_name,
+  };
+  const addToOrderCall = {
+    name: 'add_to_order',
+    arguments: { itemId: item.id, quantity: 1 },
+    result: {
+      message: 'Escolha a comanda para adicionar a água ao pedido.',
+      chips,
+      actionPayload,
+    },
+    actionPayload,
+    chips,
+  };
+
+  return [
+    ...toolCalls.filter(
+      (tc) => !['call_waiter', 'view_menu', 'recommend_dish'].includes(String(tc.name)),
+    ),
+    addToOrderCall,
+  ];
+}
+
+function isPaymentIntent(message: string): boolean {
+  const text = normalizeForMatch(message);
+  if (!text) return false;
+  return (
+    /\b(quero|queria|vamos|vou)\s+pagar\b/.test(text) ||
+    /\b(pagar|pagamento|fechar|finalizar|pedir|trazer|traz|manda)\b.*\b(conta|comanda)\b/.test(text) ||
+    /\b(conta|comanda)\b.*\b(pagar|pagamento|fechar|finalizar|pedir|trazer|traz|manda)\b/.test(text)
+  );
+}
+
+function isViewOrderIntent(message: string): boolean {
+  const text = normalizeForMatch(message);
+  if (!text) return false;
+  return (
+    /\b(ver|ve|olhar|mostrar|consultar|acompanhar)\b.*\b(meu|minha|o|a|esse|este)?\s*(pedido|comanda|carrinho)\b/.test(text) ||
+    /\b(pedido|comanda|carrinho)\b.*\b(ver|ve|olhar|mostrar|consultar|acompanhar)\b/.test(text) ||
+    /\b(quanto tempo|demora|vai demorar|cade|status|andamento|previsao|quando)\b.*\b(pedido|comida|prato|cozinha)\b/.test(text) ||
+    /\b(pedido|comida|prato|cozinha)\b.*\b(quanto tempo|demora|vai demorar|cade|status|andamento|previsao|quando)\b/.test(text)
+  );
+}
+
+function rescueViewOrderTool(
+  message: string,
+  toolCalls: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  if (!isViewOrderIntent(message)) return toolCalls;
+  if (toolCalls.some((tc) => tc.name === 'view_order')) {
+    return toolCalls.filter((tc) => !['call_waiter', 'view_menu'].includes(String(tc.name)));
+  }
+  return [
+    ...toolCalls.filter((tc) => !['call_waiter', 'view_menu'].includes(String(tc.name))),
+    {
+      name: 'view_order',
+      arguments: {},
+      result: {
+        message: 'Claro, vou mostrar seu pedido.',
+        chips: [
+          { id: 'add_more', label: 'Pedir mais', action: 'send', payload: 'quero pedir mais alguma coisa' },
+          { id: 'request_check', label: 'Pedir conta', action: 'send', payload: 'quero pagar a conta' },
+        ],
+        actionPayload: { tool: 'view_order' },
+        routerTarget: 'ScreenCustomerOrder',
+      },
+      actionPayload: { tool: 'view_order' },
+      chips: [
+        { id: 'add_more', label: 'Pedir mais', action: 'send', payload: 'quero pedir mais alguma coisa' },
+        { id: 'request_check', label: 'Pedir conta', action: 'send', payload: 'quero pagar a conta' },
+      ],
+      routerTarget: 'ScreenCustomerOrder',
+    },
+  ];
+}
+
+function paymentToolNameForMessage(message: string): string {
+  const text = normalizeForMatch(message);
+  if (/\b(dividir|rachar|separar)\b.*\b(conta|comanda)\b|\b(conta|comanda)\b.*\b(dividir|rachar|separar)\b/.test(text)) {
+    return 'split_bill';
+  }
+  if (/\b(minha parte|minha comanda|so a minha|individual)\b/.test(text)) {
+    return 'pay_individual';
+  }
+  if (/\b(pagar tudo|conta toda|comanda toda|mesa toda)\b/.test(text)) {
+    return 'pay_full';
+  }
+  return 'open_payment_screen';
+}
+
+function paymentToolResult(toolName: string): Record<string, unknown> {
+  if (toolName === 'split_bill') {
+    return {
+      message: 'Te levo pra tela de dividir a conta.',
+      chips: [
+        { id: 'pay_mine', label: 'Pagar minha parte', action: 'send', payload: 'quero pagar só a minha parte' },
+        { id: 'pay_full', label: 'Pagar tudo', action: 'send', payload: 'quero pagar a conta toda' },
+      ],
+      actionPayload: { tool: 'split_bill' },
+      routerTarget: 'ScreenCustomerSplitBill',
+    };
+  }
+  if (toolName === 'pay_individual') {
+    return {
+      message: 'Abro a tela pra você pagar só a sua parte.',
+      chips: [
+        { id: 'pay_pix', label: 'Pagar com PIX', action: 'send', payload: 'quero pagar minha parte com pix' },
+        { id: 'pay_full', label: 'Pagar tudo', action: 'send', payload: 'quero pagar a conta toda' },
+      ],
+      actionPayload: { tool: 'pay_individual' },
+      routerTarget: 'ScreenCustomerPayIndividual',
+    };
+  }
+  if (toolName === 'pay_full') {
+    return {
+      message: 'Abro a tela pra você pagar a conta toda da mesa.',
+      chips: [
+        { id: 'pay_pix', label: 'Pagar com PIX', action: 'send', payload: 'quero pagar com pix' },
+        { id: 'split', label: 'Dividir conta', action: 'send', payload: 'quero dividir a conta' },
+      ],
+      actionPayload: { tool: 'pay_full' },
+      routerTarget: 'ScreenCustomerPayFull',
+    };
+  }
+  return {
+    message: 'Abro a tela de pagamento pra você.',
+    chips: [
+      { id: 'pay_full', label: 'Pagar tudo', action: 'send', payload: 'quero pagar a conta toda' },
+      { id: 'pay_individual', label: 'Pagar minha parte', action: 'send', payload: 'quero pagar só a minha parte' },
+      { id: 'split', label: 'Dividir conta', action: 'send', payload: 'quero dividir a conta' },
+    ],
+    actionPayload: { tool: 'open_payment_screen' },
+    routerTarget: 'ScreenCustomerPayment',
+  };
+}
+
+function rescuePaymentTool(
+  message: string,
+  toolCalls: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  if (!isPaymentIntent(message)) return toolCalls;
+  const paymentTools = new Set(['open_payment_screen', 'pay_full', 'pay_individual', 'split_bill']);
+  if (toolCalls.some((tc) => paymentTools.has(String(tc.name)))) {
+    return toolCalls.filter((tc) => !['call_waiter', 'request_check'].includes(String(tc.name)));
+  }
+
+  const toolName = paymentToolNameForMessage(message);
+  const result = paymentToolResult(toolName);
+  const actionPayload = result.actionPayload as Record<string, unknown>;
+  const chips = result.chips as Array<Record<string, unknown>>;
+  return [
+    ...toolCalls.filter((tc) => !['call_waiter', 'request_check', 'view_menu'].includes(String(tc.name))),
+    {
+      name: toolName,
+      arguments: {},
+      result,
+      actionPayload,
+      chips,
+      routerTarget: result.routerTarget,
+    },
+  ];
+}
+
+function isGlutenFreeRecommendationIntent(message: string): boolean {
+  const text = normalizeForMatch(message);
+  return /\bsem gluten\b/.test(text) && /\b(opcoes|opcao|prato|pratos|recomenda|recomendar|indica|indicar|tem|quais|alguma)\b/.test(text);
+}
+
+function rescueDietaryRecommendationTool(
+  message: string,
+  toolCalls: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  if (!isGlutenFreeRecommendationIntent(message)) return toolCalls;
+  const withoutGenericMenu = toolCalls.filter(
+    (tc) => !['view_menu', 'search_dish', 'check_allergens'].includes(String(tc.name)),
+  );
+  const idx = withoutGenericMenu.findIndex((tc) => tc.name === 'recommend_dish');
+  if (idx >= 0) {
+    const next = [...withoutGenericMenu];
+    const current = next[idx];
+    next[idx] = {
+      ...current,
+      arguments: {
+        ...((current.arguments ?? {}) as Record<string, unknown>),
+        dietary: 'gluten_free',
+      },
+      actionPayload: {
+        ...((current.actionPayload ?? {}) as Record<string, unknown>),
+        dietary: 'gluten_free',
+      },
+    };
+    return next;
+  }
+  return [
+    ...withoutGenericMenu,
+    {
+      name: 'recommend_dish',
+      arguments: { dietary: 'gluten_free' },
+      result: {
+        message: 'Vou separar opções sem glúten pra você.',
+        chips: [],
+        actionPayload: { dietary: 'gluten_free' },
+      },
+      actionPayload: { dietary: 'gluten_free' },
+      chips: [],
+    },
+  ];
+}
+
+function responseWithToolContext(
+  response: string,
+  toolCalls: Array<Record<string, unknown>>,
+): string {
+  const addToOrder = toolCalls.find((tc) => tc.name === 'add_to_order');
+  const payload = addToOrder?.actionPayload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return response;
+  }
+  const itemName = (payload as Record<string, unknown>).name;
+  if (typeof itemName !== 'string' || itemName.trim().length === 0) {
+    return response;
+  }
+  const quantityRaw = (payload as Record<string, unknown>).quantity;
+  const quantity = typeof quantityRaw === 'number' && quantityRaw > 0 ? Math.floor(quantityRaw) : 1;
+  return `Escolha a comanda para eu adicionar ${quantity}x ${itemName.trim()} ao pedido.`;
+}
+
 function normalizeForMatch(text: string): string {
   return text
     .toLowerCase()
@@ -143,19 +455,16 @@ function normalizeForMatch(text: string): string {
 function extractLinkedItems(
   responseText: string,
   menuItems: MenuItemRow[],
+  toolCalls: Array<Record<string, unknown>> = [],
 ): LinkedItem[] {
   const haystack = normalizeForMatch(responseText);
-  if (!haystack) return [];
 
   const seen = new Set<string>();
   const found: LinkedItem[] = [];
+  const byId = new Map(menuItems.map((item) => [item.id, item]));
 
-  for (const item of menuItems) {
-    const needle = normalizeForMatch(item.name);
-    if (needle.length < 4) continue; // too generic to trust a substring hit
-    const pos = haystack.indexOf(needle);
-    if (pos === -1) continue;
-    if (seen.has(item.id)) continue;
+  const pushItem = (item: MenuItemRow, position: number) => {
+    if (seen.has(item.id)) return;
     seen.add(item.id);
     found.push({
       id: item.id,
@@ -163,12 +472,207 @@ function extractLinkedItems(
       priceCents: item.price_cents,
       imageUrl: item.image_url,
       categoryName: item.category_name,
-      position: pos,
+      position,
     });
+  };
+
+  const candidateIds: string[] = [];
+  for (const tc of toolCalls) {
+    const args = (tc.arguments ?? {}) as Record<string, unknown>;
+    const result = (tc.result ?? {}) as Record<string, unknown>;
+    const actionPayload = (tc.actionPayload ??
+      result.actionPayload ??
+      {}) as Record<string, unknown>;
+    for (const val of [
+      args.itemId,
+      args.item_id,
+      args.menuItemId,
+      actionPayload.itemId,
+      actionPayload.menuItemId,
+    ]) {
+      if (typeof val === 'string' && val.length > 0) candidateIds.push(val);
+    }
+  }
+
+  candidateIds.forEach((id, index) => {
+    const item = byId.get(id);
+    if (item) pushItem(item, -1000 + index);
+  });
+
+  if (!haystack) {
+    found.sort((a, b) => a.position - b.position);
+    return found.slice(0, 4);
+  }
+
+  for (const item of menuItems) {
+    const needle = normalizeForMatch(item.name);
+    if (needle.length < 4) continue; // too generic to trust a substring hit
+    const pos = haystack.indexOf(needle);
+    if (pos === -1) continue;
+    pushItem(item, pos);
   }
 
   found.sort((a, b) => a.position - b.position);
   return found.slice(0, 4); // cap to avoid overwhelming the UI
+}
+
+function inferRecommendationCategory(
+  message: string,
+  toolCall: Record<string, unknown>,
+): string | null {
+  const args = (toolCall.arguments ?? {}) as Record<string, unknown>;
+  const payload = (toolCall.actionPayload ?? {}) as Record<string, unknown>;
+  const raw =
+    typeof args.category === 'string'
+      ? args.category
+      : typeof payload.category === 'string'
+        ? payload.category
+        : message;
+  const text = normalizeForMatch(raw);
+  if (!text) return null;
+  if (/\b(bebida|bebidas|drink|drinks|vinho|suco|cerveja)\b/.test(text)) return 'bebida';
+  if (/\b(sobremesa|sobremesas|doce|doces)\b/.test(text)) return 'sobremesa';
+  if (/\b(entrada|entradas|aperitivo|aperitivos)\b/.test(text)) return 'entrada';
+  if (/\b(principal|prato|pratos|refeicao|refeicao)\b/.test(text)) return 'principal';
+  return null;
+}
+
+function inferRecommendationDietary(
+  message: string,
+  toolCall: Record<string, unknown>,
+): 'gluten_free' | null {
+  const args = (toolCall.arguments ?? {}) as Record<string, unknown>;
+  const payload = (toolCall.actionPayload ?? {}) as Record<string, unknown>;
+  const raw =
+    typeof args.dietary === 'string'
+      ? args.dietary
+      : typeof payload.dietary === 'string'
+        ? payload.dietary
+        : message;
+  const text = normalizeForMatch(raw);
+  if (/\b(gluten_free|sem gluten|gluten)\b/.test(text)) return 'gluten_free';
+  return null;
+}
+
+function menuItemMatchesRecommendationCategory(
+  item: MenuItemRow,
+  category: string | null,
+): boolean {
+  if (!category) return true;
+  const haystack = normalizeForMatch(`${item.category_name} ${item.name} ${(item.tags ?? []).join(' ')}`);
+  if (category === 'bebida') return /\b(bebida|bebidas|drink|drinks|vinho|suco|cerveja|agua)\b/.test(haystack);
+  if (category === 'sobremesa') return /\b(sobremesa|sobremesas|doce|doces)\b/.test(haystack);
+  if (category === 'entrada') return /\b(entrada|entradas|aperitivo|aperitivos)\b/.test(haystack);
+  if (category === 'principal') return /\b(principal|principais|prato|pratos|refeicao|refeicoes)\b/.test(haystack);
+  return true;
+}
+
+function menuItemMatchesDietary(
+  item: MenuItemRow,
+  dietary: 'gluten_free' | null,
+): boolean {
+  if (!dietary) return true;
+  const allergens = normalizeForMatch((item.allergens ?? []).join(' '));
+  if (dietary === 'gluten_free') return !/\bgluten\b/.test(allergens);
+  return true;
+}
+
+function isDrinkItem(item: MenuItemRow): boolean {
+  const haystack = normalizeForMatch(`${item.category_name} ${item.name} ${(item.tags ?? []).join(' ')}`);
+  return /\b(bebida|bebidas|drink|drinks|vinho|suco|cerveja|agua|refrigerante|caipirinha)\b/.test(haystack);
+}
+
+function formatCents(cents: number): string {
+  return `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function recommendationMessageForItems(
+  items: MenuItemRow[],
+  context: { dietary?: 'gluten_free' | null } = {},
+): string {
+  const lines = items.map(
+    (item) => `- ${item.name} — ${formatCents(item.price_cents)}`,
+  );
+  if (context.dietary === 'gluten_free') {
+    return `Encontrei estas opções sem glúten declarado:\n${lines.join('\n')}`;
+  }
+  return `Eu iria nessas opções hoje:\n${lines.join('\n')}`;
+}
+
+function enrichRecommendationToolCalls(
+  message: string,
+  response: string,
+  toolCalls: Array<Record<string, unknown>>,
+  menuItems: MenuItemRow[],
+): { response: string; toolCalls: Array<Record<string, unknown>> } {
+  const idx = toolCalls.findIndex((tc) => tc.name === 'recommend_dish');
+  if (idx === -1 || menuItems.length === 0) {
+    return { response, toolCalls };
+  }
+
+  const alreadySpecific = extractLinkedItems(response, menuItems, toolCalls).length > 0;
+  if (alreadySpecific) {
+    return { response, toolCalls };
+  }
+
+  const category = inferRecommendationCategory(message, toolCalls[idx]);
+  const dietary = inferRecommendationDietary(message, toolCalls[idx]);
+  const candidates = menuItems.filter(
+    (item) =>
+      menuItemMatchesRecommendationCategory(item, category) &&
+      menuItemMatchesDietary(item, dietary),
+  );
+  const preferredCandidates =
+    dietary && !category
+      ? candidates.filter((item) => !isDrinkItem(item))
+      : candidates;
+  const pickedSource = preferredCandidates.length >= 3 ? preferredCandidates : candidates;
+  const picked = pickedSource.slice(0, 3);
+  const items = picked.length > 0 ? picked : menuItems.slice(0, 3);
+  if (items.length === 0) {
+    return { response, toolCalls };
+  }
+
+  const recommendationResponse = recommendationMessageForItems(items, { dietary });
+  const chips = items.map((item) => ({
+    id: `recommend-${item.id}`,
+    label: item.name,
+    action: 'send',
+    payload: `quero o ${item.name}`,
+    primary: false,
+  }));
+  const nextCalls = [...toolCalls];
+  const current = nextCalls[idx];
+  const result = ((current.result ?? {}) as Record<string, unknown>) || {};
+  const resultPayload = isPlainRecord(result.actionPayload) ? result.actionPayload : {};
+  const currentPayload = isPlainRecord(current.actionPayload) ? current.actionPayload : {};
+  nextCalls[idx] = {
+    ...current,
+    result: {
+      ...result,
+      message: recommendationResponse,
+      chips,
+      actionPayload: {
+        ...resultPayload,
+        category,
+        dietary,
+        count: items.length,
+      },
+    },
+    actionPayload: {
+      ...currentPayload,
+      category,
+      dietary,
+      count: items.length,
+    },
+    chips,
+  };
+
+  return { response: recommendationResponse, toolCalls: nextCalls };
 }
 
 @Injectable()
@@ -189,8 +693,53 @@ export class AssistantService {
     // ("Mensagens com a equipe").
     @Optional()
     private readonly customerStaffMessages?: CustomerStaffMessagesService,
+    @Optional() private readonly lgpdService?: LgpdService,
     @Optional() private readonly events?: EventsGateway,
   ) {}
+
+  private async getScopedHistory(
+    tableSessionId: string,
+    customerId: string | null,
+    tenantId: string,
+    conversationId?: string | null,
+    continueThreadId?: string | null,
+  ): Promise<AssistantHistoryMessage[]> {
+    const scopedRequested = !!continueThreadId?.trim() || !!conversationId?.trim();
+    if (scopedRequested && (!customerId || !this.chatHistory)) {
+      return [];
+    }
+
+    if (customerId && this.chatHistory) {
+      const threadId =
+        continueThreadId?.trim() ||
+        (conversationId?.trim()
+          ? `${tenantId}:${customerId}:${conversationId.trim()}`
+          : null);
+
+      if (threadId) {
+        try {
+          const messages = await this.chatHistory.listMessagesForCustomer(
+            threadId,
+            customerId,
+          );
+          return messages
+            .filter((m) => m.role === 'user' || m.role === 'assistant')
+            .slice(-10)
+            .map((m) => ({
+              role: m.role === 'user' ? 'user' : 'assistant',
+              content: m.content,
+            }));
+        } catch {
+          // Conversa nova ainda não tem documento Mongo; isso deve começar
+          // com contexto vazio. Não voltamos ao histórico da mesa para não
+          // vazar contexto de outro chat ativo/arquivado.
+          return [];
+        }
+      }
+    }
+
+    return this.getHistory(tableSessionId, customerId);
+  }
 
   async sendMessage(
     tableSessionId: string,
@@ -201,6 +750,8 @@ export class AssistantService {
     // is kept on the public signature so the controller and any future
     // direct callers don't have to change. Marked unused to satisfy lint.
     _schemaName: string,
+    conversationId?: string | null,
+    continueThreadId?: string | null,
   ) {
     // IDOR guard: cliente nao pode passar `customerId` de outro cliente
     // pra extrair contexto de consumo / historico alheio. Validamos que
@@ -238,7 +789,13 @@ export class AssistantService {
     // Passa customerId pra que o classifier so veja a propria conversa do
     // usuario — sem isso, follow-ups de outro cliente da mesma mesa
     // poluiam o contexto e davam falsos positivos. P1-B do bug-hunt.
-    const recentHistory = await this.getHistory(tableSessionId, safeCustomerId);
+    const recentHistory = await this.getScopedHistory(
+      tableSessionId,
+      safeCustomerId,
+      _schemaName,
+      conversationId,
+      continueThreadId,
+    );
     const classification = await this.aiClient.classify(
       message,
       recentHistory.slice(-4),
@@ -251,6 +808,19 @@ export class AssistantService {
         tokensIn: 0,
         tokensOut: 0,
       });
+      if (safeCustomerId && this.chatHistory) {
+        await this.chatHistory.appendTurn({
+          tenantId: _schemaName,
+          customerId: safeCustomerId,
+          sessionId: tableSessionId,
+          conversationId,
+          continueThreadId,
+          userMessage: message,
+          assistantResponse: greeting,
+          suggestionChips: SUGGESTION_CHIPS.slice(0, 3),
+          linkedItems: [],
+        });
+      }
       return {
         response: greeting,
         wasBlocked: false,
@@ -265,6 +835,19 @@ export class AssistantService {
         wasBlocked: true,
         blockReason: classification.reason || 'classifier',
       });
+      if (safeCustomerId && this.chatHistory) {
+        await this.chatHistory.appendTurn({
+          tenantId: _schemaName,
+          customerId: safeCustomerId,
+          sessionId: tableSessionId,
+          conversationId,
+          continueThreadId,
+          userMessage: message,
+          assistantResponse: BLOCKED_RESPONSE,
+          suggestionChips: SUGGESTION_CHIPS,
+          linkedItems: [],
+        });
+      }
 
       return {
         response: BLOCKED_RESPONSE,
@@ -290,7 +873,33 @@ export class AssistantService {
         customerContext,
       );
 
-      const normalizedTools = normalizeToolCalls(result.tool_calls);
+      const normalizedToolsRaw = rescueDietaryRecommendationTool(
+        message,
+        rescueViewOrderTool(
+          message,
+          rescuePaymentTool(
+            message,
+            rescueDirectWaterOrderTool(
+              message,
+              normalizeToolCalls(result.tool_calls, menuItems),
+              menuItems,
+            ),
+          ),
+        ),
+      );
+      const recommendationContext = enrichRecommendationToolCalls(
+        message,
+        result.response,
+        normalizedToolsRaw,
+        menuItems,
+      );
+      const normalizedTools = recommendationContext.toolCalls;
+      const assistantResponse = responseWithToolContext(
+        recommendationContext.response,
+        normalizedTools,
+      );
+      const persistedToolCalls =
+        normalizedTools.length > 0 ? (normalizedTools as AiToolCall[]) : result.tool_calls ?? null;
       // K-1 fix: prefer chips canônicos das tools sobre SUGGESTION_CHIPS estático.
       // Quando nenhuma tool emitiu chips (ex: turno 100% texto), caímos
       // pro trio default — assim o cliente nunca vê uma row de chips vazia.
@@ -299,18 +908,64 @@ export class AssistantService {
       // Persistir os chips canônicos em `assistant_messages.contextual_chips`
       // (jsonb, migration 030). Se a tool não retornou nada, persistimos
       // null pra que o GIN index parcial fique enxuto.
-      await this.saveMessage(tableSessionId, safeCustomerId, message, result.response, {
+      await this.saveMessage(tableSessionId, safeCustomerId, message, assistantResponse, {
         tokensIn: result.tokens_in,
         tokensOut: result.tokens_out,
         modelUsed: result.model,
         providerUsed: result.provider,
         estimatedCostCents: result.estimated_cost_cents,
         latencyMs: result.latency_ms,
-        toolCalls: result.tool_calls ?? null,
+        toolCalls: persistedToolCalls,
         contextualChips: toolChips,
       });
 
-      const linkedItems = extractLinkedItems(result.response, menuItems);
+      const linkedItems = extractLinkedItems(
+        assistantResponse,
+        menuItems,
+        normalizedTools,
+      );
+
+      // Round 22 fix · `send_message_to_manager` server-side handoff.
+      //
+      // Antes a tool (ai-service `services/tools/send_message_to_manager.py`)
+      // tentava `POST /:tenant/staff-messages` direto via `ctx.api_client`
+      // — endpoint protegido por `StaffOnlyGuard` que o ai-service não
+      // autentica. O catch silencioso retornava `ToolResult(error=…)` ou
+      // success enganoso, dependendo do path; manager nunca recebia a
+      // mensagem e o customer via "Mensagem enviada" sem nada acontecer.
+      //
+      // Trocamos por dispatch in-process: o AssistantService já tem
+      // tenantId (`_schemaName`) + customerId + tableSessionId resolvidos
+      // e o `CustomerStaffMessagesService` faz upsert do thread + grava
+      // em `staff_messages` (Mongo) + emite WS pra inbox staff. Mesma
+      // soft-fail posture do chat-history dual-write logo abaixo —
+      // erro aqui não derruba a resposta da IA pro customer.
+      if (safeCustomerId && this.customerStaffMessages) {
+        for (const tc of normalizedTools) {
+          if (tc.name !== 'send_message_to_manager') continue;
+          const args = (tc.arguments ?? {}) as Record<string, unknown>;
+          const text = typeof args.text === 'string' ? args.text.trim() : '';
+          if (!text) continue;
+          try {
+            await this.customerStaffMessages.appendOutbound({
+              tenantId: _schemaName,
+              customerId: safeCustomerId,
+              tableSessionId,
+              content: text,
+            });
+          } catch (err) {
+            this.logger.warn(
+              `Falha ao persistir send_message_to_manager em Mongo: ${(err as Error).message}`,
+            );
+          }
+        }
+      }
+
+      await this.persistLgpdToolRequests(
+        normalizedTools,
+        safeCustomerId,
+        _schemaName,
+      );
 
       // P1 #B-6 fix (round 3): dual-write pra Mongo `chat_messages`.
       // Best-effort — Postgres remains source of truth e o appendTurn
@@ -334,9 +989,11 @@ export class AssistantService {
           tenantId: _schemaName,
           customerId: safeCustomerId,
           sessionId: tableSessionId,
+          conversationId,
+          continueThreadId,
           userMessage: message,
-          assistantResponse: result.response,
-          toolCalls: result.tool_calls ?? null,
+          assistantResponse,
+          toolCalls: persistedToolCalls,
           suggestionChips: toolChips
             ? (toolChips as Array<Record<string, unknown>>)
                 .map((c) => (typeof c.label === 'string' ? c.label : ''))
@@ -347,7 +1004,7 @@ export class AssistantService {
       }
 
       return {
-        response: result.response,
+        response: assistantResponse,
         wasBlocked: false,
         // suggestions agora reflete os chips canônicos quando presentes,
         // ou cai no fallback estático. FE consome esse array independente
@@ -367,6 +1024,19 @@ export class AssistantService {
       await this.saveMessage(tableSessionId, safeCustomerId, message, FALLBACK_RESPONSE, {
         wasBlocked: false,
       });
+      if (safeCustomerId && this.chatHistory) {
+        await this.chatHistory.appendTurn({
+          tenantId: _schemaName,
+          customerId: safeCustomerId,
+          sessionId: tableSessionId,
+          conversationId,
+          continueThreadId,
+          userMessage: message,
+          assistantResponse: FALLBACK_RESPONSE,
+          suggestionChips: SUGGESTION_CHIPS,
+          linkedItems: [],
+        });
+      }
 
       return {
         response: FALLBACK_RESPONSE,
@@ -374,6 +1044,62 @@ export class AssistantService {
         suggestions: SUGGESTION_CHIPS,
         linkedItems: [],
       };
+    }
+  }
+
+  private async persistLgpdToolRequests(
+    toolCalls: Array<Record<string, unknown>>,
+    customerId: string | null,
+    tenantId: string,
+  ): Promise<void> {
+    if (!customerId || !this.lgpdService) return;
+
+    for (const tc of toolCalls) {
+      if (tc.name !== 'lgpd_data_request') continue;
+
+      const actionPayload =
+        tc.actionPayload &&
+        typeof tc.actionPayload === 'object' &&
+        !Array.isArray(tc.actionPayload)
+          ? (tc.actionPayload as Record<string, unknown>)
+          : {};
+      const lgpdErasure =
+        actionPayload.lgpdErasure &&
+        typeof actionPayload.lgpdErasure === 'object' &&
+        !Array.isArray(actionPayload.lgpdErasure)
+          ? (actionPayload.lgpdErasure as Record<string, unknown>)
+          : {};
+
+      if (lgpdErasure.backendDispatched === true) continue;
+
+      const args = (tc.arguments ?? {}) as Record<string, unknown>;
+      const requestType =
+        typeof lgpdErasure.type === 'string'
+          ? lgpdErasure.type
+          : typeof args.type === 'string'
+            ? args.type
+            : 'erasure';
+      const kind = requestType === 'erasure' ? 'erasure' : 'export';
+      const protocolNumber =
+        typeof lgpdErasure.protocolNumber === 'string'
+          ? lgpdErasure.protocolNumber
+          : undefined;
+
+      try {
+        await this.lgpdService.createRequest(
+          {
+            kind,
+            customerId,
+            protocolNumber,
+            notes: `assistant lgpd_data_request type=${requestType}`,
+          },
+          tenantId,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Falha ao persistir lgpd_data_request: ${(err as Error).message}`,
+        );
+      }
     }
   }
 
@@ -633,7 +1359,7 @@ export class AssistantService {
     const menuSummary = items
       .map(
         (i) =>
-          `- ${i.name} (${i.category_name}) - R$${(i.price_cents / 100).toFixed(2)}${
+          `- ${i.name} [id: ${i.id}] (${i.category_name}) - R$${(i.price_cents / 100).toFixed(2)}${
             i.short_description ? `: ${i.short_description}` : ''
           }${i.allergens?.length ? ` [Alergenos: ${i.allergens.join(', ')}]` : ''}`,
       )

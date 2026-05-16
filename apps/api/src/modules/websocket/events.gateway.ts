@@ -232,7 +232,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.data.staffId = staffId;
         if (staffRole) client.data.staffRole = staffRole;
         client.data.staffTenantSlug = tenantSlug;
+        client.join(`staff:${staffId}`);
+        client.join(`tenant:${tenantSlug}`);
         this.logger.log(`Staff client connected: ${client.id}`);
+        this.logger.log(`Client ${client.id} auto-joined staff room ${staffId}`);
         return;
       }
     }
@@ -523,6 +526,18 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  emitKitchenReorder(
+    slug: string,
+    data: { orderIds: string[]; reason?: string | null; requestedBy?: string | null },
+  ) {
+    const payload = {
+      ...data,
+      timestamp: new Date().toISOString(),
+    };
+    this.server.to(`tenant:${slug}:kitchen`).emit('kitchen:reorder', payload);
+    this.server.to(`tenant:${slug}:manager`).emit('kitchen:reorder', payload);
+  }
+
   emitWaiterCall(
     slug: string,
     callData: {
@@ -547,6 +562,19 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   emitToSession(sessionId: string, event: string, data: unknown) {
     this.server.to(`session:${sessionId}`).emit(event, data);
+  }
+
+  /**
+   * Generic tenant-room emitter — every staff dashboard joined to
+   * `tenant:<slug>` receives the event. Used by features that don't have
+   * a specific room-routing helper (`emitCustomerStaffMessage`, etc.) and
+   * want a fanout to "all staff for this restaurant".
+   *
+   * Distinct from `emitToSession` (single table's customer-side socket)
+   * and the per-role helpers (`tenant:<slug>:waiter`, `:kitchen`).
+   */
+  emitToTenant(slug: string, event: string, data: unknown) {
+    this.server.to(`tenant:${slug}`).emit(event, data);
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -888,6 +916,22 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (staffId) {
       this.server.to(`staff:${staffId}`).emit('staff_message.received', payload);
     }
+  }
+
+  /**
+   * Staff-to-staff thread routing. A reply sent with only `threadId` has no
+   * single `recipientStaffId`, so route it to every active participant room.
+   * Socket.IO de-duplicates sockets that are present in more than one room.
+   */
+  emitStaffThreadMessageReceived(
+    _slug: string,
+    staffIds: string[],
+    payload: WsStaffMessageReceived['payload'],
+  ) {
+    const rooms = Array.from(new Set(staffIds.filter(Boolean))).map(
+      (id) => `staff:${id}`,
+    );
+    this.server.to(rooms).emit('staff_message.received', payload);
   }
 
   /**

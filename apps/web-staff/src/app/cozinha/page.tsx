@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Clock, ChefHat, Bell, Volume2, User } from 'lucide-react';
+import { Clock, ChefHat, Bell, MessageSquare, Volume2, User } from 'lucide-react';
+import { io, type Socket } from 'socket.io-client';
 import { staffGet, staffPatch } from '../../lib/api';
 
 interface OrderItem {
@@ -20,10 +21,32 @@ interface Order {
   total_cents: number;
   notes?: string;
   created_at: string;
+  table_label?: string;
+  table_number?: number;
+  priority_rank?: string;
+  priority_reason?: string | null;
+  priority_updated_at?: string | null;
   items: OrderItem[];
 }
 
 const TENANT_SLUG = process.env.NEXT_PUBLIC_TENANT_SLUG || 'restaurant_dev';
+
+function resolveWsUrl(): string {
+  const explicit = process.env.NEXT_PUBLIC_WS_URL;
+  if (explicit) return explicit;
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (apiUrl) return apiUrl.replace(/\/?api\/?$/, '');
+  return 'http://localhost:3001';
+}
+
+function readStaffId(): string {
+  if (typeof window === 'undefined') return 'kitchen-display';
+  try {
+    return window.localStorage.getItem('staffId') || 'kitchen-display';
+  } catch {
+    return 'kitchen-display';
+  }
+}
 
 function TimerBadge({ createdAt }: { createdAt: string }) {
   const [elapsed, setElapsed] = useState('');
@@ -54,11 +77,16 @@ export default function CozinhaKDS() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [staffId, setStaffId] = useState('kitchen-display');
   const prevCountRef = useRef(0);
+
+  useEffect(() => {
+    setStaffId(readStaffId());
+  }, []);
 
   const loadOrders = useCallback(async () => {
     try {
-      const res = await staffGet<{ orders: Order[] }>(`/${TENANT_SLUG}/orders`);
+      const res = await staffGet<{ orders: Order[] }>(`/${TENANT_SLUG}/kitchen/queue`);
       const activeOrders = res.orders.filter(
         (o) => !['delivered', 'cancelled'].includes(o.status),
       );
@@ -81,6 +109,42 @@ export default function CozinhaKDS() {
     loadOrders();
     const interval = setInterval(loadOrders, 5000);
     return () => clearInterval(interval);
+  }, [loadOrders]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let socket: Socket | null = null;
+    try {
+      socket = io(resolveWsUrl(), {
+        path: '/socket.io/',
+        transports: ['websocket'],
+        reconnection: true,
+        auth: {
+          staffKey: process.env.NEXT_PUBLIC_STAFF_API_KEY || undefined,
+          staffId: readStaffId(),
+          tenantSlug: TENANT_SLUG,
+          staffRole: 'kitchen',
+        },
+      });
+    } catch {
+      return;
+    }
+
+    const refresh = () => {
+      loadOrders();
+    };
+    socket.on('connect', () => {
+      socket?.emit('join:tenant', { slug: TENANT_SLUG, role: 'kitchen' });
+    });
+    socket.on('order:new', refresh);
+    socket.on('order:status', refresh);
+    socket.on('kitchen:reorder', refresh);
+    return () => {
+      socket?.off('order:new', refresh);
+      socket?.off('order:status', refresh);
+      socket?.off('kitchen:reorder', refresh);
+      socket?.disconnect();
+    };
   }, [loadOrders]);
 
   const handleAdvanceStatus = async (orderId: string, nextStatus: string) => {
@@ -141,7 +205,18 @@ export default function CozinhaKDS() {
             Som {soundEnabled ? 'ON' : 'OFF'}
           </button>
           <button
-            onClick={() => router.push('/cozinha/eu')}
+            onClick={() =>
+              router.push(`/cozinha/mensagens?tenant=${TENANT_SLUG}&cookId=${staffId}`)
+            }
+            aria-label="Mensagens"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-white/5 text-white/80 hover:text-white"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() =>
+              router.push(`/cozinha/eu?tenant=${TENANT_SLUG}&cookId=${staffId}`)
+            }
             aria-label="Perfil"
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-white/5 text-white/80 hover:text-white"
           >
@@ -256,10 +331,18 @@ function KdsCard({
       {/* Timer */}
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs text-white/40">
+          {order.table_label ? `${order.table_label} · ` : ''}
           #{order.id.slice(0, 8)}
         </span>
         <TimerBadge createdAt={order.created_at} />
       </div>
+
+      {Number(order.priority_rank ?? 0) > 0 && (
+        <div className="mb-3 rounded-lg border border-red-400/40 bg-red-500/15 px-2 py-1 text-xs font-bold uppercase tracking-wide text-red-200">
+          Prioridade gerência
+          {order.priority_reason ? ` · ${order.priority_reason}` : ''}
+        </div>
+      )}
 
       {/* Items — big and bold for kitchen visibility */}
       <div className="mb-3 space-y-2">

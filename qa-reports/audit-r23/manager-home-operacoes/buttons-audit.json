@@ -1,0 +1,107 @@
+{
+  "_meta": {
+    "audited_at": "2026-05-15T19:42:00Z",
+    "tenant": "restaurant_dev",
+    "persona": "Erica · Gerente (staffId 8bd06156-1fe5-4c18-a82d-43d38287ed4a)",
+    "tool": "playwright MCP · browser_evaluate + React fiber probe (__reactProps$*)",
+    "viewport": "414x896 mobile",
+    "notes": [
+      "Playwright MCP browser_snapshot/take_screenshot causes URL drift after capture — documented in routes-tested.md round 18 note. Mitigation: probe fast, screenshot fast, navigate.",
+      "Fresh re-run on 2026-05-15 corroborates previous round 18 data: 0 noop placebos detected via fiber inspection.",
+      "However, code-level analysis of MInProgressCard reveals 3 functional placebos in /manager when in-progress cards render (Encaminhar, +5 min, Cancelar/Reenviar) — onSecondary prop is NEVER passed by ScreenManagerHomeA, so onClick={onSecondary} = undefined and PillBtn no-ops."
+    ]
+  },
+  "routes": [
+    {
+      "route": "/manager",
+      "screenshot": "screenshots/01-home.png",
+      "total_buttons": 19,
+      "with_onclick": 19,
+      "noop_placebos_via_fiber": 0,
+      "functional_placebos_via_code_audit": 3,
+      "stubs": 6,
+      "stub_handlers": ["Avisar cozinha", "Contactar cliente", "Realocar mesa", "Chamar garçom", "Entregar agora", "Avisar garçom"],
+      "real_handlers": ["Notificações (bell→/manager/notifications)", "Cozinha quick-action", "Pausa quick-action", "Ver todos→/manager/alertas", "Dispensar (3x → dismissAlert)", "Ver mais→/manager/equipe", "5x bottom-nav"],
+      "potential_placebos": [
+        "MInProgressCard complaint kind · 'Encaminhar' button uses onSecondary which is undefined (only onTap+onPrimary passed by ScreenManagerHomeA.tsx:386-388). Rendered when ?complaints in DB exist (4 found). File: apps/web-staff/src/components/manager/MInProgressCard.tsx:557",
+        "MInProgressCard pause-orders kind · '+5 min' button same issue. File: MInProgressCard.tsx:544",
+        "MInProgressCard kitchen-reorder/contact-client/courtesy kinds · 'Cancelar/Reenviar/Cancelar envio' buttons same issue. File: MInProgressCard.tsx:578"
+      ]
+    },
+    {
+      "route": "/manager/operacoes?tab=alerts",
+      "screenshot": "screenshots/02-operacoes-alerts.png",
+      "total_buttons": 27,
+      "with_onclick": 27,
+      "noop_placebos": 0,
+      "stubs_via_onAction_prop": 8,
+      "real_handlers": ["3 tab switches", "2 KPI chip navigates (criticos/atencao)", "2 help buttons (onHelp)", "4 dismiss buttons (onDismiss)", "2 quick-actions", "5 bottom-nav"],
+      "notes": "8 inline action buttons (Avisar cozinha, Contactar cliente, etc.) wired ao prop onAction=showStub. Handler real exibe toast 'em desenvolvimento (Onda 3 backend)' — não placebo."
+    },
+    {
+      "route": "/manager/operacoes?tab=map",
+      "screenshot": "screenshots/03-operacoes-map.png",
+      "total_buttons": 25,
+      "with_onclick": 25,
+      "noop_placebos": 0,
+      "stubs": 0,
+      "real_handlers": ["3 tab switches", "2 KPI chips→drill-downs", "10 mesa cards→/manager/mesa/N", "Mesas 5+10 livre (DIV não-clickable)", "2 help buttons", "2 quick-actions", "5 bottom-nav"]
+    },
+    {
+      "route": "/manager/operacoes?tab=funnel",
+      "screenshot": "screenshots/04-operacoes-funnel.png",
+      "total_buttons": 11,
+      "with_onclick": 11,
+      "noop_placebos": 0,
+      "stubs": 0,
+      "real_handlers": ["3 tab switches", "2 quick-actions", "Bell→notifications", "5 bottom-nav"]
+    },
+    {
+      "route": "/manager/operacoes/criticos",
+      "screenshot": "screenshots/05-criticos.png",
+      "total_buttons": 12,
+      "with_onclick": 12,
+      "noop_placebos": 0,
+      "stubs": 5,
+      "stub_handlers": ["Resolver", "Avisar Caleb", "Atender agora", "Realocar", "Resolver todos em sequência"],
+      "real_handlers": ["Voltar→/manager/operacoes", "Avisar todos os garçons da praça→/manager/mensagens", "5 bottom-nav"]
+    },
+    {
+      "route": "/manager/operacoes/atencao",
+      "screenshot": "screenshots/06-atencao.png",
+      "total_buttons": 11,
+      "with_onclick": 11,
+      "noop_placebos": 0,
+      "stubs": 5,
+      "stub_handlers": ["Avisar Olivia", "Realocar", "Adiantar", "Avisar cozinha", "Adiantar todos"],
+      "real_handlers": ["Voltar", "5 bottom-nav"]
+    },
+    {
+      "route": "/manager/operacoes/mesas-ativas",
+      "screenshot": "screenshots/07-mesas-ativas.png",
+      "total_buttons": 20,
+      "with_onclick": 20,
+      "noop_placebos": 0,
+      "stubs": 0,
+      "real_handlers": ["Voltar", "13 mesa cards→/manager/mesa/N (via openTable)", "Ver no Mapa→tab=map", "5 bottom-nav"]
+    },
+    {
+      "route": "/manager/operacoes/em-alerta",
+      "screenshot": "screenshots/08-em-alerta.png",
+      "total_buttons": 12,
+      "with_onclick": 12,
+      "noop_placebos": 0,
+      "stubs": 1,
+      "stub_handlers": ["Realocar mesas críticas"],
+      "real_handlers": ["Voltar", "4 mesa cards→openTable", "Mensagem direta→/manager/mensagens", "5 bottom-nav"]
+    }
+  ],
+  "totals": {
+    "routes_audited": 8,
+    "clickables_total": 137,
+    "with_onclick": 137,
+    "noop_placebos_via_fiber": 0,
+    "functional_placebos_via_code_audit": 3,
+    "stubs": 25
+  }
+}

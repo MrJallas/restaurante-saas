@@ -235,6 +235,26 @@ def test_recommend_dish_renders_chips():
     assert result.message is not None
 
 
+def test_view_order_uses_status_copy_for_eta_question():
+    ctx = ToolContext(
+        tenant_id="t1",
+        customer_id="c1",
+        raw_message="quanto tempo demora o pedido?",
+    )
+    result = dispatch_tool("view_order", {}, ctx)
+    assert "status" in result.message.lower()
+
+
+def test_view_order_uses_adjust_copy_for_generic_change_request():
+    ctx = ToolContext(
+        tenant_id="t1",
+        customer_id="c1",
+        raw_message="quero mudar meu pedido",
+    )
+    result = dispatch_tool("view_order", {}, ctx)
+    assert "ajustar" in result.message.lower()
+
+
 def test_request_table_merge_no_target_returns_error():
     """Canonical request_table_merge needs a targetTable."""
     ctx = ToolContext(tenant_id="t1", customer_id="c1")

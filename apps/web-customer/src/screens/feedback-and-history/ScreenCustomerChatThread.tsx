@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiRequestError } from '../../lib/api';
 import { listMessages, deleteThread } from '../../lib/api/chat-history';
@@ -19,13 +19,58 @@ interface ScreenCustomerChatThreadProps {
   threadId: string;
 }
 
-function formatThreadHeaderDate(iso: string | null): string {
-  if (!iso) return '';
+const WEEKDAYS_PT = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'];
+const MONTHS_PT = [
+  'JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN',
+  'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ',
+];
+
+/**
+ * Round 22 §C — eyebrow canon V20 pra separar grupos por dia
+ * ("QUI 14 MAI" ou "QUI 14 MAI 2025" quando ano não é o atual). Usado
+ * acima do 1º bubble de cada day group em `ScreenCustomerChatThread`.
+ *
+ * Fallback "" pra ISO inválido — caller renderiza grupo sem eyebrow em
+ * vez de "Invalid Date".
+ */
+function formatDayLabel(iso: string): string {
   const d = new Date(iso);
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const yy = String(d.getFullYear()).slice(-2);
-  return `${day}/${month}/${yy}`;
+  if (Number.isNaN(d.getTime())) return '';
+  const weekday = WEEKDAYS_PT[d.getDay()];
+  const date = String(d.getDate()).padStart(2, '0');
+  const month = MONTHS_PT[d.getMonth()];
+  const currentYear = new Date().getFullYear();
+  return d.getFullYear() === currentYear
+    ? `${weekday} ${date} ${month}`
+    : `${weekday} ${date} ${month} ${d.getFullYear()}`;
+}
+
+interface DayGroup {
+  day: string;
+  label: string;
+  items: ChatMessageDto[];
+}
+
+/**
+ * Round 22 §C — agrupa mensagens por dia (YYYY-MM-DD local) preservando
+ * ordem cronológica (input já vem sorted por createdAt ASC do backend).
+ * Cada grupo carrega seu label canon ("QUI 14 MAI") pronto pro eyebrow.
+ */
+function groupMessagesByDay(messages: ChatMessageDto[]): DayGroup[] {
+  const groups = new Map<string, ChatMessageDto[]>();
+  for (const m of messages) {
+    const d = new Date(m.createdAt);
+    if (Number.isNaN(d.getTime())) continue;
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const arr = groups.get(day) ?? [];
+    arr.push(m);
+    groups.set(day, arr);
+  }
+  return Array.from(groups.entries()).map(([day, items]) => ({
+    day,
+    label: formatDayLabel(items[0].createdAt),
+    items,
+  }));
 }
 
 /**
@@ -97,9 +142,7 @@ export function ScreenCustomerChatThread({
     }
   };
 
-  const headerDate = messages.length > 0
-    ? formatThreadHeaderDate(messages[0].createdAt)
-    : '';
+  const dayGroups = useMemo(() => groupMessagesByDay(messages), [messages]);
 
   if (!ready) return null;
 
@@ -112,10 +155,7 @@ export function ScreenCustomerChatThread({
       showHamburger={false}
     >
       <div className="flex flex-1 flex-col px-[22px] pb-10 pt-3">
-        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[1.5px] text-mute">
-          {headerDate}
-        </div>
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between">
           <h1 className="text-[18px] font-semibold tracking-[-0.02em] text-ink">
             Conversa antiga
           </h1>
@@ -128,9 +168,6 @@ export function ScreenCustomerChatThread({
             Apagar
           </button>
         </div>
-        <div className="mb-4 self-start rounded-full bg-surface px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[1.2px] text-mute">
-          Este chat é somente leitura · não pode ser continuado
-        </div>
 
         {error && (
           <div className="mb-4 rounded-[12px] border border-danger bg-[#fdf2f2] px-3.5 py-2.5 text-[13px] text-[#7a1f1f]">
@@ -142,11 +179,39 @@ export function ScreenCustomerChatThread({
           <div className="text-center text-[13px] text-mute">Carregando…</div>
         )}
 
-        <div className="flex flex-col gap-3.5">
-          {messages.map((m) => (
-            <ChatHistoryMessage key={m.messageId} msg={m} />
+        {/* Round 22 §C — grouping canônico V20: cada dia ganha um eyebrow
+            mono uppercase ("QUI 14 MAI") logo acima do 1º bubble. Bubbles
+            mantêm gap-3.5 entre eles, e o gap entre grupos vira gap-5
+            (espaço visual extra que sinaliza "outra data"). */}
+        <div className="flex flex-col gap-5">
+          {dayGroups.map((group) => (
+            <div key={group.day} className="flex flex-col gap-3.5">
+              {group.label && (
+                <div className="self-center mt-1 text-[10px] font-semibold uppercase tracking-[1.5px] text-faint">
+                  {group.label}
+                </div>
+              )}
+              {group.items.map((m) => (
+                <ChatHistoryMessage key={m.messageId} msg={m} />
+              ))}
+            </div>
           ))}
         </div>
+
+        {!loading && messages.length > 0 && (
+          <div className="mt-8 flex flex-col gap-1.5">
+            <PillButton
+              variant="filled"
+              fullWidth
+              onClick={() => router.push(`/${slug}/assistente?threadId=${encodeURIComponent(threadId)}`)}
+            >
+              Continuar nessa conversa
+            </PillButton>
+            <p className="px-2 pt-1 text-center text-[10px] font-semibold uppercase leading-[1.5] tracking-[1.2px] text-faint">
+              Retomamos daqui · novas mensagens entram no mesmo histórico
+            </p>
+          </div>
+        )}
       </div>
 
       <BottomSheet
@@ -185,6 +250,38 @@ export function ScreenCustomerChatThread({
   );
 }
 
+type ToolCategory =
+  | 'menu'
+  | 'order'
+  | 'session'
+  | 'info'
+  | 'staff'
+  | 'payment'
+  | 'destructive'
+  | 'lgpd';
+
+/**
+ * Round 22 §C — espelha o categorizer de `/assistente/page.tsx` pra
+ * pintar o `ToolCallIndicator` com a cor certa no histórico. Default
+ * 'info' (cinza) pra nomes não-canônicos. Mantém os 2 lugares em sync.
+ */
+function categorizeToolName(name: string): ToolCategory {
+  if (name === 'view_menu' || name === 'search_dish' || name === 'check_allergens' || name === 'compare_dishes') return 'menu';
+  if (name === 'add_to_order' || name === 'view_order' || name === 'place_order') return 'order';
+  if (name === 'call_waiter' || name === 'send_complaint' || name === 'send_message_to_manager') return 'staff';
+  if (name === 'request_bill' || name === 'split_bill' || name === 'pay_individual' || name === 'pay_full' || name === 'open_payment_screen') return 'payment';
+  if (name === 'lgpd_data_request' || name === 'lgpd_notice') return 'lgpd';
+  if (name === 'delete_chat' || name === 'delete_all_chats') return 'destructive';
+  if (name === 'request_table_merge' || name === 'late_arrival') return 'session';
+  return 'info';
+}
+
+function formatBubbleTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
 function ChatHistoryMessage({ msg }: { msg: ChatMessageDto }) {
   if (msg.role === 'user') {
     return <Bubble role="user">{msg.content}</Bubble>;
@@ -194,10 +291,7 @@ function ChatHistoryMessage({ msg }: { msg: ChatMessageDto }) {
       <ManagerBubble
         name="Renata"
         role="Gerente"
-        when={new Date(msg.createdAt).toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit',
-        })}
+        when={formatBubbleTime(msg.createdAt)}
       >
         {msg.content}
       </ManagerBubble>
@@ -210,9 +304,10 @@ function ChatHistoryMessage({ msg }: { msg: ChatMessageDto }) {
       </div>
     );
   }
-  // assistant
+  // assistant — bubble + tool indicators (categorizadas) + chips (decay
+  // visual com opacity, sinaliza que são histórico não-clicável).
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col items-start gap-2">
       <Bubble role="ai">{msg.content}</Bubble>
       {msg.toolCalls && msg.toolCalls.length > 0 && (
         <div className="ml-2 flex flex-wrap gap-2">
@@ -220,7 +315,7 @@ function ChatHistoryMessage({ msg }: { msg: ChatMessageDto }) {
             <ToolCallIndicator
               key={`${tc.name}-${i}`}
               name={tc.name}
-              category="info"
+              category={categorizeToolName(tc.name)}
             />
           ))}
         </div>

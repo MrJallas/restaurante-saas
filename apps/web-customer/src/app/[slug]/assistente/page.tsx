@@ -1,8 +1,13 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { apiPost, apiGet } from '../../../lib/api';
+import { clearDeliveredContinuationHint } from '../../../lib/continuationHints';
+import { recordCustomerEvent } from '../../../lib/customerEvents';
+import { listMessages } from '../../../lib/api/chat-history';
+import type { ChatMessageDto } from '@restaurant/shared-types';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
@@ -17,6 +22,10 @@ import { ToolCallIndicator } from '../../../components/ui/ToolCallIndicator';
 import { SuggestionChip } from '../../../components/ui/SuggestionChip';
 import { PillButton } from '../../../components/ui/PillButton';
 import { HomeHero } from '../../../components/home/HomeHero';
+import {
+  CommandPicker,
+  type CommandModeChoice,
+} from '../../../components/cardapio/CommandPicker';
 import { useUIState } from '../../../providers/UIStateProvider';
 import {
   OverlaySalonMap,
@@ -112,6 +121,7 @@ interface AssistantToolCall {
   name: string;
   arguments?: Record<string, unknown>;
   result?: unknown;
+  actionPayload?: unknown;
   silent?: boolean;
   router?: boolean;
 }
@@ -158,6 +168,41 @@ interface SendResponse {
   toolCalls?: AssistantToolCall[];
 }
 
+interface ContinuationPostResponse {
+  kind: string;
+  text: string;
+  chips?: ChipCanon[];
+  meta?: {
+    subtitle?: string | null;
+    primary_cta?: Record<string, unknown> | null;
+  };
+}
+
+interface MenuItemToolPayload {
+  id: string;
+  name: string;
+  price_cents?: number;
+  priceCents?: number;
+  image_url?: string | null;
+  imageUrl?: string | null;
+  category_name?: string;
+  categoryName?: string;
+}
+
+interface PendingOrderItem {
+  id: string;
+  name: string;
+  priceCents: number;
+  quantity: number;
+  note?: string;
+}
+
+interface PendingOrderAdd {
+  items: PendingOrderItem[];
+  sourceMessageId?: string;
+  openReviewAfterAdd?: boolean;
+}
+
 // Fallback chips — só aparecem em idle (antes do primeiro turno) ou
 // quando a tool dispatched não retornou chips canônicos. Backend devolve
 // `chips` quando vier de uma tool com chips populated; aí esses defaults
@@ -175,8 +220,96 @@ const DEFAULT_SUGGESTIONS: ChipCanon[] = [
  * de uma string final pra navigate (path) ou send (texto pra digitar).
  */
 function chipText(chip: ChipCanon): string {
-  if (typeof chip.payload === 'string' && chip.payload.length > 0) return chip.payload;
-  return chip.label;
+  const normalized = normalizeChipCopy(chip);
+  if (typeof normalized.payload === 'string' && normalized.payload.length > 0) return normalized.payload;
+  return normalized.label;
+}
+
+function chipCopyKey(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function normalizeChipCopy(chip: ChipCanon): ChipCanon {
+  const payload = typeof chip.payload === 'string' ? chip.payload : '';
+  const copy = chipCopyKey(`${chip.id} ${chip.label} ${payload}`);
+
+  if (
+    chip.id === 'complaint-text' ||
+    (chip.action === 'expand' &&
+      (/\b(contar|conta)\b.*\b(rolou|gerencia|gerente)\b/.test(copy) ||
+        /\b(reclamacao|reclamar)\b/.test(copy)))
+  ) {
+    return {
+      ...chip,
+      action: 'expand',
+      label: 'Registrar reclamação formal',
+      payload: 'Descreva o problema para registrar a reclamação...',
+    };
+  }
+
+  if (
+    chip.action === 'expand' &&
+    /\b(mensagem|recado|comunicar)\b/.test(copy) &&
+    /\b(gerencia|gerente)\b/.test(copy)
+  ) {
+    return {
+      ...chip,
+      label: 'Enviar mensagem ao gerente',
+      payload: 'Escreva a mensagem que o gerente deve receber...',
+    };
+  }
+
+  return chip;
+}
+
+function chipNavigationDestination(slug: string, payload: string): string {
+  const raw = payload.trim();
+  const ratingMatch = raw.match(/^avaliar[:/](.+)$/);
+  if (ratingMatch?.[1]) {
+    return `/${slug}/orders/${encodeURIComponent(ratingMatch[1])}/rating`;
+  }
+  if (raw === 'avaliar' || raw === '/avaliar') {
+    return `/${slug}/pagamento/feedback`;
+  }
+  return raw.startsWith('/') ? raw : `/${slug}/${raw}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function numberValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function positiveInt(value: unknown, fallback = 1): number {
+  const n = numberValue(value);
+  if (n === null) return fallback;
+  return Math.max(1, Math.min(20, Math.floor(n)));
+}
+
+function actionPayload(call: AssistantToolCall): Record<string, unknown> {
+  if (isRecord(call.actionPayload)) return call.actionPayload;
+  if (isRecord(call.result) && isRecord(call.result.actionPayload)) {
+    return call.result.actionPayload;
+  }
+  return {};
+}
+
+function formatCurrency(cents: number): string {
+  return `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 }
 
 // Palavras que, combinadas com itens ja mencionados pela IA, indicam "quero
@@ -245,15 +378,101 @@ type ToolCategory =
  * no `ToolCallIndicator` inline. Centralizado aqui pra n\u00e3o duplicar
  * em cada lugar que cria `ChatMessage.toolCall`. Default 'info'.
  */
+/**
+ * Tools cujo efeito é uma side-effect visível (overlay sobe, route push,
+ * sheet abre) sem texto bubble como resposta principal. Para essas, atrasamos
+ * a side-effect em 1.5s depois do setMessages para que o `ToolCallIndicator`
+ * inline (eyebrow `··· USANDO X ···`) tenha tempo de registrar antes da UI
+ * shift — o usuário vê "Assistente está usando view_menu..." antes do
+ * overlay subir, prevenindo sensação de "engasgo".
+ */
+const SILENT_PATH_TOOLS = new Set<string>([
+  'view_menu',
+  'view_order',
+  'call_waiter',
+  'request_table_merge',
+  'open_payment_screen',
+  'pay_individual',
+  'pay_full',
+  'split_bill',
+]);
+
+/**
+ * Tools cuja resposta principal é o próprio texto do bubble (perguntas livres,
+ * info do restaurante, busca/comparação de pratos). O eyebrow `··· USANDO X ···`
+ * AINDA aparece pra elas (decisão V20: user quer ver toda tool dispatchada),
+ * mas o `dispatchToolCall` skipa o stub bubble "OK" extra — sem isso, "qual o
+ * horário?" criava DOIS bubbles: a resposta certa + "OK" duplicado embaixo.
+ */
+const TEXT_ONLY_TOOLS = new Set<string>([
+  'ask_about_restaurant',
+  'search_dish',
+  'check_allergens',
+  'compare_dishes',
+  'view_courtesy',
+]);
+
 function categorizeToolName(name: string): ToolCategory {
   if (name === 'view_menu' || name === 'search_dish' || name === 'check_allergens' || name === 'compare_dishes') return 'menu';
-  if (name === 'add_to_order' || name === 'view_order' || name === 'place_order') return 'order';
+  if (name === 'add_to_order' || name === 'view_order' || name === 'confirm_order' || name === 'place_order' || name === 'remove_from_cart' || name === 'change_order' || name === 'cancel_order') return 'order';
   if (name === 'call_waiter' || name === 'send_complaint' || name === 'send_message_to_manager') return 'staff';
   if (name === 'request_bill' || name === 'split_bill' || name === 'pay_individual' || name === 'pay_full' || name === 'open_payment_screen') return 'payment';
   if (name === 'lgpd_data_request' || name === 'lgpd_notice') return 'lgpd';
   if (name === 'delete_chat' || name === 'delete_all_chats') return 'destructive';
   if (name === 'request_table_merge' || name === 'late_arrival') return 'session';
   return 'info';
+}
+
+/**
+ * Mapeia mensagens persistidas no Mongo (DTO) pro shape interno do chat
+ * ativo. Usado somente no fluxo explícito de continuar conversa a partir
+ * de `/chat-history/:threadId`; entrada direta em `/assistente` nunca
+ * reidrata histórico antigo.
+ */
+function mapHistoryToChat(msgs: ChatMessageDto[]): ChatMessage[] {
+  return msgs.map((m, i) => {
+    const id = `history-${m.messageId ?? i}`;
+    if (m.role === 'user') {
+      return { id, role: 'user', content: m.content };
+    }
+    if (m.role === 'manager') {
+      const meta = (m.metadata ?? {}) as Record<string, unknown>;
+      const rawName = typeof meta.staffName === 'string' && meta.staffName.length > 0
+        ? meta.staffName
+        : 'Renata';
+      const firstName = rawName.split(' ')[0] || 'Renata';
+      return {
+        id,
+        role: 'staff',
+        content: m.content,
+        staffName: firstName,
+        staffInitial: (firstName[0] ?? 'R').toUpperCase(),
+        staffRole: typeof meta.staffRole === 'string' ? meta.staffRole : 'Gerente',
+        staffCreatedAt: m.createdAt,
+      };
+    }
+    const firstTool = Array.isArray(m.toolCalls) && m.toolCalls.length > 0
+      ? m.toolCalls[0]
+      : null;
+    const toolName = firstTool && typeof firstTool.name === 'string' ? firstTool.name : null;
+    return {
+      id,
+      role: 'ai',
+      content: m.content,
+      toolCall: toolName
+        ? { name: toolName, category: categorizeToolName(toolName) }
+        : undefined,
+    };
+  });
+}
+
+function newAssistantConversationId(): string {
+  const cryptoApi =
+    typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+    return cryptoApi.randomUUID();
+  }
+  return `client-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function normalize(text: string): string {
@@ -303,11 +522,21 @@ export default function AssistentePage() {
   const session = useSession();
   const { push } = useNav();
   const { openCallWaiterSheet, openMenuOverlay } = useUIState();
-  const { addItem } = useDraftOrder();
+  const {
+    items: draftItems,
+    addItem,
+    updateItem,
+    removeItem,
+    clear: clearDraftOrder,
+    totalCents,
+  } = useDraftOrder();
   const router = useRouter();
   const slug = params.slug as string;
   const prefill = searchParams.get('prefill') ?? '';
   const itemId = searchParams.get('itemId') ?? '';
+  // Continuação explícita: só o menu de conversas arquivadas passa
+  // `threadId`. Entrada normal em `/assistente` fica sempre nova.
+  const threadIdParam = searchParams.get('threadId') ?? '';
 
   useEffect(() => {
     if (!getSessionToken()) {
@@ -357,47 +586,61 @@ export default function AssistentePage() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(!!prefill);
-  // Round 4 §C-NEW-8 — `/assistente` agora abre numa "landing" tipo Mesa
-  // Home (eyebrow ASSISTENTE + greeting da continuation API + chips +
-  // input). Bubbles de chat só aparecem quando o customer envia a 1ª
-  // mensagem nesta sessão. Voltar pra `/assistente` (ex.: vindo de
-  // /cardapio) recomeça em landing — histórico completo fica em
-  // `/chat-history`. Com prefill, já entra direto em chat (skip landing).
-  const [chatStarted, setChatStarted] = useState<boolean>(!!prefill);
+  // `/assistente` sem `threadId` sempre abre uma conversa ativa nova por
+  // visita. Histórico salvo no Mongo só volta ao chat ativo pelo menu de
+  // conversas, quando o usuário escolhe continuar aquele thread.
+  const [chatStarted, setChatStarted] = useState<boolean>(!!prefill || !!threadIdParam);
+  const [historyLoading, setHistoryLoading] = useState<boolean>(!!threadIdParam);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [landingGreeting, setLandingGreeting] = useState<string | null>(null);
   // suggestions agora carrega chips canônicos (ChipCanon) em vez de só
   // strings — herdamos do backend `res.chips` quando uma tool dispatched
   // emitiu chips reativos. Fallback é DEFAULT_SUGGESTIONS (idle state).
   const [suggestions, setSuggestions] = useState<ChipCanon[]>(DEFAULT_SUGGESTIONS);
   const [chipBusy, setChipBusy] = useState(false);
+  const [continuationRefreshKey, setContinuationRefreshKey] = useState(0);
+  const [expandedInputPlaceholder, setExpandedInputPlaceholder] = useState<string | null>(null);
+  const [pendingOrderAdd, setPendingOrderAdd] = useState<PendingOrderAdd | null>(null);
   // Round 3 Cat 4 (V20 chat): última tool dispatched neste turno — usa
   // pra renderizar a eyebrow `··· USANDO ADD_TO_ORDER ···` antes do
   // bubble do assistente.
   const [lastToolName, setLastToolName] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoSentRef = useRef(false);
+  const conversationIdRef = useRef<string | null>(null);
+  if (!conversationIdRef.current) {
+    conversationIdRef.current = newAssistantConversationId();
+  }
 
-  // Round 4 §C-NEW-8 — em vez de carregar histórico inteiro como bubbles,
-  // /assistente abre num "landing" com greeting da continuation API
-  // (mesmo endpoint que a Mesa Home consome). Histórico completo fica em
-  // `/chat-history` (rota dedicada). Quando customer envia 1ª mensagem,
-  // o greeting vira a 1ª bubble do assistant + vai a user msg + resposta.
   useEffect(() => {
-    if (!slug || prefill) return; // prefill: já vai em chat mode
+    if (!slug || !session.sessionId) return;
+    recordCustomerEvent(slug, 'assistant_opened', {
+      source: threadIdParam ? 'thread' : prefill ? 'prefill' : 'landing',
+    });
+  }, [slug, session.sessionId, threadIdParam, prefill]);
+
+  useEffect(() => {
+    const refresh = () => setContinuationRefreshKey((key) => key + 1);
+    window.addEventListener('customer:continuation-refresh', refresh);
+    return () => window.removeEventListener('customer:continuation-refresh', refresh);
+  }, []);
+
+  // A tela ativa não hidrata chat antigo por padrão. O histórico completo
+  // fica em `/chat-history`; aqui carregamos só o greeting de continuation
+  // para a landing normal antes da primeira mensagem da nova conversa.
+  useEffect(() => {
+    if (!slug || prefill || threadIdParam || !session.sessionId || chatStarted) return;
     const load = async () => {
       try {
-        const qs = new URLSearchParams({
-          tenantId: slug,
-          customerId: session.customerId ?? '',
-          isReturning: String(session.isReturning ?? false),
-          customerName: session.customerName ?? '',
+        const res = await apiPost<ContinuationPostResponse>(`/${slug}/continuation`, {
+          tableSessionId: session.sessionId,
+          customerId: session.customerId ?? undefined,
+          hasDraftOrder: draftItems.length > 0,
+          isReturning: session.isReturning ?? false,
         });
-        const res = await apiGet<{
-          rendered: string | null;
-          chips?: ChipCanon[];
-        }>(`/${slug}/continuation?${qs.toString()}`);
-        if (res?.rendered) {
-          setLandingGreeting(res.rendered);
+        if (res?.text) {
+          setLandingGreeting(res.text);
+          clearDeliveredContinuationHint(res.kind);
           if (res.chips && res.chips.length > 0) {
             setSuggestions(res.chips as ChipCanon[]);
           }
@@ -407,7 +650,51 @@ export default function AssistentePage() {
       }
     };
     load();
-  }, [slug, prefill, session.customerId, session.isReturning, session.customerName]);
+  }, [
+    slug,
+    prefill,
+    threadIdParam,
+    chatStarted,
+    session.sessionId,
+    session.customerId,
+    session.isReturning,
+    session.customerName,
+    draftItems.length,
+    continuationRefreshKey,
+  ]);
+
+  // Continuação explícita pelo menu de conversas com IA. Esse é o único
+  // caminho que reidrata Mongo no chat ativo; entrar direto no assistente
+  // não procura thread antiga nem thread do dia.
+  useEffect(() => {
+    if (!slug || !threadIdParam) return;
+    let cancelled = false;
+    setActiveThreadId(null);
+    (async () => {
+      try {
+        const msgs = await listMessages(slug, threadIdParam);
+        if (cancelled) return;
+        if (msgs.length > 0) {
+          setMessages(mapHistoryToChat(msgs));
+          setChatStarted(true);
+          setActiveThreadId(threadIdParam);
+        } else {
+          setChatStarted(false);
+          setActiveThreadId(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setChatStarted(false);
+          setActiveThreadId(null);
+        }
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, threadIdParam]);
 
   useEffect(() => {
     // Nas primeiras mensagens o "smooth" faz o chat animar de baixo pra cima
@@ -485,6 +772,131 @@ export default function AssistentePage() {
   // `/salon/tables/adjacent?from={ourTable}` once the BE endpoint lands.
   const salonTables = useMemo<SalonTable[]>(() => [], []);
 
+  const appendToolFeedback = (content: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `tool-feedback-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        role: 'ai',
+        content,
+      },
+    ]);
+  };
+
+  const pendingOrderTotalCents = useMemo(
+    () =>
+      pendingOrderAdd?.items.reduce(
+        (sum, item) => sum + item.priceCents * item.quantity,
+        0,
+      ) ?? 0,
+    [pendingOrderAdd],
+  );
+
+  const queueOrderAdd = (
+    itemsToAdd: PendingOrderItem[],
+    options?: { sourceMessageId?: string; openReviewAfterAdd?: boolean },
+  ) => {
+    if (itemsToAdd.length === 0 || pendingOrderAdd) return;
+    setPendingOrderAdd({
+      items: itemsToAdd,
+      sourceMessageId: options?.sourceMessageId,
+      openReviewAfterAdd: options?.openReviewAfterAdd,
+    });
+  };
+
+  const closePendingOrderAdd = () => {
+    setPendingOrderAdd(null);
+    setPlacingOrder(false);
+  };
+
+  const confirmPendingOrderAdd = (mode: CommandModeChoice) => {
+    if (!pendingOrderAdd) return;
+    pendingOrderAdd.items.forEach((item) => {
+      addItem({
+        menuItemId: item.id,
+        name: item.name,
+        priceCents: item.priceCents,
+        quantity: item.quantity,
+        note: item.note,
+        commandMode: mode,
+      });
+    });
+    if (pendingOrderAdd.sourceMessageId) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === pendingOrderAdd.sourceMessageId ? { ...m, orderPlaced: true } : m,
+        ),
+      );
+    }
+    const label =
+      pendingOrderAdd.items.length === 1
+        ? pendingOrderAdd.items[0].name
+        : `${pendingOrderAdd.items.length} itens`;
+    appendToolFeedback(
+      `${label} ${pendingOrderAdd.items.length === 1 ? 'foi adicionado' : 'foram adicionados'} à ${
+        mode === 'individual' ? 'sua comanda' : 'comanda da mesa'
+      }.`,
+    );
+    const shouldOpenReview = pendingOrderAdd.openReviewAfterAdd;
+    setPendingOrderAdd(null);
+    setPlacingOrder(false);
+    if (shouldOpenReview) {
+      push(`/${slug}/pedido/revisar`);
+    }
+  };
+
+  const resolveToolMenuItem = async (
+    call: AssistantToolCall,
+  ): Promise<{ id: string; name: string; priceCents: number } | null> => {
+    const payload = actionPayload(call);
+    const args = call.arguments ?? {};
+    const itemId =
+      stringValue(payload.itemId) ??
+      stringValue(args.itemId) ??
+      stringValue(args.item_id) ??
+      stringValue(args.menuItemId);
+    if (!itemId) return null;
+
+    const payloadName = stringValue(payload.name) ?? stringValue(payload.itemName);
+    const payloadPrice = numberValue(payload.priceCents) ?? numberValue(payload.price_cents);
+    if (payloadName && payloadPrice !== null) {
+      return { id: itemId, name: payloadName, priceCents: payloadPrice };
+    }
+
+    try {
+      const item = await apiGet<MenuItemToolPayload>(`/${slug}/menu/items/${itemId}`);
+      const name = item.name;
+      const priceCents = numberValue(item.priceCents) ?? numberValue(item.price_cents);
+      if (name && priceCents !== null) {
+        return { id: item.id, name, priceCents };
+      }
+    } catch (err) {
+      console.warn('[chat] failed to resolve menu item for tool:', itemId, err);
+    }
+    return null;
+  };
+
+  const draftSummaryText = () => {
+    if (draftItems.length === 0) {
+      return 'Seu pedido tá vazio. Quer dar uma olhada no cardápio?';
+    }
+    const lines = draftItems.map((it) => {
+      const lineTotal = it.priceCents * it.quantity;
+      return `- ${it.quantity}x ${it.name} — ${formatCurrency(lineTotal)}`;
+    });
+    return `Seu pedido até agora:\n${lines.join('\n')}\nTotal: ${formatCurrency(totalCents)}`;
+  };
+
+  const findDraftLine = (itemOrDraftId: string | null) => {
+    if (itemOrDraftId) {
+      const exact = draftItems.find(
+        (it) => it.draftId === itemOrDraftId || it.menuItemId === itemOrDraftId,
+      );
+      if (exact) return exact;
+    }
+    return draftItems.length === 1 ? draftItems[0] : null;
+  };
+
   /**
    * Dispatch a tool call coming back from the AI service. Most canonical
    * tools resolve server-side and just produce text in `res.response`; this
@@ -510,6 +922,22 @@ export default function AssistentePage() {
     call: AssistantToolCall,
   ): Promise<void> => {
     const name = call.name;
+    // Round C (chat UX polish) — para tools text-only (ask_about_restaurant,
+    // search_dish, etc.), a aiMsg principal já carregou o texto da resposta.
+    // Não precisamos do stub bubble "OK" nem de side-effect; early-return
+    // mantém o transcript limpo (só o bubble texto + eyebrow `··· USANDO X ···`
+    // que vem do `eyebrowTool` em sendMessage, sem stub duplicado).
+    if (TEXT_ONLY_TOOLS.has(name)) return;
+    // Round D (chat UX polish) — para tools silent-path (overlay/route sem
+    // bubble texto como resposta principal), esperamos 1.5s ANTES de disparar
+    // o efeito. O `setMessages` em `sendMessage` já enfileirou o aiMsg com
+    // `toolCall`, então o `ToolCallIndicator` (eyebrow `··· USANDO X ···`)
+    // renderiza nesta janela e o usuário vê "Assistente está usando view_menu..."
+    // antes do overlay subir — previne sensação de "engasgo" (efeito instantâneo
+    // dava impressão de IA sem trabalho intermediário).
+    if (SILENT_PATH_TOOLS.has(name)) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
     // 1) Tools the FE owns end-to-end.
     if (name === 'request_table_merge') {
       const enriched = await tableMerge.handleToolCall({
@@ -553,11 +981,160 @@ export default function AssistentePage() {
     // entrada/principal) — repassamos como query param ?tab= pro iframe
     // do cardápio, que já entende "bebidas" como filtro de tab.
     if (name === 'view_menu') {
-      const cat = (call.arguments?.category as string | undefined)?.toLowerCase().trim();
-      const tab = cat === 'bebida' || cat === 'bebidas' || cat === 'drink' || cat === 'drinks'
-        ? 'bebidas'
-        : undefined;
-      openMenuOverlay({ tab });
+      const category =
+        typeof call.arguments?.category === 'string'
+          ? call.arguments.category
+          : null;
+      openMenuOverlay(category);
+      return;
+    }
+
+    // Pagamento é navegação primária. Se o LLM também tiver emitido
+    // call_waiter no mesmo turno, o batch dispatcher abaixo remove o chamado.
+    if (name === 'open_payment_screen') {
+      if (draftItems.length > 0) {
+        appendToolFeedback('Antes de pagar, confirme seu pedido para abrir a conta.');
+        push(`/${slug}/pedido/revisar`);
+        return;
+      }
+      push(`/${slug}/pagamento`);
+      return;
+    }
+
+    if (name === 'pay_full') {
+      if (draftItems.length > 0) {
+        appendToolFeedback('Antes de pagar, confirme seu pedido para abrir a conta.');
+        push(`/${slug}/pedido/revisar`);
+        return;
+      }
+      push(`/${slug}/pagamento?mode=table`);
+      return;
+    }
+
+    if (name === 'pay_individual') {
+      if (draftItems.length > 0) {
+        appendToolFeedback('Antes de pagar, confirme seu pedido para abrir a conta.');
+        push(`/${slug}/pedido/revisar`);
+        return;
+      }
+      push(`/${slug}/pagamento?mode=individual`);
+      return;
+    }
+
+    if (name === 'split_bill') {
+      if (draftItems.length > 0) {
+        appendToolFeedback('Antes de dividir a conta, confirme seu pedido.');
+        push(`/${slug}/pedido/revisar`);
+        return;
+      }
+      push(`/${slug}/pagamento/dividir`);
+      return;
+    }
+
+    if (name === 'add_to_order') {
+      const item = await resolveToolMenuItem(call);
+      if (!item) {
+        appendToolFeedback('Não consegui localizar esse item no cardápio para atualizar seu pedido.');
+        return;
+      }
+      const payload = actionPayload(call);
+      const args = call.arguments ?? {};
+      const quantity = positiveInt(payload.quantity ?? args.quantity ?? args.qty, 1);
+      const note =
+        stringValue(payload.notes) ??
+        stringValue(payload.note) ??
+        stringValue(args.notes) ??
+        stringValue(args.note) ??
+        undefined;
+      queueOrderAdd([{
+        id: item.id,
+        name: item.name,
+        priceCents: item.priceCents,
+        quantity,
+        note,
+      }]);
+      return;
+    }
+
+    if (name === 'view_order') {
+      if (draftItems.length > 0) {
+        appendToolFeedback(draftSummaryText());
+        push(`/${slug}/pedido/revisar`);
+        return;
+      }
+      push(`/${slug}/pedido`);
+      return;
+    }
+
+    if (name === 'remove_from_cart') {
+      const payload = actionPayload(call);
+      const args = call.arguments ?? {};
+      const itemId =
+        stringValue(payload.removedItemId) ??
+        stringValue(payload.itemId) ??
+        stringValue(args.itemId) ??
+        stringValue(args.item_id);
+      const line = findDraftLine(itemId);
+      if (!line) {
+        appendToolFeedback('Não encontrei esse item no pedido atual.');
+        return;
+      }
+      removeItem(line.draftId);
+      return;
+    }
+
+    if (name === 'change_order') {
+      const payload = actionPayload(call);
+      const args = call.arguments ?? {};
+      const changes = isRecord(payload.changes)
+        ? payload.changes
+        : isRecord(args.changes)
+          ? args.changes
+          : {};
+      const itemId =
+        stringValue(payload.itemId) ??
+        stringValue(args.itemId) ??
+        stringValue(args.item_id);
+      const line = findDraftLine(itemId);
+      if (!line) {
+        appendToolFeedback('Não encontrei esse item no pedido atual.');
+        return;
+      }
+
+      const nextQuantity = numberValue(
+        changes.quantity ?? changes.qty ?? payload.quantity ?? args.quantity ?? args.qty,
+      );
+      const nextNote =
+        stringValue(changes.notes) ??
+        stringValue(changes.note) ??
+        stringValue(payload.notes) ??
+        stringValue(payload.note) ??
+        stringValue(args.notes) ??
+        stringValue(args.note);
+      const patch: { quantity?: number; note?: string } = {};
+      if (nextQuantity !== null) {
+        patch.quantity = Math.max(1, Math.min(20, Math.floor(nextQuantity)));
+      }
+      if (nextNote !== null) {
+        patch.note = nextNote;
+      }
+      if (Object.keys(patch).length > 0) {
+        updateItem(line.draftId, patch);
+      }
+      return;
+    }
+
+    if (name === 'cancel_order') {
+      clearDraftOrder();
+      return;
+    }
+
+    if (name === 'confirm_order') {
+      if (draftItems.length === 0) {
+        appendToolFeedback('Seu pedido tá vazio. Quer escolher algo no cardápio?');
+        return;
+      }
+      push(`/${slug}/pedido/revisar`);
       return;
     }
 
@@ -568,11 +1145,6 @@ export default function AssistentePage() {
       'search_dish',
       'check_allergens',
       'compare_dishes',
-      'view_order',
-      'split_bill',
-      'pay_individual',
-      'pay_full',
-      'open_payment_screen',
       'delete_chat',
       'delete_all_chats',
       'view_courtesy',
@@ -599,52 +1171,28 @@ export default function AssistentePage() {
   };
 
   /**
-   * Core order placement: adiciona itens ao draft, cria o pedido e leva pro
-   * countdown de 15s. Usado tanto pelo botao "Sim, pedir" quanto pelo fluxo
-   * por chat ("quero os dois").
+   * Core order placement vindo da IA: antes de adicionar qualquer item,
+   * abre a mesma escolha de comanda do cardápio. Só depois do cliente
+   * escolher individual/mesa os itens entram no draft.
    */
   const placeOrderForItems = async (picked: LinkedItem[], sourceMessageId: string) => {
-    if (placingOrder || picked.length === 0) return;
+    if (placingOrder || pendingOrderAdd || picked.length === 0) return;
     setPlacingOrder(true);
-
-    const mode: 'individual' | 'table' = session.customerId ? 'individual' : 'table';
-    picked.forEach((it) => {
-      addItem({
-        menuItemId: it.id,
+    queueOrderAdd(
+      picked.map((it) => ({
+        id: it.id,
         name: it.name,
         priceCents: it.priceCents,
         quantity: 1,
-        commandMode: mode,
-      });
-    });
-
-    try {
-      const res = await apiPost<{ id: string }>(`/${slug}/orders`, {
-        billingMode: mode,
-        visitId: session.visitId || undefined,
-        customerId: session.customerId || undefined,
-        items: picked.map((it) => ({ menuItemId: it.id, quantity: 1 })),
-      });
-      setMessages((prev) =>
-        prev.map((m) => (m.id === sourceMessageId ? { ...m, orderPlaced: true } : m)),
-      );
-      push(`/${slug}/pedido/confirmando?orderId=${res.id}`);
-    } catch {
-      setPlacingOrder(false);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `err-${Date.now()}`,
-          role: 'ai',
-          content: 'Não consegui enviar seu pedido agora. Tente de novo em instantes.',
-        },
-      ]);
-    }
+      })),
+      { sourceMessageId, openReviewAfterAdd: true },
+    );
   };
 
   const sendMessage = async (text: string, options?: { skipUserBubble?: boolean }) => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    setExpandedInputPlaceholder(null);
 
     // Round 4 §C-NEW-8: 1ª mensagem do customer triggera transição
     // landing→chat. O greeting que estava na landing vira o 1º AI bubble,
@@ -703,7 +1251,7 @@ export default function AssistentePage() {
           {
             id: `ai-${Date.now()}`,
             role: 'ai',
-            content: `Perfeito! Já estou pedindo ${names} para você.`,
+            content: `Perfeito. Escolha em qual comanda eu coloco ${names}.`,
           },
         ]);
         await placeOrderForItems(picked, lastAiWithItems.id);
@@ -718,6 +1266,8 @@ export default function AssistentePage() {
         message: trimmed,
         customerId: session.customerId || undefined,
         itemId: itemId || undefined,
+        conversationId: activeThreadId ? undefined : conversationIdRef.current ?? undefined,
+        continueThreadId: activeThreadId ?? undefined,
       });
 
       // V20 canon F04_Chat: ToolCallIndicator + bubble texto + chips
@@ -726,15 +1276,38 @@ export default function AssistentePage() {
       // aiMsg pra que o render mostre o indicador ANTES do bubble texto,
       // dentro do mesmo `<div>` esquerdo. Antes ficava num bloco global
       // no rodapé (`lastToolName`) que quebrava o layout.
-      const firstTool = res.toolCalls && res.toolCalls.length > 0 ? res.toolCalls[0] : null;
+      // Pagamento é navegação primária. Se o LLM também tiver emitido
+      // call_waiter no mesmo turno, removemos o chamado (open_payment_screen
+      // vai pra frente). Sort garante que o handler de pagamento dispara
+      // antes de qualquer outro side-effect.
+      const displayToolCalls = res.toolCalls?.some((tc) => tc.name === 'open_payment_screen')
+        ? res.toolCalls
+            .filter((tc) => tc.name !== 'call_waiter')
+            .sort((a, b) =>
+              a.name === 'open_payment_screen'
+                ? -1
+                : b.name === 'open_payment_screen'
+                  ? 1
+                  : 0,
+            )
+        : (res.toolCalls ?? []);
+      // Round C (chat UX polish) — eyebrow `··· USANDO X ···` aparece pra
+      // TODAS as tools dispatchadas (silent-path, card visual ou text-only).
+      // Decisão V20: o user quer ver explicitamente o que a IA tá fazendo em
+      // qualquer caso — transparência > minimalismo. `dispatchToolCall` ainda
+      // skipa o stub bubble "OK" pras text-only tools (a resposta principal já
+      // carrega o texto), mas o eyebrow continua marcado pra que o user saiba
+      // qual ferramenta foi acionada.
+      const firstTool = displayToolCalls.length > 0 ? displayToolCalls[0] : null;
+      const eyebrowTool = firstTool;
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         role: res.wasBlocked ? 'blocked' : 'ai',
         content: res.response,
         linkedItems: res.linkedItems && res.linkedItems.length > 0 ? res.linkedItems : undefined,
         selectedIds: [],
-        toolCall: firstTool
-          ? { name: firstTool.name, category: categorizeToolName(firstTool.name) }
+        toolCall: eyebrowTool
+          ? { name: eyebrowTool.name, category: categorizeToolName(eyebrowTool.name) }
           : undefined,
         // LGPD notice flow · the AI service signals this via `toolHint`.
         // We do NOT paraphrase the canonical text — it lives in
@@ -751,6 +1324,11 @@ export default function AssistentePage() {
             : undefined,
       };
       setMessages((prev) => [...prev, aiMsg]);
+      // Round D (chat UX polish): assim que o aiMsg entra no transcript, o
+      // typing-dots indicator deixa de fazer sentido — o `ToolCallIndicator`
+      // inline já assume o papel de "IA está agindo". Sem isso, durante os
+      // 1.5s do delay silent-path teríamos eyebrow + dots simultaneamente.
+      setLoading(false);
 
       // K-1 fix (round 3): chips canon das tools dispatchadas têm
       // prioridade sobre `res.suggestions` (que é o trio estático ou
@@ -774,8 +1352,8 @@ export default function AssistentePage() {
       // Round 3 Cat 4 (V20 chat): atualiza eyebrow `··· USANDO X ···`
       // baseado na primeira tool dispatched neste turno. Limpamos no
       // próximo turno do user (handler do submit).
-      if (res.toolCalls && res.toolCalls.length > 0) {
-        setLastToolName(res.toolCalls[0].name);
+      if (displayToolCalls.length > 0) {
+        setLastToolName(displayToolCalls[0].name);
       } else {
         setLastToolName(null);
       }
@@ -784,8 +1362,8 @@ export default function AssistentePage() {
       // Fired AFTER the bubble is in the DOM so the order in the transcript
       // is `bubble → tool effect`. Errors are caught per-call inside dispatch
       // — one failing tool doesn't poison the whole turn.
-      if (res.toolCalls && res.toolCalls.length > 0) {
-        for (const tc of res.toolCalls) {
+      if (displayToolCalls.length > 0) {
+        for (const tc of displayToolCalls) {
           try {
             await dispatchToolCall(tc);
           } catch (e) {
@@ -850,7 +1428,7 @@ export default function AssistentePage() {
   };
 
   const confirmLinkedOrder = async (messageId: string) => {
-    if (placingOrder) return;
+    if (placingOrder || pendingOrderAdd) return;
     const msg = messages.find((m) => m.id === messageId);
     if (!msg || !msg.linkedItems || !msg.selectedIds || msg.selectedIds.length === 0) return;
 
@@ -947,14 +1525,26 @@ export default function AssistentePage() {
       activeHref={`/${slug}/assistente`}
       noMainPadding
     >
-      <div className="flex flex-1 flex-col">
-        <div className="gpu-layer flex flex-1 flex-col gap-3.5 overflow-auto px-[22px] pb-4 pt-3">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="gpu-layer flex min-h-0 flex-1 flex-col gap-3.5 overflow-auto px-[22px] pb-4 pt-3">
+          {/* Round 22 §A/§D — loader inline enquanto hidrata o histórico
+              persistido. Some logo que listMessages resolve (sucesso ou
+              erro). Sem ele teríamos um flash da landing antes do chat
+              aparecer (ruim em conexões 4G lentas). */}
+          {historyLoading && (
+            <div
+              data-testid="assistente-history-loading"
+              className="flex flex-1 items-center justify-center"
+            >
+              <div className="text-[13px] text-mute">Carregando conversa…</div>
+            </div>
+          )}
           {/* Round 4 §C-NEW-8: landing view (idle) · 2 PillButtons grandes
               acima do greeting do LLM, alinhado ao layout da Mesa Home.
               Ao 1º send do customer, chatStarted vira true e essa view
               é substituída pelos bubbles de chat (que pre-pendam o
               greeting como 1º AI message). */}
-          {!chatStarted && (
+          {!chatStarted && !historyLoading && (
             <div
               data-testid="assistente-landing"
               className="flex flex-1 flex-col justify-center gap-7"
@@ -1082,11 +1672,13 @@ export default function AssistentePage() {
                         >
                           <div className="relative aspect-[4/3] w-full bg-surface">
                             {it.imageUrl ? (
-                              <img
+                              <Image
                                 src={it.imageUrl}
                                 alt={it.name}
-                                className="h-full w-full object-cover"
-                                loading="lazy"
+                                fill
+                                sizes="148px"
+                                className="object-cover"
+                                unoptimized
                               />
                             ) : (
                               <div className="flex h-full w-full items-center justify-center text-[22px] text-faint">
@@ -1137,10 +1729,10 @@ export default function AssistentePage() {
                       <button
                         type="button"
                         onClick={() => confirmLinkedOrder(msg.id)}
-                        disabled={placingOrder}
+                        disabled={placingOrder || !!pendingOrderAdd}
                         className="flex-1 rounded-full bg-ink px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-60"
                       >
-                        {placingOrder ? 'Enviando…' : 'Sim, pedir'}
+                        {pendingOrderAdd ? 'Escolhendo…' : placingOrder ? 'Enviando…' : 'Sim, pedir'}
                       </button>
                       <button
                         type="button"
@@ -1189,33 +1781,34 @@ export default function AssistentePage() {
             {/* Round 3 Cat 1 / Cat 13: usa SuggestionChip em vez do
                 <button> plano. Chip canônico (action: send|navigate|expand)
                 permite contextual input expand pra send_complaint etc. */}
-            {suggestions.map((chip) => (
-              <SuggestionChip
-                key={chip.id}
-                chip={chip}
-                disabled={loading || chipBusy}
-                onTap={async (c) => {
-                  if (chipBusy) return;
-                  setChipBusy(true);
-                  try {
-                    const txt = chipText(c as ChipCanon);
-                    if (c.action === 'navigate') {
-                      const dest = txt.startsWith('/') ? txt : `/${slug}/${txt}`;
-                      router.push(dest);
-                    } else if (c.action === 'expand') {
-                      // 'expand' cai no fallback `send` — sem primitivo
-                      // dedicado, o payload do chip vira mensagem direta.
-                      await sendMessage(txt);
-                    } else {
-                      // 'send' default
-                      await sendMessage(txt);
+            {suggestions.map((chip) => {
+              const normalizedChip = normalizeChipCopy(chip);
+              return (
+                <SuggestionChip
+                  key={chip.id}
+                  chip={normalizedChip}
+                  disabled={loading || chipBusy}
+                  onTap={async (c) => {
+                    if (chipBusy) return;
+                    setChipBusy(true);
+                    try {
+                      const txt = chipText(c as ChipCanon);
+                      if (c.action === 'navigate') {
+                        router.push(chipNavigationDestination(slug, txt));
+                      } else if (c.action === 'expand') {
+                        setExpandedInputPlaceholder(txt);
+                        setLastToolName(lastToolName ?? 'send_message_to_manager');
+                      } else {
+                        // 'send' default
+                        await sendMessage(txt);
+                      }
+                    } finally {
+                      setTimeout(() => setChipBusy(false), 800);
                     }
-                  } finally {
-                    setTimeout(() => setChipBusy(false), 800);
-                  }
-                }}
-              />
-            ))}
+                  }}
+                />
+              );
+            })}
           </div>
         </div>
 
@@ -1226,10 +1819,11 @@ export default function AssistentePage() {
             // quando uma tool acabou de rodar — sinaliza que o próximo
             // input vai pra mesa (host/staff) e não mais pra IA conversar.
             placeholder={
-              lastToolName === 'send_complaint' ||
+              expandedInputPlaceholder ??
+              (lastToolName === 'send_complaint' ||
               lastToolName === 'send_message_to_manager'
                 ? 'Mensagem para a casa'
-                : 'Pergunte alguma coisa...'
+                : 'Pergunte alguma coisa...')
             }
             value={input}
             onChange={setInput}
@@ -1242,6 +1836,13 @@ export default function AssistentePage() {
       {/* Salon-map overlay · driven by the LLM tool `request_table_merge`
           when no `targetTable` is provided. Tap on a table resolves the
           pending tool-call promise (see `useTableMerge`). */}
+      <CommandPicker
+        open={pendingOrderAdd !== null}
+        priceCents={pendingOrderTotalCents}
+        onClose={closePendingOrderAdd}
+        onConfirm={confirmPendingOrderAdd}
+      />
+
       <OverlaySalonMap
         open={tableMerge.overlayOpen}
         tables={salonTables}

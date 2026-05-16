@@ -9,10 +9,6 @@
 // Dados reais: GET /staff/:id pra nome/role/cpf/email/phone (round 18
 // migration 041 expandiu).
 //
-// Métricas (KPIs + chart + comparativo): mock por enquanto. Backend de
-// performance metrics fica pra Onda 4 (precisa agregar orders/calls/
-// ratings por staff_id × periodo). Marcado com TODO claro no UI.
-
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -29,7 +25,7 @@ import {
   MBottomNav,
   Icon,
 } from '../../components/manager';
-import { manager, type StaffRosterEntry } from '../../lib/api/manager';
+import { manager, type StaffPerformance, type StaffRosterEntry } from '../../lib/api/manager';
 
 const STAFF_COLORS = [
   '#4F6BFF', '#E37D2F', '#7A4FBE', '#C43A3A', '#0B7A8B',
@@ -60,6 +56,19 @@ function roleLabel(role: string): string {
   };
   return map[role] ?? role;
 }
+function formatCurrency(cents: number): string {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    maximumFractionDigits: 0,
+  }).format(cents / 100);
+}
+function formatDuration(seconds: number): string {
+  if (!seconds) return '0s';
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return minutes > 0 ? `${minutes}m ${rest}s` : `${rest}s`;
+}
 
 type Window = 'today' | '7d' | '30d';
 
@@ -86,6 +95,8 @@ export function ScreenManagerStaffDetail({
 
   const [staff, setStaff] = useState<StaffRosterEntry | null>(null);
   const [loading, setLoading] = useState(true);
+  const [performance, setPerformance] = useState<StaffPerformance | null>(null);
+  const [performanceLoading, setPerformanceLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeWindow, setActiveWindow] = useState<Window>('7d');
   const [stubMsg, setStubMsg] = useState<string | null>(null);
@@ -98,10 +109,9 @@ export function ScreenManagerStaffDetail({
     let cancelled = false;
     setLoading(true);
     manager(slug)
-      .staffRoster.list()
-      .then((rows) => {
+      .staffRoster.get(staffId)
+      .then((found) => {
         if (cancelled) return;
-        const found = rows.find((r) => r.id === staffId);
         if (!found) {
           setErrorMsg('Funcionário não encontrado.');
         } else {
@@ -119,6 +129,25 @@ export function ScreenManagerStaffDetail({
     };
   }, [slug, staffId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setPerformanceLoading(true);
+    manager(slug)
+      .staffRoster.performance(staffId, activeWindow)
+      .then((res) => {
+        if (!cancelled) setPerformance(res);
+      })
+      .catch(() => {
+        if (!cancelled) setPerformance(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPerformanceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, staffId, activeWindow]);
+
   // Mock weekly data (canvas exemplo). TODO Onda 4 backend.
   const days = [
     { d: 'Seg', v: 1240 },
@@ -131,6 +160,7 @@ export function ScreenManagerStaffDetail({
   ];
   const maxV = Math.max(...days.map((d) => d.v));
 
+  const kpis = performance?.kpis;
   const goEdit = () => router.push(`/manager/equipe/${staffId}/editar?slug=${slug}`);
   const goBack = () => router.push('/manager/equipe');
 
@@ -216,10 +246,10 @@ export function ScreenManagerStaffDetail({
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  ★ 4,7
+                  {kpis?.callsAnswered ?? 0}
                 </div>
                 <div style={{ fontSize: 10, color: C.faint, fontWeight: 600 }}>
-                  mock · roadmap
+                  chamados
                 </div>
               </div>
             </div>
@@ -267,38 +297,37 @@ export function ScreenManagerStaffDetail({
               <div style={{ display: 'flex', gap: 10 }}>
                 <MStat
                   dark={dark}
-                  label="Vendas no turno"
-                  value="R$ 1.520"
-                  sub="+8% vs média"
+                  label="Receita atendida"
+                  value={performanceLoading ? '...' : formatCurrency(kpis?.totalRevenue ?? 0)}
+                  sub={`${kpis?.ordersServed ?? 0} pedidos servidos`}
                   trend={{ dir: 'up' }}
-                  help="Total que vendeu desde que entrou hoje."
+                  help="Receita dos pedidos entregues atribuídos a este funcionário no período."
                 />
                 <MStat
                   dark={dark}
                   label="Mesas atendidas"
-                  value="6"
-                  sub="média 5,2"
+                  value={performanceLoading ? '...' : String(kpis?.sessionsHandled ?? 0)}
+                  sub={activeWindow === 'today' ? 'hoje' : activeWindow === '7d' ? '7 dias' : '30 dias'}
                   trend={{ dir: 'up' }}
-                  help="Mesas que passaram por ele/ela neste turno."
+                  help="Sessões de mesa encerradas por este funcionário."
                 />
               </div>
               <div style={{ display: 'flex', gap: 10 }}>
                 <MStat
                   dark={dark}
                   label="Tempo de resposta"
-                  value="1m 48s"
-                  sub="meta 2 min"
+                  value={performanceLoading ? '...' : formatDuration(kpis?.avgResponseSec ?? 0)}
+                  sub={`${kpis?.callsAnswered ?? 0} chamados atendidos`}
                   trend={{ dir: 'up' }}
-                  help="Quanto demora pra ir na mesa quando o cliente chama."
+                  help="Tempo médio entre o chamado do cliente e o atendimento registrado."
                 />
                 <MStat
                   dark={dark}
-                  label="Chamados escalados"
-                  value="1"
-                  sub="vs equipe 0,8"
-                  trend={{ dir: 'down' }}
-                  accent="#C43A3A"
-                  help="Vezes que outro precisou cobrir por ele/ela."
+                  label="Chamados atendidos"
+                  value={performanceLoading ? '...' : String(kpis?.callsAnswered ?? 0)}
+                  sub="garçom"
+                  trend={{ dir: 'up' }}
+                  help="Chamados de garçom reconhecidos por este funcionário."
                 />
               </div>
               <div
@@ -311,7 +340,7 @@ export function ScreenManagerStaffDetail({
                   fontFamily: MONO_FONT,
                 }}
               >
-                Métricas mock · backend de performance vem na Onda 4.
+                Dados do endpoint de performance · {activeWindow === 'today' ? 'hoje' : activeWindow === '7d' ? '7 dias' : '30 dias'}
               </div>
             </div>
 

@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSession } from '../../hooks/useSession';
+import { useDraftOrder } from '../../providers/DraftOrderProvider';
 import { ContinuationHome } from '../../components/ui/ContinuationHome';
 import { SuggestionChip } from '../../components/ui/SuggestionChip';
-import { apiGet } from '../../lib/api';
+import { apiPost } from '../../lib/api';
+import { clearDeliveredContinuationHint } from '../../lib/continuationHints';
 
 interface ContinuationChip {
   id: string;
@@ -24,6 +26,30 @@ interface ContinuationGetResponse {
   chips?: ContinuationChip[];
   subtitle?: string | null;
   primary_cta?: { label: string; action: string; payload: string } | null;
+}
+
+interface ContinuationPostResponse {
+  kind: string;
+  text: string;
+  chips?: ContinuationChip[];
+  meta?: {
+    subtitle?: unknown;
+    primary_cta?: unknown;
+  };
+}
+
+function primaryCta(value: unknown): ContinuationGetResponse['primary_cta'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const label = typeof record.label === 'string' ? record.label : '';
+  const action = typeof record.action === 'string' ? record.action : '';
+  const payload = typeof record.payload === 'string' ? record.payload : '';
+  if (!label || !action) return null;
+  return {
+    label,
+    action,
+    payload,
+  };
 }
 
 function chipPayloadText(chip: ContinuationChip): string {
@@ -47,6 +73,7 @@ export default function SlugIndex() {
   const params = useParams<{ slug: string }>();
   const router = useRouter();
   const session = useSession();
+  const { items: draftItems } = useDraftOrder();
   const [cont, setCont] = useState<ContinuationGetResponse | null>(null);
 
   // Pega kind via query param (apps/api home.service decide)
@@ -56,25 +83,39 @@ export default function SlugIndex() {
       : null;
 
   useEffect(() => {
-    if (!session.customerId) return;
+    if (!session.customerId || !session.sessionId) return;
     (async () => {
       try {
-        const qs = new URLSearchParams({
-          tenantId: params?.slug ?? '',
-          customerId: session.customerId ?? '',
-          isReturning: String(session.isReturning ?? false),
-          customerName: session.customerName ?? '',
-        });
-        if (kindFromUrl) qs.set('kind', kindFromUrl);
-        const res = await apiGet<ContinuationGetResponse>(
-          `/${params?.slug}/continuation?${qs.toString()}`,
+        const res = await apiPost<ContinuationPostResponse>(
+          `/${params?.slug}/continuation`,
+          {
+            tableSessionId: session.sessionId,
+            customerId: session.customerId ?? undefined,
+            clientKindHint: kindFromUrl ?? undefined,
+            hasDraftOrder: draftItems.length > 0,
+            isReturning: session.isReturning ?? false,
+          },
         );
-        if (res?.rendered) setCont(res);
+        if (res?.text) setCont({
+          message: { kind: res.kind },
+          rendered: res.text,
+          chips: res.chips ?? [],
+          subtitle: typeof res.meta?.subtitle === 'string' ? res.meta.subtitle : null,
+          primary_cta: primaryCta(res.meta?.primary_cta),
+        });
+        clearDeliveredContinuationHint(res?.kind);
       } catch {
         /* silently fail — continuation é progressive enhancement */
       }
     })();
-  }, [params?.slug, session.customerId, session.isReturning, session.customerName, kindFromUrl]);
+  }, [
+    params?.slug,
+    session.customerId,
+    session.sessionId,
+    session.isReturning,
+    kindFromUrl,
+    draftItems.length,
+  ]);
 
   // Customer novo · sem session · copy clássico de QR
   if (!session.customerId) {

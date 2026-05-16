@@ -23,23 +23,9 @@ def _chips_too_late_to_cancel() -> list[dict[str, Any]]:
 
 def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     order_id = args.get("orderId") or args.get("order_id")
-    if not order_id:
-        return ToolResult(error={"code": "missing_order", "message": "qual pedido?"})
-
-    if ctx.api_client:
-        try:
-            ctx.api_client("DELETE", f"/customer/orders/{order_id}", None)
-        except Exception as e:
-            status = getattr(e, "status_code", None)
-            if status == 409:
-                return ToolResult(
-                    message="Esse pedido já tá saindo da cozinha — não dá mais pra cancelar. Quer falar com o garçom?",
-                    chips=_chips_too_late_to_cancel(),
-                )
-            return ToolResult(error={"code": "api_error", "message": str(e)})
 
     return ToolResult(
-        message="Cancelado. Sem problema.",
+        message="Vou limpar esse pedido por aqui. Sem problema.",
         chips=_chips_after_cancel(),
-        action_payload={"orderCancelled": True, "orderId": order_id},
+        action_payload={"orderCancelled": True, "clearDraftOrder": True, "orderId": order_id},
     )

@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TenantModule } from '../tenant/tenant.module';
 import { RedisModule } from '../../infra/redis/redis.module';
 import { OrdersController } from './orders.controller';
+import { KitchenController } from './kitchen.controller';
 import { OrdersService } from './orders.service';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { OrderRatingsModule } from '../order-ratings/order-ratings.module';
@@ -18,7 +19,7 @@ import { CallerResolverModule } from '../../common/services/caller-resolver.modu
     CallerResolverModule,
     forwardRef(() => OrderRatingsModule),
   ],
-  controllers: [OrdersController],
+  controllers: [OrdersController, KitchenController],
   providers: [OrdersService, StaffOrSessionGuard],
   exports: [OrdersService],
 })

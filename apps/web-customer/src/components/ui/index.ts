@@ -29,8 +29,8 @@ export { QRPattern } from './QRPattern';
 export { Row } from './Row';
 export { SoftInput } from './SoftInput';
 
-// Chips com action='expand' caem no fallback `send` do chat page (não há
-// mais primitivo dedicado pra "expand").
+// Chips com action='expand' preparam o input contextual sem enviar payload
+// como mensagem direta.
 export { AssistantBlock, AssistantText, SuggestionChipRow } from './AssistantBlock';
 export { CallWaiterSheet } from './CallWaiterSheet';
 export { ContinuationHome } from './ContinuationHome';
