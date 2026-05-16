@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TenantModule } from '../tenant/tenant.module';
 import { ChatHistoryModule } from '../chat-history/chat-history.module';
 import { CustomerStaffMessagesModule } from '../customer-staff-messages/customer-staff-messages.module';
+import { LgpdModule } from '../lgpd/lgpd.module';
 import { CallerResolverModule } from '../../common/services/caller-resolver.module';
 import { AssistantController } from './assistant.controller';
 import { AssistantService } from './assistant.service';
@@ -17,6 +18,7 @@ import { AssistantService } from './assistant.service';
     TenantModule,
     ChatHistoryModule,
     CustomerStaffMessagesModule,
+    LgpdModule,
     CallerResolverModule,
   ],
   controllers: [AssistantController],

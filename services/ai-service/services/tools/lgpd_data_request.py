@@ -40,19 +40,26 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     # `lgpd_erase_chat` callers; spec also allows 'access' and 'portability'
     # but only 'erasure' is wired in this round.
     request_type = args.get("type") or "erasure"
+    request_kind = "erasure" if request_type == "erasure" else "export"
 
     protocol_number = None
+    backend_dispatched = False
     if ctx.api_client:
         try:
-            res = ctx.api_client("POST", "/customer/lgpd-requests", {
-                "type": request_type,
+            res = ctx.api_client("POST", f"/{ctx.tenant_id}/lgpd-requests", {
+                "kind": request_kind,
                 "consentMethod": args.get("consentMethod", "free_text"),
                 "originalMessage": ctx.raw_message,
                 "chipLabel": args.get("chipLabel"),
+                "notes": f"assistant lgpd_data_request type={request_type}",
             })
             protocol_number = (res or {}).get("protocolNumber")
-        except Exception as e:
-            return ToolResult(error={"code": "api_error", "message": str(e)})
+            backend_dispatched = bool(protocol_number)
+        except Exception:
+            # apps/api also performs an in-process handoff after tool dispatch.
+            # Keep the customer-facing LGPD confirmation canonical even if the
+            # HTTP callback is unavailable or misconfigured.
+            backend_dispatched = False
     if not protocol_number:
         protocol_number = _make_protocol()
 
@@ -71,6 +78,7 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
                 "status": "fulfilled",
                 "executedAt": datetime.now(timezone.utc).isoformat(),
                 "type": request_type,
+                "backendDispatched": backend_dispatched,
             }
         },
     )

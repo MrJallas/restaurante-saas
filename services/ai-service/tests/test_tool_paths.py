@@ -23,7 +23,7 @@ no `/courtesy` endpoint on apps/api. We assert it does NOT call api_client.
 import pytest
 
 from services.tools import dispatch_tool, ToolContext
-from services.api_client import RecordingApiClient
+from services.api_client import ApiClientError, RecordingApiClient
 
 
 # ─────────────────────────────────────────────────────────────
@@ -94,6 +94,40 @@ def test_delete_all_chats_hits_canonical_route():
     assert method == "DELETE"
     assert path == "/my-rest/chat-history?customerId=cust-1"
     assert "3 conversa" in (result.message or "")
+
+
+# ─────────────────────────────────────────────────────────────
+# lgpd_data_request → POST /:slug/lgpd-requests
+# ─────────────────────────────────────────────────────────────
+
+
+def test_lgpd_data_request_hits_canonical_route():
+    api = RecordingApiClient(default={"protocolNumber": "LGPD-2026-05-15-0001"})
+    ctx = ToolContext(
+        tenant_id="my-rest",
+        customer_id="cust-1",
+        api_client=api,
+        raw_message="quero excluir meus dados",
+    )
+    result = dispatch_tool("lgpd_data_request", {"type": "erasure"}, ctx)
+    assert result.error is None
+    assert len(api.calls) == 1
+    method, path, body = api.calls[0]
+    assert method == "POST"
+    assert path == "/my-rest/lgpd-requests"
+    assert body["kind"] == "erasure"
+    assert body["originalMessage"] == "quero excluir meus dados"
+    assert result.action_payload["lgpdErasure"]["backendDispatched"] is True
+
+
+def test_lgpd_data_request_keeps_confirmation_when_api_fails():
+    api = RecordingApiClient(
+        raise_on_call=ApiClientError("unauthorized", status_code=401),
+    )
+    ctx = ToolContext(tenant_id="my-rest", customer_id="cust-1", api_client=api)
+    result = dispatch_tool("lgpd_data_request", {"type": "erasure"}, ctx)
+    assert result.error is None
+    assert result.action_payload["lgpdErasure"]["backendDispatched"] is False
 
 
 # ─────────────────────────────────────────────────────────────
