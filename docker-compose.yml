@@ -130,7 +130,7 @@ services:
       # refused — localhost:3000 dentro do container não resolve pro NestJS
       # rodando em outra container. Aponta pro service docker `api` na
       # porta interna 3001 (host port também é 3001).
-      API_BASE_URL: ${API_BASE_URL:-http://api:3001/api/restaurant_dev}
+      API_BASE_URL: ${API_BASE_URL:-http://api:3001/api}
       API_REQUEST_TIMEOUT: ${API_REQUEST_TIMEOUT:-10}
       # Round 7 (B-NEW-25): API key compartilhada entre apps/api → ai-service.
       # Sem isso, ai-service estava sem auth alguma — combinado com porta

@@ -46,6 +46,21 @@ class CreateLgpdDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  consentMethod?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  originalMessage?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  chipLabel?: string;
 }
 
 class ListQueryDto {

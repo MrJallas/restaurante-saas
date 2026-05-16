@@ -37,6 +37,23 @@ def test_make_http_api_client_returns_callable():
     assert callable(fn)
 
 
+def test_make_http_api_client_strips_duplicate_tenant_prefix():
+    """Docker may pass API_BASE_URL ending in /api/<tenant>; paths stay canonical."""
+    response = MagicMock()
+    response.status_code = 200
+    response.content = b'{"ok": true}'
+    response.json.return_value = {"ok": True}
+    client = MagicMock()
+    client.request.return_value = response
+
+    with patch("httpx.Client", return_value=client):
+        fn = make_http_api_client("http://api:3001/api/restaurant_dev")
+        assert fn("DELETE", "/restaurant_dev/chat-history?customerId=c1") == {"ok": True}
+
+    client.request.assert_called_once()
+    assert client.request.call_args.kwargs["url"] == "/chat-history?customerId=c1"
+
+
 def test_main_builds_api_client_when_base_url_set(monkeypatch):
     """`_build_api_client()` returns a callable when API_BASE_URL is configured."""
     monkeypatch.setattr(main.settings, "API_BASE_URL", "http://localhost:3000")

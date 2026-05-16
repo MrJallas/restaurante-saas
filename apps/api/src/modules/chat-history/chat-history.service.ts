@@ -71,14 +71,17 @@ export class ChatHistoryService {
    * chamava esse método e a collection ficava em 0 docs apesar do flow
    * rodar.
    *
-   * @param ctx.threadId opcional — quando ausente, criamos uma nova thread
-   *   pelo par (tenantId, customerId, day-bucket). Customer com 5 idas no
-   *   mesmo dia compartilha thread; nova visita amanhã abre thread nova.
+   * @param ctx.continueThreadId opcional — usado só quando o cliente veio
+   *   do menu de conversas arquivadas e decidiu continuar aquele thread.
+   * @param ctx.conversationId opcional — id gerado no FE por abertura do
+   *   assistente; entrada normal em `/assistente` vira thread nova.
    */
   async appendTurn(ctx: {
     tenantId: string;
     customerId: string;
     sessionId: string;
+    conversationId?: string | null;
+    continueThreadId?: string | null;
     userMessage: string;
     assistantResponse: string;
     toolCalls?: unknown[] | null;
@@ -97,10 +100,31 @@ export class ChatHistoryService {
     try {
       const now = new Date();
       const expiresAt = new Date(now.getTime() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000);
-      // Day bucket: AAAA-MM-DD UTC. Cada visita cria thread nova quando
-      // muda o dia, mantendo turnos da mesma visita agrupados.
-      const dayBucket = now.toISOString().slice(0, 10);
-      const threadId = `${ctx.tenantId}:${ctx.customerId}:${dayBucket}`;
+      let threadId: string | null = null;
+
+      const requestedThreadId = ctx.continueThreadId?.trim();
+      if (requestedThreadId) {
+        const existingThread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({
+          threadId: requestedThreadId,
+          customerId: ctx.customerId,
+          tenantId: ctx.tenantId,
+          deletedByUser: { $ne: true },
+        });
+        if (existingThread) {
+          threadId = requestedThreadId;
+        } else {
+          this.logger.warn(
+            `Ignoring invalid continueThreadId for customer ${ctx.customerId}`,
+          );
+        }
+      }
+
+      if (!threadId) {
+        // Normal assistant opens use the per-visit conversation id from the
+        // FE. The day-bucket fallback is kept only for legacy callers.
+        const bucket = ctx.conversationId?.trim() || now.toISOString().slice(0, 10);
+        threadId = `${ctx.tenantId}:${ctx.customerId}:${bucket}`;
+      }
 
       // Upsert thread — incrementa messageCount em 2 (user + assistant).
       const previewSource = ctx.userMessage.slice(0, 80);
