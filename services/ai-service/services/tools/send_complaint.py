@@ -13,11 +13,16 @@ from .types import ToolContext, ToolResult
 
 def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     return ToolResult(
-        message="Vou te levar pra tela de reclamação onde você pode descrever direitinho o que rolou.",
+        message="Vou abrir a tela de reclamação formal para você descrever o problema.",
         # action='expand' pede ao FE pra abrir o ContextualInputExpand
         # com o textarea grande de 240 chars (canvas v14). Spec K-7.
         chips=[
-            {"id": "complaint-text", "label": "Contar o que rolou", "action": "expand", "payload": "Conta pra gerência..."},
+            {
+                "id": "complaint-text",
+                "label": "Registrar reclamação formal",
+                "action": "expand",
+                "payload": "Descreva o problema para registrar a reclamação...",
+            },
             {"id": "cancel", "label": "Cancelar", "action": "send", "payload": "deixa pra lá"},
         ],
         router_target="ScreenCustomerComplaintCompose",

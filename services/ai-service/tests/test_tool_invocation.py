@@ -195,7 +195,7 @@ def chat_client(monkeypatch):
                 "type": "function",
                 "function": {
                     "name": "add_to_order",
-                    "arguments": {"itemId": "risoto-1", "quantity": 1},
+                    "arguments": {"itemId": "12345678-1234-4234-8234-123456789012", "quantity": 1},
                 },
             }
         ],
@@ -259,3 +259,79 @@ def test_chat_endpoint_falls_back_to_tool_message_when_llm_text_empty(chat_clien
     body = res.json()
     # add_to_order returns "Adicionei 1x ao seu pedido. Quer mais alguma coisa?"
     assert "Adicionei" in body["response"]
+
+
+def test_chat_routes_order_eta_question_to_view_order_without_llm(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={"message": "quanto tempo demora o pedido?", "tenantId": "t1"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] == "rule-order-status"
+    assert body["tool_calls"][0]["function"]["name"] == "view_order"
+    assert provider.chat.await_count == 0
+
+
+def test_chat_routes_view_order_request_without_llm(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={"message": "olhar meu pedido", "tenantId": "t1"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] == "rule-order-status"
+    assert body["tool_calls"][0]["function"]["name"] == "view_order"
+    assert provider.chat.await_count == 0
+
+
+def test_chat_routes_payment_request_without_llm(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={"message": "quero pagar a conta", "tenantId": "t1"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] == "rule-payment"
+    assert body["tool_calls"][0]["function"]["name"] == "open_payment_screen"
+    assert provider.chat.await_count == 0
+
+
+def test_chat_routes_gluten_free_options_to_recommendation_without_llm(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={"message": "opções sem glúten", "tenantId": "t1"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] == "rule-gluten-free-recommendation"
+    assert body["tool_calls"][0]["function"]["name"] == "recommend_dish"
+    assert body["tool_calls"][0]["function"]["arguments"]["dietary"] == "gluten_free"
+    assert provider.chat.await_count == 0
+
+
+def test_chat_manager_message_followup_uses_manager_tool_without_llm(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={
+            "message": "Estou frustrado com o pedido",
+            "tenantId": "t1",
+            "history": [
+                {
+                    "role": "assistant",
+                    "content": "Olá Caleb! Posso te ajudar a enviar uma mensagem para o gerente. Me conte o que você gostaria de comunicar, por favor.",
+                }
+            ],
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] == "rule-manager-message-followup"
+    assert body["tool_calls"][0]["function"]["name"] == "send_message_to_manager"
+    assert body["tool_calls"][0]["function"]["arguments"]["text"] == "Estou frustrado com o pedido"
+    assert provider.chat.await_count == 0

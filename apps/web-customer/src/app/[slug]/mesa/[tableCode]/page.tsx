@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { apiPost, apiGet } from '../../../../lib/api';
 import { clearDeliveredContinuationHint } from '../../../../lib/continuationHints';
+import { recordCustomerEvent } from '../../../../lib/customerEvents';
 import { setSessionToken } from '../../../../lib/storage';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
@@ -100,7 +101,10 @@ export default function MesaPage() {
   const [homeData, setHomeData] = useState<HomeData | null>(null);
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [inputValue, setInputValue] = useState('');
+  const [homeInputFocused, setHomeInputFocused] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const [reclaimBanner, setReclaimBanner] = useState(false);
+  const [sessionResetNonce, setSessionResetNonce] = useState(0);
 
   // P1 #21: zone-pause active no DB ja era invisivel no customer side
   // (sem WS scoped ao session room nem polling). Ativamos polling de
@@ -109,6 +113,40 @@ export default function MesaPage() {
   const activePause = useZonePause(slug, {
     enabled: pageState === 'home',
   });
+
+  useEffect(() => {
+    if (pageState !== 'home') return;
+    recordCustomerEvent(slug, 'session_resumed', {
+      tableCode,
+      customerId: customerId ?? null,
+    });
+  }, [pageState, slug, tableCode, customerId]);
+
+  useEffect(() => {
+    if (!homeInputFocused || typeof window === 'undefined') {
+      setKeyboardInset(0);
+      return;
+    }
+
+    const viewport = window.visualViewport;
+    const updateKeyboardInset = () => {
+      const nextInset = viewport
+        ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+        : 0;
+      setKeyboardInset(Math.round(nextInset));
+    };
+
+    updateKeyboardInset();
+    viewport?.addEventListener('resize', updateKeyboardInset);
+    viewport?.addEventListener('scroll', updateKeyboardInset);
+    window.addEventListener('resize', updateKeyboardInset);
+
+    return () => {
+      viewport?.removeEventListener('resize', updateKeyboardInset);
+      viewport?.removeEventListener('scroll', updateKeyboardInset);
+      window.removeEventListener('resize', updateKeyboardInset);
+    };
+  }, [homeInputFocused]);
 
   // Bug recorrente: usuario cancela um chamado de garcom (ou fecha o
   // bottom sheet) → `router.back()` traz pra ca → isValid ja e true
@@ -127,6 +165,7 @@ export default function MesaPage() {
   useEffect(() => {
     if (!initialIsValidRef.current) return;
     if (!isValid) return;
+    if (sessionTableCode && sessionTableCode !== tableCode) return;
     if (homeData && settings) {
       setPageState('home');
       return;
@@ -167,24 +206,13 @@ export default function MesaPage() {
     return () => {
       cancelled = true;
     };
-  }, [isValid, slug, customerId, homeData, settings]);
+  }, [isValid, slug, customerId, homeData, settings, sessionTableCode, tableCode]);
 
   useEffect(() => {
     // Guard em tempo de montagem: se o SessionContext ja foi populado antes
-    // (navegacao programatica com sessao ativa), nao reinicia. NAO colocamos
-    // `isValid` nas deps porque ele vira true quando chamarmos setSession
-    // dentro de initSession — e ai o effect reiniciaria, cancelando a si
-    // mesmo antes de terminar a transicao.
-    //
-    // EXCEÇÃO: se a URL aponta pra outro tableCode que o da sessao atual,
-    // o usuario escaneou QR de mesa diferente — invalida a sessao em
-    // memoria pra forçar re-init. Sem isso, pedidos iam pra mesa errada
-    // silenciosamente (P1-G do bug-hunt).
-    if (isValid && sessionTableCode && sessionTableCode !== tableCode) {
-      clearSession();
-      return; // proximo render, isValid sera false e cai no fluxo normal
-    }
-    if (isValid) return;
+    // (navegacao programatica com sessao ativa), nao reinicia. Usamos o valor
+    // inicial em ref para o init nao ser cancelado pelo proprio setSession.
+    if (initialIsValidRef.current && sessionResetNonce === 0) return;
 
     // Escopo local por mount — em StrictMode o effect roda mount→unmount→mount
     // e cada "vida" tem seu proprio cancelled + timer. Nao da para usar useRef
@@ -302,8 +330,17 @@ export default function MesaPage() {
       cancelled = true;
       window.clearTimeout(hardCap);
     };
-    // `isValid` e usado so como guard inicial, por isso fica fora das deps.
-  }, [slug, tableCode, setSession, setCustomer]);
+  }, [slug, tableCode, setSession, setCustomer, prefetch, sessionResetNonce]);
+
+  useEffect(() => {
+    // Se a URL aponta pra outro tableCode que o da sessao atual, o usuario
+    // escaneou QR de mesa diferente: invalida a sessao e força novo init.
+    if (!isValid || !sessionTableCode || sessionTableCode === tableCode) return;
+    initialIsValidRef.current = false;
+    clearSession();
+    setPageState('loading');
+    setSessionResetNonce((n) => n + 1);
+  }, [clearSession, isValid, sessionTableCode, tableCode]);
 
   const [hostName, setHostName] = useState<string | null>(null);
   const [isHost, setIsHost] = useState(false);
@@ -505,6 +542,15 @@ export default function MesaPage() {
     : isReturning
       ? 'Assistente · reconheceu você'
       : 'Assistente';
+  const keyboardAccessoryOffset =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(pointer: coarse)').matches
+      ? 112
+      : 0;
+  const focusedInputBottom = `calc(${Math.max(
+    keyboardInset,
+    keyboardAccessoryOffset,
+  )}px + max(env(safe-area-inset-bottom), 12px))`;
 
   return (
     <AppShell
@@ -577,12 +623,34 @@ export default function MesaPage() {
       </div>
 
       <div className="px-6 pb-safe pb-8">
-        <SoftInput
-          placeholder="Digite aqui"
-          value={inputValue}
-          onChange={setInputValue}
-          onSubmit={handleAssistantSubmit}
-        />
+        <div
+          className={
+            homeInputFocused
+              ? 'fixed inset-x-0 z-40 mx-auto w-full max-w-[420px] px-6 transition-[bottom] duration-150 ease-out'
+              : undefined
+          }
+          style={
+            homeInputFocused
+              ? {
+                  bottom: focusedInputBottom,
+                }
+              : undefined
+          }
+        >
+          <SoftInput
+            placeholder={
+              homeInputFocused ? 'Escreva sua mensagem...' : 'Digite aqui'
+            }
+            value={inputValue}
+            onChange={setInputValue}
+            onSubmit={handleAssistantSubmit}
+            onFocusChange={setHomeInputFocused}
+            multiline
+            scrollOnFocus={false}
+            maxLength={2000}
+          />
+        </div>
+        {homeInputFocused && <div aria-hidden className="h-[88px]" />}
         {activePause && (
           // Hint sub-banner discreto (mono caps tiny) — alinhado ao
           // contrato do spec (silent ETA inflation; sem badge ou banner

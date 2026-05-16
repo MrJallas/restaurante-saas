@@ -1,5 +1,6 @@
 import os
 import time
+import re
 from hmac import compare_digest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,6 +60,96 @@ def _build_api_client():
 
 
 _api_client = _build_api_client()
+
+
+_CANCEL_MANAGER_MESSAGE_RE = re.compile(
+    r"\b(deixa\s+pra\s+l[aá]|cancela|cancelar|n[aã]o\s+(precisa|quero)|esquece)\b",
+    re.IGNORECASE,
+)
+_MANAGER_MESSAGE_PROMPT_RE = re.compile(
+    r"\b(mensagem|comunicar|recado)\b.*\b(gerente|ger[eê]ncia)\b|\bgerente\b.*\b(comunicar|mensagem|recado)\b",
+    re.IGNORECASE,
+)
+_ORDER_STATUS_RE = re.compile(
+    r"\b(quanto\s+tempo|demora|vai\s+demorar|cad[eê]|status|andamento|previs[aã]o|quando)\b.*\b(pedido|comida|prato|cozinha)\b|"
+    r"\b(pedido|comida|prato|cozinha)\b.*\b(quanto\s+tempo|demora|vai\s+demorar|cad[eê]|status|andamento|previs[aã]o|quando)\b",
+    re.IGNORECASE,
+)
+_VIEW_ORDER_RE = re.compile(
+    r"\b(ver|v[eê]|olhar|mostrar|consultar|acompanhar)\b.*\b(meu|minha|o|a|esse|este)?\s*(pedido|comanda|carrinho)\b|"
+    r"\b(pedido|comanda|carrinho)\b.*\b(ver|v[eê]|olhar|mostrar|consultar|acompanhar)\b",
+    re.IGNORECASE,
+)
+_PAYMENT_RE = re.compile(
+    r"\b(quero|queria|pode|vamos|vou|preciso|me\s+ajuda|me\s+ajude)?\s*(pagar|pagamento|fechar|finalizar|pedir|trazer|traz|manda)\b.*\b(conta|comanda)\b|"
+    r"\b(conta|comanda)\b.*\b(pagar|pagamento|fechar|finalizar|pedir|trazer|traz|manda)\b|"
+    r"\b(quero|queria|vamos|vou)\s+pagar\b",
+    re.IGNORECASE,
+)
+_PAYMENT_SPLIT_RE = re.compile(r"\b(dividir|rachar|separar)\b.*\b(conta|comanda)\b|\b(conta|comanda)\b.*\b(dividir|rachar|separar)\b", re.IGNORECASE)
+_PAYMENT_INDIVIDUAL_RE = re.compile(r"\b(minha\s+parte|minha\s+comanda|s[oó]\s+a\s+minha|individual)\b", re.IGNORECASE)
+_PAYMENT_FULL_RE = re.compile(r"\b(pagar\s+tudo|conta\s+toda|comanda\s+toda|mesa\s+toda)\b", re.IGNORECASE)
+_GLUTEN_FREE_RE = re.compile(
+    r"\b(op[cç][oõ]es?|pratos?|recomenda|indica|tem|quais|alguma)\b.*\bsem\s+gl[uú]ten\b|"
+    r"\bsem\s+gl[uú]ten\b.*\b(op[cç][oõ]es?|pratos?|recomenda|indica|tem|quais|alguma)\b",
+    re.IGNORECASE,
+)
+
+
+def _last_assistant_requested_manager_message(history: list["ChatMessage"]) -> bool:
+    """Detect the follow-up turn after "me conte a mensagem pro gerente"."""
+    for msg in reversed(history[-4:]):
+        if msg.role != "assistant":
+            continue
+        content = (msg.content or "").strip()
+        if _MANAGER_MESSAGE_PROMPT_RE.search(content):
+            return True
+        return False
+    return False
+
+
+def _rule_tool_response(
+    name: str,
+    args: dict,
+    req: "ChatRequest",
+    text: str,
+    start_time: float,
+    *,
+    layer: str,
+) -> "ChatResponse":
+    ctx = ToolContext(
+        tenant_id=req.tenantId or "",
+        customer_id=req.customerId,
+        session_id=req.sessionId,
+        api_client=_api_client,
+        raw_message=text,
+    )
+    tool_result = dispatch_tool(name, args, ctx)
+    return ChatResponse(
+        response=tool_result.message or "",
+        tokens_in=0,
+        tokens_out=0,
+        model="rule-layer",
+        provider="local",
+        latency_ms=int((time.time() - start_time) * 1000),
+        estimated_cost_cents=0,
+        layer=layer,
+        tool_calls=[
+            {
+                "id": f"rule_{name}",
+                "type": "function",
+                "function": {"name": name, "arguments": args},
+                "result": {
+                    "message": tool_result.message,
+                    "chips": tool_result.chips,
+                    "silent": tool_result.silent,
+                    "actionPayload": tool_result.action_payload,
+                    "routerTarget": tool_result.router_target,
+                    "error": tool_result.error,
+                },
+            }
+        ],
+    )
 
 
 @app.on_event("startup")
@@ -374,6 +465,56 @@ async def chat(req: ChatRequest):
             latency_ms=int((time.time() - start_time) * 1000),
             estimated_cost_cents=0,
             layer="ack-silent",
+        )
+
+    if _ORDER_STATUS_RE.search(text) or _VIEW_ORDER_RE.search(text):
+        return _rule_tool_response(
+            "view_order",
+            {},
+            req,
+            text,
+            start_time,
+            layer="rule-order-status",
+        )
+
+    if _PAYMENT_RE.search(text):
+        tool_name = "open_payment_screen"
+        if _PAYMENT_SPLIT_RE.search(text):
+            tool_name = "split_bill"
+        elif _PAYMENT_INDIVIDUAL_RE.search(text):
+            tool_name = "pay_individual"
+        elif _PAYMENT_FULL_RE.search(text):
+            tool_name = "pay_full"
+        return _rule_tool_response(
+            tool_name,
+            {},
+            req,
+            text,
+            start_time,
+            layer="rule-payment",
+        )
+
+    if _GLUTEN_FREE_RE.search(text):
+        return _rule_tool_response(
+            "recommend_dish",
+            {"dietary": "gluten_free"},
+            req,
+            text,
+            start_time,
+            layer="rule-gluten-free-recommendation",
+        )
+
+    if (
+        _last_assistant_requested_manager_message(req.history)
+        and not _CANCEL_MANAGER_MESSAGE_RE.search(text)
+    ):
+        return _rule_tool_response(
+            "send_message_to_manager",
+            {"text": text},
+            req,
+            text,
+            start_time,
+            layer="rule-manager-message-followup",
         )
 
     # Otherwise hand off to the regular LLM chat path.
@@ -697,6 +838,8 @@ USO DE FERRAMENTAS (function calling · OBRIGATÓRIO em mutações):
        → `add_to_order(itemId=<UUID do item>, quantity=<int 1-20>)`.
        NUNCA passe o NOME do prato em itemId — sempre o UUID. Quantity
        sempre o número que o cliente disse (default 1, NUNCA inventar 3).
+       Se X for água/bebida que está no cardápio, também é pedido:
+       "quero uma água" / "me traz uma água" → `add_to_order`, não `call_waiter`.
   · "ver cardápio" / "abre o menu" / "mostra o menu" → `view_menu`.
     Quando o cliente filtrar ("opções de bebida", "ver as sobremesas",
     "quais entradas tem"), passe `category` apropriadamente:
@@ -706,6 +849,8 @@ USO DE FERRAMENTAS (function calling · OBRIGATÓRIO em mutações):
     "prato"|"principal"|"refeição" → `view_menu(category='principal')`.
   · "vê meu pedido" / "o que tá no carrinho" / "mostra meu pedido"
        → `view_order`.
+  · "quanto tempo demora o pedido?" / "cadê meu pedido?" / "status do pedido"
+       → `view_order`. Isso é assunto do restaurante, NUNCA fora de escopo.
   · "tira o X" / "remove o X" → `remove_from_cart(itemId)`.
   · "muda o X pra Y unidades" / "altera quantidade" → `change_order(itemId, qty)`.
   · "cancela o pedido" → `cancel_order`.
@@ -720,12 +865,19 @@ USO DE FERRAMENTAS (function calling · OBRIGATÓRIO em mutações):
   · "chama o garçom" / "preciso de ajuda" / "chamar atendente" → `call_waiter`.
     **Só dispare CALL_WAITER quando o usuário pedir explicitamente o
     garçom** (atendimento presencial). NÃO dispare quando ele só quer
-    pagar, pedir, ou ver cardápio — essas têm tools próprias.
+    pagar, pedir, adicionar água/bebida do cardápio, ou ver cardápio —
+    essas têm tools próprias.
   · "junta com a mesa N" / "juntar mesas" → `request_table_merge(targetTable=N)`.
   · "tem glúten?" / "é sem lactose?" / "tem alérgeno X?" → `check_allergens`.
   · "quero comparar X e Y" → `compare_dishes`.
-  · "manda recado pro gerente" / "mensagem pra gerência" → `send_message_to_manager(text=…)`.
-  · "quero reclamar" / "tô insatisfeito" → `send_complaint`.
+  · "manda recado pro gerente" / "mensagem pra gerência" → se o texto já
+    veio junto, `send_message_to_manager(text=…)`; se ainda falta o texto,
+    peça a mensagem. No turno seguinte, envie o texto do cliente com
+    `send_message_to_manager`, mesmo se ele mencionar frustração ou pedido.
+  · "quero reclamar" / "abrir reclamação formal" → `send_complaint`.
+    Use copy explícita de reclamação formal; não use "contar pra gerência"
+    como rótulo solto. Não converta automaticamente uma mensagem pro gerente
+    em reclamação formal.
   · "quero apagar dados" / "exclusão LGPD" → `show_lgpd_notice` PRIMEIRO.
   · "qual o horário?" / "endereço?" / "wi-fi?" → `ask_about_restaurant(topic=…)`.
 - Quando chamar uma tool, NÃO repita o resultado em texto — o sistema renderiza

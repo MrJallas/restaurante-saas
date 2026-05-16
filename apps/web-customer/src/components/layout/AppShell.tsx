@@ -52,7 +52,7 @@ export function AppShell({
         />
       )}
       <main
-        className={`flex flex-1 flex-col ${
+        className={`flex min-h-0 flex-1 flex-col ${
           noMainPadding ? '' : 'px-0 pb-safe pt-0'
         }`}
       >
