@@ -66,14 +66,9 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         })
 
     payload = {"itemId": item_id, "quantity": quantity, "notes": args.get("notes")}
-    if ctx.api_client:
-        try:
-            ctx.api_client("POST", "/customer/cart/items", payload)
-        except Exception as e:  # network errors propagate as soft errors
-            return ToolResult(error={"code": "api_error", "message": str(e)})
 
     return ToolResult(
         message=f"Adicionei {quantity}x ao seu pedido. Quer mais alguma coisa?",
         chips=_chips_for_add(),
-        action_payload={"orderUpdated": True, "itemId": item_id, "quantity": quantity},
+        action_payload={"orderUpdated": True, "cartUpdated": True, **payload},
     )

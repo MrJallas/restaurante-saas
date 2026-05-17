@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
+import { recordContinuationHint } from '../lib/continuationHints';
 
 interface UIStateContextValue {
   drawerOpen: boolean;
@@ -45,6 +46,7 @@ export function UIStateProvider({ children }: { children: ReactNode }) {
     setMenuOverlayOpen(true);
   }, []);
   const closeMenuOverlay = useCallback(() => {
+    recordContinuationHint('viu_menu');
     setMenuOverlayOpen(false);
     setMenuOverlayCategory(null);
   }, []);

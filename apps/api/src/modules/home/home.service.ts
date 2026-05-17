@@ -36,6 +36,19 @@ export interface QuickAction {
   href: string;
 }
 
+type ContinuationKind =
+  | 'viu_menu'
+  | 'chamou_garcom'
+  | 'abriu_pedido'
+  | 'pagou'
+  | 'voltou_sem_acao';
+
+interface HomeContinuationSignals {
+  tenantId?: string;
+  kindHint?: string | string[];
+  hasDraftOrder?: boolean;
+}
+
 @Injectable()
 export class HomeService {
   private readonly logger = new Logger(HomeService.name);
@@ -49,6 +62,7 @@ export class HomeService {
     sessionId: string,
     customerId?: string,
     tableLabel?: string,
+    continuationSignals: HomeContinuationSignals = {},
   ): Promise<HomeData> {
     // 1. Busca settings
     const settings = await this.tenantConn.query('SELECT * FROM settings LIMIT 1');
@@ -172,12 +186,24 @@ export class HomeService {
     let continuationMessage: HomeData['continuationMessage'];
     try {
       const aiUrl = process.env.AI_SERVICE_URL || 'http://localhost:8001';
+      const inferred = await this.inferContinuationKind({
+        sessionId,
+        customerId,
+        isReturning,
+        kindHint: continuationSignals.kindHint,
+        hasDraftOrder: continuationSignals.hasDraftOrder === true,
+      });
       const params = new URLSearchParams({
-        tenantId: process.env.TENANT_ID || 'restaurant_dev',
+        tenantId: continuationSignals.tenantId || process.env.TENANT_ID || 'restaurant_dev',
         isReturning: String(isReturning),
         isVip: 'false',
         customerName: nome,
       });
+      if (inferred.kind) params.set('kind', inferred.kind);
+      if (inferred.favoriteItem) params.set('favoriteItem', inferred.favoriteItem);
+      if (inferred.kind) {
+        this.logger.debug(`continuation kind=${inferred.kind} session=${sessionId}`);
+      }
       // Round 7 (B-NEW-25): X-AI-Service-Key header obrigatório.
       const aiHeaders: Record<string, string> = {};
       if (process.env.AI_SERVICE_API_KEY) {
@@ -207,5 +233,107 @@ export class HomeService {
       lastVisitSummary,
       continuationMessage,
     };
+  }
+
+  private normalizeKindHint(kindHint?: string | string[]): ContinuationKind | null {
+    const raw = Array.isArray(kindHint) ? kindHint[0] : kindHint;
+    if (!raw) return null;
+    const value = raw.trim();
+    if (
+      value === 'viu_menu' ||
+      value === 'chamou_garcom' ||
+      value === 'abriu_pedido' ||
+      value === 'pagou' ||
+      value === 'voltou_sem_acao'
+    ) {
+      return value;
+    }
+    return null;
+  }
+
+  private async inferContinuationKind(input: {
+    sessionId: string;
+    customerId?: string;
+    isReturning: boolean;
+    kindHint?: string | string[];
+    hasDraftOrder: boolean;
+  }): Promise<{ kind: ContinuationKind | null; favoriteItem?: string }> {
+    const hint = this.normalizeKindHint(input.kindHint);
+
+    const paymentRows = (await this.tenantConn.query(
+      `SELECT 1
+         FROM payments
+        WHERE table_session_id = $1
+          AND status IN ('confirmed', 'paid')
+          AND COALESCE(paid_at, updated_at, created_at) >= now() - INTERVAL '10 minutes'
+        LIMIT 1`,
+      [input.sessionId],
+    )) as unknown[];
+    if (paymentRows.length > 0 || hint === 'pagou') {
+      return { kind: 'pagou' };
+    }
+
+    if (input.hasDraftOrder || hint === 'abriu_pedido') {
+      return { kind: 'abriu_pedido' };
+    }
+
+    const orderRows = (await this.tenantConn.query(
+      `SELECT id
+         FROM orders
+        WHERE table_session_id = $1
+          AND status NOT IN ('cancelled', 'delivered')
+          AND created_at >= now() - INTERVAL '30 minutes'
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [input.sessionId],
+    )) as Array<{ id: string }>;
+    if (orderRows.length > 0) {
+      return {
+        kind: 'abriu_pedido',
+        favoriteItem: await this.summariseOrder(orderRows[0].id),
+      };
+    }
+
+    const waiterRows = (await this.tenantConn.query(
+      `SELECT 1
+         FROM waiter_calls
+        WHERE table_session_id = $1
+          AND status IN ('pending', 'acknowledged')
+          AND created_at >= now() - INTERVAL '30 minutes'
+          AND resolved_at IS NULL
+          AND cancelled_at IS NULL
+        LIMIT 1`,
+      [input.sessionId],
+    )) as unknown[];
+    if (waiterRows.length > 0 || hint === 'chamou_garcom') {
+      return { kind: 'chamou_garcom' };
+    }
+
+    if (hint === 'viu_menu') {
+      return { kind: 'viu_menu' };
+    }
+
+    if (input.isReturning || hint === 'voltou_sem_acao') {
+      return { kind: 'voltou_sem_acao' };
+    }
+
+    return { kind: null };
+  }
+
+  private async summariseOrder(orderId: string): Promise<string | undefined> {
+    const rows = (await this.tenantConn.query(
+      `SELECT oi.quantity, mi.name
+         FROM order_items oi
+         JOIN menu_items mi ON mi.id = oi.menu_item_id
+        WHERE oi.order_id = $1
+        ORDER BY oi.created_at ASC
+        LIMIT 3`,
+      [orderId],
+    )) as Array<{ quantity: number; name: string }>;
+    const summary = rows
+      .map((row) => `${row.quantity}x ${row.name}`)
+      .join(', ')
+      .slice(0, 80);
+    return summary || undefined;
   }
 }

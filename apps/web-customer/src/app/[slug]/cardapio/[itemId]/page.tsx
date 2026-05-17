@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { apiGet } from '../../../../lib/api';
+import { recordContinuationHint } from '../../../../lib/continuationHints';
 import { useNav } from '../../../../hooks/useNav';
 import { useDraftOrder } from '../../../../providers/DraftOrderProvider';
 import { FoodDetail, FoodDetailData } from '../../../../components/cardapio/FoodDetail';
@@ -54,6 +55,10 @@ export default function ItemDetailPage() {
   const [item, setItem] = useState<MenuItemApi | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<PendingAdd | null>(null);
+
+  useEffect(() => {
+    recordContinuationHint('viu_menu');
+  }, []);
 
   useEffect(() => {
     if (!slug || !itemId) return;

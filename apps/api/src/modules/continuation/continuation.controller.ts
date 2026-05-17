@@ -5,7 +5,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import type { TenantRequest } from '../tenant/tenant.middleware';
 import {
@@ -25,6 +25,18 @@ class ContinuationDto {
   @IsOptional()
   @IsUUID()
   customerId?: string;
+
+  @IsOptional()
+  @IsString()
+  clientKindHint?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  hasDraftOrder?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isReturning?: boolean;
 }
 
 /**
@@ -50,10 +62,20 @@ export class ContinuationController {
     @Body() dto: ContinuationDto,
     @Req() req: TenantRequest,
   ): Promise<ContinuationResponse> {
+    const headerHint = Array.isArray(req.headers['x-continuation-kind-hint'])
+      ? req.headers['x-continuation-kind-hint'][0]
+      : req.headers['x-continuation-kind-hint'];
+    const draftCount = Number(req.headers['x-draft-order-count'] ?? 0);
     return this.service.getContinuation(
       dto.tableSessionId,
       dto.customerId ?? null,
-      req.tenantSlug ?? 'restaurant_dev',
+      req.tenantSchemaName ?? req.tenantSlug ?? 'restaurant_dev',
+      {
+        clientKindHint: dto.clientKindHint ?? headerHint,
+        hasDraftOrder:
+          dto.hasDraftOrder === true || (Number.isFinite(draftCount) && draftCount > 0),
+        isReturning: dto.isReturning === true,
+      },
     );
   }
 }

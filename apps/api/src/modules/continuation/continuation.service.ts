@@ -21,6 +21,19 @@ export type ContinuationKind =
   | 'voltou_sem_acao'
   | 'first_time';
 
+type ContinuationClientKindHint =
+  | 'viu_menu'
+  | 'chamou_garcom'
+  | 'abriu_pedido'
+  | 'pagou'
+  | 'voltou_sem_acao';
+
+interface ContinuationSignals {
+  clientKindHint?: string | null;
+  hasDraftOrder?: boolean;
+  isReturning?: boolean;
+}
+
 interface DerivedContext {
   kind: ContinuationKind;
   slots: {
@@ -71,6 +84,7 @@ export class ContinuationService {
     tableSessionId: string,
     customerId: string | null,
     tenantSlug: string,
+    signals: ContinuationSignals = {},
   ): Promise<ContinuationResponse> {
     let derived: DerivedContext;
     try {
@@ -78,6 +92,7 @@ export class ContinuationService {
         tableSessionId,
         customerId,
         tenantSlug,
+        signals,
       );
     } catch (err) {
       this.logger.error(
@@ -108,6 +123,7 @@ export class ContinuationService {
     tableSessionId: string,
     customerId: string | null,
     tenantSlug: string,
+    signals: ContinuationSignals,
   ): Promise<DerivedContext> {
     // Resolve table label first — useful for greeting copy regardless of
     // which kind wins. tables.label is the canonical column (the spec
@@ -160,6 +176,7 @@ export class ContinuationService {
       manager_name: null as string | null,
       avg_response_min: null as number | null,
     };
+    const clientHint = this.normalizeClientKindHint(signals.clientKindHint);
 
     // ── Priority 1: complaint within 10 min ──────────────────────────
     // Round 19 (C2 fix): also fetch manager name + avg response time pra
@@ -216,13 +233,20 @@ export class ContinuationService {
     if (payRows.length > 0) {
       return { kind: 'pagou', slots: baseSlots };
     }
+    if (clientHint === 'pagou') {
+      return { kind: 'pagou', slots: baseSlots };
+    }
+
+    if (signals.hasDraftOrder || clientHint === 'abriu_pedido') {
+      return { kind: 'abriu_pedido', slots: baseSlots };
+    }
 
     // ── Priority 3: active order within 30 min ───────────────────────
     const orderRows = (await this.tenantConn.query(
       `SELECT o.id, o.created_at
          FROM orders o
         WHERE o.table_session_id = $1
-          AND o.status IN ('placed','preparing','ready','delivered')
+          AND o.status NOT IN ('cancelled', 'delivered')
           AND o.created_at >= now() - INTERVAL '30 minutes'
         ORDER BY o.created_at DESC
         LIMIT 1`,
@@ -255,6 +279,13 @@ export class ContinuationService {
         kind: 'chamou_garcom',
         slots: { ...baseSlots, wait_minutes: waitMinutes },
       };
+    }
+    if (clientHint === 'chamou_garcom') {
+      return { kind: 'chamou_garcom', slots: baseSlots };
+    }
+
+    if (clientHint === 'viu_menu') {
+      return { kind: 'viu_cardapio', slots: baseSlots };
     }
 
     // ── Priority 4.5: assistant_messages mentioning menu/cardapio < 10 min ──
@@ -322,7 +353,28 @@ export class ContinuationService {
       };
     }
 
+    if (signals.isReturning || clientHint === 'voltou_sem_acao') {
+      return { kind: 'voltou_sem_acao', slots: baseSlots };
+    }
+
     return { kind: 'first_time', slots: baseSlots };
+  }
+
+  private normalizeClientKindHint(
+    value?: string | null,
+  ): ContinuationClientKindHint | null {
+    if (!value) return null;
+    const kind = value.trim();
+    if (
+      kind === 'viu_menu' ||
+      kind === 'chamou_garcom' ||
+      kind === 'abriu_pedido' ||
+      kind === 'pagou' ||
+      kind === 'voltou_sem_acao'
+    ) {
+      return kind;
+    }
+    return null;
   }
 
   /** "2x Pizza Margherita, 1x Coca" — truncated to 80 chars. */

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { apiPost, apiGet } from '../../../lib/api';
+import { clearDeliveredContinuationHint } from '../../../lib/continuationHints';
 import { listMessages, listThreads } from '../../../lib/api/chat-history';
 import type { ChatMessageDto } from '@restaurant/shared-types';
 import { getSessionToken } from '../../../lib/storage';
@@ -114,6 +115,7 @@ interface AssistantToolCall {
   name: string;
   arguments?: Record<string, unknown>;
   result?: unknown;
+  actionPayload?: unknown;
   silent?: boolean;
   router?: boolean;
 }
@@ -160,6 +162,27 @@ interface SendResponse {
   toolCalls?: AssistantToolCall[];
 }
 
+interface ContinuationPostResponse {
+  kind: string;
+  text: string;
+  chips?: ChipCanon[];
+  meta?: {
+    subtitle?: string | null;
+    primary_cta?: Record<string, unknown> | null;
+  };
+}
+
+interface MenuItemToolPayload {
+  id: string;
+  name: string;
+  price_cents?: number;
+  priceCents?: number;
+  image_url?: string | null;
+  imageUrl?: string | null;
+  category_name?: string;
+  categoryName?: string;
+}
+
 // Fallback chips — só aparecem em idle (antes do primeiro turno) ou
 // quando a tool dispatched não retornou chips canônicos. Backend devolve
 // `chips` quando vier de uma tool com chips populated; aí esses defaults
@@ -179,6 +202,41 @@ const DEFAULT_SUGGESTIONS: ChipCanon[] = [
 function chipText(chip: ChipCanon): string {
   if (typeof chip.payload === 'string' && chip.payload.length > 0) return chip.payload;
   return chip.label;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function numberValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function positiveInt(value: unknown, fallback = 1): number {
+  const n = numberValue(value);
+  if (n === null) return fallback;
+  return Math.max(1, Math.min(20, Math.floor(n)));
+}
+
+function actionPayload(call: AssistantToolCall): Record<string, unknown> {
+  if (isRecord(call.actionPayload)) return call.actionPayload;
+  if (isRecord(call.result) && isRecord(call.result.actionPayload)) {
+    return call.result.actionPayload;
+  }
+  return {};
+}
+
+function formatCurrency(cents: number): string {
+  return `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 }
 
 // Palavras que, combinadas com itens ja mencionados pela IA, indicam "quero
@@ -280,7 +338,7 @@ const TEXT_ONLY_TOOLS = new Set<string>([
 
 function categorizeToolName(name: string): ToolCategory {
   if (name === 'view_menu' || name === 'search_dish' || name === 'check_allergens' || name === 'compare_dishes') return 'menu';
-  if (name === 'add_to_order' || name === 'view_order' || name === 'place_order') return 'order';
+  if (name === 'add_to_order' || name === 'view_order' || name === 'confirm_order' || name === 'place_order' || name === 'remove_from_cart' || name === 'change_order' || name === 'cancel_order') return 'order';
   if (name === 'call_waiter' || name === 'send_complaint' || name === 'send_message_to_manager') return 'staff';
   if (name === 'request_bill' || name === 'split_bill' || name === 'pay_individual' || name === 'pay_full' || name === 'open_payment_screen') return 'payment';
   if (name === 'lgpd_data_request' || name === 'lgpd_notice') return 'lgpd';
@@ -387,7 +445,14 @@ export default function AssistentePage() {
   const session = useSession();
   const { push } = useNav();
   const { openCallWaiterSheet, openMenuOverlay } = useUIState();
-  const { addItem } = useDraftOrder();
+  const {
+    items: draftItems,
+    addItem,
+    updateItem,
+    removeItem,
+    clear: clearDraftOrder,
+    totalCents,
+  } = useDraftOrder();
   const router = useRouter();
   const slug = params.slug as string;
   const prefill = searchParams.get('prefill') ?? '';
@@ -485,21 +550,18 @@ export default function AssistentePage() {
   // sobrescreve `messages` e a landing some; se não encontrar, mantemos
   // o greeting carregado pra landing.
   useEffect(() => {
-    if (!slug || prefill || threadIdParam) return;
+    if (!slug || prefill || threadIdParam || !session.sessionId || chatStarted) return;
     const load = async () => {
       try {
-        const qs = new URLSearchParams({
-          tenantId: slug,
-          customerId: session.customerId ?? '',
-          isReturning: String(session.isReturning ?? false),
-          customerName: session.customerName ?? '',
+        const res = await apiPost<ContinuationPostResponse>(`/${slug}/continuation`, {
+          tableSessionId: session.sessionId,
+          customerId: session.customerId ?? undefined,
+          hasDraftOrder: draftItems.length > 0,
+          isReturning: session.isReturning ?? false,
         });
-        const res = await apiGet<{
-          rendered: string | null;
-          chips?: ChipCanon[];
-        }>(`/${slug}/continuation?${qs.toString()}`);
-        if (res?.rendered) {
-          setLandingGreeting(res.rendered);
+        if (res?.text) {
+          setLandingGreeting(res.text);
+          clearDeliveredContinuationHint(res.kind);
           if (res.chips && res.chips.length > 0) {
             setSuggestions(res.chips as ChipCanon[]);
           }
@@ -509,7 +571,17 @@ export default function AssistentePage() {
       }
     };
     load();
-  }, [slug, prefill, threadIdParam, session.customerId, session.isReturning, session.customerName]);
+  }, [
+    slug,
+    prefill,
+    threadIdParam,
+    chatStarted,
+    session.sessionId,
+    session.customerId,
+    session.isReturning,
+    session.customerName,
+    draftItems.length,
+  ]);
 
   // Round 22 §A — fetcha mensagens da thread escolhida via `?threadId=`
   // e hidrata o chat ativo. Backend valida ownership pelo cookie
@@ -657,6 +729,69 @@ export default function AssistentePage() {
   // `/salon/tables/adjacent?from={ourTable}` once the BE endpoint lands.
   const salonTables = useMemo<SalonTable[]>(() => [], []);
 
+  const appendToolFeedback = (content: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `tool-feedback-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        role: 'ai',
+        content,
+      },
+    ]);
+  };
+
+  const resolveToolMenuItem = async (
+    call: AssistantToolCall,
+  ): Promise<{ id: string; name: string; priceCents: number } | null> => {
+    const payload = actionPayload(call);
+    const args = call.arguments ?? {};
+    const itemId =
+      stringValue(payload.itemId) ??
+      stringValue(args.itemId) ??
+      stringValue(args.item_id) ??
+      stringValue(args.menuItemId);
+    if (!itemId) return null;
+
+    const payloadName = stringValue(payload.name) ?? stringValue(payload.itemName);
+    const payloadPrice = numberValue(payload.priceCents) ?? numberValue(payload.price_cents);
+    if (payloadName && payloadPrice !== null) {
+      return { id: itemId, name: payloadName, priceCents: payloadPrice };
+    }
+
+    try {
+      const item = await apiGet<MenuItemToolPayload>(`/${slug}/menu/items/${itemId}`);
+      const name = item.name;
+      const priceCents = numberValue(item.priceCents) ?? numberValue(item.price_cents);
+      if (name && priceCents !== null) {
+        return { id: item.id, name, priceCents };
+      }
+    } catch (err) {
+      console.warn('[chat] failed to resolve menu item for tool:', itemId, err);
+    }
+    return null;
+  };
+
+  const draftSummaryText = () => {
+    if (draftItems.length === 0) {
+      return 'Seu pedido tá vazio. Quer dar uma olhada no cardápio?';
+    }
+    const lines = draftItems.map((it) => {
+      const lineTotal = it.priceCents * it.quantity;
+      return `- ${it.quantity}x ${it.name} — ${formatCurrency(lineTotal)}`;
+    });
+    return `Seu pedido até agora:\n${lines.join('\n')}\nTotal: ${formatCurrency(totalCents)}`;
+  };
+
+  const findDraftLine = (itemOrDraftId: string | null) => {
+    if (itemOrDraftId) {
+      const exact = draftItems.find(
+        (it) => it.draftId === itemOrDraftId || it.menuItemId === itemOrDraftId,
+      );
+      if (exact) return exact;
+    }
+    return draftItems.length === 1 ? draftItems[0] : null;
+  };
+
   /**
    * Dispatch a tool call coming back from the AI service. Most canonical
    * tools resolve server-side and just produce text in `res.response`; this
@@ -756,6 +891,109 @@ export default function AssistentePage() {
       return;
     }
 
+    if (name === 'add_to_order') {
+      const item = await resolveToolMenuItem(call);
+      if (!item) {
+        appendToolFeedback('Não consegui localizar esse item no cardápio para atualizar seu pedido.');
+        return;
+      }
+      const payload = actionPayload(call);
+      const args = call.arguments ?? {};
+      const quantity = positiveInt(payload.quantity ?? args.quantity ?? args.qty, 1);
+      const note =
+        stringValue(payload.notes) ??
+        stringValue(payload.note) ??
+        stringValue(args.notes) ??
+        stringValue(args.note) ??
+        undefined;
+      addItem({
+        menuItemId: item.id,
+        name: item.name,
+        priceCents: item.priceCents,
+        quantity,
+        note,
+        commandMode: session.customerId ? 'individual' : 'table',
+      });
+      return;
+    }
+
+    if (name === 'view_order') {
+      appendToolFeedback(draftSummaryText());
+      return;
+    }
+
+    if (name === 'remove_from_cart') {
+      const payload = actionPayload(call);
+      const args = call.arguments ?? {};
+      const itemId =
+        stringValue(payload.removedItemId) ??
+        stringValue(payload.itemId) ??
+        stringValue(args.itemId) ??
+        stringValue(args.item_id);
+      const line = findDraftLine(itemId);
+      if (!line) {
+        appendToolFeedback('Não encontrei esse item no pedido atual.');
+        return;
+      }
+      removeItem(line.draftId);
+      return;
+    }
+
+    if (name === 'change_order') {
+      const payload = actionPayload(call);
+      const args = call.arguments ?? {};
+      const changes = isRecord(payload.changes)
+        ? payload.changes
+        : isRecord(args.changes)
+          ? args.changes
+          : {};
+      const itemId =
+        stringValue(payload.itemId) ??
+        stringValue(args.itemId) ??
+        stringValue(args.item_id);
+      const line = findDraftLine(itemId);
+      if (!line) {
+        appendToolFeedback('Não encontrei esse item no pedido atual.');
+        return;
+      }
+
+      const nextQuantity = numberValue(
+        changes.quantity ?? changes.qty ?? payload.quantity ?? args.quantity ?? args.qty,
+      );
+      const nextNote =
+        stringValue(changes.notes) ??
+        stringValue(changes.note) ??
+        stringValue(payload.notes) ??
+        stringValue(payload.note) ??
+        stringValue(args.notes) ??
+        stringValue(args.note);
+      const patch: { quantity?: number; note?: string } = {};
+      if (nextQuantity !== null) {
+        patch.quantity = Math.max(1, Math.min(20, Math.floor(nextQuantity)));
+      }
+      if (nextNote !== null) {
+        patch.note = nextNote;
+      }
+      if (Object.keys(patch).length > 0) {
+        updateItem(line.draftId, patch);
+      }
+      return;
+    }
+
+    if (name === 'cancel_order') {
+      clearDraftOrder();
+      return;
+    }
+
+    if (name === 'confirm_order') {
+      if (draftItems.length === 0) {
+        appendToolFeedback('Seu pedido tá vazio. Quer escolher algo no cardápio?');
+        return;
+      }
+      push(`/${slug}/pedido/revisar`);
+      return;
+    }
+
     // 2) Tools whose UX isn't fully designed yet — render a generic "OK"
     //    bubble so the chat doesn't crash, log a warning so devs see the
     //    gap. Per F4 brief.
@@ -763,7 +1001,6 @@ export default function AssistentePage() {
       'search_dish',
       'check_allergens',
       'compare_dishes',
-      'view_order',
       'split_bill',
       'pay_individual',
       'pay_full',

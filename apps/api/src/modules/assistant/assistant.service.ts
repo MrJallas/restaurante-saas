@@ -70,6 +70,7 @@ export interface LinkedItem {
  */
 function normalizeToolCalls(
   raw: AiToolCall[] | undefined,
+  menuItems: MenuItemRow[] = [],
 ): Array<Record<string, unknown>> {
   if (!raw || raw.length === 0) return [];
   return raw.map((tc) => {
@@ -82,6 +83,12 @@ function normalizeToolCalls(
     const flatArgs = (tc.args ?? fn?.arguments ?? {}) as Record<string, unknown>;
     const result = (tc.result ?? null) as Record<string, unknown> | null;
     const chips = Array.isArray(result?.chips) ? (result!.chips as unknown[]) : [];
+    const actionPayload = enrichToolActionPayload(
+      flatName,
+      flatArgs,
+      (result?.actionPayload ?? null) as Record<string, unknown> | null,
+      menuItems,
+    );
     return {
       ...tc,
       name: flatName,
@@ -95,10 +102,40 @@ function normalizeToolCalls(
         result && typeof result.routerTarget === 'string'
           ? result.routerTarget
           : undefined,
-      actionPayload: result?.actionPayload,
+      actionPayload,
       chips,
     };
   });
+}
+
+function enrichToolActionPayload(
+  toolName: string,
+  args: Record<string, unknown>,
+  payload: Record<string, unknown> | null,
+  menuItems: MenuItemRow[],
+): Record<string, unknown> | null {
+  if (toolName !== 'add_to_order') return payload;
+  const itemId =
+    typeof payload?.itemId === 'string'
+      ? payload.itemId
+      : typeof args.itemId === 'string'
+        ? args.itemId
+        : typeof args.menuItemId === 'string'
+          ? args.menuItemId
+          : null;
+  if (!itemId) return payload;
+
+  const item = menuItems.find((it) => it.id === itemId);
+  if (!item) return payload;
+
+  return {
+    ...(payload ?? {}),
+    itemId,
+    name: item.name,
+    priceCents: item.price_cents,
+    imageUrl: item.image_url,
+    categoryName: item.category_name,
+  };
 }
 
 /**
@@ -122,6 +159,24 @@ function aggregateChipsFromTools(
     }
   }
   return out.length > 0 ? out : null;
+}
+
+function responseWithToolContext(
+  response: string,
+  toolCalls: Array<Record<string, unknown>>,
+): string {
+  const addToOrder = toolCalls.find((tc) => tc.name === 'add_to_order');
+  const payload = addToOrder?.actionPayload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return response;
+  }
+  const itemName = (payload as Record<string, unknown>).name;
+  if (typeof itemName !== 'string' || itemName.trim().length === 0) {
+    return response;
+  }
+  const quantityRaw = (payload as Record<string, unknown>).quantity;
+  const quantity = typeof quantityRaw === 'number' && quantityRaw > 0 ? Math.floor(quantityRaw) : 1;
+  return `Adicionei ${quantity}x ${itemName.trim()} ao seu pedido. Quer mais alguma coisa?`;
 }
 
 function normalizeForMatch(text: string): string {
@@ -323,7 +378,8 @@ export class AssistantService {
         customerContext,
       );
 
-      const normalizedTools = normalizeToolCalls(result.tool_calls);
+      const normalizedTools = normalizeToolCalls(result.tool_calls, menuItems);
+      const assistantResponse = responseWithToolContext(result.response, normalizedTools);
       // K-1 fix: prefer chips canônicos das tools sobre SUGGESTION_CHIPS estático.
       // Quando nenhuma tool emitiu chips (ex: turno 100% texto), caímos
       // pro trio default — assim o cliente nunca vê uma row de chips vazia.
@@ -332,7 +388,7 @@ export class AssistantService {
       // Persistir os chips canônicos em `assistant_messages.contextual_chips`
       // (jsonb, migration 030). Se a tool não retornou nada, persistimos
       // null pra que o GIN index parcial fique enxuto.
-      await this.saveMessage(tableSessionId, safeCustomerId, message, result.response, {
+      await this.saveMessage(tableSessionId, safeCustomerId, message, assistantResponse, {
         tokensIn: result.tokens_in,
         tokensOut: result.tokens_out,
         modelUsed: result.model,
@@ -344,7 +400,7 @@ export class AssistantService {
       });
 
       const linkedItems = extractLinkedItems(
-        result.response,
+        assistantResponse,
         menuItems,
         normalizedTools,
       );
@@ -408,7 +464,7 @@ export class AssistantService {
           customerId: safeCustomerId,
           sessionId: tableSessionId,
           userMessage: message,
-          assistantResponse: result.response,
+          assistantResponse,
           toolCalls: result.tool_calls ?? null,
           suggestionChips: toolChips
             ? (toolChips as Array<Record<string, unknown>>)
@@ -420,7 +476,7 @@ export class AssistantService {
       }
 
       return {
-        response: result.response,
+        response: assistantResponse,
         wasBlocked: false,
         // suggestions agora reflete os chips canônicos quando presentes,
         // ou cai no fallback estático. FE consome esse array independente
@@ -706,7 +762,7 @@ export class AssistantService {
     const menuSummary = items
       .map(
         (i) =>
-          `- ${i.name} (${i.category_name}) - R$${(i.price_cents / 100).toFixed(2)}${
+          `- ${i.name} [id: ${i.id}] (${i.category_name}) - R$${(i.price_cents / 100).toFixed(2)}${
             i.short_description ? `: ${i.short_description}` : ''
           }${i.allergens?.length ? ` [Alergenos: ${i.allergens.join(', ')}]` : ''}`,
       )

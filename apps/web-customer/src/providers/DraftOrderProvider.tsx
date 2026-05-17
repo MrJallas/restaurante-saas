@@ -9,6 +9,7 @@ import {
   useMemo,
   useState,
 } from 'react';
+import { clearContinuationHint, recordContinuationHint } from '../lib/continuationHints';
 
 export interface DraftItem {
   /** stable id for this draft line (not the menu item id) */
@@ -41,6 +42,33 @@ function storageKey(sessionId: string | null) {
   return sessionId ? `draft:${sessionId}` : null;
 }
 
+function sessionIdFromBundle(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem('session:bundle');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { sessionId?: unknown };
+    return typeof parsed.sessionId === 'string' && parsed.sessionId.length > 0
+      ? parsed.sessionId
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolvedStorageKey(sessionId: string | null) {
+  return storageKey(sessionId ?? sessionIdFromBundle());
+}
+
+function writeDraftNow(key: string | null, nextItems: DraftItem[]) {
+  if (!key || typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(nextItems));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function DraftOrderProvider({
   sessionId,
   children,
@@ -52,7 +80,7 @@ export function DraftOrderProvider({
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    const key = storageKey(sessionId);
+    const key = resolvedStorageKey(sessionId);
     if (!key) {
       setItems([]);
       setHydrated(true);
@@ -81,14 +109,10 @@ export function DraftOrderProvider({
   // rota externa); casos residuais perdem no maximo os ultimos 200ms.
   useEffect(() => {
     if (!hydrated) return;
-    const key = storageKey(sessionId);
+    const key = resolvedStorageKey(sessionId);
     if (!key) return;
     const flush = () => {
-      try {
-        window.localStorage.setItem(key, JSON.stringify(items));
-      } catch {
-        /* ignore */
-      }
+      writeDraftNow(key, items);
     };
     const t = window.setTimeout(flush, 200);
     window.addEventListener('beforeunload', flush);
@@ -99,26 +123,41 @@ export function DraftOrderProvider({
   }, [items, sessionId, hydrated]);
 
   const addItem = useCallback<DraftOrderContextValue['addItem']>((item) => {
-    setItems((prev) => [
-      ...prev,
-      { ...item, draftId: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}` },
-    ]);
-  }, []);
+    recordContinuationHint('abriu_pedido');
+    setItems((prev) => {
+      const next = [
+        ...prev,
+        { ...item, draftId: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}` },
+      ];
+      writeDraftNow(resolvedStorageKey(sessionId), next);
+      return next;
+    });
+  }, [sessionId]);
 
   const updateItem = useCallback<DraftOrderContextValue['updateItem']>(
     (draftId, patch) => {
-      setItems((prev) =>
-        prev.map((it) => (it.draftId === draftId ? { ...it, ...patch } : it)),
-      );
+      setItems((prev) => {
+        const next = prev.map((it) => (it.draftId === draftId ? { ...it, ...patch } : it));
+        writeDraftNow(resolvedStorageKey(sessionId), next);
+        return next;
+      });
     },
-    [],
+    [sessionId],
   );
 
   const removeItem = useCallback<DraftOrderContextValue['removeItem']>((draftId) => {
-    setItems((prev) => prev.filter((it) => it.draftId !== draftId));
-  }, []);
+    setItems((prev) => {
+      const next = prev.filter((it) => it.draftId !== draftId);
+      writeDraftNow(resolvedStorageKey(sessionId), next);
+      return next;
+    });
+  }, [sessionId]);
 
-  const clear = useCallback(() => setItems([]), []);
+  const clear = useCallback(() => {
+    clearContinuationHint('abriu_pedido');
+    writeDraftNow(resolvedStorageKey(sessionId), []);
+    setItems([]);
+  }, [sessionId]);
 
   const totalCents = useMemo(
     () => items.reduce((s, it) => s + it.priceCents * it.quantity, 0),

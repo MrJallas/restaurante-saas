@@ -162,6 +162,32 @@ def test_view_courtesy_does_not_call_api():
 
 
 # ─────────────────────────────────────────────────────────────
+# customer draft order tools — client-state only, NO HTTP cart calls
+# ─────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "tool_name,args",
+    [
+        ("add_to_order", {"itemId": "12345678-1234-4234-8234-123456789012", "quantity": 1}),
+        ("view_order", {}),
+        ("remove_from_cart", {"itemId": "12345678-1234-4234-8234-123456789012"}),
+        ("change_order", {"itemId": "12345678-1234-4234-8234-123456789012", "quantity": 2}),
+        ("cancel_order", {}),
+        ("confirm_order", {}),
+    ],
+)
+def test_customer_draft_order_tools_do_not_call_api(tool_name, args):
+    """Draft cart lives in web-customer state; tools must not hit /customer/cart/*."""
+    api = RecordingApiClient()
+    ctx = ToolContext(tenant_id="my-rest", customer_id="cust-1", api_client=api)
+    result = dispatch_tool(tool_name, args, ctx)
+    assert result.error is None
+    assert api.calls == []
+    assert result.action_payload is not None
+
+
+# ─────────────────────────────────────────────────────────────
 # api_client integration — wire correctness
 # ─────────────────────────────────────────────────────────────
 
