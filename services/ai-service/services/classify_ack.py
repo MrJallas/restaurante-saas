@@ -116,6 +116,18 @@ _ALLOW_LIST_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b(cancela(mento|r)?|trocar|alterar|adiar)\s+(reserva|pedido|mesa)?", re.IGNORECASE),
     re.compile(r"\b(dress\s+code|traje|roupa)\b", re.IGNORECASE),
     re.compile(r"\b(acessibilidade|cadeira\s+de\s+rodas|rampa)\b", re.IGNORECASE),
+    # Customer assistant secondary tools: courtesy lookup and chat-history
+    # routing are restaurant-app intents, even when phrased naturally.
+    re.compile(r"\b(cortesia|cortesias|brinde|brindes|compensa[cç][aã]o|mimo)\b", re.IGNORECASE),
+    re.compile(r"\b(minhas?|meus?)\s+(conversas?|chats?|mensagens)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(ver|abrir|mostrar|consultar|apagar|deletar|excluir)\b.*\b(hist[oó]rico|conversas?|chats?)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(hist[oó]rico|conversas?|chats?)\b.*\b(conversas?|chat|mensagens|atendimento)\b",
+        re.IGNORECASE,
+    ),
 ]
 
 

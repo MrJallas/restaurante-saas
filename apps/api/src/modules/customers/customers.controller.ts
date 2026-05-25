@@ -18,8 +18,11 @@ import {
   Matches,
   IsOptional,
   IsUUID,
+  IsIn,
+  IsNumber,
+  ValidateNested,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { Request, Response } from 'express';
 import { getSecureCookieOptions } from '../../common/utils/cookie-options';
 import { SessionGuard } from '../../common/guards/session.guard';
@@ -37,6 +40,27 @@ const IDENTIFY_RATE_MAX = 5;
 const IDENTIFY_RATE_WINDOW_SECONDS = 15 * 60;
 const IDENTIFY_RATE_LOCK_SECONDS = 15 * 60;
 
+class CustomerLocationDto {
+  @IsIn(['unknown', 'prompt', 'granted', 'denied', 'unavailable', 'unsupported'])
+  status!: 'unknown' | 'prompt' | 'granted' | 'denied' | 'unavailable' | 'unsupported';
+
+  @IsOptional()
+  @IsNumber()
+  latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  longitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  accuracyMeters?: number;
+
+  @IsOptional()
+  @IsString()
+  capturedAt?: string;
+}
+
 class CustomerWelcomeDto {
   @IsString()
   @IsNotEmpty()
@@ -53,6 +77,11 @@ class CustomerWelcomeDto {
   @MaxLength(11)
   @Matches(/^\d{11}$/, { message: 'cpf must be 11 digits' })
   cpf!: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CustomerLocationDto)
+  location?: CustomerLocationDto;
 }
 
 class CustomerRecognizeDto {
@@ -60,6 +89,11 @@ class CustomerRecognizeDto {
   @IsString()
   @MaxLength(256)
   recognitionToken?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CustomerLocationDto)
+  location?: CustomerLocationDto;
 }
 
 class CustomerIdentifyDto {
@@ -275,10 +309,11 @@ export class CustomersController {
     try {
       result = await this.customersService.welcome(
         dto.name,
-        dto.cpf,
-        session.sessionId,
-        callerRecognitionToken,
-      );
+      dto.cpf,
+      session.sessionId,
+      callerRecognitionToken,
+      dto.location,
+    );
     } catch (err) {
       await this.bumpWelcomeAttempts(ipKey);
       throw err;
@@ -325,6 +360,7 @@ export class CustomersController {
     const result = await this.customersService.recognize(
       token,
       session.sessionId,
+      dto.location,
     );
 
     res.cookie('recognition_token', result.recognitionToken, getSecureCookieOptions(req as Request, {

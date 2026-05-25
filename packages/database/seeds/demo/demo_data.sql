@@ -23,6 +23,8 @@ DELETE FROM complaints WHERE TRUE;
 DELETE FROM order_ratings WHERE TRUE;
 DELETE FROM table_merge_cooldowns WHERE TRUE;
 DELETE FROM table_merge_requests WHERE TRUE;
+DELETE FROM scan_verification_requests WHERE TRUE;
+DELETE FROM table_qr_releases WHERE TRUE;
 DELETE FROM late_arrival_requests WHERE TRUE;
 DELETE FROM escalation_chains WHERE TRUE;
 DELETE FROM lgpd_requests WHERE TRUE;
@@ -58,6 +60,34 @@ INSERT INTO tables (code, label, capacity, sort_order) VALUES
   ('M03', 'Mesa 03', 4, 3),
   ('M04', 'Mesa 04', 6, 4),
   ('M05', 'Mesa 05 (Varanda)', 4, 5);
+
+-- Fixed physical QR tables used by automated and manual QR-entry tests.
+-- They intentionally use high table numbers so host endpoints that receive
+-- numeric table refs do not collide with M01-M05.
+INSERT INTO tables (
+  code,
+  label,
+  qr_hmac_secret,
+  qr_public_token,
+  capacity,
+  sort_order
+) VALUES
+  (
+    'QRTEST91',
+    'QR Teste 91',
+    'qrtest91-secret-fixed',
+    'qrtest91-public-token-fixed',
+    2,
+    91
+  ),
+  (
+    'QRTEST92',
+    'QR Teste 92',
+    'qrtest92-secret-fixed',
+    'qrtest92-public-token-fixed',
+    2,
+    92
+  );
 
 -- === Staff (PIN 1234 everywhere = sha256) ===
 -- sha256('1234') = 03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4

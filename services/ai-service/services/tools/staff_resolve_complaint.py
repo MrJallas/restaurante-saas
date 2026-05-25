@@ -13,8 +13,7 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     if ctx.api_client:
         try:
-            ctx.api_client("POST", f"/staff/complaints/{complaint_id}/resolve", {
-                "resolvedBy": ctx.waiter_id,
+            ctx.api_client("POST", f"/complaints/{complaint_id}/resolve", {
                 "compensation": compensation,
                 "note": args.get("note"),
             })

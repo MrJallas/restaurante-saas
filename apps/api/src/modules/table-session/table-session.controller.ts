@@ -1,6 +1,6 @@
 import { Controller, Post, Body, Res } from '@nestjs/common';
 import { Response } from 'express';
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 import { Tenant } from '../../common/decorators/tenant.decorator';
 import { TableSessionService } from './table-session.service';
 
@@ -16,6 +16,10 @@ class InitSessionDto {
   @IsString()
   @IsNotEmpty()
   timestamp!: string;
+
+  @IsOptional()
+  @IsString()
+  accessToken?: string;
 }
 
 @Controller(':slug/session')
@@ -33,6 +37,7 @@ export class TableSessionController {
       dto.hmacSignature,
       dto.timestamp,
       schemaName,
+      dto.accessToken,
     );
 
     res.cookie('session_token', session.sessionId, {

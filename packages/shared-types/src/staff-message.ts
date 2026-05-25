@@ -98,8 +98,9 @@ export interface StaffMessageThreadDto {
 }
 
 /**
- * Body of `POST /staff/messages` (manager direct reply outside the complaint
- * flow). For complaint responses, use `POST /staff/complaints/:id/respond`.
+ * Body of `POST /:slug/staff-messages` (manager direct reply outside the
+ * complaint flow). For complaint responses, use
+ * `POST /:slug/complaints/:id/respond`.
  */
 export interface StaffMessageSendDto {
   recipientStaffId?: string;

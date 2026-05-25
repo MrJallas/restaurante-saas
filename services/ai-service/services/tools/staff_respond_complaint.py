@@ -12,9 +12,9 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     if ctx.api_client:
         try:
-            ctx.api_client("POST", f"/staff/complaints/{complaint_id}/messages", {
-                "fromStaffId": ctx.waiter_id,
-                "text": text,
+            ctx.api_client("POST", f"/complaints/{complaint_id}/respond", {
+                "content": text,
+                "chipAction": args.get("chipAction") or args.get("chip_action"),
             })
         except Exception as e:
             return ToolResult(error={"code": "api_error", "message": str(e)})

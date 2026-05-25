@@ -84,6 +84,11 @@ def test_returns_none_for_empty():
     # Table merge
     "junta com a mesa 5",
     "queria juntar minha mesa com a 3",
+    # Courtesy/history tools
+    "tenho cortesia ativa?",
+    "quero ver minhas conversas",
+    "abrir histórico de chat",
+    "apagar histórico de conversas",
 ])
 def test_allow_list_lets_legit_intents_through(text: str):
     assert is_allowed_intent(text) is True, f"expected allow-list to pass: {text!r}"
@@ -123,3 +128,19 @@ def test_classify_endpoint_does_not_block_check_request():
     body = res.json()
     assert body["allowed"] is True
     assert body["reason"] != "classifier"
+
+
+@pytest.mark.parametrize("message", [
+    "tenho cortesia ativa?",
+    "quero ver minhas conversas",
+    "abrir histórico de chat",
+])
+def test_classify_endpoint_does_not_block_secondary_tools(message: str):
+    from fastapi.testclient import TestClient
+    import main
+
+    client = TestClient(main.app)
+    res = client.post("/classify", json={"message": message})
+    body = res.json()
+    assert body["allowed"] is True
+    assert body["reason"] == "allow_list"

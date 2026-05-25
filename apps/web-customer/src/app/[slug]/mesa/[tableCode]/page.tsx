@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { apiPost, apiGet } from '../../../../lib/api';
 import { clearDeliveredContinuationHint } from '../../../../lib/continuationHints';
 import { recordCustomerEvent } from '../../../../lib/customerEvents';
+import { captureCustomerLocationSignal } from '../../../../lib/location';
 import { setSessionToken } from '../../../../lib/storage';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
@@ -23,7 +24,7 @@ import type { SessionResponseDto, CustomerWelcomeResponseDto } from '@restaurant
 
 // Hard cap para a splash "Preparando sua experiencia". Se o initSession demorar
 // mais que isso, o pageState e forcado para 'welcome' para a UI nao travar.
-const SPLASH_MAX_MS = 1500;
+const SPLASH_MAX_MS = 3000;
 
 type PageState = 'loading' | 'welcome' | 'home' | 'error' | 'pending_approval';
 
@@ -105,6 +106,30 @@ export default function MesaPage() {
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [reclaimBanner, setReclaimBanner] = useState(false);
   const [sessionResetNonce, setSessionResetNonce] = useState(0);
+  const [hostName, setHostName] = useState<string | null>(null);
+  const [isHost, setIsHost] = useState(false);
+
+  // Verifica status do participant atual (apos welcome ou rehydrate).
+  // Se status='pending', renderiza a tela de espera ate host/staff aprovar.
+  // Se rejeitado, mostra mensagem terminal.
+  const checkParticipantStatus = useCallback(
+    async (cid: string | null): Promise<'approved' | 'pending' | 'rejected' | null> => {
+      if (!cid) return null;
+      try {
+        const res = await apiGet<ParticipantsResponse>(
+          `/${slug}/table/participants`,
+        );
+        const me = res.participants.find((p) => p.customerId === cid);
+        const host = res.participants.find((p) => p.isHost);
+        setHostName(host?.name ?? (me?.status === 'pending' ? 'equipe' : null));
+        setIsHost(!!me?.isHost);
+        return me?.status ?? null;
+      } catch {
+        return null;
+      }
+    },
+    [slug],
+  );
 
   // P1 #21: zone-pause active no DB ja era invisivel no customer side
   // (sem WS scoped ao session room nem polling). Ativamos polling de
@@ -243,11 +268,13 @@ export default function MesaPage() {
         const urlParams = new URLSearchParams(window.location.search);
         const hmac = urlParams.get('hmac') || '';
         const ts = urlParams.get('ts') || '';
+        const accessToken = urlParams.get('accessToken') || undefined;
 
         const session = await apiPost<SessionResponseDto>(`/${slug}/session/init`, {
           tableCode,
           hmacSignature: hmac,
           timestamp: ts,
+          accessToken,
         });
         if (cancelled) return;
 
@@ -285,9 +312,13 @@ export default function MesaPage() {
         // Auto-recognize via httpOnly cookie (server reads req.cookies)
         {
           try {
+            const location = await captureCustomerLocationSignal({
+              prompt: false,
+              timeoutMs: 900,
+            });
             const customer = await apiPost<CustomerWelcomeResponseDto>(
               `/${slug}/customer/recognize`,
-              {},
+              { location },
             );
             if (cancelled) return;
             if (!customer || !customer.customerId) {
@@ -300,6 +331,20 @@ export default function MesaPage() {
               recognitionToken: customer.recognitionToken,
               isReturning: customer.isReturning,
             });
+
+            const status = await checkParticipantStatus(customer.customerId);
+            if (cancelled) return;
+            if (status === 'pending') {
+              transitionTo('pending_approval');
+              return;
+            }
+            if (status === 'rejected') {
+              setErrorMessage(
+                'Sua entrada não foi autorizada. Tente outra mesa ou peça ao garçom.',
+              );
+              transitionTo('error');
+              return;
+            }
 
             const home = await apiGet<HomeData>(
               `/${slug}/home?customerId=${customer.customerId}`,
@@ -330,7 +375,7 @@ export default function MesaPage() {
       cancelled = true;
       window.clearTimeout(hardCap);
     };
-  }, [slug, tableCode, setSession, setCustomer, prefetch, sessionResetNonce]);
+  }, [slug, tableCode, setSession, setCustomer, prefetch, sessionResetNonce, checkParticipantStatus]);
 
   useEffect(() => {
     // Se a URL aponta pra outro tableCode que o da sessao atual, o usuario
@@ -342,30 +387,23 @@ export default function MesaPage() {
     setSessionResetNonce((n) => n + 1);
   }, [clearSession, isValid, sessionTableCode, tableCode]);
 
-  const [hostName, setHostName] = useState<string | null>(null);
-  const [isHost, setIsHost] = useState(false);
+  const refreshHomeContinuation = useCallback(async () => {
+    const url = customerId ? `/${slug}/home?customerId=${customerId}` : `/${slug}/home`;
+    const home = await apiGet<HomeData>(url);
+    setHomeData(home);
+    clearDeliveredContinuationHint(home?.continuationMessage?.kind);
+  }, [slug, customerId]);
 
-  // Verifica status do participant atual (apos welcome ou rehydrate).
-  // Se status='pending', renderiza PendingApprovalScreen ate o host
-  // aprovar via WS. Se rejeitado, mostra mensagem terminal.
-  const checkParticipantStatus = useCallback(
-    async (cid: string | null): Promise<'approved' | 'pending' | 'rejected' | null> => {
-      if (!cid) return null;
-      try {
-        const res = await apiGet<ParticipantsResponse>(
-          `/${slug}/table/participants`,
-        );
-        const me = res.participants.find((p) => p.customerId === cid);
-        const host = res.participants.find((p) => p.isHost);
-        setHostName(host?.name ?? null);
-        setIsHost(!!me?.isHost);
-        return me?.status ?? null;
-      } catch {
-        return null;
-      }
-    },
-    [slug],
-  );
+  useEffect(() => {
+    if (pageState !== 'home') return;
+    const refresh = () => {
+      void refreshHomeContinuation().catch(() => {
+        /* best-effort refresh after sheet close */
+      });
+    };
+    window.addEventListener('customer:continuation-refresh', refresh);
+    return () => window.removeEventListener('customer:continuation-refresh', refresh);
+  }, [pageState, refreshHomeContinuation]);
 
   const handleWelcomeComplete = useCallback(
     async (customer: CustomerWelcomeResponseDto | null) => {
@@ -483,6 +521,7 @@ export default function MesaPage() {
         hostName={hostName}
         onApproved={async () => {
           try {
+            await checkParticipantStatus(customerId);
             const url = customerId
               ? `/${slug}/home?customerId=${customerId}`
               : `/${slug}/home`;
@@ -783,8 +822,11 @@ function humanizeInitError(err: unknown): string {
   if (isValidatorBag) {
     return 'QR Code invalido. Escaneie novamente o codigo da mesa.';
   }
-  if (/QR Code invalido|expirado/i.test(raw)) {
+  if (/QR Code invalido|expirado|Token do QR Code/i.test(raw)) {
     return raw;
+  }
+  if (/Sessao expirada|Sessao nao encontrada|Token de acesso/i.test(raw)) {
+    return 'Escaneie novamente o QR fisico da mesa.';
   }
   if (/Mesa inativa|Mesa nao encontrada/i.test(raw)) {
     return raw;

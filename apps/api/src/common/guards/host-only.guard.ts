@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
+import { getCachedActiveStaffRole } from './staff-role-cache';
 
 /**
  * Host-or-manager guard · second layer on top of `StaffOnlyGuard`.
@@ -49,16 +50,13 @@ export class HostOrManagerGuard implements CanActivate {
       throw new UnauthorizedException('x-staff-id inválido');
     }
 
-    const rows = (await this.tenantConn.query(
-      `SELECT role FROM staff WHERE id = $1 AND is_active = true`,
-      [staffId],
-    )) as { role: string }[];
+    const role = await getCachedActiveStaffRole(this.tenantConn, staffId);
 
-    if (!rows.length) {
+    if (!role) {
       throw new ForbiddenException('staff não encontrado ou inativo');
     }
 
-    if (rows[0].role !== 'host' && rows[0].role !== 'manager') {
+    if (role !== 'host' && role !== 'manager') {
       throw new ForbiddenException('host- or manager-only endpoint');
     }
 

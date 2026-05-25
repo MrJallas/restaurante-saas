@@ -19,8 +19,9 @@ interface ScreenCustomerChatHistoryProps {
   slug: string;
 }
 
-function formatDateMonthLabel(iso: string): string {
+function formatDateDayLabel(iso: string): string {
   const d = new Date(iso);
+  const day = String(d.getDate()).padStart(2, '0');
   const months = [
     'JAN',
     'FEV',
@@ -35,7 +36,7 @@ function formatDateMonthLabel(iso: string): string {
     'NOV',
     'DEZ',
   ];
-  return `${months[d.getMonth()]} · ${d.getFullYear()}`;
+  return `${day} ${months[d.getMonth()]} · ${d.getFullYear()}`;
 }
 
 function formatThreadDateTime(iso: string): string {
@@ -63,7 +64,7 @@ function formatThreadDateTime(iso: string): string {
 /**
  * Chat history list · per `chat-history-lgpd.md`.
  *
- * Renders the customer's chat threads grouped by month with a delete CTA on
+ * Renders the customer's chat threads grouped by day with a delete CTA on
  * each row + a destructive "Apagar todo o histórico" footer button. The
  * delete-all path is the SAME endpoint the LGPD erasure tool calls, so the
  * behavior is uniform: NoSQL chat data is wiped, customer cadastro stays.
@@ -114,12 +115,16 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
     };
   }, [slug, session.customerId]);
 
-  // Group threads by month (YYYY-MM) for the eyebrow labels.
+  // Group threads by day (YYYY-MM-DD) for the eyebrow labels.
   const grouped = (() => {
     const map = new Map<string, ChatThreadDto[]>();
     for (const t of threads) {
       const d = new Date(t.lastMessageAt);
-      const key = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}`;
+      const key = [
+        d.getFullYear(),
+        String(d.getMonth() + 1).padStart(2, '0'),
+        String(d.getDate()).padStart(2, '0'),
+      ].join('-');
       const arr = map.get(key) ?? [];
       arr.push(t);
       map.set(key, arr);
@@ -210,7 +215,7 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
             {grouped.map(([key, items]) => (
               <div key={key} className="flex flex-col gap-2">
                 <div className="text-[10px] font-semibold uppercase tracking-[1.5px] text-faint">
-                  {formatDateMonthLabel(items[0].lastMessageAt)}
+                  {formatDateDayLabel(items[0].lastMessageAt)}
                 </div>
                 <div className="flex flex-col gap-2">
                   {items.map((t) => (

@@ -160,7 +160,7 @@ export class StaffService {
     const params: unknown[] = [ref];
     let where = `ts.id::text = $1 OR t.code = $1 OR t.label = $1`;
     if (isUuid) {
-      where = `ts.id = $1::uuid OR t.id = $1::uuid OR t.code = $1 OR t.label = $1`;
+      where = `ts.id = $1::uuid OR t.id = $1::uuid OR t.code = $1::text OR t.label = $1::text`;
     }
     if (numeric !== null) {
       params.push(numeric);
@@ -306,15 +306,27 @@ export class StaffService {
       sessionsHandled: number;
       callsAnswered: number;
     };
+    salesByDay: Array<{
+      date: string;
+      ordersServed: number;
+      totalRevenue: number;
+    }>;
+    teamComparison: Array<{
+      metric: 'avgResponseSec' | 'avgTicketCents' | 'callsAnswered' | 'sessionsHandled';
+      mine: number;
+      team: number;
+      lowerIsBetter?: boolean;
+    }>;
   }> {
     // Confirma staff existe (404 limpo).
     const sRows = (await this.tenantConn.query(
-      `SELECT id FROM staff WHERE id = $1`,
+      `SELECT id, role FROM staff WHERE id = $1`,
       [staffId],
-    )) as Array<{ id: string }>;
+    )) as Array<{ id: string; role: string }>;
     if (!sRows.length) {
       throw new NotFoundException('Funcionario nao encontrado.');
     }
+    const staffRole = sRows[0].role;
 
     // SQL `since` expression. `date_trunc('day', now())` = 00:00 today.
     const sinceExpr =
@@ -377,6 +389,116 @@ export class StaffService {
     )) as Array<{ sessions_handled: number }>;
     const sessionsHandled = sessionsRows[0]?.sessions_handled ?? 0;
 
+    const salesByDay = (await this.tenantConn.query(
+      `
+      WITH days AS (
+        SELECT generate_series(
+          date_trunc('day', ${sinceExpr}),
+          date_trunc('day', now()),
+          interval '1 day'
+        )::date AS day
+      ),
+      served AS (
+        SELECT DISTINCT osh.order_id, date_trunc('day', osh.created_at)::date AS day
+          FROM order_status_history osh
+         WHERE osh.to_status = 'delivered'
+           AND osh.changed_by = $1
+           AND osh.created_at >= ${sinceExpr}
+      )
+      SELECT
+        days.day::text AS date,
+        COUNT(served.order_id)::int AS orders_served,
+        COALESCE(SUM(o.total_cents), 0)::int AS total_revenue
+      FROM days
+      LEFT JOIN served ON served.day = days.day
+      LEFT JOIN orders o ON o.id = served.order_id
+      GROUP BY days.day
+      ORDER BY days.day ASC
+      `,
+      [staffId],
+    )) as Array<{ date: string; orders_served: number; total_revenue: number }>;
+
+    const teamRows = (await this.tenantConn.query(
+      `
+      WITH team AS (
+        SELECT id FROM staff WHERE role = $1 AND is_active = true
+      ),
+      served AS (
+        SELECT DISTINCT osh.changed_by AS staff_id, osh.order_id
+          FROM order_status_history osh
+          JOIN team t ON t.id = osh.changed_by
+         WHERE osh.to_status = 'delivered'
+           AND osh.created_at >= ${sinceExpr}
+      ),
+      staff_orders AS (
+        SELECT t.id AS staff_id,
+               COUNT(served.order_id)::int AS orders_served,
+               COALESCE(SUM(o.total_cents), 0)::int AS total_revenue
+          FROM team t
+          LEFT JOIN served ON served.staff_id = t.id
+          LEFT JOIN orders o ON o.id = served.order_id
+         GROUP BY t.id
+      ),
+      staff_calls AS (
+        SELECT t.id AS staff_id,
+               COUNT(wc.id)::int AS calls_answered,
+               COALESCE(
+                 AVG(EXTRACT(EPOCH FROM (wc.acknowledged_at - wc.created_at))),
+                 0
+               )::int AS avg_response_sec
+          FROM team t
+          LEFT JOIN waiter_calls wc
+            ON wc.acknowledged_by = t.id
+           AND wc.acknowledged_at IS NOT NULL
+           AND wc.created_at >= ${sinceExpr}
+         GROUP BY t.id
+      ),
+      staff_sessions AS (
+        SELECT t.id AS staff_id,
+               COUNT(ts.id)::int AS sessions_handled
+          FROM team t
+          LEFT JOIN table_sessions ts
+            ON ts.closed_by = t.id::text
+           AND ts.closed_at IS NOT NULL
+           AND ts.closed_at >= ${sinceExpr}
+         GROUP BY t.id
+      )
+      SELECT
+        COALESCE(ROUND(AVG(staff_orders.total_revenue)), 0)::int AS avg_revenue,
+        COALESCE(ROUND(AVG(
+          CASE WHEN staff_orders.orders_served > 0
+            THEN staff_orders.total_revenue::numeric / staff_orders.orders_served
+            ELSE 0
+          END
+        )), 0)::int AS avg_ticket_cents,
+        COALESCE(ROUND(AVG(staff_calls.avg_response_sec)), 0)::int AS avg_response_sec,
+        COALESCE(ROUND(AVG(staff_calls.calls_answered)), 0)::int AS avg_calls_answered,
+        COALESCE(ROUND(AVG(staff_sessions.sessions_handled)), 0)::int AS avg_sessions_handled
+      FROM team
+      LEFT JOIN staff_orders ON staff_orders.staff_id = team.id
+      LEFT JOIN staff_calls ON staff_calls.staff_id = team.id
+      LEFT JOIN staff_sessions ON staff_sessions.staff_id = team.id
+      `,
+      [staffRole],
+    )) as Array<{
+      avg_revenue: number;
+      avg_ticket_cents: number;
+      avg_response_sec: number;
+      avg_calls_answered: number;
+      avg_sessions_handled: number;
+    }>;
+    const team = teamRows[0] ?? {
+      avg_revenue: 0,
+      avg_ticket_cents: 0,
+      avg_response_sec: 0,
+      avg_calls_answered: 0,
+      avg_sessions_handled: 0,
+    };
+    const avgTicketCents =
+      ordersAgg.orders_served > 0
+        ? Math.round(ordersAgg.total_revenue / ordersAgg.orders_served)
+        : 0;
+
     return {
       staffId,
       period,
@@ -387,6 +509,34 @@ export class StaffService {
         sessionsHandled,
         callsAnswered: callsAgg.calls_answered,
       },
+      salesByDay: salesByDay.map((row) => ({
+        date: row.date,
+        ordersServed: row.orders_served,
+        totalRevenue: row.total_revenue,
+      })),
+      teamComparison: [
+        {
+          metric: 'avgResponseSec',
+          mine: callsAgg.avg_response_sec,
+          team: team.avg_response_sec,
+          lowerIsBetter: true,
+        },
+        {
+          metric: 'avgTicketCents',
+          mine: avgTicketCents,
+          team: team.avg_ticket_cents,
+        },
+        {
+          metric: 'callsAnswered',
+          mine: callsAgg.calls_answered,
+          team: team.avg_calls_answered,
+        },
+        {
+          metric: 'sessionsHandled',
+          mine: sessionsHandled,
+          team: team.avg_sessions_handled,
+        },
+      ],
     };
   }
 

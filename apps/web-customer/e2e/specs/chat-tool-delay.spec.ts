@@ -4,7 +4,7 @@ import { newSession } from '../helpers/session';
 
 /**
  * Limpa rate-limit do welcome (5 tentativas/15min por IP) + sessões abertas
- * na mesa M01. Sem isso, as 4 tests da suite estouram o limite após o 5º
+ * na mesa QRTEST91. Sem isso, as 4 tests da suite estouram o limite após o 5º
  * `welcomeAs` da rodada (cada teste re-faz welcome com mesmo IP).
  */
 function resetWelcomeRateLimitAndSessions(): void {
@@ -14,7 +14,7 @@ function resetWelcomeRateLimitAndSessions(): void {
       { stdio: 'ignore' },
     );
     execSync(
-      `docker exec restaurant-postgres psql -h localhost -p 5434 -U postgres -d restaurant_saas -c "UPDATE restaurant_dev.table_sessions SET status='closed', closed_at=NOW() WHERE table_id IN (SELECT id FROM restaurant_dev.tables WHERE code='M01') AND closed_at IS NULL;" >/dev/null 2>&1`,
+      `docker exec restaurant-postgres psql -h localhost -p 5434 -U postgres -d restaurant_saas -c "UPDATE restaurant_dev.table_sessions SET status='closed', closed_at=NOW() WHERE table_id IN (SELECT id FROM restaurant_dev.tables WHERE code='QRTEST91') AND closed_at IS NULL;" >/dev/null 2>&1`,
       { stdio: 'ignore' },
     );
   } catch {

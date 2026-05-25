@@ -10,10 +10,10 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     if ctx.api_client:
         try:
-            ctx.api_client("POST", "/staff/broadcasts", {
-                "fromStaffId": ctx.waiter_id,
-                "audience": audience,
-                "text": text,
+            ctx.api_client("POST", "/staff-messages", {
+                "body": text,
+                "subject": f"Broadcast {audience}",
+                "isBroadcast": True,
             })
         except Exception as e:
             return ToolResult(error={"code": "api_error", "message": str(e)})

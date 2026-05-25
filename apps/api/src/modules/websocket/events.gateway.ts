@@ -21,6 +21,9 @@ import type {
   WsLateArrivalApproved,
   WsLateArrivalRejected,
   WsLateArrivalExpired,
+  WsScanVerificationCreated,
+  WsScanVerificationEscalated,
+  WsScanVerificationResolved,
   WsTableMergeCreated,
   WsTableMergeApproved,
   WsTableMergeRejected,
@@ -558,6 +561,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       callId,
       timestamp: new Date().toISOString(),
     });
+    this.server.to(`tenant:${slug}:waiter`).emit('waiter:acknowledged', {
+      callId,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   emitToSession(sessionId: string, event: string, data: unknown) {
@@ -714,6 +721,54 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         .to(`customer:${requesterCustomerId}`)
         .emit('late_arrival.expired', payload);
     }
+  }
+
+  /**
+   * Routing: all staff dashboards + host room first. Customer stays in the
+   * table session waiting screen until a resolved event/participant decision.
+   */
+  emitScanVerificationCreated(
+    slug: string,
+    payload: WsScanVerificationCreated['payload'],
+  ) {
+    this.server.to(`tenant:${slug}`).emit('scan_verification.created', payload);
+    this.server
+      .to(`tenant:${slug}:host`)
+      .emit('scan_verification.created', payload);
+  }
+
+  /**
+   * Routing: staff dashboards and the newly responsible role room.
+   */
+  emitScanVerificationEscalated(
+    slug: string,
+    assigneeRole: 'host' | 'manager' | 'waiter',
+    payload: WsScanVerificationEscalated['payload'],
+  ) {
+    this.server
+      .to(`tenant:${slug}`)
+      .emit('scan_verification.escalated', payload);
+    this.server
+      .to(`tenant:${slug}:${assigneeRole}`)
+      .emit('scan_verification.escalated', payload);
+  }
+
+  /**
+   * Routing: staff dashboards + requester customer + table session room.
+   */
+  emitScanVerificationResolved(
+    slug: string,
+    payload: WsScanVerificationResolved['payload'],
+  ) {
+    this.server
+      .to(`tenant:${slug}`)
+      .emit('scan_verification.resolved', payload);
+    this.server
+      .to(`customer:${payload.requesterCustomerId}`)
+      .emit('scan_verification.resolved', payload);
+    this.server
+      .to(`session:${payload.tableSessionId}`)
+      .emit('scan_verification.resolved', payload);
   }
 
   /**
@@ -1053,15 +1108,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   /**
    * Round 18 (Onda 4 batch 2): broadcast pra dashboards de manager
    * quando um alerta novo é inserido na tabela `alerts` (migration
-   * 045). Sem slug-arg (alerta nao carrega slug — eh tenant-scoped
-   * pela schema de quem inseriu); o gateway emite no namespace
-   * default. Subscribers no FE (`ScreenManagerAlertsAll`) filtram
-   * por dismissed/resolved e re-fetch ao receber o event.
+   * 045). O emit é sempre tenant-scoped para evitar vazamento
+   * cross-tenant em sockets staff/customer de outros restaurantes.
    *
    * Payload: o row do alerta serializado. Inclui `actions` JSONB ja
    * parsed pro FE renderizar botoes inline sem segundo fetch.
    */
-  emitAlertCreated(alert: Record<string, unknown>) {
-    this.server.emit('alert.created', alert);
+  emitAlertCreated(slug: string, alert: Record<string, unknown>) {
+    this.server.to(`tenant:${slug}:manager`).emit('alert.created', alert);
   }
 }

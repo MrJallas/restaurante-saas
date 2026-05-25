@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { buildMesaUrl } from '../helpers/qr';
+import { buildMesaUrl, liberateQrTestTable } from '../helpers/qr';
 import { newSession, openDrawer, TEST_CPF, TEST_NAME, welcomeAs } from '../helpers/session';
 
 async function openReasonPicker(page: Page) {
@@ -54,6 +54,7 @@ test.describe('Critical paths', () => {
   });
 
   test('fresh user: QR -> welcome modal -> home com botoes', async ({ page }) => {
+    await liberateQrTestTable();
     await page.goto(buildMesaUrl(), { waitUntil: 'networkidle' });
     // Next dev compila a rota no primeiro hit — pode levar 10-20s no warm-up.
     // Como a recognition usa cookie+CPF, em DB compartilhado (CPF 12345678909

@@ -39,6 +39,7 @@ interface DerivedContext {
     customer_name: string | null;
     last_item_seen: string | null;
     last_order_summary: string | null;
+    last_order_id: string | null;
     wait_minutes: number | null;
     // Round 19 (C2 fix): rich slots pra pos_reclamacao (canvas V20)
     manager_name: string | null;
@@ -169,6 +170,7 @@ export class ContinuationService {
       customer_name: customerName,
       last_item_seen: null as string | null,
       last_order_summary: null as string | null,
+      last_order_id: null as string | null,
       wait_minutes: null as number | null,
       manager_name: null as string | null,
       avg_response_min: null as number | null,
@@ -219,23 +221,48 @@ export class ContinuationService {
 
     // ── Priority 2: payment.paid_at within 10 min ────────────────────
     const payRows = (await this.tenantConn.query(
-      `SELECT 1
-         FROM payments
-        WHERE table_session_id = $1
-          AND paid_at IS NOT NULL
-          AND paid_at >= now() - INTERVAL '10 minutes'
+      `SELECT latest_order.id AS order_id
+         FROM payments p
+    LEFT JOIN LATERAL (
+          SELECT o.id
+            FROM orders o
+           WHERE o.table_session_id = p.table_session_id
+             AND (p.visit_id IS NULL OR o.visit_id = p.visit_id)
+             AND o.status NOT IN ('cancelled', 'canceled')
+           ORDER BY o.created_at DESC
+           LIMIT 1
+        ) latest_order ON true
+        WHERE p.table_session_id = $1
+          AND p.paid_at IS NOT NULL
+          AND p.paid_at >= now() - INTERVAL '10 minutes'
+        ORDER BY p.paid_at DESC
         LIMIT 1`,
       [tableSessionId],
-    )) as unknown[];
+    )) as { order_id: string | null }[];
     if (payRows.length > 0) {
-      return { kind: 'pagou', slots: baseSlots };
+      return {
+        kind: 'pagou',
+        slots: { ...baseSlots, last_order_id: payRows[0].order_id },
+      };
     }
     if (clientHint === 'pagou') {
-      return { kind: 'pagou', slots: baseSlots };
+      return {
+        kind: 'pagou',
+        slots: {
+          ...baseSlots,
+          last_order_id: await this.latestOrderIdForSession(tableSessionId),
+        },
+      };
     }
 
     if (signals.hasDraftOrder || clientHint === 'abriu_pedido') {
-      return { kind: 'abriu_pedido', slots: baseSlots };
+      return {
+        kind: 'abriu_pedido',
+        slots: {
+          ...baseSlots,
+          last_order_id: await this.latestOrderIdForSession(tableSessionId),
+        },
+      };
     }
 
     // ── Priority 3: active order within 30 min ───────────────────────
@@ -243,7 +270,7 @@ export class ContinuationService {
       `SELECT o.id, o.created_at
          FROM orders o
         WHERE o.table_session_id = $1
-          AND o.status NOT IN ('cancelled', 'delivered')
+          AND o.status NOT IN ('cancelled', 'canceled', 'delivered')
           AND o.created_at >= now() - INTERVAL '30 minutes'
         ORDER BY o.created_at DESC
         LIMIT 1`,
@@ -253,7 +280,11 @@ export class ContinuationService {
       const summary = await this.summariseOrder(orderRows[0].id);
       return {
         kind: 'abriu_pedido',
-        slots: { ...baseSlots, last_order_summary: summary },
+        slots: {
+          ...baseSlots,
+          last_order_summary: summary,
+          last_order_id: orderRows[0].id,
+        },
       };
     }
 
@@ -346,7 +377,11 @@ export class ContinuationService {
           : null;
       return {
         kind: 'voltou_sem_acao',
-        slots: { ...baseSlots, last_order_summary: summary },
+        slots: {
+          ...baseSlots,
+          last_order_summary: summary,
+          last_order_id: lastOrderRows[0]?.id ?? null,
+        },
       };
     }
 
@@ -372,6 +407,19 @@ export class ContinuationService {
       return kind;
     }
     return null;
+  }
+
+  private async latestOrderIdForSession(tableSessionId: string): Promise<string | null> {
+    const rows = (await this.tenantConn.query(
+      `SELECT id
+         FROM orders
+        WHERE table_session_id = $1
+          AND status NOT IN ('cancelled', 'canceled')
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [tableSessionId],
+    )) as { id: string }[];
+    return rows[0]?.id ?? null;
   }
 
   /** "2x Pizza Margherita, 1x Coca" — truncated to 80 chars. */
@@ -441,6 +489,7 @@ export class ContinuationService {
           : slots.table_number ?? null,
       lastItem: slots.last_item_seen ?? null,
       lastOrderSummary: slots.last_order_summary ?? null,
+      lastOrderId: slots.last_order_id ?? null,
     };
 
     const headers: Record<string, string> = {

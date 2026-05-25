@@ -3,7 +3,10 @@
 // at apps/api/src/modules/* (late-arrival, table-merge, table-session).
 
 import { staffGet, staffPost } from '../api';
-import type { LateArrivalRequestDto } from '@restaurant/shared-types';
+import type {
+  LateArrivalRequestDto,
+  ScanVerificationRequestDto,
+} from '@restaurant/shared-types';
 
 export interface HostTableEntry {
   number: number;
@@ -49,7 +52,10 @@ export function liberateTable(
   tenantSlug: string,
   tableNumber: number,
 ): Promise<{ ok: true }> {
-  return staffPost<{ ok: true }>(`/${tenantSlug}/host/tables/${tableNumber}/liberate`, {});
+  return staffPost<{ ok: true }>(
+    `/${tenantSlug}/host/tables/${tableNumber}/liberate`,
+    { mode: 'auto' },
+  );
 }
 
 export function swapTable(
@@ -126,6 +132,45 @@ export function rejectLateArrival(
 ): Promise<LateArrivalRequestDto> {
   return staffPost<LateArrivalRequestDto>(
     `/${tenantSlug}/late-arrival-requests/${id}/reject`,
+    body,
+  );
+}
+
+// ─── Physical QR scan verification ───
+export function listPendingScanVerifications(
+  tenantSlug: string,
+): Promise<ScanVerificationRequestDto[]> {
+  return staffGet<ScanVerificationRequestDto[]>(
+    `/${tenantSlug}/scan-verification-requests?status=pending`,
+  );
+}
+
+export function getScanVerification(
+  tenantSlug: string,
+  id: string,
+): Promise<ScanVerificationRequestDto> {
+  return staffGet<ScanVerificationRequestDto>(
+    `/${tenantSlug}/scan-verification-requests/${id}`,
+  );
+}
+
+export function approveScanVerification(
+  tenantSlug: string,
+  id: string,
+): Promise<ScanVerificationRequestDto> {
+  return staffPost<ScanVerificationRequestDto>(
+    `/${tenantSlug}/scan-verification-requests/${id}/approve`,
+    {},
+  );
+}
+
+export function rejectScanVerification(
+  tenantSlug: string,
+  id: string,
+  body: { reason?: string } = {},
+): Promise<ScanVerificationRequestDto> {
+  return staffPost<ScanVerificationRequestDto>(
+    `/${tenantSlug}/scan-verification-requests/${id}/reject`,
     body,
   );
 }

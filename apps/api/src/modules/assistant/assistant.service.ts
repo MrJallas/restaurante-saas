@@ -422,6 +422,16 @@ function responseWithToolContext(
   response: string,
   toolCalls: Array<Record<string, unknown>>,
 ): string {
+  if (!response.trim()) {
+    const failedTool = toolCalls.find((tc) => {
+      const result = (tc.result ?? {}) as Record<string, unknown>;
+      return result.error && typeof result.error === 'object';
+    });
+    if (failedTool) {
+      return 'Não consegui consultar essa informação agora. Quer tentar de novo ou chamar um garçom?';
+    }
+  }
+
   const addToOrder = toolCalls.find((tc) => tc.name === 'add_to_order');
   const payload = addToOrder?.actionPayload;
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
@@ -752,6 +762,7 @@ export class AssistantService {
     _schemaName: string,
     conversationId?: string | null,
     continueThreadId?: string | null,
+    tenantSlug?: string | null,
   ) {
     // IDOR guard: cliente nao pode passar `customerId` de outro cliente
     // pra extrair contexto de consumo / historico alheio. Validamos que
@@ -871,6 +882,11 @@ export class AssistantService {
         history,
         tenantContext,
         customerContext,
+        {
+          tenantId: tenantSlug || _schemaName,
+          customerId: safeCustomerId,
+          sessionId: tableSessionId,
+        },
       );
 
       const normalizedToolsRaw = rescueDietaryRecommendationTool(

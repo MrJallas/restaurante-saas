@@ -22,7 +22,10 @@ import { PromotionsModule } from './modules/promotions/promotions.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { StaffModule } from './modules/staff/staff.module';
 import { MongoModule } from './infra/mongo/mongo.module';
+import { SecurityAuditModule } from './modules/security-audit/security-audit.module';
 import { LateArrivalModule } from './modules/late-arrival/late-arrival.module';
+import { ScanVerificationModule } from './modules/scan-verification/scan-verification.module';
+import { QrResolverModule } from './modules/qr-resolver/qr-resolver.module';
 import { TableMergeModule } from './modules/table-merge/table-merge.module';
 import { LgpdModule } from './modules/lgpd/lgpd.module';
 import { ComplaintsModule } from './modules/complaints/complaints.module';
@@ -46,6 +49,7 @@ import { ContinuationModule } from './modules/continuation/continuation.module';
     TypeOrmModule.forRoot(databaseConfig),
     RedisModule,
     MongoModule,
+    SecurityAuditModule,
     AiModule,
     WebsocketModule,
     TenantModule,
@@ -68,6 +72,8 @@ import { ContinuationModule } from './modules/continuation/continuation.module';
     StaffModule,
     // Phase 2 modules:
     LateArrivalModule,
+    ScanVerificationModule,
+    QrResolverModule,
     TableMergeModule,
     ChatHistoryModule,
     CustomerStaffMessagesModule,
@@ -91,6 +97,7 @@ export class AppModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(TenantMiddleware)
+      .exclude({ path: 'qr/:token', method: RequestMethod.ALL })
       .forRoutes({ path: ':slug/*', method: RequestMethod.ALL });
   }
 }

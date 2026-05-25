@@ -7,10 +7,14 @@ from .types import ToolContext, ToolResult
 def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if ctx.api_client:
         try:
-            ctx.api_client("POST", "/customer/check-requests", {
-                "sessionId": ctx.session_id,
-                "splitMode": args.get("splitMode", "single"),
-            })
+            ctx.api_client(
+                "POST",
+                "/waiter-calls",
+                {
+                    "reason": "ask_bill",
+                    "customerId": ctx.customer_id,
+                },
+            )
         except Exception as e:
             return ToolResult(error={"code": "api_error", "message": str(e)})
 

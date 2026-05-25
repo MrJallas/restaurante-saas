@@ -27,8 +27,8 @@ const DEFAULT_TTL_DAYS = 30;
  * O cap dá controle previsível de storage independente do tempo.
  *
  * Aplicado apenas quando uma NOVA thread é criada (upsert resultou em
- * insert) — assim a query de contagem roda no máximo 1× por dia por
- * customer (day-bucket muda) em vez de cada turno.
+ * insert) — assim a query de contagem não roda a cada turno dentro de
+ * uma conversa já existente.
  */
 const FIFO_MAX_THREADS_PER_CUSTOMER = 80;
 
@@ -56,6 +56,21 @@ interface MessageDoc {
   linkedItems?: unknown[];
   createdAt: Date;
   expiresAt: Date;
+}
+
+function dayKey(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function isLegacyDayBucketThread(
+  thread: ThreadDoc,
+  tenantId: string,
+  customerId: string,
+): boolean {
+  const prefix = `${tenantId}:${customerId}:`;
+  if (!thread.threadId.startsWith(prefix)) return false;
+  const suffix = thread.threadId.slice(prefix.length);
+  return /^\d{4}-\d{2}-\d{2}$/.test(suffix);
 }
 
 @Injectable()
@@ -121,8 +136,10 @@ export class ChatHistoryService {
 
       if (!threadId) {
         // Normal assistant opens use the per-visit conversation id from the
-        // FE. The day-bucket fallback is kept only for legacy callers.
-        const bucket = ctx.conversationId?.trim() || now.toISOString().slice(0, 10);
+        // FE. Legacy callers without conversationId now fall back to the
+        // session id, not a day bucket, so multiple conversations on the
+        // same date do not collapse into one historical thread.
+        const bucket = ctx.conversationId?.trim() || ctx.sessionId?.trim() || randomUUID();
         threadId = `${ctx.tenantId}:${ctx.customerId}:${bucket}`;
       }
 
@@ -145,8 +162,8 @@ export class ChatHistoryService {
       );
 
       // Round 22 §B · FIFO 80 cleanup quando uma nova thread foi criada.
-      // Só corre quando o day-bucket mudou (upsert virou insert), pra não
-      // fazer count em todo turno. Erros aqui são best-effort — log e
+      // Só corre quando uma thread nova nasceu (upsert virou insert), pra
+      // não fazer count em todo turno. Erros aqui são best-effort — log e
       // continua (não falhar o append por causa do cleanup).
       if (upsertResult.upsertedId) {
         this.pruneOldestThreads(db, ctx.customerId).catch((err) => {
@@ -216,7 +233,17 @@ export class ChatHistoryService {
       );
     }
 
-    return threads.map((t) => ({
+    const modernDays = new Set(
+      threads
+        .filter((t) => !isLegacyDayBucketThread(t, tenantId, customerId))
+        .map((t) => dayKey(t.lastMessageAt)),
+    );
+    const visibleThreads = threads.filter((t) => {
+      if (!isLegacyDayBucketThread(t, tenantId, customerId)) return true;
+      return !modernDays.has(dayKey(t.lastMessageAt));
+    });
+
+    return visibleThreads.map((t) => ({
       threadId: t.threadId,
       startedAt: t.startedAt.toISOString(),
       lastMessageAt: t.lastMessageAt.toISOString(),

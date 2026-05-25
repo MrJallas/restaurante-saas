@@ -29,8 +29,8 @@ EXPECTED_CANONICAL = {
     # staff/communication (4)
     "call_waiter", "send_message_to_manager", "send_complaint",
     "request_table_merge",
-    # lgpd / history (4)
-    "delete_chat", "delete_all_chats", "lgpd_data_request",
+    # lgpd / history (5)
+    "delete_chat", "delete_all_chats", "view_chat_history", "lgpd_data_request",
     "show_lgpd_notice",
     # info (3)
     "view_courtesy", "ask_about_restaurant", "rate_visit",
@@ -54,12 +54,12 @@ def test_canonical_tool_is_registered(tool_name: str):
     assert callable(meta.call)
 
 
-def test_canonical_count_is_23():
-    """F2 spec calls for ~25 tools (incl. optional session). Currently 23
+def test_canonical_count_is_24():
+    """F2 spec calls for ~25 tools (incl. optional session). Currently 24
     canonical tools without start/end_session (those are NOT in the codebase
     yet · spec says 'if exists, keep'). When session tools are added, this
-    count bumps to 25."""
-    assert len(CANONICAL_TOOL_NAMES) == 23
+    count bumps to 26."""
+    assert len(CANONICAL_TOOL_NAMES) == 24
 
 
 # ─────────────────────────────────────────────────────────────

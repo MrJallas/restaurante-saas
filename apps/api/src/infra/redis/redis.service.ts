@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
 import { redisConfig } from '../../config/redis.config';
+import { recordRedisOperation } from '../../common/performance/request-timing';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
@@ -12,12 +13,23 @@ export class RedisService implements OnModuleDestroy {
     this.client.on('error', (err) => this.logger.error('Redis error', err));
   }
 
-  async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
-    if (ttlSeconds) {
-      await this.client.set(key, value, 'EX', ttlSeconds);
-    } else {
-      await this.client.set(key, value);
+  private async timed<T>(operation: () => Promise<T>): Promise<T> {
+    const startedAt = process.hrtime.bigint();
+    try {
+      return await operation();
+    } finally {
+      recordRedisOperation(startedAt);
     }
+  }
+
+  async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
+    await this.timed(async () => {
+      if (ttlSeconds) {
+        await this.client.set(key, value, 'EX', ttlSeconds);
+      } else {
+        await this.client.set(key, value);
+      }
+    });
   }
 
   /**
@@ -34,37 +46,39 @@ export class RedisService implements OnModuleDestroy {
    * passarem (GET → GET → INSERT → INSERT → SET → SET overwrite).
    */
   async setNX(key: string, value: string, ttlSeconds: number): Promise<boolean> {
-    const result = await this.client.set(key, value, 'EX', ttlSeconds, 'NX');
+    const result = await this.timed(() =>
+      this.client.set(key, value, 'EX', ttlSeconds, 'NX'),
+    );
     return result === 'OK';
   }
 
   async get(key: string): Promise<string | null> {
-    return this.client.get(key);
+    return this.timed(() => this.client.get(key));
   }
 
   async del(key: string): Promise<void> {
-    await this.client.del(key);
+    await this.timed(() => this.client.del(key));
   }
 
   async incr(key: string): Promise<number> {
-    return this.client.incr(key);
+    return this.timed(() => this.client.incr(key));
   }
 
   async lpop(key: string): Promise<string | null> {
-    return this.client.lpop(key);
+    return this.timed(() => this.client.lpop(key));
   }
 
   async rpush(key: string, ...values: string[]): Promise<number> {
-    return this.client.rpush(key, ...values);
+    return this.timed(() => this.client.rpush(key, ...values));
   }
 
   async expire(key: string, ttlSeconds: number): Promise<void> {
-    await this.client.expire(key, ttlSeconds);
+    await this.timed(() => this.client.expire(key, ttlSeconds));
   }
 
   async ping(): Promise<boolean> {
     try {
-      const res = await this.client.ping();
+      const res = await this.timed(() => this.client.ping());
       return res === 'PONG';
     } catch {
       return false;

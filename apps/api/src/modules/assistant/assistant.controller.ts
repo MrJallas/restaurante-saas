@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, Req, UseGuards, Param } from '@nestjs/common';
 import type { Request } from 'express';
 import {
   IsString,
@@ -72,6 +72,7 @@ export class AssistantController {
   @Post('message')
   @UseGuards(SessionGuard)
   async sendMessage(
+    @Param('slug') slug: string,
     @Body() dto: SendMessageDto,
     @Session() session: SessionData,
     @Req() req: Request,
@@ -84,6 +85,7 @@ export class AssistantController {
       session.schemaName,
       dto.conversationId,
       dto.continueThreadId,
+      slug,
     );
   }
 

@@ -22,7 +22,7 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     if ctx.api_client:
         try:
-            res = ctx.api_client("POST", "/staff/zone-pauses", {
+            res = ctx.api_client("POST", "/zone-pauses", {
                 "waiterId": waiter_id,
                 "durationMinutes": duration,
                 "reason": text,

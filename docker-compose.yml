@@ -14,7 +14,7 @@ services:
     container_name: restaurant-postgres
     expose:
       - "5434"
-    command: -p 5434
+    command: -p 5434 -c log_min_duration_statement=100
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -82,6 +82,7 @@ services:
       REDIS_PORT: 6379
       MONGODB_URI: mongodb://mongodb:27017
       MONGODB_DB: restaurant_chat
+      MONGODB_SECURITY_DB: restaurant_security
       QR_HMAC_SECRET: change-me-in-prod
       STAFF_API_KEY: ${STAFF_API_KEY:-dev-staff-api-key-change-in-prod}
       AI_SERVICE_URL: http://ai-service:8000
@@ -132,6 +133,7 @@ services:
       # porta interna 3001 (host port também é 3001).
       API_BASE_URL: ${API_BASE_URL:-http://api:3001/api}
       API_REQUEST_TIMEOUT: ${API_REQUEST_TIMEOUT:-10}
+      STAFF_API_KEY: ${STAFF_API_KEY:-dev-staff-api-key-change-in-prod}
       # Round 7 (B-NEW-25): API key compartilhada entre apps/api → ai-service.
       # Sem isso, ai-service estava sem auth alguma — combinado com porta
       # exposta era DoS gratuito. Agora middleware FastAPI exige header

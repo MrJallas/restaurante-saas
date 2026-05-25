@@ -33,31 +33,65 @@ export class StaffMessagesService {
       let threadId = input.threadId ?? null;
       let participantStaffIds: string[] = [];
       if (!threadId) {
-        const thRows = (await tx.query(
-          `INSERT INTO staff_message_threads
-             (subject, is_broadcast, created_by_staff_id)
-           VALUES ($1, $2, $3) RETURNING id`,
-          [input.subject ?? null, input.isBroadcast ?? false, input.senderStaffId],
-        )) as Array<Record<string, unknown>>;
-        threadId = thRows[0].id as string;
-        await tx.query(
-          `INSERT INTO staff_message_thread_participants (thread_id, staff_id)
-           VALUES ($1, $2)
-           ON CONFLICT (thread_id, staff_id) DO NOTHING`,
-          [threadId, input.senderStaffId],
-        );
-        if (input.recipientStaffId) {
+        if (input.recipientStaffId && !input.isBroadcast) {
+          const existing = (await tx.query(
+            `SELECT t.id
+               FROM staff_message_threads t
+               JOIN staff_message_thread_participants p1
+                 ON p1.thread_id = t.id
+                AND p1.staff_id = $1
+                AND p1.left_at IS NULL
+               JOIN staff_message_thread_participants p2
+                 ON p2.thread_id = t.id
+                AND p2.staff_id = $2
+                AND p2.left_at IS NULL
+              WHERE t.is_broadcast = false
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM staff_message_thread_participants px
+                   WHERE px.thread_id = t.id
+                     AND px.left_at IS NULL
+                     AND px.staff_id NOT IN ($1, $2)
+                )
+              ORDER BY t.last_message_at DESC NULLS LAST, t.created_at DESC
+              LIMIT 1`,
+            [input.senderStaffId, input.recipientStaffId],
+          )) as Array<{ id: string }>;
+          threadId = existing[0]?.id ?? null;
+        }
+
+        if (threadId) {
+          participantStaffIds = [
+            input.senderStaffId,
+            ...(input.recipientStaffId ? [input.recipientStaffId] : []),
+          ];
+        } else {
+          const thRows = (await tx.query(
+            `INSERT INTO staff_message_threads
+               (subject, is_broadcast, created_by_staff_id)
+             VALUES ($1, $2, $3) RETURNING id`,
+            [input.subject ?? null, input.isBroadcast ?? false, input.senderStaffId],
+          )) as Array<Record<string, unknown>>;
+          threadId = thRows[0].id as string;
           await tx.query(
             `INSERT INTO staff_message_thread_participants (thread_id, staff_id)
              VALUES ($1, $2)
              ON CONFLICT (thread_id, staff_id) DO NOTHING`,
-            [threadId, input.recipientStaffId],
+            [threadId, input.senderStaffId],
           );
+          if (input.recipientStaffId) {
+            await tx.query(
+              `INSERT INTO staff_message_thread_participants (thread_id, staff_id)
+               VALUES ($1, $2)
+               ON CONFLICT (thread_id, staff_id) DO NOTHING`,
+              [threadId, input.recipientStaffId],
+            );
+          }
+          participantStaffIds = [
+            input.senderStaffId,
+            ...(input.recipientStaffId ? [input.recipientStaffId] : []),
+          ];
         }
-        participantStaffIds = [
-          input.senderStaffId,
-          ...(input.recipientStaffId ? [input.recipientStaffId] : []),
-        ];
       } else {
         // Round 14 (P1-NEW-2): se o caller fornece um threadId, exigimos
         // que ele seja participante da thread. Antes era IDOR aberto:

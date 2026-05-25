@@ -97,7 +97,7 @@ export interface ComplaintCreateResponseDto {
 }
 
 /**
- * Body of `POST /staff/complaints/:id/respond`. Manager picks a chip OR
+ * Body of `POST /:slug/complaints/:id/respond`. Manager picks a chip OR
  * writes a custom text reply.
  */
 export interface ComplaintResponseDto {
@@ -106,14 +106,14 @@ export interface ComplaintResponseDto {
 }
 
 /**
- * Body of `POST /staff/complaints/:id/resolve`.
+ * Body of `POST /:slug/complaints/:id/resolve`.
  */
 export interface ComplaintResolveDto {
   reason?: string;
 }
 
 /**
- * Body of `POST /staff/complaints/:id/forward`.
+ * Body of `POST /:slug/complaints/:id/forward`.
  */
 export interface ComplaintForwardDto {
   toStaffId: string;

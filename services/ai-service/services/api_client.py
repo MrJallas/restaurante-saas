@@ -43,7 +43,8 @@ def make_http_api_client(base_url: str, timeout: float = 10.0) -> Callable[..., 
     """
     Build a callable that hits `apps/api` over HTTP.
 
-    Returns a function with signature `(method, path, body) -> dict | None`.
+    Returns a function with signature
+    `(method, path, body, headers=None) -> dict | None`.
     Lazy-imports httpx at call time so the FastAPI app can boot even if
     httpx is missing (tests use the recording client below).
     """
@@ -59,7 +60,13 @@ def make_http_api_client(base_url: str, timeout: float = 10.0) -> Callable[..., 
     )
     client = httpx.Client(base_url=clean_base_url, timeout=timeout)
 
-    def _call(method: str, path: str, body: Any = None) -> Any:
+    def _call(
+        method: str,
+        path: str,
+        body: Any = None,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
         normalised = path if path.startswith("/") else f"/{path}"
         if base_tenant and normalised == f"/{base_tenant}":
             normalised = "/"
@@ -70,6 +77,7 @@ def make_http_api_client(base_url: str, timeout: float = 10.0) -> Callable[..., 
                 method=method.upper(),
                 url=normalised,
                 json=body if body is not None else None,
+                headers=headers or None,
             )
         except httpx.HTTPError as e:
             logger.warning("api_client transport error: %s %s — %s", method, normalised, e)
@@ -120,9 +128,18 @@ class RecordingApiClient:
     calls: list[tuple[str, str, Any]] = field(default_factory=list)
     queued_responses: list[Any] = field(default_factory=list)
     raise_on_call: Optional[Exception] = None
+    call_headers: list[dict[str, str] | None] = field(default_factory=list)
 
-    def __call__(self, method: str, path: str, body: Any = None) -> Any:
+    def __call__(
+        self,
+        method: str,
+        path: str,
+        body: Any = None,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
         self.calls.append((method, path, body))
+        self.call_headers.append(headers)
         if self.raise_on_call is not None:
             raise self.raise_on_call
         if self.queued_responses:

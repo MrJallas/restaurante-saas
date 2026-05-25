@@ -5,7 +5,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/a
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 interface ApiError {
-  message: string;
+  message: string | string[];
   statusCode: number;
 }
 
@@ -56,17 +56,23 @@ export async function api<T>(
   }
 
   if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as ApiError;
+    const message = Array.isArray(body.message)
+      ? body.message.join(', ')
+      : body.message;
     if (res.status === 401) {
       // Sessao expirada. NAO redirecionamos pra `/` daqui — esse path
       // levaria o usuario pra placeholder root e ele perderia o slug
       // /tableCode, ficando preso. Quem chamou e quem sabe o contexto
       // (ex.: estamos em /mesa/[code] → re-iniciar sessao na mesma URL,
       // estamos em /assistente → voltar pra mesa). O caller decide.
-      throw new ApiRequestError(401, 'Sessao expirada.');
+      throw new ApiRequestError(
+        401,
+        message || 'Sessao expirada. Escaneie o QR Code novamente.',
+      );
     }
 
-    const body = (await res.json().catch(() => ({}))) as ApiError;
-    throw new ApiRequestError(res.status, body.message || 'Erro inesperado.');
+    throw new ApiRequestError(res.status, message || 'Erro inesperado.');
   }
 
   return res.json() as Promise<T>;

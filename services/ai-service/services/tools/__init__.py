@@ -328,7 +328,7 @@ CANONICAL_TOOL_NAMES: set[str] = {
     "call_waiter", "send_message_to_manager", "send_complaint",
     "request_table_merge",
     # lgpd / history
-    "delete_chat", "delete_all_chats", "lgpd_data_request",
+    "delete_chat", "delete_all_chats", "view_chat_history", "lgpd_data_request",
     "show_lgpd_notice",
     # info
     "view_courtesy", "ask_about_restaurant", "rate_visit",

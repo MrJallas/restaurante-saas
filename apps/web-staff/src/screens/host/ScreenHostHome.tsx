@@ -13,10 +13,16 @@ import { useG, G_FONT, HSt } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
 import {
-  listHostTables, listPendingLateArrivals,
+  listHostTables,
+  listPendingLateArrivals,
+  listPendingScanVerifications,
   type HostTableEntry,
 } from '../../lib/api/host';
-import type { LateArrivalRequestDto, WsEvent } from '@restaurant/shared-types';
+import type {
+  LateArrivalRequestDto,
+  ScanVerificationRequestDto,
+  WsEvent,
+} from '@restaurant/shared-types';
 import { useHostEvents } from '../../hooks/useHostEvents';
 
 interface ScreenHostHomeProps {
@@ -25,31 +31,35 @@ interface ScreenHostHomeProps {
   hostInitials?: string;
   onLiberate?: (tableNumber: number) => void;
   onOpenLateArrival?: (id: string) => void;
+  onOpenScanVerification?: (id: string) => void;
   onTabChange?: (tab: string) => void;
 }
 
 export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
   tenantSlug, hostId, hostInitials = 'EU',
-  onLiberate, onOpenLateArrival, onTabChange,
+  onLiberate, onOpenLateArrival, onOpenScanVerification, onTabChange,
 }) => {
   const dark = false;
   const C = useG(dark);
   const router = useRouter();
   const [tables, setTables] = useState<HostTableEntry[]>([]);
   const [lateArrivals, setLateArrivals] = useState<LateArrivalRequestDto[]>([]);
+  const [scanVerifications, setScanVerifications] = useState<ScanVerificationRequestDto[]>([]);
   const { on } = useHostEvents({ tenantSlug, hostId });
 
   useEffect(() => {
     let alive = true;
     async function load() {
       try {
-        const [t, la] = await Promise.all([
+        const [t, la, sv] = await Promise.all([
           listHostTables(tenantSlug).catch(() => []),
           listPendingLateArrivals(tenantSlug).catch(() => []),
+          listPendingScanVerifications(tenantSlug).catch(() => []),
         ]);
         if (!alive) return;
         setTables(t);
         setLateArrivals(la);
+        setScanVerifications(sv);
       } catch {
         /* noop */
       }
@@ -66,12 +76,16 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
     const off = on((event: WsEvent) => {
       if (event.event === 'late_arrival.created') {
         listPendingLateArrivals(tenantSlug).then(setLateArrivals).catch(() => undefined);
+      } else if (event.event === 'scan_verification.created' || event.event === 'scan_verification.escalated') {
+        listPendingScanVerifications(tenantSlug).then(setScanVerifications).catch(() => undefined);
       } else if (
         event.event === 'late_arrival.approved'
         || event.event === 'late_arrival.rejected'
         || event.event === 'late_arrival.expired'
       ) {
         setLateArrivals((prev) => prev.filter((la) => la.id !== event.payload.requestId));
+      } else if (event.event === 'scan_verification.resolved') {
+        setScanVerifications((prev) => prev.filter((sv) => sv.id !== event.payload.requestId));
       }
     });
     return () => {
@@ -165,6 +179,63 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
         </div>
 
         {/* Late-arrival approvals */}
+        {scanVerifications.length > 0 && (
+          <div style={{ marginBottom: 18 }}>
+            <div
+              style={{
+                fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase',
+                color: C.ink, fontWeight: 700, marginBottom: 8,
+              }}
+            >
+              Verificar mesa escaneada ({scanVerifications.length})
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {scanVerifications.map((sv) => (
+                <button
+                  key={sv.id}
+                  type="button"
+                  onClick={() => onOpenScanVerification?.(sv.id)}
+                  style={{
+                    all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '12px 14px', borderRadius: 14,
+                    background: '#F3FBF6', border: '1px solid #CBE8D8',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 40, height: 40, borderRadius: 10,
+                      background: '#1E8C5A', color: '#fff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {Icon.user(20)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 9.5, fontWeight: 800, color: '#176C45',
+                        letterSpacing: 0.7, textTransform: 'uppercase',
+                        fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
+                      }}
+                    >
+                      QR FÍSICO · VERIFICAR PRESENÇA
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#1d1c19', marginTop: 2 }}>
+                      Mesa {sv.tableNumber} · {sv.requesterName}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#176C45', fontWeight: 500, marginTop: 2 }}>
+                      Localização: {sv.locationStatus} · CPF {sv.cpfMasked ?? '—'}
+                    </div>
+                  </div>
+                  <span style={{ color: '#176C45', flexShrink: 0 }}>{Icon.arrow(16)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {lateArrivals.length > 0 && (
           <div style={{ marginBottom: 18 }}>
             <div
@@ -284,7 +355,7 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
       <HBottomNav
         active="tables"
         dark={dark}
-        inboxBadge={lateArrivals.length}
+        inboxBadge={lateArrivals.length + scanVerifications.length}
         onTabChange={(id) => onTabChange?.(id)}
       />
     </div>

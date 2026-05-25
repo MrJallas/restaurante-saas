@@ -57,7 +57,11 @@ export function HostApprovalModal({ slug }: { slug: string }) {
 
   useEffect(() => {
     if (!sessionId) return;
-    refetch();
+    void refetch();
+    const interval = window.setInterval(() => {
+      void refetch();
+    }, 2500);
+    return () => window.clearInterval(interval);
   }, [sessionId, refetch]);
 
   // Escuta WS pra refetch imediato quando alguem novo pede pra entrar

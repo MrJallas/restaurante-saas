@@ -9,6 +9,7 @@ import type { ComplaintChipAction, ComplaintProblemType } from './complaint';
 import type { SessionFlag } from './vip';
 import type { StaffMessageDto } from './staff-message';
 import type { LgpdRequestKind } from './lgpd';
+import type { ScanVerificationStatus } from './scan-verification';
 
 // ─── Escalation generic events (for qr-issue cascade and others) ───
 
@@ -21,7 +22,12 @@ export interface WsEscalationCreated {
      * manager forwards (P1 #29) where the complaint climbs the chain because
      * the original assignee couldn't or wouldn't resolve it.
      */
-    type: 'late_arrival' | 'table_merge' | 'qr_issue' | 'complaint';
+    type:
+      | 'late_arrival'
+      | 'table_merge'
+      | 'qr_issue'
+      | 'complaint'
+      | 'scan_verification';
     tenantId: string;
     /** Free-form context payload (kind-specific). */
     context: Record<string, unknown>;
@@ -95,6 +101,50 @@ export interface WsLateArrivalExpired {
   payload: {
     requestId: string;
     tableSessionId: string;
+  };
+}
+
+// ─── Scan verification ───
+
+export interface WsScanVerificationCreated {
+  event: 'scan_verification.created';
+  payload: {
+    requestId: string;
+    tableSessionId: string;
+    tableId: string;
+    tableCode: string;
+    tableNumber: number;
+    requesterCustomerId: string;
+    requesterName: string;
+    cpfMasked: string | null;
+    locationStatus: string;
+    expiresAt: string;
+  };
+}
+
+export interface WsScanVerificationEscalated {
+  event: 'scan_verification.escalated';
+  payload: {
+    requestId: string;
+    tableSessionId: string;
+    escalationId: string;
+    fromStep: number;
+    toStep: number;
+    assigneeRole: 'host' | 'manager' | 'waiter';
+    expiresAt: string;
+  };
+}
+
+export interface WsScanVerificationResolved {
+  event: 'scan_verification.resolved';
+  payload: {
+    requestId: string;
+    tableSessionId: string;
+    requesterCustomerId: string;
+    status: ScanVerificationStatus;
+    decidedAt: string;
+    decidedByStaffId: string | null;
+    reason?: string | null;
   };
 }
 
@@ -272,6 +322,36 @@ export interface WsStaffMessagesCustomerReplied {
   };
 }
 
+// ─── Waiter calls / order handoff ───
+
+export interface WsOrderReady {
+  event: 'order:ready';
+  payload: {
+    orderId: string;
+    tableLabel: string;
+    timestamp: string;
+  };
+}
+
+export interface WsWaiterCall {
+  event: 'waiter:call';
+  payload: {
+    callId: string;
+    tableLabel: string;
+    tableCode: string;
+    reason?: string;
+    timestamp: string;
+  };
+}
+
+export interface WsWaiterAcknowledged {
+  event: 'waiter:acknowledged';
+  payload: {
+    callId: string;
+    timestamp: string;
+  };
+}
+
 // ─── Zone pause ───
 
 export interface WsZonePauseStarted {
@@ -422,6 +502,9 @@ export type WsEvent =
   | WsLateArrivalApproved
   | WsLateArrivalRejected
   | WsLateArrivalExpired
+  | WsScanVerificationCreated
+  | WsScanVerificationEscalated
+  | WsScanVerificationResolved
   | WsTableMergeCreated
   | WsTableMergeApproved
   | WsTableMergeRejected
@@ -435,6 +518,9 @@ export type WsEvent =
   | WsStaffMessageReceived
   | WsStaffMessageRead
   | WsStaffMessagesCustomerReplied
+  | WsOrderReady
+  | WsWaiterCall
+  | WsWaiterAcknowledged
   | WsZonePauseStarted
   | WsZonePauseEnded
   | WsSessionFlagChanged

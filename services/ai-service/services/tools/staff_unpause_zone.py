@@ -11,7 +11,7 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     if ctx.api_client:
         try:
-            ctx.api_client("DELETE", f"/staff/zone-pauses/{pause_id}", {"reason": args.get("reason")})
+            ctx.api_client("DELETE", f"/zone-pauses/{pause_id}", {"reason": args.get("reason")})
         except Exception as e:
             return ToolResult(error={"code": "api_error", "message": str(e)})
 

@@ -1,48 +1,84 @@
-import crypto from 'node:crypto';
-
 /**
- * HMAC secrets pras 5 mesas seed do tenant `restaurant_dev`. Vem da
- * coluna `tables.qr_hmac_secret`. Sao fixos por mesa (recriar tenant
- * gera novos UUIDs — atualizar aqui se acontecer).
+ * Fixed physical QR fixtures for customer E2E tests.
  *
- * Mantemos hardcoded em vez de query no DB pra que a suite rode sem
- * dependencia de pg client. Se rotacionar segredos no dev, basta uma
- * rapida `psql -c "SELECT code, qr_hmac_secret FROM tables"`.
+ * Tests must enter through the public QR resolver, not by recreating HMACs in
+ * the browser suite. These tokens are seeded in
+ * `packages/database/seeds/demo/demo_data.sql` and are meant to stay stable
+ * until the rows are manually removed from the dev tenant.
  */
-export const TABLE_SECRETS = {
-  M01: '5e4cf4c2-58e9-44fe-a0c0-e3aa7a9f53eb',
-  M02: 'f071eda7-4c4b-4a40-b5eb-da957f000076',
-  M03: '3d8c052a-14f6-4632-9f6b-9527835d08d1',
-  M04: '85ef443a-f9bb-4205-a729-05a5f2652f26',
-  M05: '6068dff0-7ef8-4eb3-a042-b25e7d54f34a',
+
+export const QR_TEST_TABLES = {
+  QRTEST91: {
+    tableNumber: 91,
+    publicToken: 'qrtest91-public-token-fixed',
+  },
+  QRTEST92: {
+    tableNumber: 92,
+    publicToken: 'qrtest92-public-token-fixed',
+  },
 } as const;
 
-export type TableCode = keyof typeof TABLE_SECRETS;
+export type TableCode = keyof typeof QR_TEST_TABLES;
 
 export interface BuildMesaUrlOptions {
   slug?: string;
   tableCode?: TableCode;
-  baseUrl?: string;
-  /** Para forcar ts especifico — util pra testar QR expirado. */
-  ts?: number;
+  apiBaseUrl?: string;
 }
 
-/**
- * Gera a URL assinada que o iPhone receberia ao escanear o QR. Mesmo
- * algoritmo de `apps/api/src/modules/table-session/qr-code.service.ts`
- * (`HMAC-SHA256(`${tableCode}:${ts}`, secret)`).
- */
 export function buildMesaUrl({
-  slug = 'restaurant_dev',
-  tableCode = 'M01',
-  baseUrl = 'http://localhost:3003',
-  ts = Date.now(),
+  tableCode = 'QRTEST91',
+  apiBaseUrl = process.env.E2E_API_BASE_URL ?? 'http://localhost:3001/api',
 }: BuildMesaUrlOptions = {}): string {
-  const secret = TABLE_SECRETS[tableCode];
-  const tsStr = ts.toString();
-  const sig = crypto
-    .createHmac('sha256', secret)
-    .update(`${tableCode}:${tsStr}`)
-    .digest('hex');
-  return `${baseUrl}/${slug}/mesa/${tableCode}?hmac=${sig}&ts=${tsStr}`;
+  const token = QR_TEST_TABLES[tableCode].publicToken;
+  return `${apiBaseUrl.replace(/\/$/, '')}/qr/${token}`;
+}
+
+export async function liberateQrTestTable({
+  slug = 'restaurant_dev',
+  tableCode = 'QRTEST91',
+  apiBaseUrl = process.env.E2E_API_BASE_URL ?? 'http://localhost:3001/api',
+  staffKey = process.env.E2E_STAFF_API_KEY ?? 'dev-staff-api-key-change-in-prod',
+}: BuildMesaUrlOptions & { staffKey?: string } = {}): Promise<void> {
+  const api = apiBaseUrl.replace(/\/$/, '');
+  const staffId = await resolveHostOrManagerStaffId(api, slug);
+  const tableNumber = QR_TEST_TABLES[tableCode].tableNumber;
+  const response = await fetch(`${api}/${slug}/host/tables/${tableNumber}/liberate`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-staff-key': staffKey,
+      'x-staff-id': staffId,
+    },
+    body: JSON.stringify({
+      mode: 'auto',
+      reason: 'playwright qr entry pre-release',
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to pre-release ${tableCode}: ${response.status} ${await response.text()}`,
+    );
+  }
+}
+
+async function resolveHostOrManagerStaffId(
+  apiBaseUrl: string,
+  slug: string,
+): Promise<string> {
+  const response = await fetch(`${apiBaseUrl}/${slug}/staff?activeOnly=true`);
+  if (!response.ok) {
+    throw new Error(`Failed to list staff: ${response.status} ${await response.text()}`);
+  }
+  const payload = (await response.json()) as {
+    staff?: Array<{ id: string; role: string }>;
+  };
+  const staff =
+    payload.staff?.find((s) => s.role === 'host') ??
+    payload.staff?.find((s) => s.role === 'manager');
+  if (!staff) {
+    throw new Error('No active host or manager staff found for QR pre-release.');
+  }
+  return staff.id;
 }

@@ -55,6 +55,7 @@ export interface InitSessionDto {
   tableCode: string;
   hmacSignature: string;
   timestamp: string;
+  accessToken: string;
 }
 
 export interface SessionResponseDto {
@@ -68,10 +69,12 @@ export interface SessionResponseDto {
 export interface CustomerWelcomeDto {
   name: string;
   cpf: string;
+  location?: import('./scan-verification').CustomerLocationSignal;
 }
 
 export interface CustomerRecognizeDto {
   recognitionToken: string;
+  location?: import('./scan-verification').CustomerLocationSignal;
 }
 
 export interface CustomerWelcomeResponseDto {
@@ -103,5 +106,6 @@ export * from './staff-message-history';
 export * from './vip';
 export * from './zone-pause';
 export * from './host';
+export * from './scan-verification';
 export * from './ai';
 export * from './ws-events';

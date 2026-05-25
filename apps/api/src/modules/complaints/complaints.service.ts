@@ -35,9 +35,25 @@ export class ComplaintsService {
       text: string;
       attachedImageUrl?: string | null;
       autoFromRating?: boolean;
+      tableSessionId?: string | null;
     },
     slug?: string,
   ) {
+    let visitId = input.visitId ?? null;
+    if (!visitId && input.tableSessionId && input.customerId) {
+      const participantRows = (await this.tenantConn.query(
+        `SELECT visit_id
+           FROM session_participants
+          WHERE table_session_id = $1
+            AND customer_id = $2
+            AND visit_id IS NOT NULL
+          ORDER BY joined_at DESC
+          LIMIT 1`,
+        [input.tableSessionId, input.customerId],
+      )) as Array<{ visit_id: string | null }>;
+      visitId = participantRows[0]?.visit_id ?? null;
+    }
+
     const rows = (await this.tenantConn.query(
       `INSERT INTO complaints
          (customer_id, visit_id, order_id, order_rating_id, rating,
@@ -46,7 +62,7 @@ export class ComplaintsService {
        RETURNING *`,
       [
         input.customerId ?? null,
-        input.visitId ?? null,
+        visitId,
         input.orderId ?? null,
         input.orderRatingId ?? null,
         input.rating ?? null,
@@ -56,18 +72,22 @@ export class ComplaintsService {
       ],
     )) as Array<Record<string, unknown>>;
 
-    const result = this.mapRow(rows[0]);
+    let enriched = await this.getEnrichedRow(rows[0].id as string);
+    if ((!enriched?.table_session_id || !enriched?.table_number) && input.tableSessionId) {
+      enriched = await this.getEnrichedRowForSession(
+        rows[0].id as string,
+        input.tableSessionId,
+      );
+    }
+    const result = this.mapRow(enriched ?? rows[0]);
 
     if (slug && this.events && result.customerId) {
-      // TODO(payload): tableSessionId / tableNumber / customerName need
-      // joins with visits + customers. Defaulting to '' / 0 so the contract
-      // is satisfied; FE re-fetches via REST when expanding the card.
       this.events.emitComplaintReceived(slug, result.assignedManagerId, {
         complaintId: result.id,
-        tableSessionId: '',
-        tableNumber: 0,
+        tableSessionId: result.tableSessionId,
+        tableNumber: result.tableNumber,
         customerId: result.customerId,
-        customerName: '',
+        customerName: result.customerName,
         problemType: (result.problemType ?? 'outro') as ComplaintProblemType,
         rating: result.rating,
         description: result.text,
@@ -144,7 +164,8 @@ export class ComplaintsService {
         HttpStatus.NOT_FOUND,
       );
     }
-    const mapped = this.mapRow(updated[0]);
+    const enriched = await this.getEnrichedRow(updated[0].id as string);
+    const mapped = this.mapRow(enriched ?? updated[0]);
     const result = { ...mapped, chipAction: body.chipAction ?? null };
 
     if (slug && this.events && mapped.customerId) {
@@ -195,7 +216,8 @@ export class ComplaintsService {
         HttpStatus.NOT_FOUND,
       );
     }
-    const result = this.mapRow(updated[0]);
+    const enriched = await this.getEnrichedRow(updated[0].id as string);
+    const result = this.mapRow(enriched ?? updated[0]);
 
     if (slug && this.events) {
       this.events.emitComplaintResolved(slug, result.customerId, {
@@ -304,7 +326,8 @@ export class ComplaintsService {
       };
     });
 
-    const mapped = this.mapRow(result.row);
+    const enriched = await this.getEnrichedRow(result.row.id as string);
+    const mapped = this.mapRow(enriched ?? result.row);
     if (slug && this.events && result.chainId) {
       this.events.emitEscalationCreated(slug, toStaffId, {
         escalationId: result.chainId,
@@ -338,7 +361,10 @@ export class ComplaintsService {
     }
     const sql = `SELECT c.*,
                         COALESCE(o.table_session_id, v.table_session_id) AS table_session_id,
-                        CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT) AS table_number,
+                        COALESCE(
+                          CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT),
+                          CAST(NULLIF(regexp_replace(t.label, '[^0-9]', '', 'g'), '') AS INT)
+                        ) AS table_number,
                         cust.name AS customer_name
                    FROM complaints c
               LEFT JOIN orders o ON o.id = c.order_id
@@ -352,6 +378,51 @@ export class ComplaintsService {
       Record<string, unknown>
     >;
     return rows.map((r) => this.mapRow(r));
+  }
+
+  private async getEnrichedRow(id: string): Promise<Record<string, unknown> | null> {
+    const rows = (await this.tenantConn.query(
+      `SELECT c.*,
+              COALESCE(o.table_session_id, v.table_session_id) AS table_session_id,
+              COALESCE(
+                CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT),
+                CAST(NULLIF(regexp_replace(t.label, '[^0-9]', '', 'g'), '') AS INT)
+              ) AS table_number,
+              cust.name AS customer_name
+         FROM complaints c
+    LEFT JOIN orders o ON o.id = c.order_id
+    LEFT JOIN visits v ON v.id = COALESCE(c.visit_id, o.visit_id)
+    LEFT JOIN table_sessions ts ON ts.id = COALESCE(o.table_session_id, v.table_session_id)
+    LEFT JOIN tables t ON t.id = ts.table_id
+    LEFT JOIN customers cust ON cust.id = c.customer_id
+        WHERE c.id = $1
+        LIMIT 1`,
+      [id],
+    )) as Array<Record<string, unknown>>;
+    return rows[0] ?? null;
+  }
+
+  private async getEnrichedRowForSession(
+    id: string,
+    tableSessionId: string,
+  ): Promise<Record<string, unknown> | null> {
+    const rows = (await this.tenantConn.query(
+      `SELECT c.*,
+              ts.id AS table_session_id,
+              COALESCE(
+                CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT),
+                CAST(NULLIF(regexp_replace(t.label, '[^0-9]', '', 'g'), '') AS INT)
+              ) AS table_number,
+              cust.name AS customer_name
+         FROM complaints c
+    LEFT JOIN table_sessions ts ON ts.id = $2
+    LEFT JOIN tables t ON t.id = ts.table_id
+    LEFT JOIN customers cust ON cust.id = c.customer_id
+        WHERE c.id = $1
+        LIMIT 1`,
+      [id, tableSessionId],
+    )) as Array<Record<string, unknown>>;
+    return rows[0] ?? null;
   }
 
   private mapRow(row: Record<string, unknown>) {

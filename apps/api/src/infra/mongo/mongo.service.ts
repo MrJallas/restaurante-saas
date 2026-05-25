@@ -5,6 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { Db, MongoClient } from 'mongodb';
+import { recordMongoOperation } from '../../common/performance/request-timing';
 
 /**
  * Thin singleton wrapper over the official mongo driver. We keep one client
@@ -27,6 +28,8 @@ export class MongoService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MongoService.name);
   private client?: MongoClient;
   private database?: Db;
+  private defaultDbName = 'restaurant_chat';
+  private readonly mongoProxies = new WeakMap<object, object>();
 
   async onModuleInit() {
     const url =
@@ -35,6 +38,7 @@ export class MongoService implements OnModuleInit, OnModuleDestroy {
       'mongodb://localhost:27017';
     const dbName =
       process.env.MONGODB_DB ?? process.env.MONGO_DB ?? 'restaurant_chat';
+    this.defaultDbName = dbName;
     try {
       this.client = new MongoClient(url, {
         connectTimeoutMS: 5_000,
@@ -57,15 +61,69 @@ export class MongoService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Throws when called before `onModuleInit` succeeded. */
-  db(): Db {
-    if (!this.database) {
+  db(dbName?: string): Db {
+    if (!this.client || !this.database) {
       throw new Error('Mongo client not initialized.');
     }
-    return this.database;
+    if (!dbName || dbName === this.defaultDbName) {
+      return this.instrumentMongo(this.database);
+    }
+    return this.instrumentMongo(this.client.db(dbName));
   }
 
   /** Best-effort access for endpoints that prefer to surface a 503. */
-  tryDb(): Db | null {
-    return this.database ?? null;
+  tryDb(dbName?: string): Db | null {
+    if (!this.client || !this.database) return null;
+    if (!dbName || dbName === this.defaultDbName) {
+      return this.instrumentMongo(this.database);
+    }
+    return this.instrumentMongo(this.client.db(dbName));
+  }
+
+  private instrumentMongo<T extends object>(target: T): T {
+    const cached = this.mongoProxies.get(target);
+    if (cached) return cached as T;
+
+    const proxy = new Proxy(target, {
+      get: (obj, prop) => {
+        const value = Reflect.get(obj, prop, obj);
+        if (typeof value !== 'function') return value;
+
+        return (...args: unknown[]) => {
+          const startedAt = process.hrtime.bigint();
+          try {
+            const result: unknown = value.apply(obj, args);
+            if (this.isPromiseLike(result)) {
+              return result.finally(() => recordMongoOperation(startedAt));
+            }
+
+            recordMongoOperation(startedAt);
+            if (result && typeof result === 'object') {
+              return this.instrumentMongo(result);
+            }
+            return result;
+          } catch (err) {
+            recordMongoOperation(startedAt);
+            throw err;
+          }
+        };
+      },
+    });
+
+    this.mongoProxies.set(target, proxy);
+    return proxy as T;
+  }
+
+  private isPromiseLike<T = unknown>(
+    value: unknown,
+  ): value is Promise<T> & { finally: Promise<T>['finally'] } {
+    return (
+      !!value &&
+      typeof value === 'object' &&
+      'then' in value &&
+      'finally' in value &&
+      typeof (value as Promise<T>).then === 'function' &&
+      typeof (value as Promise<T>).finally === 'function'
+    );
   }
 }

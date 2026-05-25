@@ -8,6 +8,7 @@ tone for VIP).
 """
 
 import random
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -584,6 +585,22 @@ def render_continuation(message: dict, slots: dict[str, str]) -> str:
     return out
 
 
+def _chips_with_context(chips: list[dict], slots: dict[str, str]) -> list[dict]:
+    order_id = (slots.get("orderId") or slots.get("lastOrderId") or "").strip()
+    if not order_id:
+        return deepcopy(chips)
+
+    out = deepcopy(chips)
+    for chip in out:
+        if (
+            chip.get("id") == "avaliar"
+            and chip.get("action") == "navigate"
+            and chip.get("payload") in ("avaliar", "/avaliar")
+        ):
+            chip["payload"] = f"avaliar:{order_id}"
+    return out
+
+
 def get_continuation_full(
     tenant_id: str,
     customer_ctx: dict | None = None,
@@ -616,7 +633,7 @@ def get_continuation_full(
         "subtitle": msg.get("subtitle"),
         "template": msg.get("template"),
         "rendered": rendered,
-        "chips": msg.get("chips", []),
+        "chips": _chips_with_context(msg.get("chips", []), rendered_slots),
     }
     if "primary_cta" in msg:
         out["primary_cta"] = msg["primary_cta"]

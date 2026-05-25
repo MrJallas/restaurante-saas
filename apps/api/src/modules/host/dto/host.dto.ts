@@ -14,8 +14,9 @@ import {
 // ─── Liberate ───
 
 export class LiberateTableDto {
+  @IsOptional()
   @IsIn(['auto', 'manual_paid', 'manual_force'])
-  mode!: 'auto' | 'manual_paid' | 'manual_force';
+  mode: 'auto' | 'manual_paid' | 'manual_force' = 'auto';
 
   @IsOptional()
   @IsString()

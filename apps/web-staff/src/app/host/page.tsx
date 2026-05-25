@@ -16,6 +16,7 @@ function HostHomePageInner() {
       hostId={hostId}
       onLiberate={(t) => router.push(`/host/liberate/${t}?tenant=${tenantSlug}`)}
       onOpenLateArrival={(id) => router.push(`/host/late-arrival/${id}?tenant=${tenantSlug}&hostId=${hostId}`)}
+      onOpenScanVerification={(id) => router.push(`/host/scan-verification/${id}?tenant=${tenantSlug}&hostId=${hostId}`)}
       onTabChange={(tab) => {
         if (tab === 'waitlist') router.push(`/host/waitlist?tenant=${tenantSlug}`);
         if (tab === 'reserva') router.push(`/host/reservations?tenant=${tenantSlug}`);

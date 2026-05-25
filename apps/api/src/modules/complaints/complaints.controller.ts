@@ -20,8 +20,9 @@ import {
   Min,
 } from 'class-validator';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
-import { SessionGuard } from '../../common/guards/session.guard';
+import { SessionGuard, SessionData } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { Session } from '../../common/decorators/session.decorator';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { ComplaintsService } from './complaints.service';
 
@@ -131,6 +132,7 @@ export class ComplaintsController {
   async create(
     @Param('slug') slug: string,
     @Body() dto: CreateComplaintDto,
+    @Session() session: SessionData,
     @Req() req: Request,
   ) {
     const callerCustomerId = await this.callerResolver.requireCustomerId(req);
@@ -144,6 +146,7 @@ export class ComplaintsController {
         problemType: dto.problemType,
         text: dto.text,
         attachedImageUrl: dto.attachedImageUrl,
+        tableSessionId: session.sessionId,
       },
       slug,
     );

@@ -71,6 +71,9 @@ export class RatingPushService {
     if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schemaName)) {
       throw new Error(`Invalid schema name: ${schemaName}`);
     }
+    if (!(await this.hasTable(schemaName, 'order_ratings'))) {
+      return;
+    }
     const qr = this.dataSource.createQueryRunner();
     let pending: Array<{
       id: string;
@@ -124,5 +127,17 @@ export class RatingPushService {
         );
       }
     }
+  }
+
+  private async hasTable(schemaName: string, tableName: string): Promise<boolean> {
+    const rows = (await this.dataSource.query(
+      `SELECT 1
+         FROM information_schema.tables
+        WHERE table_schema = $1
+          AND table_name = $2
+        LIMIT 1`,
+      [schemaName, tableName],
+    )) as unknown[];
+    return rows.length > 0;
   }
 }

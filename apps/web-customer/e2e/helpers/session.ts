@@ -1,5 +1,5 @@
 import { Page, expect } from '@playwright/test';
-import { buildMesaUrl, TableCode } from './qr';
+import { buildMesaUrl, liberateQrTestTable, TableCode } from './qr';
 
 /**
  * CPF de teste valido (dois digitos verificadores ok). Mantemos um numero
@@ -13,6 +13,12 @@ export const TEST_NAME = 'Caleb Teste';
 export interface NewSessionOpts {
   slug?: string;
   tableCode?: TableCode;
+  /**
+   * Most customer E2E tests need to land on the app home. With physical QR
+   * verification enabled, the first scan only reaches home if staff has
+   * pre-released the table.
+   */
+  preRelease?: boolean;
   /** Se true, sempre passa pelo welcome (assume sem cookies). */
   expectWelcome?: boolean;
   name?: string;
@@ -20,7 +26,7 @@ export interface NewSessionOpts {
 }
 
 /**
- * Vai pra mesa via QR assinado e completa o welcome se aparecer. Idempotente:
+ * Vai pra mesa via QR resolver e completa o welcome se aparecer. Idempotente:
  * se a sessao ja tem cookie de recognition, pula o modal automaticamente.
  *
  * Retorna assim que a home estiver visivel (botao "Chamar garçom" presente).
@@ -30,9 +36,13 @@ export async function newSession(
   opts: NewSessionOpts = {},
 ): Promise<void> {
   const slug = opts.slug ?? 'restaurant_dev';
-  const tableCode = opts.tableCode ?? 'M01';
+  const tableCode = opts.tableCode ?? 'QRTEST91';
   const name = opts.name ?? TEST_NAME;
   const cpf = opts.cpf ?? TEST_CPF;
+
+  if (opts.preRelease ?? true) {
+    await liberateQrTestTable({ slug, tableCode });
+  }
 
   await page.goto(buildMesaUrl({ slug, tableCode }));
 

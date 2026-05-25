@@ -1,7 +1,7 @@
 """Smoke tests for smart-suggestions + continuation modules."""
 
 from services.smart_suggestions import get_suggestions
-from services.continuation import get_continuation, render_continuation
+from services.continuation import get_continuation, get_continuation_full, render_continuation
 
 
 def test_smart_suggestions_returns_default_pool_on_miss():
@@ -86,3 +86,16 @@ def test_render_continuation_voltou_sem_acao_with_last_item_keeps_canon():
     assert msg is not None
     rendered = render_continuation(msg, {"last_item": "risoto de funghi"})
     assert "risoto de funghi" in rendered
+
+
+def test_continuation_pagou_rating_chip_carries_order_id():
+    full = get_continuation_full(
+        tenant_id="restaurant_dev",
+        customer_ctx={},
+        kind="pagou",
+        slots={"lastOrderId": "order-123"},
+    )
+    assert full is not None
+    rating_chips = [chip for chip in full["chips"] if chip.get("id") == "avaliar"]
+    assert rating_chips
+    assert rating_chips[0]["payload"] == "avaliar:order-123"

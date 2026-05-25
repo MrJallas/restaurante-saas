@@ -39,6 +39,9 @@ interface UseWaiterEventsOptions {
 }
 
 const DEFAULT_WAITER_EVENTS: WsEventName[] = [
+  'waiter:call',
+  'waiter:acknowledged',
+  'order:ready',
   'zone_pause.started',
   'zone_pause.ended',
   'staff_message.received',
@@ -48,6 +51,9 @@ const DEFAULT_WAITER_EVENTS: WsEventName[] = [
   'escalation.created',
   'escalation.advanced',
   'escalation.completed',
+  'scan_verification.created',
+  'scan_verification.escalated',
+  'scan_verification.resolved',
   'session.flag_changed',
 ];
 

@@ -1,6 +1,7 @@
 import { Scope, Injectable, Inject } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { DataSource, QueryRunner } from 'typeorm';
+import { recordPgQuery } from '../../common/performance/request-timing';
 import { TenantRequest } from './tenant.middleware';
 
 /**
@@ -15,20 +16,30 @@ export interface TenantTx {
 
 /**
  * Per-request query helper that transparently scopes queries to the caller's
- * tenant schema. Historically this held onto a single `QueryRunner` for the
- * whole request and expected the caller to release it — which nothing did,
- * so every request leaked a pool connection and the service eventually
- * stalled once the pool saturated. To avoid that whole class of bug we now
- * acquire and release a fresh runner per `query()` call. `SET search_path`
- * is set on the same runner right before the user query so multi-tenant
- * isolation is preserved.
+ * tenant schema. It lazily reuses one QueryRunner for bursts of sequential
+ * `query()` calls, then releases it after a short idle tick. That removes
+ * repeated pool acquire + `SET search_path` inside chatty handlers without
+ * holding a DB connection while the request waits on Redis, Mongo, fetch()
+ * or serialization under concurrent load.
  */
 @Injectable({ scope: Scope.REQUEST })
 export class TenantConnectionProvider {
+  private queryRunner?: QueryRunner;
+  private queryRunnerPromise?: Promise<QueryRunner>;
+  private releaseRegistered = false;
+  private requestClosed = false;
+  private queryQueue: Promise<unknown> = Promise.resolve();
+  private idleReleaseTimer?: ReturnType<typeof setTimeout>;
+  private releasePromise?: Promise<void>;
+
   constructor(
     private readonly dataSource: DataSource,
     @Inject(REQUEST) private readonly request: TenantRequest,
   ) {}
+
+  getTenantSlug(): string | undefined {
+    return this.request.tenantSlug;
+  }
 
   async query(sql: string, params?: unknown[]): Promise<unknown[]> {
     const schemaName = this.request.tenantSchemaName;
@@ -36,14 +47,106 @@ export class TenantConnectionProvider {
       throw new Error('Schema do tenant nao encontrado no request.');
     }
 
-    const qr = this.dataSource.createQueryRunner();
-    try {
+    const run = async () => {
+      const qr = await this.getRequestQueryRunner(schemaName);
+      const startedAt = process.hrtime.bigint();
+      try {
+        return await qr.query(sql, params);
+      } finally {
+        recordPgQuery(startedAt);
+        this.scheduleIdleRelease();
+      }
+    };
+
+    const result = this.queryQueue.then(run, run);
+    this.queryQueue = result.catch(() => undefined);
+    return result;
+  }
+
+  private async getRequestQueryRunner(schemaName: string): Promise<QueryRunner> {
+    if (this.requestClosed) {
+      throw new Error('Tenant query runner ja foi liberado para este request.');
+    }
+    this.clearIdleReleaseTimer();
+    if (this.releasePromise) {
+      await this.releasePromise;
+    }
+    if (this.queryRunner) return this.queryRunner;
+    if (this.queryRunnerPromise) return this.queryRunnerPromise;
+
+    this.registerReleaseHooks();
+    this.queryRunnerPromise = (async () => {
+      const qr = this.dataSource.createQueryRunner();
       await qr.connect();
       await qr.query(`SET search_path = '${schemaName}'`);
-      return await qr.query(sql, params);
-    } finally {
-      await qr.release();
+      this.queryRunner = qr;
+      return qr;
+    })();
+    try {
+      return await this.queryRunnerPromise;
+    } catch (err) {
+      this.queryRunnerPromise = undefined;
+      throw err;
     }
+  }
+
+  private registerReleaseHooks(): void {
+    if (this.releaseRegistered) return;
+    this.releaseRegistered = true;
+
+    const res = this.request.res;
+    const release = () => {
+      void this.releaseCurrentQueryRunner(true);
+    };
+
+    if (res) {
+      res.once('finish', release);
+      res.once('close', release);
+    } else {
+      this.request.once('close', release);
+    }
+  }
+
+  private scheduleIdleRelease(): void {
+    if (this.requestClosed) return;
+    this.clearIdleReleaseTimer();
+    this.idleReleaseTimer = setTimeout(() => {
+      this.idleReleaseTimer = undefined;
+      void this.releaseCurrentQueryRunner(false);
+    }, 5);
+  }
+
+  private clearIdleReleaseTimer(): void {
+    if (!this.idleReleaseTimer) return;
+    clearTimeout(this.idleReleaseTimer);
+    this.idleReleaseTimer = undefined;
+  }
+
+  private async releaseCurrentQueryRunner(markRequestClosed: boolean): Promise<void> {
+    if (markRequestClosed) {
+      this.requestClosed = true;
+    }
+    this.clearIdleReleaseTimer();
+    if (this.releasePromise) {
+      await this.releasePromise;
+      return;
+    }
+
+    this.releasePromise = (async () => {
+      await this.queryQueue.catch(() => undefined);
+      await this.queryRunnerPromise?.catch(() => undefined);
+
+      const requestRunner = this.queryRunner;
+      this.queryRunner = undefined;
+      this.queryRunnerPromise = undefined;
+      if (requestRunner && !requestRunner.isReleased) {
+        await requestRunner.release().catch(() => undefined);
+      }
+    })().finally(() => {
+      this.releasePromise = undefined;
+    });
+
+    await this.releasePromise;
   }
 
   /**
@@ -60,6 +163,8 @@ export class TenantConnectionProvider {
       throw new Error('Schema do tenant nao encontrado no request.');
     }
 
+    await this.releaseCurrentQueryRunner(false);
+
     const qr: QueryRunner = this.dataSource.createQueryRunner();
     try {
       await qr.connect();
@@ -67,7 +172,14 @@ export class TenantConnectionProvider {
       await qr.startTransaction();
       try {
         const tx: TenantTx = {
-          query: (sql: string, params?: unknown[]) => qr.query(sql, params),
+          query: async (sql: string, params?: unknown[]) => {
+            const startedAt = process.hrtime.bigint();
+            try {
+              return await qr.query(sql, params);
+            } finally {
+              recordPgQuery(startedAt);
+            }
+          },
         };
         const result = await work(tx);
         await qr.commitTransaction();

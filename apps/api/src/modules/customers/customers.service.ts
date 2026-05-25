@@ -4,6 +4,7 @@ import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { TableSessionService } from '../table-session/table-session.service';
 import { validateCpf } from './cpf.util';
+import type { CustomerLocationSignal } from '@restaurant/shared-types';
 
 export interface CustomerWelcomeResult {
   customerId: string;
@@ -31,6 +32,7 @@ export class CustomersService {
     cpf: string,
     sessionId: string,
     callerRecognitionToken?: string | null,
+    location?: CustomerLocationSignal | null,
   ): Promise<CustomerWelcomeResult> {
     const cleanCpf = cpf.replace(/\D/g, '');
 
@@ -116,6 +118,10 @@ export class CustomersService {
       sessionId,
       customerId,
       visitId,
+      {
+        location: location ?? null,
+        slug: this.tenantConn.getTenantSlug(),
+      },
     );
 
     // Round 16 (B-NEW-65): grava customerId no payload Redis da sessão
@@ -261,6 +267,7 @@ export class CustomersService {
   async recognize(
     recognitionToken: string,
     sessionId: string,
+    location?: CustomerLocationSignal | null,
   ): Promise<CustomerWelcomeResult> {
     const customers = await this.tenantConn.query(
       'SELECT id, name, cpf, recognition_token, total_visits FROM customers WHERE recognition_token = $1',
@@ -297,6 +304,10 @@ export class CustomersService {
       sessionId,
       customerId,
       visitId,
+      {
+        location: location ?? null,
+        slug: this.tenantConn.getTenantSlug(),
+      },
     );
 
     // Busca consumption_summary

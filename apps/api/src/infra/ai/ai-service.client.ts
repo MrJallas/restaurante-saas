@@ -47,6 +47,12 @@ interface ChatMessage {
   content: string;
 }
 
+interface ChatContextMeta {
+  tenantId?: string;
+  customerId?: string | null;
+  sessionId?: string;
+}
+
 @Injectable()
 export class AiServiceClient {
   private readonly logger = new Logger(AiServiceClient.name);
@@ -99,6 +105,7 @@ export class AiServiceClient {
     history: ChatMessage[],
     tenantContext: Record<string, unknown>,
     customerContext?: Record<string, unknown>,
+    meta: ChatContextMeta = {},
   ): Promise<ChatResponse> {
     const res = await fetch(`${this.baseUrl}/chat`, {
       method: 'POST',
@@ -108,6 +115,9 @@ export class AiServiceClient {
         history,
         tenant_context: tenantContext,
         customer_context: customerContext,
+        tenantId: meta.tenantId,
+        customerId: meta.customerId,
+        sessionId: meta.sessionId,
       }),
       signal: AbortSignal.timeout(this.timeout),
     });

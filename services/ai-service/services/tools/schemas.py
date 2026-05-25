@@ -20,6 +20,7 @@ increases the chance of the model hallucinating arg names that don't match.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 
@@ -199,6 +200,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         {},
     ),
     _function(
+        "view_chat_history",
+        "Abre a tela de histórico de conversas do cliente. Use quando o cliente pedir para ver conversas antigas, histórico de chat ou mensagens anteriores.",
+        {},
+    ),
+    _function(
         "lgpd_data_request",
         "Cria uma requisição LGPD formal (apagar dados, com protocolo). Use SOMENTE após o cliente confirmar via chip ou texto livre afirmativo.",
         {
@@ -238,8 +244,30 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 ]
 
 
-def get_tool_schemas() -> list[dict[str, Any]]:
+def _remove_descriptions(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _remove_descriptions(child)
+            for key, child in value.items()
+            if key != "description"
+        }
+    if isinstance(value, list):
+        return [_remove_descriptions(child) for child in value]
+    return value
+
+
+def _compact_tool_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    compact = _remove_descriptions(deepcopy(schema))
+    fn = compact.get("function", {})
+    name = fn.get("name", "tool")
+    fn["description"] = f"Execute {name} quando a intenção do cliente corresponder."
+    return compact
+
+
+def get_tool_schemas(compact: bool = False) -> list[dict[str, Any]]:
     """Return the OpenAI-compatible tool schema list (one per canonical tool)."""
+    if compact:
+        return [_compact_tool_schema(schema) for schema in TOOL_SCHEMAS]
     return list(TOOL_SCHEMAS)
 
 

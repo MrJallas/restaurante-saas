@@ -49,9 +49,37 @@ interface HomeContinuationSignals {
   hasDraftOrder?: boolean;
 }
 
+interface HomeStaticData {
+  restaurantName: string;
+  highlights: HighlightItem[];
+}
+
+interface HomeCustomerContext {
+  nome: string;
+  isReturning: boolean;
+  lastVisitSummary: Record<string, unknown> | null;
+  ultimoPrato?: string;
+  ultimaBebida?: string;
+  ultimaSobremesa?: string;
+}
+
 @Injectable()
 export class HomeService {
   private readonly logger = new Logger(HomeService.name);
+  private static readonly staticDataCache = new Map<
+    string,
+    { expiresAt: number; value: HomeStaticData }
+  >();
+  private static readonly continuationCache = new Map<
+    string,
+    { expiresAt: number; value: HomeData['continuationMessage'] }
+  >();
+  private readonly staticDataCacheTtlMs = Number(
+    process.env.HOME_STATIC_CACHE_TTL_MS ?? 5_000,
+  );
+  private readonly continuationCacheTtlMs = Number(
+    process.env.HOME_CONTINUATION_CACHE_TTL_MS ?? 1_000,
+  );
 
   constructor(
     private readonly tenantConn: TenantConnectionProvider,
@@ -64,82 +92,21 @@ export class HomeService {
     tableLabel?: string,
     continuationSignals: HomeContinuationSignals = {},
   ): Promise<HomeData> {
-    // 1. Busca settings
-    const settings = await this.tenantConn.query('SELECT * FROM settings LIMIT 1');
-    const config = (settings as Record<string, unknown>[])[0] || {};
-    const restaurantName = (config.restaurant_name as string) || 'Restaurante';
+    const [staticData, templateIndex, customerContext] = await Promise.all([
+      this.getStaticHomeData(),
+      this.nextWelcomeTemplateIndex(sessionId),
+      this.getCustomerContext(customerId),
+    ]);
+    const { restaurantName, highlights } = staticData;
+    const {
+      nome,
+      isReturning,
+      lastVisitSummary,
+      ultimoPrato,
+      ultimaBebida,
+      ultimaSobremesa,
+    } = customerContext;
 
-    // 2. LPOP welcome pool
-    let templateIndex = 0;
-    const poolKey = `welcome_pool:${sessionId}`;
-    const idx = await this.redis.lpop(poolKey);
-
-    if (idx !== null) {
-      templateIndex = parseInt(idx, 10);
-    } else {
-      // Pool vazio — re-shuffle
-      const indices = Array.from({ length: TOTAL_TEMPLATES }, (_, i) => i);
-      for (let i = indices.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [indices[i], indices[j]] = [indices[j], indices[i]];
-      }
-      await this.redis.rpush(poolKey, ...indices.map(String));
-      templateIndex = indices[0];
-      await this.redis.lpop(poolKey); // remove o que acabamos de usar
-    }
-
-    // 3. Monta variaveis do template
-    let nome = 'visitante';
-    let isReturning = false;
-    let lastVisitSummary: Record<string, unknown> | null = null;
-    let ultimoPrato: string | undefined;
-    let ultimaBebida: string | undefined;
-    let ultimaSobremesa: string | undefined;
-
-    if (customerId) {
-      const customers = await this.tenantConn.query(
-        'SELECT name, created_at, total_visits FROM customers WHERE id = $1',
-        [customerId],
-      );
-      if ((customers as unknown[]).length > 0) {
-        const row = (customers as Record<string, unknown>[])[0];
-        nome = row.name as string;
-        // Round 21 — reconhece customer que JÁ se cadastrou e está
-        // retornando, mesmo SEM histórico de pedido completo. Antes a UI
-        // dependia exclusivamente de `customer_consumption_summary`, que
-        // só populates após `order.status='served'` — quem se cadastrou
-        // ontem e nunca chegou a confirmar um pedido ficava marcado como
-        // first-time pra sempre. Heurística: > 30 min desde o cadastro
-        // = "já viu o app antes nessa sessão ou em outra", trigger pro
-        // eyebrow "Assistente · reconheceu você" + greeting de retorno.
-        const createdAt = row.created_at instanceof Date
-          ? row.created_at
-          : new Date(row.created_at as string);
-        const ageMs = Date.now() - createdAt.getTime();
-        const totalVisits =
-          typeof row.total_visits === 'number'
-            ? row.total_visits
-            : Number(row.total_visits ?? 0);
-        if (ageMs > 30 * 60 * 1000 || totalVisits > 1) {
-          isReturning = true;
-        }
-      }
-
-      const summary = await this.tenantConn.query(
-        'SELECT last_items, favorite_items, total_spent_cents FROM customer_consumption_summary WHERE customer_id = $1',
-        [customerId],
-      );
-      if ((summary as unknown[]).length > 0) {
-        isReturning = true;
-        lastVisitSummary = (summary as Record<string, unknown>[])[0];
-        const lastItems = (lastVisitSummary.last_items as { name: string; category?: string }[]) || [];
-        ultimoPrato = lastItems.find((i) => i.category !== 'Bebidas' && i.category !== 'Sobremesas')?.name;
-        ultimaBebida = lastItems.find((i) => i.category === 'Bebidas')?.name;
-        ultimaSobremesa = lastItems.find((i) => i.category === 'Sobremesas')?.name;
-      }
-    }
-
-    // 4. Renderiza template
     const heroMessage = renderTemplate(templateIndex, {
       nome,
       restaurante: restaurantName,
@@ -148,30 +115,6 @@ export class HomeService {
       ultima_sobremesa: ultimaSobremesa,
     });
 
-    // 5. Busca highlights
-    const highlightRows = await this.tenantConn.query(
-      `SELECT id, name, short_description, price_cents, image_url,
-              CASE
-                WHEN is_day_special THEN 'Prato do dia'
-                WHEN is_featured THEN 'Destaque'
-                ELSE 'Mais pedido'
-              END as badge
-       FROM menu_items
-       WHERE is_available = true AND (is_featured = true OR is_day_special = true)
-       ORDER BY is_day_special DESC, total_orders DESC
-       LIMIT 5`,
-    );
-
-    const highlights = (highlightRows as Record<string, unknown>[]).map((row) => ({
-      id: row.id as string,
-      name: row.name as string,
-      shortDescription: row.short_description as string | null,
-      priceCents: row.price_cents as number,
-      imageUrl: row.image_url as string | null,
-      badge: row.badge as string | null,
-    }));
-
-    // 6. Quick actions (fixas)
     const quickActions: QuickAction[] = [
       { id: 'menu', label: 'Ver cardápio', icon: 'book-open', href: '/cardapio' },
       { id: 'suggest', label: 'Sugestão da IA', icon: 'sparkles', href: '/assistente' },
@@ -201,6 +144,7 @@ export class HomeService {
       });
       if (inferred.kind) params.set('kind', inferred.kind);
       if (inferred.favoriteItem) params.set('favoriteItem', inferred.favoriteItem);
+      if (inferred.lastOrderId) params.set('lastOrderId', inferred.lastOrderId);
       if (inferred.kind) {
         this.logger.debug(`continuation kind=${inferred.kind} session=${sessionId}`);
       }
@@ -209,16 +153,11 @@ export class HomeService {
       if (process.env.AI_SERVICE_API_KEY) {
         aiHeaders['x-ai-service-key'] = process.env.AI_SERVICE_API_KEY;
       }
-      const res = await fetch(`${aiUrl}/continuation?${params.toString()}`, {
-        headers: aiHeaders,
-        signal: AbortSignal.timeout(800),
-      });
-      if (res.ok) {
-        const body = (await res.json()) as { message: ContinuationMessage | null; rendered: string | null };
-        if (body.message) {
-          continuationMessage = { ...body.message, rendered: body.rendered || undefined };
-        }
-      }
+      continuationMessage = await this.getCachedContinuationMessage(
+        aiUrl,
+        params,
+        aiHeaders,
+      );
     } catch (err) {
       this.logger.debug(`continuation fetch skipped: ${(err as Error).message}`);
     }
@@ -233,6 +172,229 @@ export class HomeService {
       lastVisitSummary,
       continuationMessage,
     };
+  }
+
+  private async getStaticHomeData(): Promise<HomeStaticData> {
+    const cacheKey = `home-static:v1:${this.tenantConn.getTenantSlug() ?? 'unknown'}`;
+    const now = Date.now();
+    const cached = HomeService.staticDataCache.get(cacheKey);
+    if (
+      Number.isFinite(this.staticDataCacheTtlMs) &&
+      this.staticDataCacheTtlMs > 0 &&
+      cached &&
+      cached.expiresAt > now
+    ) {
+      return cached.value;
+    }
+
+    const rows = (await this.tenantConn.query(
+      `WITH config AS (
+          SELECT restaurant_name FROM settings LIMIT 1
+        ),
+        highlight_items AS (
+          SELECT id, name, short_description, price_cents, image_url,
+                 CASE
+                   WHEN is_day_special THEN 'Prato do dia'
+                   WHEN is_featured THEN 'Destaque'
+                   ELSE 'Mais pedido'
+                 END AS badge,
+                 is_day_special,
+                 total_orders
+          FROM menu_items
+          WHERE is_available = true AND (is_featured = true OR is_day_special = true)
+          ORDER BY is_day_special DESC, total_orders DESC
+          LIMIT 5
+        )
+       SELECT COALESCE((SELECT restaurant_name FROM config), 'Restaurante') AS restaurant_name,
+              COALESCE(
+                (
+                  SELECT json_agg(
+                    json_build_object(
+                      'id', id,
+                      'name', name,
+                      'shortDescription', short_description,
+                      'priceCents', price_cents,
+                      'imageUrl', image_url,
+                      'badge', badge
+                    )
+                    ORDER BY is_day_special DESC, total_orders DESC
+                  )
+                  FROM highlight_items
+                ),
+                '[]'::json
+              ) AS highlights`,
+    )) as Array<{ restaurant_name: string | null; highlights: unknown }>;
+
+    const row = rows[0];
+    const value: HomeStaticData = {
+      restaurantName: row?.restaurant_name || 'Restaurante',
+      highlights: this.normalizeHighlights(row?.highlights),
+    };
+
+    if (
+      Number.isFinite(this.staticDataCacheTtlMs) &&
+      this.staticDataCacheTtlMs > 0
+    ) {
+      HomeService.staticDataCache.set(cacheKey, {
+        expiresAt: now + this.staticDataCacheTtlMs,
+        value,
+      });
+    }
+
+    return value;
+  }
+
+  private normalizeHighlights(raw: unknown): HighlightItem[] {
+    const items = Array.isArray(raw)
+      ? raw
+      : typeof raw === 'string'
+        ? (JSON.parse(raw) as unknown[])
+        : [];
+
+    return items.map((row) => {
+      const item = row as Record<string, unknown>;
+      return {
+        id: item.id as string,
+        name: item.name as string,
+        shortDescription: (item.shortDescription as string | null) ?? null,
+        priceCents: Number(item.priceCents ?? 0),
+        imageUrl: (item.imageUrl as string | null) ?? null,
+        badge: (item.badge as string | null) ?? null,
+      };
+    });
+  }
+
+  private async nextWelcomeTemplateIndex(sessionId: string): Promise<number> {
+    const poolKey = `welcome_pool:${sessionId}`;
+    const idx = await this.redis.lpop(poolKey);
+    if (idx !== null) {
+      return parseInt(idx, 10);
+    }
+
+    const indices = Array.from({ length: TOTAL_TEMPLATES }, (_, i) => i);
+    for (let i = indices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+    await this.redis.rpush(poolKey, ...indices.map(String));
+    await this.redis.lpop(poolKey);
+    return indices[0];
+  }
+
+  private async getCustomerContext(customerId?: string): Promise<HomeCustomerContext> {
+    const context: HomeCustomerContext = {
+      nome: 'visitante',
+      isReturning: false,
+      lastVisitSummary: null,
+    };
+    if (!customerId) return context;
+
+    const rows = (await this.tenantConn.query(
+      `SELECT c.name, c.created_at, c.total_visits,
+              s.last_items, s.favorite_items, s.total_spent_cents
+       FROM customers c
+       LEFT JOIN customer_consumption_summary s ON s.customer_id = c.id
+       WHERE c.id = $1
+       LIMIT 1`,
+      [customerId],
+    )) as Array<{
+      name: string;
+      created_at: Date | string;
+      total_visits: number | string | null;
+      last_items: unknown;
+      favorite_items: unknown;
+      total_spent_cents: number | string | null;
+    }>;
+
+    const row = rows[0];
+    if (!row) return context;
+
+    context.nome = row.name;
+    const createdAt = row.created_at instanceof Date
+      ? row.created_at
+      : new Date(row.created_at);
+    const ageMs = Date.now() - createdAt.getTime();
+    const totalVisits =
+      typeof row.total_visits === 'number'
+        ? row.total_visits
+        : Number(row.total_visits ?? 0);
+    if (ageMs > 30 * 60 * 1000 || totalVisits > 1) {
+      context.isReturning = true;
+    }
+
+    const hasSummary =
+      row.last_items !== null ||
+      row.favorite_items !== null ||
+      row.total_spent_cents !== null;
+    if (hasSummary) {
+      context.isReturning = true;
+      context.lastVisitSummary = {
+        last_items: row.last_items,
+        favorite_items: row.favorite_items,
+        total_spent_cents: row.total_spent_cents,
+      };
+      const lastItems =
+        (context.lastVisitSummary.last_items as {
+          name: string;
+          category?: string;
+        }[]) || [];
+      context.ultimoPrato = lastItems.find(
+        (i) => i.category !== 'Bebidas' && i.category !== 'Sobremesas',
+      )?.name;
+      context.ultimaBebida = lastItems.find(
+        (i) => i.category === 'Bebidas',
+      )?.name;
+      context.ultimaSobremesa = lastItems.find(
+        (i) => i.category === 'Sobremesas',
+      )?.name;
+    }
+
+    return context;
+  }
+
+  private async getCachedContinuationMessage(
+    aiUrl: string,
+    params: URLSearchParams,
+    headers: Record<string, string>,
+  ): Promise<HomeData['continuationMessage']> {
+    const cacheKey = `home-continuation:v1:${aiUrl}:${params.toString()}`;
+    const now = Date.now();
+    const cached = HomeService.continuationCache.get(cacheKey);
+    if (
+      Number.isFinite(this.continuationCacheTtlMs) &&
+      this.continuationCacheTtlMs > 0 &&
+      cached &&
+      cached.expiresAt > now
+    ) {
+      return cached.value;
+    }
+
+    const res = await fetch(`${aiUrl}/continuation?${params.toString()}`, {
+      headers,
+      signal: AbortSignal.timeout(800),
+    });
+    let value: HomeData['continuationMessage'];
+    if (res.ok) {
+      const body = (await res.json()) as {
+        message: ContinuationMessage | null;
+        rendered: string | null;
+      };
+      if (body.message) {
+        value = { ...body.message, rendered: body.rendered || undefined };
+      }
+    }
+
+    if (
+      Number.isFinite(this.continuationCacheTtlMs) &&
+      this.continuationCacheTtlMs > 0
+    ) {
+      HomeService.continuationCache.set(cacheKey, {
+        expiresAt: now + this.continuationCacheTtlMs,
+        value,
+      });
+    }
+
+    return value;
   }
 
   private normalizeKindHint(kindHint?: string | string[]): ContinuationKind | null {
@@ -257,40 +419,112 @@ export class HomeService {
     isReturning: boolean;
     kindHint?: string | string[];
     hasDraftOrder: boolean;
-  }): Promise<{ kind: ContinuationKind | null; favoriteItem?: string }> {
+  }): Promise<{ kind: ContinuationKind | null; favoriteItem?: string; lastOrderId?: string }> {
     const hint = this.normalizeKindHint(input.kindHint);
 
-    const paymentRows = (await this.tenantConn.query(
-      `SELECT 1
-         FROM payments
-        WHERE table_session_id = $1
-          AND status IN ('confirmed', 'paid')
-          AND COALESCE(paid_at, updated_at, created_at) >= now() - INTERVAL '10 minutes'
-        LIMIT 1`,
+    const rows = (await this.tenantConn.query(
+      `WITH latest_payment AS (
+          SELECT latest_payment_order.id AS order_id
+            FROM payments p
+       LEFT JOIN LATERAL (
+             SELECT o.id
+               FROM orders o
+              WHERE o.table_session_id = p.table_session_id
+                AND (p.visit_id IS NULL OR o.visit_id = p.visit_id)
+                AND o.status NOT IN ('cancelled', 'canceled')
+              ORDER BY o.created_at DESC
+              LIMIT 1
+           ) latest_payment_order ON true
+           WHERE p.table_session_id = $1
+             AND p.status IN ('confirmed', 'paid')
+             AND COALESCE(p.paid_at, p.updated_at, p.created_at) >= now() - INTERVAL '10 minutes'
+           ORDER BY COALESCE(p.paid_at, p.updated_at, p.created_at) DESC
+           LIMIT 1
+        ),
+        latest_order AS (
+          SELECT id
+            FROM orders
+           WHERE table_session_id = $1
+             AND status NOT IN ('cancelled', 'canceled')
+           ORDER BY created_at DESC
+           LIMIT 1
+        ),
+        recent_order AS (
+          SELECT id
+            FROM orders
+           WHERE table_session_id = $1
+             AND status NOT IN ('cancelled', 'canceled', 'delivered')
+             AND created_at >= now() - INTERVAL '30 minutes'
+           ORDER BY created_at DESC
+           LIMIT 1
+        ),
+        recent_order_summary AS (
+          SELECT string_agg(item.quantity::text || 'x ' || item.name, ', ' ORDER BY item.created_at) AS summary
+            FROM (
+              SELECT oi.quantity, mi.name, oi.created_at
+                FROM order_items oi
+                JOIN menu_items mi ON mi.id = oi.menu_item_id
+               WHERE oi.order_id = (SELECT id FROM recent_order)
+               ORDER BY oi.created_at ASC
+               LIMIT 3
+            ) item
+        )
+        SELECT
+          (SELECT order_id FROM latest_payment) AS payment_order_id,
+          (SELECT id FROM latest_order) AS latest_order_id,
+          (SELECT id FROM recent_order) AS recent_order_id,
+          (SELECT LEFT(summary, 80) FROM recent_order_summary) AS recent_order_summary,
+          EXISTS (
+            SELECT 1
+              FROM customer_events
+             WHERE table_session_id = $1
+               AND event_type IN ('menu_viewed', 'item_viewed')
+               AND created_at >= now() - INTERVAL '10 minutes'
+             LIMIT 1
+          ) AS has_menu_event,
+          EXISTS (
+            SELECT 1
+              FROM waiter_calls
+             WHERE table_session_id = $1
+               AND status IN ('pending', 'acknowledged')
+               AND created_at >= now() - INTERVAL '30 minutes'
+               AND resolved_at IS NULL
+               AND cancelled_at IS NULL
+             LIMIT 1
+          ) AS has_waiter_call`,
       [input.sessionId],
-    )) as unknown[];
-    if (paymentRows.length > 0 || hint === 'pagou') {
-      return { kind: 'pagou' };
+    )) as Array<{
+      payment_order_id: string | null;
+      latest_order_id: string | null;
+      recent_order_id: string | null;
+      recent_order_summary: string | null;
+      has_menu_event: boolean;
+      has_waiter_call: boolean;
+    }>;
+    const signals = rows[0];
+
+    if (signals?.payment_order_id) {
+      return { kind: 'pagou', lastOrderId: signals.payment_order_id };
+    }
+    if (hint === 'pagou') {
+      return {
+        kind: 'pagou',
+        lastOrderId: signals?.latest_order_id ?? undefined,
+      };
     }
 
     if (input.hasDraftOrder || hint === 'abriu_pedido') {
-      return { kind: 'abriu_pedido' };
-    }
-
-    const orderRows = (await this.tenantConn.query(
-      `SELECT id
-         FROM orders
-        WHERE table_session_id = $1
-          AND status NOT IN ('cancelled', 'delivered')
-          AND created_at >= now() - INTERVAL '30 minutes'
-        ORDER BY created_at DESC
-        LIMIT 1`,
-      [input.sessionId],
-    )) as Array<{ id: string }>;
-    if (orderRows.length > 0) {
       return {
         kind: 'abriu_pedido',
-        favoriteItem: await this.summariseOrder(orderRows[0].id),
+        lastOrderId: signals?.latest_order_id ?? undefined,
+      };
+    }
+
+    if (signals?.recent_order_id) {
+      return {
+        kind: 'abriu_pedido',
+        favoriteItem: signals.recent_order_summary ?? undefined,
+        lastOrderId: signals.recent_order_id,
       };
     }
 
@@ -298,31 +532,11 @@ export class HomeService {
       return { kind: 'viu_menu' };
     }
 
-    const menuEventRows = (await this.tenantConn.query(
-      `SELECT 1
-         FROM customer_events
-        WHERE table_session_id = $1
-          AND event_type IN ('menu_viewed', 'item_viewed')
-          AND created_at >= now() - INTERVAL '10 minutes'
-        LIMIT 1`,
-      [input.sessionId],
-    )) as unknown[];
-    if (menuEventRows.length > 0) {
+    if (signals?.has_menu_event) {
       return { kind: 'viu_menu' };
     }
 
-    const waiterRows = (await this.tenantConn.query(
-      `SELECT 1
-         FROM waiter_calls
-        WHERE table_session_id = $1
-          AND status IN ('pending', 'acknowledged')
-          AND created_at >= now() - INTERVAL '30 minutes'
-          AND resolved_at IS NULL
-          AND cancelled_at IS NULL
-        LIMIT 1`,
-      [input.sessionId],
-    )) as unknown[];
-    if (waiterRows.length > 0 || hint === 'chamou_garcom') {
+    if (signals?.has_waiter_call || hint === 'chamou_garcom') {
       return { kind: 'chamou_garcom' };
     }
 
@@ -331,22 +545,5 @@ export class HomeService {
     }
 
     return { kind: null };
-  }
-
-  private async summariseOrder(orderId: string): Promise<string | undefined> {
-    const rows = (await this.tenantConn.query(
-      `SELECT oi.quantity, mi.name
-         FROM order_items oi
-         JOIN menu_items mi ON mi.id = oi.menu_item_id
-        WHERE oi.order_id = $1
-        ORDER BY oi.created_at ASC
-        LIMIT 3`,
-      [orderId],
-    )) as Array<{ quantity: number; name: string }>;
-    const summary = rows
-      .map((row) => `${row.quantity}x ${row.name}`)
-      .join(', ')
-      .slice(0, 80);
-    return summary || undefined;
   }
 }

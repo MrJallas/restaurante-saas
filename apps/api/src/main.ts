@@ -3,14 +3,18 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { createRequestTimingMiddleware } from './common/performance/request-timing';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
 
+  app.use(createRequestTimingMiddleware());
+
   app.enableCors({
     origin: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3003', 'http://localhost:3002'],
     credentials: true,
+    maxAge: 600,
   });
 
   // Sem isso, SessionGuard.canActivate le `request.cookies?.session_token`

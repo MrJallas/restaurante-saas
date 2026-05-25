@@ -140,13 +140,14 @@ export class AlertsService {
 
     const alert = rows[0];
 
-    // Round 18 (Onda 4 batch 2): emit WS `alert.created` pra dashboards
-    // de manager. Sem slug aqui (o caller fornece via wrapper); o
-    // gateway aceita slug-less emit pra rooms genericos `alerts:all`
-    // se necessario. Por ora delegamos ao gateway que routa pra
-    // `tenant:${slug}` quando slug presente.
-    if (this.events) {
-      this.events.emitAlertCreated(alert as unknown as Record<string, unknown>);
+    // Emit only to the current tenant room. A global `server.emit` leaks
+    // alert metadata to other tenants and even customer sockets.
+    const tenantSlug = this.tenantConn.getTenantSlug();
+    if (this.events && tenantSlug) {
+      this.events.emitAlertCreated(
+        tenantSlug,
+        alert as unknown as Record<string, unknown>,
+      );
     }
 
     return alert;

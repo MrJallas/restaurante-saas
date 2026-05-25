@@ -13,6 +13,7 @@ import { MongoClient, IndexSpecification, CreateIndexesOptions } from 'mongodb';
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DB_NAME = process.env.MONGODB_DB || 'restaurant_chat';
+const SECURITY_DB_NAME = process.env.MONGODB_SECURITY_DB || 'restaurant_security';
 
 interface IndexDef {
   name: string;
@@ -59,6 +60,30 @@ const MESSAGE_INDEXES: IndexDef[] = [
   },
   {
     // TTL — mensagem expira junto com a thread (campo herdado).
+    name: 'expiresAt_ttl',
+    spec: { expiresAt: 1 },
+    options: { expireAfterSeconds: 0 },
+  },
+];
+
+const SECURITY_EVENT_INDEXES: IndexDef[] = [
+  {
+    name: 'tenantId_createdAt',
+    spec: { tenantId: 1, createdAt: -1 },
+  },
+  {
+    name: 'tenantId_tableId_createdAt',
+    spec: { tenantId: 1, tableId: 1, createdAt: -1 },
+  },
+  {
+    name: 'tenantId_customerId_createdAt',
+    spec: { tenantId: 1, customerId: 1, createdAt: -1 },
+  },
+  {
+    name: 'eventType_createdAt',
+    spec: { eventType: 1, createdAt: -1 },
+  },
+  {
     name: 'expiresAt_ttl',
     spec: { expiresAt: 1 },
     options: { expireAfterSeconds: 0 },
@@ -147,6 +172,17 @@ async function main() {
 
     console.log('Ensuring indexes on chat_messages:');
     await ensureIndexes(db, 'chat_messages', MESSAGE_INDEXES);
+
+    const securityDb = client.db(SECURITY_DB_NAME);
+    console.log(`Initializing database "${SECURITY_DB_NAME}"`);
+    for (const collection of [
+      'qr_scan_events',
+      'scan_verification_events',
+      'security_audit_events',
+    ]) {
+      await ensureCollection(securityDb, collection);
+      await ensureIndexes(securityDb, collection, SECURITY_EVENT_INDEXES);
+    }
 
     console.log('MongoDB init OK.');
   } finally {

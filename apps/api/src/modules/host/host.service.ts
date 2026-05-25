@@ -33,6 +33,8 @@ interface TableRow {
   active_session_started_at: string | null;
   participant_count: number | null;
   has_vip: boolean | null;
+  open_release_id: string | null;
+  open_release_expires_at: string | null;
 }
 
 interface SwapRow {
@@ -119,7 +121,9 @@ export class HostService {
          active_ts.id                            AS active_session_id,
          active_ts.created_at                    AS active_session_started_at,
          active_ts.participant_count             AS participant_count,
-         active_ts.has_vip                       AS has_vip
+         active_ts.has_vip                       AS has_vip,
+         open_release.id                         AS open_release_id,
+         open_release.expires_at                 AS open_release_expires_at
        FROM tables t
        LEFT JOIN zones z ON z.id = t.zone_id
        LEFT JOIN LATERAL (
@@ -138,6 +142,15 @@ export class HostService {
          ORDER BY ts.created_at DESC
          LIMIT 1
        ) active_ts ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT id, expires_at
+           FROM table_qr_releases r
+          WHERE r.table_id = t.id
+            AND r.consumed_at IS NULL
+            AND r.expires_at > now()
+          ORDER BY r.created_at DESC
+          LIMIT 1
+       ) open_release ON TRUE
        WHERE t.is_active = TRUE
        ORDER BY t.sort_order ASC, number ASC`,
     )) as TableRow[];
@@ -336,34 +349,43 @@ export class HostService {
           HttpStatus.CONFLICT,
         );
       }
-      return { ok: true as const, alreadyFree: true };
+    } else {
+      const closedBy = body.mode === 'auto' ? 'system' : `staff:${body.mode}`;
+      const updated = unwrapRows<{ id: string }>(
+        await this.tenantConn.query(
+          `UPDATE table_sessions
+              SET status     = 'closed',
+                  closed_at  = now(),
+                  closed_by  = $2,
+                  updated_at = now()
+            WHERE id = $1 AND status = 'active'
+            RETURNING id`,
+          [activeSession.id, closedBy],
+        ),
+      );
+      if (!updated.length) {
+        throw new HttpException(
+          'Sessao ja foi fechada.',
+          HttpStatus.CONFLICT,
+        );
+      }
     }
 
-    const closedBy = body.mode === 'auto' ? 'system' : `staff:${body.mode}`;
-    const updated = unwrapRows<{ id: string }>(
+    const release = unwrapRows<{ id: string; expires_at: string }>(
       await this.tenantConn.query(
-        `UPDATE table_sessions
-            SET status     = 'closed',
-                closed_at  = now(),
-                closed_by  = $2,
-                updated_at = now()
-          WHERE id = $1 AND status = 'active'
-          RETURNING id`,
-        [activeSession.id, closedBy],
+        `INSERT INTO table_qr_releases
+           (table_id, released_by_staff_id, reason, expires_at)
+         VALUES ($1, $2, $3, now() + interval '15 minutes')
+         RETURNING id, expires_at`,
+        [tableRow.id, body.staffId ?? null, body.reason ?? null],
       ),
-    );
-    if (!updated.length) {
-      throw new HttpException(
-        'Sessao ja foi fechada.',
-        HttpStatus.CONFLICT,
-      );
-    }
+    )[0];
 
     if (this.events) {
       this.events.emitHostTableLiberated(slug, {
         tableId: tableRow.id,
         tableNumber,
-        sessionId: activeSession.id,
+        sessionId: activeSession?.id ?? '',
         mode: body.mode,
         by: { staffId: body.staffId ?? null },
         reason: body.reason ?? null,
@@ -373,7 +395,9 @@ export class HostService {
 
     return {
       ok: true as const,
-      sessionId: activeSession.id,
+      sessionId: activeSession?.id ?? null,
+      releaseId: release?.id ?? null,
+      releaseExpiresAt: release?.expires_at ?? null,
       mode: body.mode,
     };
   }
@@ -920,7 +944,9 @@ export class HostService {
 
   private mapTableRow(row: TableRow): HostTableDto {
     let status: HostTableStatus;
-    if (!row.active_session_id) {
+    if (!row.active_session_id && row.open_release_id) {
+      status = 'liberada';
+    } else if (!row.active_session_id) {
       status = 'livre';
     } else if (row.has_vip) {
       status = 'alerta';

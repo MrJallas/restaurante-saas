@@ -52,7 +52,11 @@ export function HostJoinRequestBanner({ slug }: { slug: string }) {
 
   useEffect(() => {
     if (!sessionId) return;
-    refetch();
+    void refetch();
+    const interval = window.setInterval(() => {
+      void refetch();
+    }, 2500);
+    return () => window.clearInterval(interval);
   }, [sessionId, refetch]);
 
   useTableSocket(sessionId, (event) => {

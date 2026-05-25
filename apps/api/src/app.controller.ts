@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { recordPgQuery } from './common/performance/request-timing';
 import { RedisService } from './infra/redis/redis.service';
 
 @Controller()
@@ -19,7 +20,12 @@ export class AppController {
     const checks: Record<string, 'ok' | 'fail'> = {};
 
     try {
-      await this.dataSource.query('SELECT 1');
+      const startedAt = process.hrtime.bigint();
+      try {
+        await this.dataSource.query('SELECT 1');
+      } finally {
+        recordPgQuery(startedAt);
+      }
       checks.database = 'ok';
     } catch {
       checks.database = 'fail';

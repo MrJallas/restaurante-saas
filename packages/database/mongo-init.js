@@ -33,3 +33,19 @@ db.chat_messages.createIndex({ threadId: 1, createdAt: 1 });
 
 // Init log pra container output.
 print('mongo-init.js: restaurant_chat TTL + lookup indexes ensured.');
+
+db = db.getSiblingDB('restaurant_security');
+
+for (const collection of [
+  'qr_scan_events',
+  'scan_verification_events',
+  'security_audit_events',
+]) {
+  db[collection].createIndex({ tenantId: 1, createdAt: -1 });
+  db[collection].createIndex({ tenantId: 1, tableId: 1, createdAt: -1 });
+  db[collection].createIndex({ tenantId: 1, customerId: 1, createdAt: -1 });
+  db[collection].createIndex({ eventType: 1, createdAt: -1 });
+  db[collection].createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+}
+
+print('mongo-init.js: restaurant_security audit indexes ensured.');

@@ -480,6 +480,17 @@ export interface StaffPerformance {
     sessionsHandled: number;
     callsAnswered: number;
   };
+  salesByDay?: Array<{
+    date: string;
+    ordersServed: number;
+    totalRevenue: number;
+  }>;
+  teamComparison?: Array<{
+    metric: 'avgResponseSec' | 'avgTicketCents' | 'callsAnswered' | 'sessionsHandled';
+    mine: number;
+    team: number;
+    lowerIsBetter?: boolean;
+  }>;
 }
 
 export const staffRosterApi = (slug: string) => ({

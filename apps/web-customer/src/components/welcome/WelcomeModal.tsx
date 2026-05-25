@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import { CpfInput } from './CpfInput';
 import { validateCpf, cleanCpf } from '../../lib/cpf';
 import { apiPost } from '../../lib/api';
+import { captureCustomerLocationSignal } from '../../lib/location';
 import { setRecognitionToken } from '../../lib/storage';
 import { useSession } from '../../hooks/useSession';
 import { PillButton } from '../ui/PillButton';
@@ -61,11 +62,16 @@ export function WelcomeModal({
     setError(null);
 
     try {
+      const location = await captureCustomerLocationSignal({
+        prompt: true,
+        timeoutMs: 4000,
+      });
       const result = await apiPost<CustomerWelcomeResponseDto>(
         `/${slug}/customer/welcome`,
         {
           name: name.trim(),
           cpf: cleanCpf(cpf),
+          location,
         },
       );
 

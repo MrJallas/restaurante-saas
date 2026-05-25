@@ -24,6 +24,8 @@ Responda "sim" se a mensagem é sobre:
 - Fome, sede, vontade de comer/beber, estado do apetite ("estou com fome", "tô com sede", "bateu a fome")
 - Pedidos de sugestão geral ("o que você recomenda", "o que tem de bom", "me indica algo")
 - Pedir para chamar garçom ou ajuda no atendimento
+- Cortesias, brindes, compensações e dúvidas sobre benefícios da mesa
+- Histórico de conversas/chats do cliente, ver ou apagar conversas, LGPD/exclusão de dados
 - PEDIDOS COMUNS DE GARÇOM (sempre permitir): "preciso de mais água", "pode
   trazer um talher", "queria mais guardanapo", "me ajuda com a conta", "tem
   como trazer sal/azeite/pimenta/gelo/copo". Estas mensagens NUNCA são
@@ -52,6 +54,9 @@ EXEMPLOS DE PEDIDOS DE GARÇOM QUE DEVEM RETORNAR "sim" (round 4 #C-NEW-2):
 - "me ajuda com a conta" → sim
 - "tem como trazer sal?" → sim
 - "preciso de gelo" → sim
+- "tenho cortesia ativa?" → sim
+- "quero ver minhas conversas" → sim
+- "abrir histórico de chat" → sim
 
 {history_block}Mensagem atual do cliente: "{message}"
 

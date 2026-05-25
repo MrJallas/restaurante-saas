@@ -3,16 +3,18 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { EventsGateway } from '../websocket/events.gateway';
 import { unwrapRows } from '../tenant/query-utils';
+import { SecurityAuditService } from '../security-audit/security-audit.service';
 
 /**
  * Recurring sweeper for time-based domain transitions. Runs every 10s and,
- * for each active tenant schema, fans out to four independent passes:
+ * for each active tenant schema, fans out to independent passes:
  *
  *  1. late-arrival expirations    -> emit late_arrival.expired (+ optional
  *                                    escalation.advanced if the chain rolls)
  *  2. escalation chain advances   -> emit escalation.advanced or .completed
  *  3. zone-pause auto-end         -> emit zone_pause.ended (autoExpired=true)
  *  4. merge-cooldown notifications-> emit merge.cooldown_expired
+ *  5. scan-verification cascade -> host -> manager -> waiter -> timeout
  *
  * Each pass is wrapped in its own try/catch so a SQL failure in one pass
  * never blocks the others. We never use `TenantConnectionProvider` here
@@ -32,6 +34,7 @@ export class TtlTickService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly gateway: EventsGateway,
+    private readonly audit: SecurityAuditService,
   ) {}
 
   @Cron(CronExpression.EVERY_10_SECONDS)
@@ -91,20 +94,59 @@ export class TtlTickService {
   }
 
   private async sweepTenant(slug: string, schemaName: string) {
-    await Promise.allSettled([
-      this.sweepLateArrivals(slug, schemaName).catch((e) =>
-        this.logger.error(`[${slug}] sweepLateArrivals`, e as Error),
-      ),
-      this.sweepEscalations(slug, schemaName).catch((e) =>
-        this.logger.error(`[${slug}] sweepEscalations`, e as Error),
-      ),
-      this.sweepZonePauses(slug, schemaName).catch((e) =>
-        this.logger.error(`[${slug}] sweepZonePauses`, e as Error),
-      ),
-      this.sweepMergeCooldowns(slug, schemaName).catch((e) =>
-        this.logger.error(`[${slug}] sweepMergeCooldowns`, e as Error),
-      ),
+    const tables = await this.existingTables(schemaName, [
+      'late_arrival_requests',
+      'escalation_chains',
+      'zone_pauses',
+      'table_merge_cooldowns',
     ]);
+    const jobs: Array<Promise<void>> = [];
+    if (tables.has('late_arrival_requests')) {
+      jobs.push(
+        this.sweepLateArrivals(slug, schemaName).catch((e) =>
+          this.logger.error(`[${slug}] sweepLateArrivals`, e as Error),
+        ),
+      );
+    }
+    if (tables.has('escalation_chains')) {
+      jobs.push(
+        this.sweepEscalations(slug, schemaName).catch((e) =>
+          this.logger.error(`[${slug}] sweepEscalations`, e as Error),
+        ),
+      );
+    }
+    if (tables.has('zone_pauses')) {
+      jobs.push(
+        this.sweepZonePauses(slug, schemaName).catch((e) =>
+          this.logger.error(`[${slug}] sweepZonePauses`, e as Error),
+        ),
+      );
+    }
+    if (tables.has('table_merge_cooldowns')) {
+      jobs.push(
+        this.sweepMergeCooldowns(slug, schemaName).catch((e) =>
+          this.logger.error(`[${slug}] sweepMergeCooldowns`, e as Error),
+        ),
+      );
+    }
+    await Promise.allSettled(jobs);
+  }
+
+  private async existingTables(
+    schemaName: string,
+    tableNames: string[],
+  ): Promise<Set<string>> {
+    if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schemaName)) {
+      throw new Error(`Invalid schema name: ${schemaName}`);
+    }
+    const rows = (await this.dataSource.query(
+      `SELECT table_name
+         FROM information_schema.tables
+        WHERE table_schema = $1
+          AND table_name = ANY($2::text[])`,
+      [schemaName, tableNames],
+    )) as Array<{ table_name: string }>;
+    return new Set(rows.map((row) => row.table_name));
   }
 
   // ───────────── Late-arrival expirations ─────────────
@@ -190,8 +232,9 @@ export class TtlTickService {
   /**
    * Advance an escalation chain by one level, or complete it with `timeout`
    * if it has run past the configured ladder. The ladder is implicit in
-   * `level`: 0 (host) -> 1 (zone host) -> 2 (manager). After level 2 we
-   * stop escalating and mark completed.
+   * `level`: default chains use 0 (host) -> 1 (zone host) -> 2 (manager);
+   * scan verification uses 0 (host) -> 1 (manager) -> 2 (waiter). After
+   * level 2 we stop escalating and mark completed.
    *
    * Per-step TTL = 60s (matches docs/customer-host-model.md "Job a cada 5s
    * detecta `expires_at < now()` em pending → marca timeout"). We stretch to
@@ -203,6 +246,8 @@ export class TtlTickService {
     schemaName: string,
     chainId: string,
     preloaded?: {
+      kind?: string;
+      source_id?: string;
       level: number;
       current_assignee_staff_id: string | null;
     },
@@ -211,15 +256,19 @@ export class TtlTickService {
       const rows = preloaded
         ? [preloaded]
         : ((await qr.query(
-            `SELECT level, current_assignee_staff_id
+            `SELECT kind, source_id, level, current_assignee_staff_id
                FROM escalation_chains WHERE id = $1`,
             [chainId],
           )) as Array<{
+            kind: string;
+            source_id: string;
             level: number;
             current_assignee_staff_id: string | null;
           }>);
       if (!rows.length) return null;
 
+      const kind = rows[0].kind ?? 'other';
+      const sourceId = rows[0].source_id ?? null;
       const fromLevel = rows[0].level;
       const fromStaffId = rows[0].current_assignee_staff_id;
       const nextLevel = fromLevel + 1;
@@ -234,16 +283,75 @@ export class TtlTickService {
             WHERE id = $1`,
           [chainId],
         );
+        let scanResolution:
+          | { tableSessionId: string; tableId: string; customerId: string }
+          | null = null;
+        if (kind === 'scan_verification' && sourceId) {
+          const expired = unwrapRows<{
+            table_session_id: string;
+            table_id: string;
+            customer_id: string;
+          }>(
+            await qr.query(
+              `UPDATE scan_verification_requests
+                  SET status = 'expired',
+                      decided_at = now(),
+                      rejection_reason = COALESCE(rejection_reason, 'auto-timeout'),
+                      updated_at = now()
+                WHERE id = $1
+                  AND status = 'pending'
+              RETURNING table_session_id, table_id, customer_id`,
+              [sourceId],
+            ),
+          )[0];
+          if (expired) {
+            await qr.query(
+              `UPDATE session_participants
+                  SET status = 'rejected',
+                      rejected_at = now()
+                WHERE table_session_id = $1
+                  AND customer_id = $2
+                  AND left_at IS NULL`,
+              [expired.table_session_id, expired.customer_id],
+            );
+            await qr.query(
+              `UPDATE table_sessions
+                  SET status = 'closed',
+                      closed_at = COALESCE(closed_at, now()),
+                      closed_by = 'scan_verification:expired',
+                      updated_at = now()
+                WHERE id = $1
+                  AND status = 'active'
+                  AND host_customer_id IS NULL`,
+              [expired.table_session_id],
+            );
+            scanResolution = {
+              tableSessionId: expired.table_session_id,
+              tableId: expired.table_id,
+              customerId: expired.customer_id,
+            };
+          }
+        }
         return {
           mode: 'completed' as const,
+          kind,
+          sourceId,
           fromLevel,
           fromStaffId,
+          scanResolution,
         };
       }
 
       // Pick next assignee role. We don't auto-resolve a specific staff id
       // here — the FE/REST side picks one on read. The role is enough.
-      const nextRole = nextLevel === 1 ? 'zone_host' : 'manager';
+      const nextRole =
+        kind === 'scan_verification'
+          ? nextLevel === 1
+            ? 'manager'
+            : 'waiter'
+          : nextLevel === 1
+            ? 'zone_host'
+            : 'manager';
       const ttl = new Date(Date.now() + 60 * 1000).toISOString();
 
       await qr.query(
@@ -256,10 +364,42 @@ export class TtlTickService {
           WHERE id = $1`,
         [chainId, nextLevel, nextRole, ttl],
       );
+      let scan:
+        | { tableSessionId: string; tableId: string; customerId: string }
+        | null = null;
+      if (kind === 'scan_verification' && sourceId) {
+        const updatedScan = unwrapRows<{
+          table_session_id: string;
+          table_id: string;
+          customer_id: string;
+        }>(
+          await qr.query(
+            `UPDATE scan_verification_requests
+                SET escalation_level = $2,
+                    ttl_expires_at = $3,
+                    updated_at = now()
+              WHERE id = $1
+                AND status = 'pending'
+            RETURNING table_session_id, table_id, customer_id`,
+            [sourceId, nextLevel, ttl],
+          ),
+        )[0];
+        scan = updatedScan
+          ? {
+              tableSessionId: updatedScan.table_session_id,
+              tableId: updatedScan.table_id,
+              customerId: updatedScan.customer_id,
+            }
+          : null;
+      }
       return {
         mode: 'advanced' as const,
+        kind,
+        sourceId,
+        scan,
         fromLevel,
         toLevel: nextLevel,
+        nextRole,
         fromStaffId,
         deadline: ttl,
       };
@@ -273,6 +413,40 @@ export class TtlTickService {
         outcome: 'timeout',
         resolvedBy: null,
       });
+      if (
+        result.kind === 'scan_verification' &&
+        result.sourceId &&
+        result.scanResolution
+      ) {
+        const decidedAt = new Date().toISOString();
+        this.gateway.emitScanVerificationResolved(slug, {
+          requestId: result.sourceId,
+          tableSessionId: result.scanResolution.tableSessionId,
+          requesterCustomerId: result.scanResolution.customerId,
+          status: 'expired',
+          decidedAt,
+          decidedByStaffId: null,
+          reason: 'auto-timeout',
+        });
+        this.gateway.emitToSession(
+          result.scanResolution.tableSessionId,
+          'participant:decision',
+          {
+            customerId: result.scanResolution.customerId,
+            status: 'rejected',
+            decidedAt,
+          },
+        );
+        await this.logScanVerificationTtlEvent(slug, 'scan_verification_timeout', {
+          requestId: result.sourceId,
+          escalationId: chainId,
+          tableSessionId: result.scanResolution.tableSessionId,
+          tableId: result.scanResolution.tableId,
+          customerId: result.scanResolution.customerId,
+          fromLevel: result.fromLevel,
+          outcome: 'timeout',
+        });
+      }
     } else {
       this.gateway.emitEscalationAdvanced(slug, result.fromStaffId, null, {
         escalationId: chainId,
@@ -280,7 +454,83 @@ export class TtlTickService {
         toStep: result.toLevel,
         deadline: result.deadline,
       });
+      if (
+        result.kind === 'scan_verification' &&
+        result.sourceId &&
+        (result.nextRole === 'host' ||
+          result.nextRole === 'manager' ||
+          result.nextRole === 'waiter')
+      ) {
+        this.gateway.emitScanVerificationEscalated(slug, result.nextRole, {
+          requestId: result.sourceId,
+          tableSessionId: result.scan?.tableSessionId ?? '',
+          escalationId: chainId,
+          fromStep: result.fromLevel,
+          toStep: result.toLevel,
+          assigneeRole: result.nextRole,
+          expiresAt: result.deadline,
+        });
+        if (result.scan) {
+          await this.logScanVerificationTtlEvent(
+            slug,
+            'scan_verification_escalated',
+            {
+              requestId: result.sourceId,
+              escalationId: chainId,
+              tableSessionId: result.scan.tableSessionId,
+              tableId: result.scan.tableId,
+              customerId: result.scan.customerId,
+              fromLevel: result.fromLevel,
+              toLevel: result.toLevel,
+              assigneeRole: result.nextRole,
+              expiresAt: result.deadline,
+            },
+          );
+        }
+      }
     }
+  }
+
+  private async logScanVerificationTtlEvent(
+    slug: string,
+    eventType: string,
+    input: {
+      requestId: string;
+      escalationId: string;
+      tableSessionId: string;
+      tableId: string;
+      customerId: string;
+      fromLevel: number;
+      toLevel?: number;
+      assigneeRole?: string;
+      expiresAt?: string;
+      outcome?: string;
+    },
+  ) {
+    const event = {
+      tenantId: slug,
+      tableId: input.tableId,
+      tableSessionId: input.tableSessionId,
+      customerId: input.customerId,
+      eventType,
+      metadata: {
+        requestId: input.requestId,
+        escalationId: input.escalationId,
+        fromLevel: input.fromLevel,
+        toLevel: input.toLevel ?? null,
+        assigneeRole: input.assigneeRole ?? null,
+        expiresAt: input.expiresAt ?? null,
+        outcome: input.outcome ?? null,
+      },
+    };
+    await Promise.all([
+      this.audit.log('scan_verification_events', event),
+      this.audit.logAudit(event),
+    ]).catch((err) =>
+      this.logger.warn(
+        `[${slug}] scan verification ttl log failed: ${(err as Error).message}`,
+      ),
+    );
   }
 
   // ───────────── Zone-pause auto-end ─────────────

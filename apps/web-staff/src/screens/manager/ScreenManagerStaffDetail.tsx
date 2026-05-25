@@ -27,6 +27,8 @@ import {
 } from '../../components/manager';
 import { manager, type StaffPerformance, type StaffRosterEntry } from '../../lib/api/manager';
 
+type StaffComparisonMetric = NonNullable<StaffPerformance['teamComparison']>[number]['metric'];
+
 const STAFF_COLORS = [
   '#4F6BFF', '#E37D2F', '#7A4FBE', '#C43A3A', '#0B7A8B',
   '#5B7CD9', '#D9595B', '#3E8C72', '#9A4FBE', '#1E8C5A',
@@ -68,6 +70,36 @@ function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return minutes > 0 ? `${minutes}m ${rest}s` : `${rest}s`;
+}
+function formatChartDay(isoDate: string): string {
+  const [year, month, day] = isoDate.slice(0, 10).split('-').map(Number);
+  const date = new Date(year, (month || 1) - 1, day || 1);
+  return new Intl.DateTimeFormat('pt-BR', { weekday: 'short' })
+    .format(date)
+    .replace('.', '')
+    .slice(0, 3)
+    .replace(/^./, (c) => c.toUpperCase());
+}
+function periodLabel(period: Window): string {
+  if (period === 'today') return 'hoje';
+  return period === '7d' ? '7 dias' : '30 dias';
+}
+function formatMetricValue(
+  metric: StaffComparisonMetric,
+  value: number,
+): string {
+  if (metric === 'avgResponseSec') return formatDuration(Math.round(value));
+  if (metric === 'avgTicketCents') return formatCurrency(Math.round(value));
+  return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(value);
+}
+function metricLabel(metric: StaffComparisonMetric): string {
+  const labels: Record<StaffComparisonMetric, string> = {
+    avgResponseSec: 'Tempo de resposta',
+    avgTicketCents: 'Ticket médio',
+    callsAnswered: 'Chamados atendidos',
+    sessionsHandled: 'Mesas atendidas',
+  };
+  return labels[metric];
 }
 
 type Window = 'today' | '7d' | '30d';
@@ -148,19 +180,23 @@ export function ScreenManagerStaffDetail({
     };
   }, [slug, staffId, activeWindow]);
 
-  // Mock weekly data (canvas exemplo). TODO Onda 4 backend.
-  const days = [
-    { d: 'Seg', v: 1240 },
-    { d: 'Ter', v: 1380 },
-    { d: 'Qua', v: 980 },
-    { d: 'Qui', v: 1620 },
-    { d: 'Sex', v: 1840 },
-    { d: 'Sáb', v: 2100 },
-    { d: 'Dom', v: 1520 },
-  ];
-  const maxV = Math.max(...days.map((d) => d.v));
-
   const kpis = performance?.kpis;
+  const salesByDay = performance?.salesByDay ?? [];
+  const chartDays = salesByDay.map((row) => ({
+    key: row.date,
+    d: formatChartDay(row.date),
+    v: row.totalRevenue,
+    orders: row.ordersServed,
+  }));
+  const maxV = Math.max(1, ...chartDays.map((d) => d.v));
+  const chartTotal = chartDays.reduce((sum, d) => sum + d.v, 0);
+  const chartOrders = chartDays.reduce((sum, d) => sum + d.orders, 0);
+  const chartAvgTicket = chartOrders > 0 ? Math.round(chartTotal / chartOrders) : 0;
+  const peakDay = chartDays.reduce(
+    (best, d) => (d.v > best.v ? d : best),
+    { key: '', d: '-', v: 0, orders: 0 },
+  );
+  const comparisonRows = performance?.teamComparison ?? [];
   const goEdit = () => router.push(`/manager/equipe/${staffId}/editar?slug=${slug}`);
   const goBack = () => router.push('/manager/equipe');
 
@@ -340,17 +376,17 @@ export function ScreenManagerStaffDetail({
                   fontFamily: MONO_FONT,
                 }}
               >
-                Dados do endpoint de performance · {activeWindow === 'today' ? 'hoje' : activeWindow === '7d' ? '7 dias' : '30 dias'}
+                Dados do endpoint de performance · {periodLabel(activeWindow)}
               </div>
             </div>
 
             {/* Sales chart */}
-            <MSection dark={dark} title="Vendas · últimos 7 dias">
+            <MSection dark={dark} title={`Vendas · ${periodLabel(activeWindow)}`}>
               <div style={{ padding: '0 16px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 110 }}>
-                  {days.map((d, i) => (
+                  {chartDays.map((d, i) => (
                     <div
-                      key={d.d}
+                      key={d.key}
                       style={{
                         flex: 1,
                         display: 'flex',
@@ -372,9 +408,9 @@ export function ScreenManagerStaffDetail({
                           style={{
                             height: `${(d.v / maxV) * 100}%`,
                             background:
-                              i === days.length - 1
+                              i === chartDays.length - 1
                                 ? C.ink
-                                : i === days.length - 2
+                                : i === chartDays.length - 2
                                 ? '#888'
                                 : '#d8d2c5',
                             borderRadius: '4px 4px 0 0',
@@ -387,13 +423,13 @@ export function ScreenManagerStaffDetail({
                   ))}
                 </div>
                 <div style={{ fontSize: 11, color: C.faint, marginTop: 8, fontWeight: 500 }}>
-                  Total · R$ 10.680 · ticket médio R$ 138 · pico no sábado
+                  Total · {formatCurrency(chartTotal)} · ticket médio {formatCurrency(chartAvgTicket)} · pico {peakDay.d}
                 </div>
               </div>
             </MSection>
 
             {/* Comparativo equipe */}
-            <MSection dark={dark} title="Comparativo · equipe da noite">
+            <MSection dark={dark} title="Comparativo · equipe">
               <div
                 style={{
                   padding: '0 16px',
@@ -402,42 +438,42 @@ export function ScreenManagerStaffDetail({
                   gap: 8,
                 }}
               >
-                {[
-                  { lbl: 'Tempo de resposta', mine: '1m 48s', team: '2m 10s', good: true },
-                  { lbl: 'Ticket médio', mine: 'R$ 138', team: 'R$ 124', good: true },
-                  { lbl: 'Chamados escalados', mine: '1', team: '0,8', good: false },
-                  { lbl: 'Avaliação', mine: '★ 4,6', team: '★ 4,5', good: true },
-                ].map((row) => (
-                  <div
-                    key={row.lbl}
-                    style={{
-                      padding: 12,
-                      border: `1px solid ${C.borderSoft}`,
-                      borderRadius: 10,
-                      background: C.bg,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                    }}
-                  >
-                    <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{row.lbl}</div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 800,
-                          color: row.good ? '#1E8C5A' : '#C43A3A',
-                          fontVariantNumeric: 'tabular-nums',
-                        }}
-                      >
-                        {row.mine}
-                      </div>
-                      <div style={{ fontSize: 10, color: C.faint, fontWeight: 600 }}>
-                        equipe {row.team}
+                {comparisonRows.map((row) => {
+                  const mine = Number(row.mine ?? 0);
+                  const team = Number(row.team ?? 0);
+                  const good = row.lowerIsBetter ? mine <= team : mine >= team;
+                  return (
+                    <div
+                      key={row.metric}
+                      style={{
+                        padding: 12,
+                        border: `1px solid ${C.borderSoft}`,
+                        borderRadius: 10,
+                        background: C.bg,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                      }}
+                    >
+                      <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{metricLabel(row.metric)}</div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 800,
+                            color: good ? '#1E8C5A' : '#C43A3A',
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {formatMetricValue(row.metric, mine)}
+                        </div>
+                        <div style={{ fontSize: 10, color: C.faint, fontWeight: 600 }}>
+                          equipe {formatMetricValue(row.metric, team)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </MSection>
           </>

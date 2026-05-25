@@ -62,6 +62,43 @@ def _build_api_client():
 _api_client = _build_api_client()
 
 
+def _context_api_client(
+    tenant_id: str | None,
+    session_id: str | None,
+    staff_id: str | None = None,
+):
+    """
+    Scope the process-wide apps/api client to one tool invocation.
+
+    Tool modules use canonical paths like `/menu/search`; apps/api routes are
+    tenant-prefixed and menu routes require `x-session-token`. This wrapper
+    adds both without making every tool know about HTTP auth details.
+    """
+    if not _api_client:
+        return None
+
+    clean_tenant = (tenant_id or "").strip().strip("/")
+    clean_session = (session_id or "").strip()
+    clean_staff = (staff_id or "").strip()
+
+    def _call(method: str, path: str, body=None):
+        normalised = path if path.startswith("/") else f"/{path}"
+        if clean_tenant:
+            tenant_prefix = f"/{clean_tenant}"
+            if normalised != tenant_prefix and not normalised.startswith(f"{tenant_prefix}/"):
+                normalised = f"{tenant_prefix}{normalised}"
+        headers = {}
+        if clean_session:
+            headers["x-session-token"] = clean_session
+        if clean_staff:
+            headers["x-staff-id"] = clean_staff
+            if settings.STAFF_API_KEY:
+                headers["x-staff-key"] = settings.STAFF_API_KEY
+        return _api_client(method, normalised, body, headers=headers)
+
+    return _call
+
+
 _CANCEL_MANAGER_MESSAGE_RE = re.compile(
     r"\b(deixa\s+pra\s+l[aá]|cancela|cancelar|n[aã]o\s+(precisa|quero)|esquece)\b",
     re.IGNORECASE,
@@ -121,7 +158,7 @@ def _rule_tool_response(
         tenant_id=req.tenantId or "",
         customer_id=req.customerId,
         session_id=req.sessionId,
-        api_client=_api_client,
+        api_client=_context_api_client(req.tenantId, req.sessionId),
         raw_message=text,
     )
     tool_result = dispatch_tool(name, args, ctx)
@@ -333,6 +370,8 @@ class ContinuationRequest(BaseModel):
     tableLabel: str | None = None
     lastItem: str | None = None
     lastOrderSummary: str | None = None
+    lastOrderId: str | None = None
+    orderId: str | None = None
 
 
 class ContinuationResponse(BaseModel):
@@ -352,6 +391,7 @@ class ToolDispatchRequest(BaseModel):
     tenantId: str
     customerId: str | None = None
     sessionId: str | None = None
+    staffId: str | None = None
     waiterId: str | None = None
     isStaff: bool = False
     isManager: bool = False
@@ -537,7 +577,7 @@ async def chat(req: ChatRequest):
             model=settings.LLM_MODEL_MAIN,
             max_tokens=500,
             temperature=0.7,
-            tools=get_tool_schemas(),
+            tools=get_tool_schemas(compact=settings.LLM_COMPACT_TOOL_SCHEMAS),
         )
     except Exception as e:
         import logging
@@ -566,7 +606,7 @@ async def chat(req: ChatRequest):
             tenant_id=req.tenantId or "",
             customer_id=req.customerId,
             session_id=req.sessionId,
-            api_client=_api_client,
+            api_client=_context_api_client(req.tenantId, req.sessionId),
             raw_message=text,
         )
         try:
@@ -583,6 +623,10 @@ async def chat(req: ChatRequest):
             dispatched_tool_calls.append(tc_record)
             if tool_result.message and not tool_result.silent:
                 fallback_messages.append(tool_result.message)
+            elif tool_result.error and not tool_result.silent:
+                fallback_messages.append(
+                    "Não consegui consultar essa informação agora. Quer tentar de novo ou chamar um garçom?"
+                )
         except (ToolNotFoundError, ToolValidationError) as e:
             tc_record = dict(tc)
             tc_record["result"] = {"error": {"code": type(e).__name__, "message": str(e)}}
@@ -644,6 +688,8 @@ async def continuation(req: ContinuationRequest):
         "avgResponseMin": str(req.avgResponseMin) if req.avgResponseMin is not None else "",
         "waitMinutes": str(req.waitMinutes) if req.waitMinutes is not None else "",
         "lastOrderSummary": req.lastOrderSummary or "",
+        "lastOrderId": req.lastOrderId or req.orderId or "",
+        "orderId": req.orderId or req.lastOrderId or "",
     }
     full = get_continuation_full(
         tenant_id=req.tenantId,
@@ -684,6 +730,8 @@ async def continuation_get(
     customerName: str | None = None,
     kind: str | None = None,
     favoriteItem: str | None = None,
+    lastOrderId: str | None = None,
+    orderId: str | None = None,
 ):
     """GET variant for the apps/api home.service to call.
 
@@ -699,6 +747,8 @@ async def continuation_get(
         "tableLabel": "",
         "last_item": favoriteItem or "",
         "favoriteItem": favoriteItem or "",
+        "lastOrderId": lastOrderId or orderId or "",
+        "orderId": orderId or lastOrderId or "",
     }
     full = get_continuation_full(
         tenant_id=tenantId,
@@ -729,18 +779,19 @@ async def continuation_get(
 @app.post("/tools/dispatch", response_model=ToolDispatchResponse)
 async def tools_dispatch(req: ToolDispatchRequest):
     """Server-side tool dispatcher exposed for orchestrators that don't run LLM tool-use natively."""
+    staff_actor_id = req.staffId or req.waiterId
     ctx = ToolContext(
         tenant_id=req.tenantId,
         customer_id=req.customerId,
         session_id=req.sessionId,
-        waiter_id=req.waiterId,
+        waiter_id=req.waiterId or req.staffId,
         is_staff=req.isStaff,
         is_manager=req.isManager,
         session_flags=req.sessionFlags or {},
         # P0 #7: inject the singleton api_client so tools that hit apps/api
         # (send_message_to_manager, request_table_merge, delete_chat, ...)
         # actually issue HTTP calls instead of seeing `None`.
-        api_client=_api_client,
+        api_client=_context_api_client(req.tenantId, req.sessionId, staff_actor_id),
         raw_message=req.rawMessage,
     )
 
@@ -796,6 +847,24 @@ def build_system_prompt(tenant_context: dict, customer_context: dict | None) -> 
     restaurant_name = tenant_context.get("restaurant_name", "o restaurante")
     menu_summary = tenant_context.get("menu_summary", "")
     categories = tenant_context.get("categories", "")
+
+    if settings.LLM_COMPACT_PROMPT:
+        prompt = f"""Você é o assistente virtual do restaurante "{restaurant_name}".
+Responda em português do Brasil, em até 3 frases, apenas sobre restaurante, cardápio, pedidos, pagamento e atendimento.
+Use function calls para intenções concretas: cardápio/menu, buscar prato, adicionar/remover item, ver/confirmar pedido, pagar/conta, chamar garçom, mensagem ao gerente, reclamação, juntar mesa, alérgenos, LGPD e histórico.
+Nunca invente itens fora do cardápio; se faltar informação, consulte a equipe ou peça uma confirmação curta."""
+
+        if categories:
+            prompt += f"\n\nCATEGORIAS DO CARDÁPIO:\n{str(categories)[:600]}"
+        if menu_summary:
+            prompt += f"\n\nITENS DO CARDÁPIO:\n{str(menu_summary)[:1800]}"
+        if customer_context:
+            name = customer_context.get("name", "")
+            if name:
+                prompt += f"\n\nCLIENTE: {name}"
+            if customer_context.get("is_vip"):
+                prompt += "\nCliente VIP: tom mais atento."
+        return prompt
 
     prompt = f"""Você é o assistente virtual do restaurante "{restaurant_name}".
 Sua função é ajudar os clientes EXCLUSIVAMENTE com assuntos do restaurante:

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { buildMesaUrl } from '../helpers/qr';
+import { buildMesaUrl, liberateQrTestTable } from '../helpers/qr';
 
 /**
  * Suite que cobre os bugs encontrados pelos bug-hunters de iOS:
@@ -65,7 +65,7 @@ test.describe('Mesa — erros amigaveis', () => {
     page,
   }) => {
     // Navega direto pro mesa sem os params assinados — o init session falha.
-    await page.goto('/restaurant_dev/mesa/M01', { waitUntil: 'networkidle' });
+    await page.goto('/restaurant_dev/mesa/QRTEST91', { waitUntil: 'networkidle' });
 
     // Aguarda sair do loading e cair na tela de erro.
     await expect(page.getByText(/Escaneie o QR Code novamente/i)).toBeVisible({
@@ -87,9 +87,10 @@ test.describe('Mesa — troca silenciosa de mesa', () => {
     await context.clearCookies();
   });
 
-  test('escanear QR de M02 com sessao ativa de M01 invalida e re-inicia', async ({ page }) => {
-    // Inicia sessao em M01.
-    await page.goto(buildMesaUrl({ tableCode: 'M01' }), {
+  test('escanear QR de QRTEST92 com sessao ativa de QRTEST91 invalida e re-inicia', async ({ page }) => {
+    // Inicia sessao em QRTEST91.
+    await liberateQrTestTable({ tableCode: 'QRTEST91' });
+    await page.goto(buildMesaUrl({ tableCode: 'QRTEST91' }), {
       waitUntil: 'networkidle',
     });
     // Welcome ou home — aceita os dois (DB pode ter customer recognition).
@@ -98,8 +99,8 @@ test.describe('Mesa — troca silenciosa de mesa', () => {
       .or(page.getByRole('button', { name: /Chamar gar.om/ }));
     await expect(welcomeOrHome.first()).toBeVisible({ timeout: 30_000 });
 
-    // Tira a "tableLabel" da URL/DOM como referencia. Cada mesa tem label
-    // diferente ("Mesa 01" vs "Mesa 02"). Vai aparecer no topbar quando
+    // Tira a "tableLabel" da URL/DOM como referencia. Cada QR de teste tem
+    // label diferente ("QR Teste 91" vs "QR Teste 92"). Vai aparecer no topbar quando
     // chegar na home.
     if (await page.getByRole('heading', { name: /Bem-vindo ao/i }).isVisible()) {
       await page.getByPlaceholder('Seu nome').fill('QA Caleb');
@@ -110,20 +111,21 @@ test.describe('Mesa — troca silenciosa de mesa', () => {
       });
     }
 
-    // Agora navega pra M02 — sem o fix, sessao seguia em M01 e pedidos
+    // Agora navega pra QRTEST92 — sem o fix, sessao seguia em QRTEST91 e pedidos
     // iam pra mesa errada. Com o fix, a guarda detecta tableCode diferente,
     // limpa session e re-inicia (pode mostrar welcome ou ir direto pra
     // home com recognition).
-    await page.goto(buildMesaUrl({ tableCode: 'M02' }), {
+    await liberateQrTestTable({ tableCode: 'QRTEST92' });
+    await page.goto(buildMesaUrl({ tableCode: 'QRTEST92' }), {
       waitUntil: 'networkidle',
     });
 
     // Entra ou no welcome ou na home — qualquer um significa que o init
-    // rodou com tableCode novo (M02). Antes: pulava direto e mantinha M01.
+    // rodou com tableCode novo (QRTEST92). Antes: pulava direto e mantinha QRTEST91.
     await expect(welcomeOrHome.first()).toBeVisible({ timeout: 30_000 });
 
-    // Verifica se a URL atual realmente carrega M02 (nao foi redirect).
-    expect(page.url()).toContain('/mesa/M02');
+    // Verifica se a URL atual realmente carrega QRTEST92 (nao foi redirect).
+    expect(page.url()).toContain('/mesa/QRTEST92');
   });
 });
 
@@ -135,6 +137,7 @@ test.describe('Assistente — falsos positivos de pedido', () => {
   test('"tudo bem" depois de prato sugerido NAO dispara pedido fake', async ({
     page,
   }) => {
+    await liberateQrTestTable();
     await page.goto(buildMesaUrl(), { waitUntil: 'networkidle' });
     const welcome = page.getByRole('heading', { name: /Bem-vindo ao/i });
     if (await welcome.isVisible({ timeout: 5000 }).catch(() => false)) {
@@ -147,7 +150,7 @@ test.describe('Assistente — falsos positivos de pedido', () => {
     });
 
     // Vai pro assistente direto via URL.
-    await page.goto(buildMesaUrl().replace(/\/mesa\/[^?]+/, '/assistente'), {
+    await page.goto('/restaurant_dev/assistente', {
       waitUntil: 'networkidle',
     });
     const input = page.getByPlaceholder('Digite aqui');

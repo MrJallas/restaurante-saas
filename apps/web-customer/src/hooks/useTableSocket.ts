@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { io, type Socket } from 'socket.io-client';
+import { getSessionToken } from '../lib/storage';
 
 /**
  * Hook que conecta o customer ao WebSocket do servidor e entra na sala
@@ -40,9 +41,11 @@ export function useTableSocket(
         ? `${window.location.protocol}//${window.location.hostname}:3001`
         : '');
 
+    const sessionToken = getSessionToken();
     const socket: Socket = io(wsUrl, {
       transports: ['websocket', 'polling'],
       reconnection: true,
+      auth: sessionToken ? { sessionToken } : undefined,
       // 4h cobre uma sessao de mesa inteira; depois disso o customer ja
       // tera reabrido o QR e teremos sessionId novo.
       reconnectionAttempts: Infinity,

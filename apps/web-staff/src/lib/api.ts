@@ -3,7 +3,11 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/a
 // por `StaffOrSessionGuard` (ex.: PATCH /orders/:id/status, antes
 // publico — qualquer um podia avancar status ou cancelar pedido em
 // qualquer tenant). Em prod evolui pra JWT via PIN.
-const STAFF_API_KEY = process.env.NEXT_PUBLIC_STAFF_API_KEY || '';
+const STAFF_API_KEY =
+  process.env.NEXT_PUBLIC_STAFF_API_KEY ||
+  (process.env.NODE_ENV !== 'production'
+    ? 'dev-staff-api-key-change-in-prod'
+    : '');
 
 /**
  * Read identity headers from `localStorage`. Manager-only endpoints
@@ -16,8 +20,27 @@ const STAFF_API_KEY = process.env.NEXT_PUBLIC_STAFF_API_KEY || '';
 function staffIdentityHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   const headers: Record<string, string> = {};
-  const staffId = window.localStorage.getItem('staffId');
-  const staffRole = window.localStorage.getItem('staffRole');
+
+  const params = new URLSearchParams(window.location.search);
+  const urlStaffId =
+    params.get('staffId') ||
+    params.get('hostId') ||
+    params.get('managerId') ||
+    params.get('waiterId') ||
+    params.get('cookId');
+  const urlStaffRole =
+    params.get('staffRole') ||
+    (params.get('managerId') ? 'manager' : null) ||
+    (params.get('hostId') ? 'host' : null) ||
+    (params.get('waiterId') ? 'waiter' : null) ||
+    (params.get('cookId') ? 'cook' : null);
+
+  const staffId = urlStaffId || window.localStorage.getItem('staffId');
+  const staffRole = urlStaffRole || window.localStorage.getItem('staffRole');
+
+  if (urlStaffId) window.localStorage.setItem('staffId', urlStaffId);
+  if (urlStaffRole) window.localStorage.setItem('staffRole', urlStaffRole);
+
   if (staffId) headers['x-staff-id'] = staffId;
   if (staffRole) headers['x-staff-role'] = staffRole;
   return headers;
@@ -33,6 +56,7 @@ export async function staffApi<T>(
   // explicit `headers: { 'x-staff-role': ... }` from the caller still wins.
   const res = await fetch(url, {
     ...options,
+    cache: options.cache ?? 'no-store',
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',

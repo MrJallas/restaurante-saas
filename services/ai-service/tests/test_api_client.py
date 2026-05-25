@@ -54,6 +54,52 @@ def test_make_http_api_client_strips_duplicate_tenant_prefix():
     assert client.request.call_args.kwargs["url"] == "/chat-history?customerId=c1"
 
 
+def test_make_http_api_client_forwards_session_header():
+    response = MagicMock()
+    response.status_code = 200
+    response.content = b'{"ok": true}'
+    response.json.return_value = {"ok": True}
+    client = MagicMock()
+    client.request.return_value = response
+
+    with patch("httpx.Client", return_value=client):
+        fn = make_http_api_client("http://api:3001/api")
+        assert fn("GET", "/restaurant_dev/menu/search?q=risoto", headers={"x-session-token": "sess-1"}) == {"ok": True}
+
+    assert client.request.call_args.kwargs["headers"] == {"x-session-token": "sess-1"}
+
+
+def test_context_api_client_prefixes_tenant_and_session_header(monkeypatch):
+    api = RecordingApiClient(default={"ok": True})
+    monkeypatch.setattr(main, "_api_client", api)
+
+    scoped = main._context_api_client("restaurant_dev", "sess-1")
+    assert scoped is not None
+    assert scoped("GET", "/menu/search?q=risoto", None) == {"ok": True}
+
+    assert api.calls == [("GET", "/restaurant_dev/menu/search?q=risoto", None)]
+    assert api.call_headers == [{"x-session-token": "sess-1"}]
+
+
+def test_context_api_client_forwards_staff_headers(monkeypatch):
+    api = RecordingApiClient(default={"ok": True})
+    monkeypatch.setattr(main, "_api_client", api)
+    monkeypatch.setattr(main.settings, "STAFF_API_KEY", "staff-secret")
+
+    scoped = main._context_api_client("restaurant_dev", "sess-1", "staff-1")
+    assert scoped is not None
+    assert scoped("POST", "/staff-messages", {"body": "Aviso"}) == {"ok": True}
+
+    assert api.calls == [("POST", "/restaurant_dev/staff-messages", {"body": "Aviso"})]
+    assert api.call_headers == [
+        {
+            "x-session-token": "sess-1",
+            "x-staff-id": "staff-1",
+            "x-staff-key": "staff-secret",
+        }
+    ]
+
+
 def test_main_builds_api_client_when_base_url_set(monkeypatch):
     """`_build_api_client()` returns a callable when API_BASE_URL is configured."""
     monkeypatch.setattr(main.settings, "API_BASE_URL", "http://localhost:3000")
