@@ -191,6 +191,14 @@ cd apps/web-customer && npx playwright test
 
 ---
 
+## Validação automatizada obrigatória
+
+- Documentar e validar setup idb do Facebook com um fluxo real no simulador iOS: abrir URL, tocar, digitar, capturar screenshot e UI tree.
+- Usar MCP Playwright/browser para auditoria das telas staff e screenshots de regressão.
+- Usar xcodebuildmcp, se disponível, para inventário/screenshot/UI tree dos simuladores; manter idb como ferramenta principal de interação.
+- Ao final dos fixes dos prompts, rodar E2E compartilhado em série, especialmente specs que usam QRTEST91/92.
+- Salvar relatório final agregando evidência dos outros chats em `qa-reports/infra-auditoria/`.
+
 ## Checklist final do chat
 
 - [ ] IDB setup documentado

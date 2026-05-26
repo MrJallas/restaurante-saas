@@ -261,6 +261,14 @@ Se precisar mexer em algum desses por fix funcional, mantém o visual idêntico.
 
 ---
 
+## Validação automatizada obrigatória
+
+- Rodar builds/testes relevantes e `git diff --check`.
+- Validar os fluxos do cliente em simulador iOS usando idb do Facebook: QR/entrada, modal de boas-vindas, assistente, cardápio, pedido, revisão, "Meus pedidos" e safe-area/teclado quando aplicável.
+- Quando o bug envolver LLM/tools/chips, testar pelo chat real do app com o LLM local ligado; conferir `assistant_messages.tool_calls`, chips e efeito real no backend.
+- Usar Playwright apenas como apoio para cenários determinísticos de desktop/mobile web; o aceite de UX mobile do cliente deve ter evidência idb com screenshots.
+- Salvar evidências em `qa-reports/cliente-<bug>/` ou equivalente.
+
 ## Checklist final do chat
 
 Não confiar no toast de "em desenvolvimento" — se um botão não funciona, ou implementa ou esconde. Nada de placeholders cinza visíveis pro cliente.

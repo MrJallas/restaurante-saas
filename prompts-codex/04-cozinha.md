@@ -132,6 +132,14 @@ Este é o monorepo `restauranteSaaS`. O app da cozinha (KDS — Kitchen Display 
 
 ---
 
+## Validação automatizada obrigatória
+
+- Rodar builds/testes relevantes e `git diff --check`.
+- Validar KDS/cozinha com MCP Playwright/browser: colunas do KDS, som, tema, mensagens, `/cozinha/eu` e fluxo de prioridade da gerência.
+- Para "chamar garçom" ou pedido criado pelo cliente, usar simulador iOS via idb para disparar a origem real e Playwright para observar cozinha/staff.
+- Para alertas sonoros/visuais, registrar screenshot e evidência de evento WebSocket/response.
+- Salvar evidências em `qa-reports/cozinha-<bug>/` ou equivalente.
+
 ## Checklist final do chat
 
 - Auditar visual: comparar KDS com `docs/design-canvas/screens-kitchen.jsx`

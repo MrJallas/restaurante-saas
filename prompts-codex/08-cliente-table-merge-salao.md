@@ -145,7 +145,15 @@ python -m pytest services/ai-service/tests -q
 git diff --check
 ```
 
-Se houver teste E2E/Playwright local disponível, validar o caminho:
+## Validação automatizada obrigatória
+
+- Validar o fluxo cliente em simulador iOS com idb do Facebook, preferencialmente com duas mesas/sessões ativas e screenshots do overlay.
+- Usar o chat real do app com LLM local ligado para disparar "quero juntar com a mesa do lado" e confirmar que `request_table_merge`/overlay/chips seguem o contrato. Nesta rodada, o LM Studio foi visto em `http://192.168.0.56:1234` com modelo `qwen/qwen3-coder-30b`; confirmar antes de rodar.
+- Usar MCP Playwright/browser para a superfície staff/host se for mais prático observar aprovação/rejeição em outra janela, mas o aceite do overlay cliente precisa ter evidência idb.
+- Conferir no DB `table_merge_requests` e eventos WebSocket; screenshot sozinho não basta.
+- Salvar evidências em `qa-reports/table-merge-salao/`.
+
+Validar o caminho E2E:
 
 1. Entrar como cliente em mesa ativa.
 2. Abrir assistente.

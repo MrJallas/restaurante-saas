@@ -468,6 +468,14 @@ Sugestões prováveis:
 
 ---
 
+## Validação automatizada obrigatória
+
+- Rodar builds/testes relevantes e `git diff --check`.
+- Validar telas do gerente com MCP Playwright/browser: Painel, Operação, Equipe, Financeiro, Eu, table menu, reclamação, cortesias, notificações, segurança/aparência.
+- Para fluxos que afetam cliente, garçom, host ou cozinha, abrir a outra superfície também: idb para cliente iOS e Playwright para staff.
+- Em cada CTA que antes era placeholder, provar ação real por response HTTP, WebSocket, DB ou mudança de tela persistente. Screenshot sozinho não basta.
+- Salvar evidências em `qa-reports/gerente-<bug>/` ou equivalente.
+
 ## Checklist final do chat
 
 - Auditar **TODOS** os botões do gerente — implementar ou esconder

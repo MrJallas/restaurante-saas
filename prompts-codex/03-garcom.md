@@ -135,6 +135,14 @@ Este é o monorepo `restauranteSaaS`. O app do garçom está em `apps/web-staff/
 
 ---
 
+## Validação automatizada obrigatória
+
+- Rodar builds/testes relevantes e `git diff --check`.
+- Validar o app do garçom com MCP Playwright/browser: bottom nav, "Novo" em todas as abas, pedido direto, chamados, mensagens, turno e logout.
+- Para fluxos que dependem do cliente/mesa, usar simulador iOS via idb em paralelo ao Playwright do staff para provar o efeito end-to-end.
+- Para encerramento de turno, validar as duas pontas: garçom cria request, gerente recebe/decide, garçom vê resposta sem refresh.
+- Salvar evidências em `qa-reports/garcom-<bug>/` ou equivalente.
+
 ## Checklist final do chat
 
 - Auditar **todos** os botões do app do garçom (Chamados, Mesas, Novo, Turno, Eu)

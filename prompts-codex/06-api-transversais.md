@@ -364,6 +364,16 @@ Este é o monorepo `restauranteSaaS`. O backend principal está em `apps/api`. E
 
 ---
 
+## Validação automatizada obrigatória
+
+- Rodar testes unitários/integração dos módulos alterados, builds relevantes e `git diff --check`.
+- Para cada contrato API novo ou corrigido, validar pelo menos um consumidor real:
+  - cliente via simulador iOS/idb quando o endpoint for customer-side;
+  - staff/manager/host/cozinha via MCP Playwright/browser quando o endpoint for staff-side.
+- Em bug 0, além dos testes de guard, mapear e exercitar rotas `manager-only`, `host-only`, `host-or-manager` e chamadas com `x-staff-id` real.
+- Para endpoints usados por LLM/tools, testar com LLM local ligado quando disponível e conferir `assistant_messages.tool_calls` + efeito real no backend.
+- Salvar relatório curto com matrix endpoint -> consumidor -> evidência em `qa-reports/api-transversais/`.
+
 ## Checklist final do chat
 
 - **Prioridade #1**: resolver bug 0 (`x-staff-id` / auditoria de permissions) — destrava metade dos bugs do gerente

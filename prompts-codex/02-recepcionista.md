@@ -174,6 +174,14 @@ Toda entrada de cliente via QR físico passa por verificação manual da recepci
 
 ---
 
+## Validação automatizada obrigatória
+
+- Rodar builds/testes relevantes e `git diff --check`.
+- Validar o app do host/recepcionista com MCP Playwright/browser: tabs Mesas/Espera/Reservas/Avisos/Eu, fluxos de liberação, reservas, notificações e aparência.
+- Para interações cross-app com cliente, usar também simulador iOS via idb para provar que o cliente recebe/consome o efeito real.
+- Em bugs de auth/role, validar network/response: não basta screenshot; provar que não há `manager-only endpoint`/`x-staff-id inválido` vazando.
+- Salvar screenshots e resumo em `qa-reports/host-<bug>/` ou equivalente.
+
 ## Checklist final do chat
 
 - Implementar fixes
