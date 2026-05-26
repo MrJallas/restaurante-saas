@@ -23,6 +23,7 @@ Em 25/05/2026 rodei teste manual no app inteiro (cliente, recepcionista, garçom
 | 5 | `04-cozinha.md` | Depende parcialmente do 06 (Chamar garçom endpoint) |
 | 6 | `05-gerente.md` | Depende do 06 (xstaff id em várias telas) |
 | 7 | `07-infra-auditoria.md` | Auditoria + MongoDB — paralelo aos outros |
+| 8 | `08-cliente-table-merge-salao.md` | Continuação feature incompleta — cliente escolhe mesa para junção |
 
 **Diretriz**: o `06-api-transversais.md` resolve bugs que aparecem em vários frontends. Idealmente roda primeiro ou em paralelo com os frontends, pra os chats frontend não terem que mockar workaround.
 

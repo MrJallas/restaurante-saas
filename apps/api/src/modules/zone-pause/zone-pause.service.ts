@@ -61,12 +61,11 @@ export class ZonePauseService {
     const result = this.mapRow(rows[0]);
 
     if (slug && this.events) {
-      // TODO(payload): waiterName needs a join with staff. We pass the id
-      // and the FE re-fetches when expanding the banner.
+      const waiterName = await this.lookupStaffName(result.waiterId);
       this.events.emitZonePauseStarted(slug, {
         id: result.id,
         waiterId: result.waiterId,
-        waiterName: '',
+        waiterName,
         endsAt: result.endsAt,
         startedBy: result.startedBy,
         reason: result.reason,
@@ -74,6 +73,23 @@ export class ZonePauseService {
     }
 
     return result;
+  }
+
+  private async lookupStaffName(staffId: string): Promise<string> {
+    try {
+      const rows = unwrapRows<{ name: string }>(
+        await this.tenantConn.query(`SELECT name FROM staff WHERE id = $1`, [
+          staffId,
+        ]),
+      );
+      return rows[0]?.name ?? '';
+    } catch (error) {
+      this.logger.warn(
+        `Unable to resolve zone-pause waiter name for staff ${staffId}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      return '';
+    }
   }
 
   async end(
