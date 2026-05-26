@@ -28,6 +28,7 @@ import { Type } from 'class-transformer';
 import type { Request } from 'express';
 import { SessionGuard, SessionData, SessionRequest } from '../../common/guards/session.guard';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
+import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { OrdersService } from './orders.service';
@@ -110,6 +111,27 @@ class CreateOrderDto {
   @IsOptional()
   @IsUUID()
   idempotencyKey?: string;
+}
+
+class StaffDirectOrderDto {
+  @IsString()
+  @IsNotEmpty()
+  tableRef!: string;
+
+  @IsOptional()
+  @IsIn(['table', 'individual'])
+  billingMode?: 'table' | 'individual';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => CreateOrderItemDto)
+  items!: CreateOrderItemDto[];
 }
 
 /**
@@ -233,6 +255,28 @@ export class OrdersController {
   }
 
   /**
+   * Staff direct-order flow for the waiter app. The UI keeps the 15s edit
+   * window client-side; this endpoint is called only when the waiter sends.
+   */
+  @Post('staff-direct')
+  @UseGuards(StaffOnlyGuard)
+  async createStaffDirectOrder(
+    @Param('slug') slug: string,
+    @Body() dto: StaffDirectOrderDto,
+    @Req() req: Request,
+  ) {
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
+    return this.ordersService.createStaffDirectOrder({
+      tableRef: dto.tableRef,
+      billingMode: dto.billingMode ?? 'table',
+      items: dto.items,
+      notes: dto.notes,
+      slug,
+      staffId,
+    });
+  }
+
+  /**
    * Round 18 (Onda 4 batch 2): timeline aggregator pra
    * ScreenManagerTimeline (canvas /manager/timeline/[orderId]).
    * Staff-only — manager dashboard view, nao customer-side. Retorna
@@ -330,6 +374,39 @@ export class OrdersController {
         sessionTableId: req.sessionData?.sessionId ?? null,
       },
     );
+  }
+
+  @Post(':orderId/call-waiter')
+  @UseGuards(StaffOnlyGuard)
+  async callWaiter(
+    @Param('orderId') orderId: string,
+    @Param('slug') slug: string,
+    @Req() req: Request,
+  ) {
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
+    return this.ordersService.callWaiterForOrder(orderId, slug, staffId);
+  }
+
+  @Post(':orderId/in-transit')
+  @UseGuards(StaffOnlyGuard)
+  async inTransit(
+    @Param('orderId') orderId: string,
+    @Param('slug') slug: string,
+    @Req() req: Request,
+  ) {
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
+    return this.ordersService.markOrderInTransit(orderId, slug, staffId);
+  }
+
+  @Post(':orderId/delivered')
+  @UseGuards(StaffOnlyGuard)
+  async delivered(
+    @Param('orderId') orderId: string,
+    @Param('slug') slug: string,
+    @Req() req: Request,
+  ) {
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
+    return this.ordersService.markOrderDeliveredByWaiter(orderId, slug, staffId);
   }
 
   /**

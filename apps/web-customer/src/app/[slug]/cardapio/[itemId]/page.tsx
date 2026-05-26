@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { apiGet } from '../../../../lib/api';
 import { recordContinuationHint } from '../../../../lib/continuationHints';
 import { recordCustomerEvent } from '../../../../lib/customerEvents';
+import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
 import { useDraftOrder } from '../../../../providers/DraftOrderProvider';
 import { FoodDetail, FoodDetailData } from '../../../../components/cardapio/FoodDetail';
@@ -51,6 +52,7 @@ export default function ItemDetailPage() {
   const { push } = useNav();
   const slug = params.slug as string;
   const itemId = params.itemId as string;
+  const { commandMode } = useSession();
   const { addItem } = useDraftOrder();
 
   const [item, setItem] = useState<MenuItemApi | null>(null);
@@ -93,11 +95,33 @@ export default function ItemDetailPage() {
     push(`/${slug}/assistente?itemId=${itemId}`);
   }, [push, slug, itemId]);
 
+  const addPendingToDraft = useCallback(
+    (data: PendingAdd, mode: CommandModeChoice) => {
+      if (!item) return;
+      addItem({
+        menuItemId: item.id,
+        name: item.name,
+        priceCents: data.priceCents,
+        quantity: data.quantity,
+        note: data.note || undefined,
+        size: data.size,
+        preferences: data.preferences,
+        commandMode: mode,
+      });
+      push(`/${slug}/pedido/revisar`);
+    },
+    [addItem, item, push, slug],
+  );
+
   const handleAddFood = useCallback(
     (data: { note: string; quantity: number; priceCents: number }) => {
+      if (commandMode) {
+        addPendingToDraft({ ...data }, commandMode);
+        return;
+      }
       setPending({ ...data });
     },
-    [],
+    [addPendingToDraft, commandMode],
   );
 
   const handleAddDrink = useCallback(
@@ -107,34 +131,29 @@ export default function ItemDetailPage() {
       quantity: number;
       priceCents: number;
     }) => {
-      setPending({
+      const next = {
         size: data.size,
         preferences: data.preferences,
         quantity: data.quantity,
         priceCents: data.priceCents,
         note: '',
-      });
+      };
+      if (commandMode) {
+        addPendingToDraft(next, commandMode);
+        return;
+      }
+      setPending(next);
     },
-    [],
+    [addPendingToDraft, commandMode],
   );
 
   const handleConfirmCommand = useCallback(
     (mode: CommandModeChoice) => {
-      if (!item || !pending) return;
-      addItem({
-        menuItemId: item.id,
-        name: item.name,
-        priceCents: pending.priceCents,
-        quantity: pending.quantity,
-        note: pending.note || undefined,
-        size: pending.size,
-        preferences: pending.preferences,
-        commandMode: mode,
-      });
+      if (!pending) return;
+      addPendingToDraft(pending, mode);
       setPending(null);
-      push(`/${slug}/pedido/revisar`);
     },
-    [addItem, item, pending, push, slug],
+    [addPendingToDraft, pending],
   );
 
   const drinkData: DrinkDetailData | null = useMemo(() => {

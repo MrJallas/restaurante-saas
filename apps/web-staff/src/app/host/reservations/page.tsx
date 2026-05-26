@@ -14,9 +14,11 @@ function HostReservationsPageInner() {
     <ScreenHostReservations
       tenantSlug={tenantSlug}
       onBack={() => router.back()}
+      onOpenReservation={(id) => router.push(`/host/reservations/${id}?tenant=${tenantSlug}&hostId=${hostId}`)}
       onTabChange={(tab) => {
         if (tab === 'tables') router.push(`/host?tenant=${tenantSlug}&hostId=${hostId}`);
-        if (tab === 'waitlist') router.push(`/host/waitlist?tenant=${tenantSlug}`);
+        if (tab === 'waitlist') router.push(`/host/waitlist?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'inbox') router.push(`/host/notifications?tenant=${tenantSlug}&hostId=${hostId}`);
         if (tab === 'me') router.push(`/host/profile?tenant=${tenantSlug}&hostId=${hostId}`);
       }}
     />

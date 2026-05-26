@@ -360,6 +360,15 @@ function getStaffEventThreadId(payload: unknown): string | null {
   return null;
 }
 
+function extractShiftEndRequestId(content: string): string | null {
+  const match = content.match(/SHIFT_END_REQUEST:([0-9a-f-]{36})/i);
+  return match?.[1] ?? null;
+}
+
+function cleanSystemToken(content: string): string {
+  return content.replace(/\n?SHIFT_END_REQUEST:[0-9a-f-]{36}/i, '').trim();
+}
+
 export function ScreenStaffMessageCompose({
   dark,
   tenantSlug,
@@ -670,6 +679,7 @@ export function ScreenStaffMessageThread({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [myStaffId, setMyStaffId] = useState(managerId ?? '');
+  const [pendingDecisionId, setPendingDecisionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (managerId) {
@@ -738,6 +748,23 @@ export function ScreenStaffMessageThread({
     }
   };
 
+  const decideShiftEnd = async (
+    requestId: string,
+    decision: 'approved' | 'rejected',
+  ) => {
+    if (pendingDecisionId) return;
+    setPendingDecisionId(requestId);
+    setError('');
+    try {
+      await api.shifts.decideShiftEnd(requestId, { decision });
+      await loadMessages(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível responder ao pedido.');
+    } finally {
+      setPendingDecisionId(null);
+    }
+  };
+
   return (
     <div
       style={{
@@ -783,6 +810,8 @@ export function ScreenStaffMessageThread({
           messages.map((m) => {
             const isMine = m.fromRole === 'staff' && !!myStaffId && m.staffId === myStaffId;
             const content = m.content ?? (m as unknown as { body?: string }).body ?? '';
+            const shiftEndRequestId = extractShiftEndRequestId(content);
+            const visibleContent = cleanSystemToken(content);
             const createdAt =
               m.createdAt ?? (m as unknown as { sentAt?: string }).sentAt ?? new Date().toISOString();
             return (
@@ -812,7 +841,54 @@ export function ScreenStaffMessageThread({
                 >
                   {m.staffName ?? (m.fromRole === 'staff' ? 'Staff' : 'Cliente')} · {new Date(createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                 </div>
-                <div>{content}</div>
+                <div>{visibleContent}</div>
+                {shiftEndRequestId && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      marginTop: 10,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => decideShiftEnd(shiftEndRequestId, 'approved')}
+                      disabled={pendingDecisionId === shiftEndRequestId}
+                      style={{
+                        border: 'none',
+                        borderRadius: 8,
+                        background: isMine ? C.bg : C.ink,
+                        color: isMine ? C.ink : C.bg,
+                        padding: '7px 10px',
+                        fontFamily: G_FONT,
+                        fontSize: 12,
+                        fontWeight: 800,
+                        cursor: pendingDecisionId ? 'wait' : 'pointer',
+                      }}
+                    >
+                      Aceitar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => decideShiftEnd(shiftEndRequestId, 'rejected')}
+                      disabled={pendingDecisionId === shiftEndRequestId}
+                      style={{
+                        borderRadius: 8,
+                        border: `1px solid ${isMine ? C.bg : C.borderSoft}`,
+                        background: 'transparent',
+                        color: isMine ? C.bg : C.ink,
+                        padding: '7px 10px',
+                        fontFamily: G_FONT,
+                        fontSize: 12,
+                        fontWeight: 800,
+                        cursor: pendingDecisionId ? 'wait' : 'pointer',
+                      }}
+                    >
+                      Recusar
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })

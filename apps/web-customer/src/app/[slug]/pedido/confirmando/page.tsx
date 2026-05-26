@@ -10,7 +10,6 @@ import { PillButton } from '../../../../components/ui/PillButton';
 
 const TOTAL_SECONDS = 15;
 const REVEAL_INTERVAL_MS = 2200;
-const SERVICE_RATE = 0.1;
 
 export default function PedidoConfirmandoPage() {
   const params = useParams();
@@ -26,8 +25,6 @@ export default function PedidoConfirmandoPage() {
   const [busy, setBusy] = useState(false);
   const autoSentRef = useRef(false);
 
-  const service = Math.round(totalCents * SERVICE_RATE);
-  const total = totalCents + service;
   const pct = ((TOTAL_SECONDS - seconds) / TOTAL_SECONDS) * 100;
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 
@@ -215,7 +212,7 @@ export default function PedidoConfirmandoPage() {
               <span className="text-[14px]">✦</span>
               <div>
                 <b>Tudo certo?</b> Total de{' '}
-                <b className="tabular-nums">{fmt(total)}</b>. O pedido será enviado
+                <b className="tabular-nums">{fmt(totalCents)}</b>. O pedido será enviado
                 automaticamente em {seconds}s, ou confirme agora.
               </div>
             </div>

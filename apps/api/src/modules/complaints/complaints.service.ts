@@ -380,6 +380,50 @@ export class ComplaintsService {
     return rows.map((r) => this.mapRow(r));
   }
 
+  async listForCustomer(customerId: string) {
+    const rows = (await this.tenantConn.query(
+      `${this.customerVisibleSelect()}
+        WHERE c.customer_id = $1
+        ORDER BY c.submitted_at DESC
+        LIMIT 100`,
+      [customerId],
+    )) as Array<Record<string, unknown>>;
+    return rows.map((r) => this.mapRow(r));
+  }
+
+  async getForCustomer(id: string, customerId: string) {
+    const rows = (await this.tenantConn.query(
+      `${this.customerVisibleSelect()}
+        WHERE c.id = $1
+          AND c.customer_id = $2
+        LIMIT 1`,
+      [id, customerId],
+    )) as Array<Record<string, unknown>>;
+    if (!rows.length) {
+      throw new HttpException(
+        'Reclamação não encontrada ou já removida.',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return this.mapRow(rows[0]);
+  }
+
+  private customerVisibleSelect(): string {
+    return `SELECT c.*,
+                   COALESCE(o.table_session_id, v.table_session_id) AS table_session_id,
+                   COALESCE(
+                     CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT),
+                     CAST(NULLIF(regexp_replace(t.label, '[^0-9]', '', 'g'), '') AS INT)
+                   ) AS table_number,
+                   cust.name AS customer_name
+              FROM complaints c
+         LEFT JOIN orders o ON o.id = c.order_id
+         LEFT JOIN visits v ON v.id = COALESCE(c.visit_id, o.visit_id)
+         LEFT JOIN table_sessions ts ON ts.id = COALESCE(o.table_session_id, v.table_session_id)
+         LEFT JOIN tables t ON t.id = ts.table_id
+         LEFT JOIN customers cust ON cust.id = c.customer_id`;
+  }
+
   private async getEnrichedRow(id: string): Promise<Record<string, unknown> | null> {
     const rows = (await this.tenantConn.query(
       `SELECT c.*,

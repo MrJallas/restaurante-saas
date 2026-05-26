@@ -23,7 +23,7 @@ import {
   GButton,
   Icon,
 } from '../../components/manager';
-import { manager, type KitchenQueueOrder } from '../../lib/api/manager';
+import { manager, type KitchenQueueOrder, type KitchenReorderRequest } from '../../lib/api/manager';
 
 interface QueueItem {
   id: string;
@@ -60,9 +60,9 @@ const heroByState = {
     bg: '#EFF5EC',
     bd: '#1E8C5A',
     fg: '#0F5A37',
-    label: 'Cozinha aceitou',
-    title: 'Pedidos foram puxados pra frente',
-    meta: 'Os garçons das mesas afetadas foram avisados.',
+    label: 'Resposta da cozinha',
+    title: 'Cozinha respondeu ao pedido',
+    meta: 'A fila sera atualizada conforme a resposta.',
   },
 } as const;
 
@@ -113,6 +113,8 @@ export function ScreenManagerKitchenReorder({
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [requestId, setRequestId] = useState<string | null>(null);
+  const [response, setResponse] = useState<KitchenReorderRequest | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -155,25 +157,70 @@ export function ScreenManagerKitchenReorder({
         ...heroBase,
         title: `Fila com ${queue.length} pedidos · ${lateCount} ${lateCount === 1 ? 'passou' : 'passaram'} da meta`,
       }
+    : state === 'accepted' && response?.status === 'next'
+      ? {
+          ...heroBase,
+          label: 'Cozinha vai pegar em seguida',
+          title: 'Pedidos entram logo após o preparo atual',
+          meta: response.response_note ?? 'A confirmação é real e veio da cozinha.',
+        }
+      : state === 'accepted' && response?.status === 'accepted'
+        ? {
+            ...heroBase,
+            label: 'Cozinha aceitou',
+            title: 'Pedidos foram puxados para o topo',
+            meta: response.response_note ?? 'A confirmação é real e veio da cozinha.',
+          }
     : heroBase;
   const selectedItems = queue.filter((q) => selected[q.id]);
+
+  useEffect(() => {
+    if (state !== 'sent' || !requestId) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const next = await api.kitchen.getReorderRequest(requestId);
+        if (cancelled) return;
+        if (next.status === 'accepted' || next.status === 'next') {
+          setResponse(next);
+          setState('accepted');
+        }
+      } catch (err) {
+        if (!cancelled) setErrorMsg(err instanceof Error ? err.message : 'Erro ao ler resposta da cozinha.');
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [api, requestId, state]);
 
   const onConfirm = async () => {
     if (selectedItems.length === 0) return;
     setState('sent');
     setErrorMsg(null);
     try {
-      await api.kitchen.reorder({
+      const request = await api.kitchen.requestReorder({
         orderIds: selectedItems.map((item) => item.id),
         reason: reason.trim() || undefined,
       });
-      setState('accepted');
+      setRequestId(request.id);
+      setResponse(request);
+      if (request.status === 'accepted' || request.status === 'next') {
+        setState('accepted');
+      }
     } catch (err) {
       setState('select');
       setErrorMsg(err instanceof Error ? err.message : 'Erro ao avisar cozinha.');
     }
   };
-  const onCancel = () => setState('select');
+  const onCancel = () => {
+    setState('select');
+    setRequestId(null);
+    setResponse(null);
+  };
 
   return (
     <div

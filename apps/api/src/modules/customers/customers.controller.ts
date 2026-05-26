@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Delete,
   Body,
@@ -273,6 +274,31 @@ export class CustomersController {
     return this.customersService.setVipFlag(customerId, false);
   }
 
+  @Get('last-visit')
+  @UseGuards(SessionGuard)
+  async lastVisit(
+    @Session() session: SessionData,
+    @Req() req: { cookies?: Record<string, string> },
+  ) {
+    let customerId = session.customerId ?? null;
+    const token = req.cookies?.recognition_token ?? null;
+    if (!customerId && token) {
+      customerId =
+        (await this.customersService.resolveByRecognitionToken(token))?.customerId ??
+        null;
+    }
+    if (!customerId) {
+      throw new HttpException(
+        'Identificação ausente. Faça login pra repetir a visita.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    return this.customersService.getLastVisitItems(
+      customerId,
+      session.sessionId,
+    );
+  }
+
   /**
    * Round 9 (B-NEW-35): rate-limit por IP + bumping pro reuso do mesmo
    * pattern da `/identify`. Antes: customer com session_token loops
@@ -340,6 +366,7 @@ export class CustomersController {
        lastVisitSummary: result.lastVisitSummary,
        visitId: result.visitId,
        wasReclaim: result.wasReclaim,
+       locationCheck: result.locationCheck,
      };
    }
 

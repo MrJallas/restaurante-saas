@@ -10,10 +10,12 @@ import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
 import { addToWaitlist, listWaitlist, type WaitlistEntry } from '../../lib/api/host';
+import { useStaffTheme } from '../../lib/theme';
 
 interface ScreenHostWaitlistProps {
   tenantSlug: string;
   onBack?: () => void;
+  onOpenEntry?: (id: string) => void;
   onTabChange?: (tab: string) => void;
 }
 
@@ -28,9 +30,9 @@ function partyMatchesFilter(party: number, filter: PartyFilter): boolean {
 }
 
 export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
-  tenantSlug, onBack, onTabChange,
+  tenantSlug, onBack, onOpenEntry, onTabChange,
 }) => {
-  const dark = false;
+  const { dark } = useStaffTheme();
   const C = useG(dark);
   const [list, setList] = useState<WaitlistEntry[]>([]);
   const [filter, setFilter] = useState<PartyFilter>('all');
@@ -138,9 +140,12 @@ export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {visible.map((entry) => (
-              <div
+              <button
                 key={entry.id}
+                type="button"
+                onClick={() => onOpenEntry?.(entry.id)}
                 style={{
+                  all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
                   display: 'flex', alignItems: 'center', gap: 12,
                   padding: '12px 14px', borderRadius: 14,
                   background: C.bg, border: `1.5px solid ${C.borderSoft}`,
@@ -172,7 +177,8 @@ export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
                 >
                   {entry.wait_minutes} min
                 </div>
-              </div>
+                <span style={{ color: C.faint, flexShrink: 0 }}>{Icon.arrow(15)}</span>
+              </button>
             ))}
           </div>
         )}

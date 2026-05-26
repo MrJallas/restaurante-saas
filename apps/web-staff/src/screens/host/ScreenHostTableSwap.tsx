@@ -10,6 +10,7 @@ import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitives';
 import { listHostTables, swapTable, type HostTableEntry } from '../../lib/api/host';
+import { useStaffTheme } from '../../lib/theme';
 
 interface ScreenHostTableSwapProps {
   tenantSlug: string;
@@ -21,7 +22,7 @@ interface ScreenHostTableSwapProps {
 export const ScreenHostTableSwap: React.FC<ScreenHostTableSwapProps> = ({
   tenantSlug, fromTable, onBack, onDone,
 }) => {
-  const dark = false;
+  const { dark } = useStaffTheme();
   const C = useG(dark);
   const [tables, setTables] = useState<HostTableEntry[]>([]);
   const [from, setFrom] = useState<number | null>(fromTable ?? null);

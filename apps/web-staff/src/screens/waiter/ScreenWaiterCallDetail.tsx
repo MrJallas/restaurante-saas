@@ -118,7 +118,6 @@ export function ScreenWaiterCallDetail({
         dark={dark}
         left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.back()} />}
         title="Chamado"
-        right={<GIconBtn dark={dark} icon={Icon.more(20)} onClick={() => showToast('Mais ações indisponíveis.')} />}
       />
 
       <div style={{ flex: 1, overflow: 'auto' }}>

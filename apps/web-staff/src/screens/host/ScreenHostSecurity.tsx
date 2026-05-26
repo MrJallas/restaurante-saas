@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GButton, GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
+import { useStaffTheme } from '../../lib/theme';
 
 const STORAGE_2FA = 'host:security:2fa';
 
@@ -33,7 +34,7 @@ interface ScreenHostSecurityProps {
 type Toast = { kind: 'info' | 'success' | 'danger'; text: string } | null;
 
 export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, onTabChange }) => {
-  const dark = false;
+  const { dark } = useStaffTheme();
   const C = useG(dark);
   const [showPassSheet, setShowPassSheet] = useState(false);
   const [twoFa, setTwoFa] = useState(false);

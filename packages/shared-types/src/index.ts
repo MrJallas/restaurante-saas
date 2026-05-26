@@ -17,6 +17,7 @@ export type OrderStatus =
   | 'preparing'
   | 'in_progress'
   | 'ready'
+  | 'in_transit'
   | 'delivered'
   | 'cancelled';
 
@@ -80,7 +81,7 @@ export interface CustomerRecognizeDto {
 export interface CustomerWelcomeResponseDto {
   customerId: string;
   name: string;
-  recognitionToken: string;
+  recognitionToken?: string;
   isReturning: boolean;
   totalVisits: number;
   lastVisitSummary: {
@@ -90,6 +91,7 @@ export interface CustomerWelcomeResponseDto {
   } | null;
   visitId: string;
   wasReclaim: boolean;
+  locationCheck?: import('./scan-verification').CustomerLocationCheck | null;
 }
 
 // === New feature contracts (per docs/features/*) ===

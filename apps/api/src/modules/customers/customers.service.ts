@@ -4,7 +4,15 @@ import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { TableSessionService } from '../table-session/table-session.service';
 import { validateCpf } from './cpf.util';
-import type { CustomerLocationSignal } from '@restaurant/shared-types';
+import {
+  assertInsideCustomerGeofence,
+  evaluateCustomerGeofence,
+  type GeofenceConfig,
+} from '../../common/utils/geofence';
+import type {
+  CustomerLocationCheck,
+  CustomerLocationSignal,
+} from '@restaurant/shared-types';
 
 export interface CustomerWelcomeResult {
   customerId: string;
@@ -16,6 +24,32 @@ export interface CustomerWelcomeResult {
   visitId: string;
   color?: string;
   wasReclaim: boolean;
+  locationCheck: CustomerLocationCheck;
+}
+
+export interface LastVisitRepeatItem {
+  menuItemId: string;
+  name: string;
+  quantity: number;
+  note: string | null;
+  priceCents: number;
+  kind: 'food' | 'drink';
+  categoryName: string | null;
+}
+
+export interface LastVisitRepeatResponse {
+  orderId: string | null;
+  items: LastVisitRepeatItem[];
+  unavailableItems: Array<{
+    menuItemId: string;
+    name: string;
+    categoryName: string | null;
+    substitute: {
+      menuItemId: string;
+      name: string;
+      priceCents: number;
+    } | null;
+  }>;
 }
 
 @Injectable()
@@ -39,6 +73,8 @@ export class CustomersService {
     if (!validateCpf(cleanCpf)) {
       throw new HttpException('CPF invalido. Verifique os numeros digitados.', HttpStatus.BAD_REQUEST);
     }
+
+    const locationCheck = await this.validateCustomerLocation(location);
 
     const existing = await this.tenantConn.query(
       'SELECT id, name, recognition_token, total_visits FROM customers WHERE cpf = $1',
@@ -151,6 +187,7 @@ export class CustomersService {
       visitId,
       color: participant.color,
       wasReclaim,
+      locationCheck,
     };
   }
 
@@ -269,6 +306,8 @@ export class CustomersService {
     sessionId: string,
     location?: CustomerLocationSignal | null,
   ): Promise<CustomerWelcomeResult> {
+    const locationCheck = await this.validateCustomerLocation(location);
+
     const customers = await this.tenantConn.query(
       'SELECT id, name, cpf, recognition_token, total_visits FROM customers WHERE recognition_token = $1',
       [recognitionToken],
@@ -330,6 +369,7 @@ export class CustomersService {
       visitId,
       color: participant.color,
       wasReclaim: false,
+      locationCheck,
     };
   }
 
@@ -357,5 +397,157 @@ export class CustomersService {
       customerId: r.id as string,
       name: r.name as string,
     };
+  }
+
+  async getLastVisitItems(
+    customerId: string,
+    currentSessionId: string,
+  ): Promise<LastVisitRepeatResponse> {
+    const orderRows = (await this.tenantConn.query(
+      `SELECT o.id
+         FROM orders o
+         JOIN visits v ON v.id = o.visit_id
+        WHERE v.customer_id = $1
+          AND v.table_session_id <> $2
+          AND o.status NOT IN ('cancelled', 'canceled')
+          AND EXISTS (
+            SELECT 1 FROM order_items oi WHERE oi.order_id = o.id
+          )
+        ORDER BY o.created_at DESC
+        LIMIT 1`,
+      [customerId, currentSessionId],
+    )) as Array<{ id: string }>;
+    const orderId = orderRows[0]?.id ?? null;
+    if (!orderId) {
+      return { orderId: null, items: [], unavailableItems: [] };
+    }
+
+    const rows = (await this.tenantConn.query(
+      `SELECT oi.menu_item_id,
+              oi.quantity,
+              oi.notes,
+              oi.unit_price_cents,
+              mi.name,
+              mi.is_available,
+              COALESCE(mi.kind, 'food') AS kind,
+              mc.name AS category_name,
+              sub.id AS substitute_id,
+              sub.name AS substitute_name,
+              sub.price_cents AS substitute_price_cents
+         FROM order_items oi
+         JOIN menu_items mi ON mi.id = oi.menu_item_id
+    LEFT JOIN menu_categories mc ON mc.id = mi.category_id
+    LEFT JOIN LATERAL (
+          SELECT smi.id, smi.name, smi.price_cents
+            FROM menu_items smi
+           WHERE smi.category_id = mi.category_id
+             AND smi.is_available = true
+             AND smi.id <> mi.id
+           ORDER BY smi.total_orders DESC NULLS LAST, smi.name ASC
+           LIMIT 1
+        ) sub ON true
+        WHERE oi.order_id = $1
+        ORDER BY oi.created_at ASC`,
+      [orderId],
+    )) as Array<{
+      menu_item_id: string;
+      quantity: number;
+      notes: string | null;
+      unit_price_cents: number;
+      name: string;
+      is_available: boolean;
+      kind: 'food' | 'drink' | string | null;
+      category_name: string | null;
+      substitute_id: string | null;
+      substitute_name: string | null;
+      substitute_price_cents: number | null;
+    }>;
+
+    return {
+      orderId,
+      items: rows
+        .filter((row) => row.is_available)
+        .map((row) => ({
+          menuItemId: row.menu_item_id,
+          name: row.name,
+          quantity: row.quantity,
+          note: row.notes,
+          priceCents: row.unit_price_cents,
+          kind: row.kind === 'drink' ? 'drink' : 'food',
+          categoryName: row.category_name,
+        })),
+      unavailableItems: rows
+        .filter((row) => !row.is_available)
+        .map((row) => ({
+          menuItemId: row.menu_item_id,
+          name: row.name,
+          categoryName: row.category_name,
+          substitute:
+            row.substitute_id && row.substitute_name && row.substitute_price_cents
+              ? {
+                  menuItemId: row.substitute_id,
+                  name: row.substitute_name,
+                  priceCents: row.substitute_price_cents,
+                }
+              : null,
+        })),
+    };
+  }
+
+  private async validateCustomerLocation(
+    location?: CustomerLocationSignal | null,
+  ): Promise<CustomerLocationCheck> {
+    const config = await this.readGeofenceConfig();
+    const check = evaluateCustomerGeofence(location, config);
+    assertInsideCustomerGeofence(check);
+    return check;
+  }
+
+  private async readGeofenceConfig(): Promise<GeofenceConfig> {
+    const envLat = this.finiteEnvNumber('CUSTOMER_GEOFENCE_LATITUDE');
+    const envLon =
+      this.finiteEnvNumber('CUSTOMER_GEOFENCE_LONGITUDE') ??
+      this.finiteEnvNumber('CUSTOMER_GEOFENCE_LON');
+    const envRadius = this.finiteEnvNumber('CUSTOMER_GEOFENCE_RADIUS_METERS');
+
+    try {
+      const rows = (await this.tenantConn.query(
+        `SELECT geofence_latitude, geofence_longitude, geofence_radius_meters
+           FROM settings
+          LIMIT 1`,
+      )) as Array<{
+        geofence_latitude: number | string | null;
+        geofence_longitude: number | string | null;
+        geofence_radius_meters: number | string | null;
+      }>;
+      const row = rows[0];
+      return {
+        latitude: envLat ?? this.finiteNumber(row?.geofence_latitude),
+        longitude: envLon ?? this.finiteNumber(row?.geofence_longitude),
+        radiusMeters:
+          envRadius ?? this.finiteNumber(row?.geofence_radius_meters) ?? 3,
+      };
+    } catch (err: unknown) {
+      const pgErr = err as { code?: string };
+      if (pgErr.code !== '42703') throw err;
+      return {
+        latitude: envLat,
+        longitude: envLon,
+        radiusMeters: envRadius ?? 3,
+      };
+    }
+  }
+
+  private finiteEnvNumber(name: string): number | null {
+    return this.finiteNumber(process.env[name]);
+  }
+
+  private finiteNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const n = Number(value);
+      if (Number.isFinite(n)) return n;
+    }
+    return null;
   }
 }

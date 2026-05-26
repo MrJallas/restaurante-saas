@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenWaiterDeliveryConfirm } from '../../../../screens/waiter/ScreenWaiterDeliveryConfirm';
-import { staffPatch } from '../../../../lib/api';
+import { staffPost } from '../../../../lib/api';
 
 function WaiterDeliveryConfirmPageInner() {
   const router = useRouter();
@@ -46,10 +46,7 @@ function WaiterDeliveryConfirmPageInner() {
     setLoading(true);
     setError(null);
     try {
-      await staffPatch(`/${tenantSlug}/orders/${orderId}/status`, {
-        status: 'delivered',
-        changedBy: 'garcom',
-      });
+      await staffPost(`/${tenantSlug}/orders/${orderId}/delivered`, {});
       router.push(`/waiter?tenant=${tenantSlug}`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Erro ao confirmar entrega';

@@ -10,6 +10,7 @@ import {
   getScanVerification,
   rejectScanVerification,
 } from '../../lib/api/host';
+import { useStaffTheme } from '../../lib/theme';
 import type { ScanVerificationRequestDto } from '@restaurant/shared-types';
 
 interface ScreenHostScanVerificationProps {
@@ -29,10 +30,23 @@ function fmtDeadline(iso: string | undefined): string {
   return `${mm}:${ss}`;
 }
 
+function formatDistance(request: ScanVerificationRequestDto | null): string {
+  const meters = request?.locationDistanceMeters ?? request?.distanceMeters;
+  if (typeof meters === 'number' && Number.isFinite(meters)) {
+    const value = new Intl.NumberFormat('pt-BR', {
+      maximumFractionDigits: meters < 10 ? 1 : 0,
+      minimumFractionDigits: meters < 10 ? 1 : 0,
+    }).format(meters);
+    return `${value}m do centro do salão`;
+  }
+  if (request?.locationStatus === 'granted') return 'localização capturada, distância indisponível';
+  return 'localização sem distância confirmada';
+}
+
 export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProps> = ({
   tenantSlug, requestId, onBack, onResolved,
 }) => {
-  const dark = false;
+  const { dark } = useStaffTheme();
   const C = useG(dark);
   const [request, setRequest] = useState<ScanVerificationRequestDto | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -132,8 +146,47 @@ export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProp
               fontSize: 13, color: C.ink, lineHeight: 1.5,
             }}
           >
-            Va ate a mesa {request?.tableNumber ?? '--'} e confirme se ha cliente
-            sentado. CPF {request?.cpfMasked ?? '--'} - localizacao {request?.locationStatus ?? '--'}.
+            Vá até a mesa {request?.tableNumber ?? '--'} e confirme se há cliente
+            sentado. CPF {request?.cpfMasked ?? '--'} · {formatDistance(request)}.
+            {(request?.locationWithinRestaurant ?? request?.insideRadius) === true && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  marginLeft: 6,
+                  padding: '2px 7px',
+                  borderRadius: 100,
+                  background: '#E2F2E8',
+                  color: '#176C45',
+                  border: '1px solid #BFE0CA',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  verticalAlign: 'middle',
+                }}
+              >
+                dentro da área do restaurante
+              </span>
+            )}
+            {request?.locationStatus === 'granted' &&
+              (request.locationWithinRestaurant ?? request.insideRadius) === false && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  marginLeft: 6,
+                  padding: '2px 7px',
+                  borderRadius: 100,
+                  background: C.dangerBg,
+                  color: C.danger,
+                  border: `1px solid ${C.danger}`,
+                  fontSize: 10,
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  verticalAlign: 'middle',
+                }}
+              >
+                fora da área do restaurante
+              </span>
+            )}
           </div>
 
           <div

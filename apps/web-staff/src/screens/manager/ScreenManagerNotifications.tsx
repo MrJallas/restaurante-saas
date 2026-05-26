@@ -34,7 +34,7 @@ import {
   MBottomNav,
   MPill,
 } from '../../components/manager';
-import { HBottomNav } from '../../components/waiter/Primitives';
+import { GBottomNav, HBottomNav } from '../../components/waiter/Primitives';
 import {
   manager,
   type AlertRow,
@@ -47,7 +47,7 @@ export interface ScreenManagerNotificationsProps {
   /** Multi-tenant slug. */
   tenantSlug: string;
   /** Persona controla bottom-nav + destino do back chevron. */
-  persona?: 'manager' | 'host';
+  persona?: 'manager' | 'host' | 'waiter';
   dark?: boolean;
 }
 
@@ -170,7 +170,7 @@ export function ScreenManagerNotifications({
     }
   }
 
-  const backTo = persona === 'host' ? '/host' : '/manager';
+  const backTo = persona === 'host' ? '/host' : persona === 'waiter' ? '/waiter' : '/manager';
   const total = alerts.length;
 
   return (
@@ -269,8 +269,20 @@ export function ScreenManagerNotifications({
             if (id === 'tables') router.push('/host');
             else if (id === 'waitlist') router.push('/host/waitlist');
             else if (id === 'reserva') router.push('/host/reservations');
-            else if (id === 'inbox') router.push('/host/mensagens');
+            else if (id === 'inbox') router.push('/host/notifications');
             else if (id === 'me') router.push('/host/profile');
+          }}
+        />
+      ) : persona === 'waiter' ? (
+        <GBottomNav
+          active="calls"
+          dark={dark}
+          onNewEntry={() => router.push(`/waiter/new-entry?tenant=${tenantSlug}`)}
+          onTabChange={(id) => {
+            if (id === 'home') router.push(`/waiter?tenant=${tenantSlug}`);
+            else if (id === 'calls') router.push(`/waiter/chamados?tenant=${tenantSlug}`);
+            else if (id === 'shift') router.push(`/waiter/eu?tenant=${tenantSlug}&focus=shift`);
+            else if (id === 'me') router.push(`/waiter/eu?tenant=${tenantSlug}`);
           }}
         />
       ) : (
@@ -581,7 +593,7 @@ function EmptyState({
             maxWidth: 300,
           }}
         >
-          {error}
+          Não foi possível carregar notificações agora.
         </div>
       )}
     </div>

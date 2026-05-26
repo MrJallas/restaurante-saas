@@ -2,8 +2,9 @@
 // Tenant slug is parameterised; route prefixes follow the API conventions
 // at apps/api/src/modules/* (late-arrival, table-merge, table-session).
 
-import { staffGet, staffPost } from '../api';
+import { staffDelete, staffGet, staffPatch, staffPost } from '../api';
 import type {
+  HostInboxItemDto,
   LateArrivalRequestDto,
   ScanVerificationRequestDto,
 } from '@restaurant/shared-types';
@@ -65,6 +66,11 @@ export function swapTable(
   return staffPost<{ ok: true; sessionId: string }>(`/${tenantSlug}/host/tables/swap`, body);
 }
 
+// ─── Host inbox / avisos ───
+export function listHostInbox(tenantSlug: string): Promise<HostInboxItemDto[]> {
+  return staffGet<HostInboxItemDto[]>(`/${tenantSlug}/host/inbox`);
+}
+
 // ─── Waitlist ───
 export function listWaitlist(tenantSlug: string): Promise<WaitlistEntry[]> {
   return staffGet<WaitlistEntry[]>(`/${tenantSlug}/host/waitlist`);
@@ -75,6 +81,16 @@ export function addToWaitlist(
   body: { name: string; party: number; phone?: string; note?: string },
 ): Promise<WaitlistEntry> {
   return staffPost<WaitlistEntry>(`/${tenantSlug}/host/waitlist`, body);
+}
+
+export function removeFromWaitlist(
+  tenantSlug: string,
+  id: string,
+  transition: 'seated' | 'left',
+): Promise<{ ok: true }> {
+  return staffDelete<{ ok: true }>(
+    `/${tenantSlug}/host/waitlist/${id}?transition=${transition}`,
+  );
 }
 
 // ─── Reservations ───
@@ -94,6 +110,18 @@ export function createReservation(
   },
 ): Promise<ReservationEntry> {
   return staffPost<ReservationEntry>(`/${tenantSlug}/host/reservations`, body);
+}
+
+export function updateReservation(
+  tenantSlug: string,
+  id: string,
+  body: {
+    status?: 'arrived' | 'cancelled' | 'no_show';
+    table?: number;
+    note?: string;
+  },
+): Promise<ReservationEntry> {
+  return staffPatch<ReservationEntry>(`/${tenantSlug}/host/reservations/${id}`, body);
 }
 
 // ─── Late-arrival approvals (host fallback when host_customer_id is null

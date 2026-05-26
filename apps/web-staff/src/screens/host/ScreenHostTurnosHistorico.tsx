@@ -13,6 +13,7 @@ import { useMemo, useState } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
+import { useStaffTheme } from '../../lib/theme';
 
 interface ShiftEntry {
   id: string;
@@ -57,7 +58,7 @@ export const ScreenHostTurnosHistorico: React.FC<ScreenHostTurnosHistoricoProps>
   onTabChange,
   shifts = MOCK_SHIFTS,
 }) => {
-  const dark = false;
+  const { dark } = useStaffTheme();
   const C = useG(dark);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 

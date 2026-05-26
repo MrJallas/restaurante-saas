@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { apiPost, apiGet } from '../../../../lib/api';
+import { ApiRequestError, apiPost, apiGet } from '../../../../lib/api';
 import { clearDeliveredContinuationHint } from '../../../../lib/continuationHints';
 import { recordCustomerEvent } from '../../../../lib/customerEvents';
 import { captureCustomerLocationSignal } from '../../../../lib/location';
@@ -11,6 +11,7 @@ import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
 import { useTableSocket } from '../../../../hooks/useTableSocket';
 import { useUIState } from '../../../../providers/UIStateProvider';
+import { useDraftOrder } from '../../../../providers/DraftOrderProvider';
 import { useZonePause } from '../../../../hooks/useZonePause';
 import { WelcomeModal } from '../../../../components/welcome/WelcomeModal';
 import { AppShell } from '../../../../components/layout/AppShell';
@@ -20,7 +21,11 @@ import { SoftInput } from '../../../../components/ui/SoftInput';
 import { HostApprovalModal } from '../../../../components/host/HostApprovalModal';
 import { HostJoinRequestBanner } from '../../../../components/host/HostJoinRequestBanner';
 import { ScreenCustomerWaitingApproval } from '../../../../screens/customer-host-flows/ScreenCustomerWaitingApproval';
-import type { SessionResponseDto, CustomerWelcomeResponseDto } from '@restaurant/shared-types';
+import type {
+  CustomerLocationCheck,
+  SessionResponseDto,
+  CustomerWelcomeResponseDto,
+} from '@restaurant/shared-types';
 
 // Hard cap para a splash "Preparando sua experiencia". Se o initSession demorar
 // mais que isso, o pageState e forcado para 'welcome' para a UI nao travar.
@@ -73,6 +78,22 @@ interface PublicSettings {
   logoUrl: string | null;
 }
 
+interface LastVisitRepeatResponse {
+  orderId: string | null;
+  items: Array<{
+    menuItemId: string;
+    name: string;
+    quantity: number;
+    note: string | null;
+    priceCents: number;
+  }>;
+  unavailableItems: Array<{
+    name: string;
+    categoryName: string | null;
+    substitute: { menuItemId: string; name: string; priceCents: number } | null;
+  }>;
+}
+
 function getInitials(name: string | null | undefined, fallback = 'TL'): string {
   if (!name) return fallback;
   const words = name.trim().split(/\s+/).slice(0, 2);
@@ -84,6 +105,7 @@ export default function MesaPage() {
   const params = useParams<{ slug: string; tableCode: string }>();
   const { push, prefetch } = useNav();
   const { openCallWaiterSheet } = useUIState();
+  const { addItem, clear: clearDraft } = useDraftOrder();
   const slug = params.slug;
   const tableCode = params.tableCode;
 
@@ -94,6 +116,7 @@ export default function MesaPage() {
     isValid,
     customerName,
     customerId,
+    commandMode,
     tableCode: sessionTableCode,
     tableLabel: sessionTableLabel,
   } = useSession();
@@ -108,6 +131,9 @@ export default function MesaPage() {
   const [sessionResetNonce, setSessionResetNonce] = useState(0);
   const [hostName, setHostName] = useState<string | null>(null);
   const [isHost, setIsHost] = useState(false);
+  const [locationCheck, setLocationCheck] = useState<CustomerLocationCheck | null>(null);
+  const [repeatBusy, setRepeatBusy] = useState(false);
+  const [repeatError, setRepeatError] = useState<string | null>(null);
 
   // Verifica status do participant atual (apos welcome ou rehydrate).
   // Se status='pending', renderiza a tela de espera ate host/staff aprovar.
@@ -278,33 +304,6 @@ export default function MesaPage() {
         });
         if (cancelled) return;
 
-        // Persiste o sessionId para requests posteriores usarem header
-        // `x-session-token` (necessario em cross-origin onde o cookie
-        // httpOnly nao chega).
-        setSessionToken(session.sessionId);
-
-        setSession({
-          sessionId: session.sessionId,
-          tableCode: session.tableCode,
-          tableLabel: session.tableLabel,
-          slug,
-        });
-
-        // Warm-up do roteador assim que a sessao foi estabelecida: as duas
-        // rotas que o usuario mais abre sao /cardapio e /assistente. Em 3G
-        // lento o ganho e minimo e o prefetch pode bater o plano de dados,
-        // por isso a porta e sempre 4g/wifi. Em browsers sem Network
-        // Information API (Safari iOS) deixamos passar — baseline ja e bom.
-        type NetConn = { effectiveType?: string };
-        const nav = (typeof navigator !== 'undefined' ? navigator : undefined) as
-          | (Navigator & { connection?: NetConn })
-          | undefined;
-        const effType = nav?.connection?.effectiveType;
-        if (!effType || effType === '4g') {
-          prefetch(`/${slug}/cardapio`);
-          prefetch(`/${slug}/assistente`);
-        }
-
         const pubSettings = await apiGet<PublicSettings>(`/${slug}/settings/public`);
         if (cancelled) return;
         setSettings(pubSettings);
@@ -313,9 +312,44 @@ export default function MesaPage() {
         {
           try {
             const location = await captureCustomerLocationSignal({
-              prompt: false,
-              timeoutMs: 900,
+              prompt: true,
+              timeoutMs: 4000,
             });
+            if (location.status !== 'granted') {
+              clearSession();
+              setErrorMessage(
+                'Permita o acesso à localização para entrar no app do restaurante.',
+              );
+              transitionTo('error');
+              return;
+            }
+
+            // Só libera navegacao interna depois da localizacao. Antes, negar
+            // geolocalizacao deixava sessionStorage com token e o usuario ainda
+            // conseguia abrir /cardapio direto pela URL.
+            setSessionToken(session.sessionId);
+            setSession({
+              sessionId: session.sessionId,
+              tableCode: session.tableCode,
+              tableLabel: session.tableLabel,
+              slug,
+            });
+
+            // Warm-up do roteador assim que a sessao foi autorizada: as duas
+            // rotas que o usuario mais abre sao /cardapio e /assistente. Em 3G
+            // lento o ganho e minimo e o prefetch pode bater o plano de dados,
+            // por isso a porta e sempre 4g/wifi. Em browsers sem Network
+            // Information API (Safari iOS) deixamos passar — baseline ja e bom.
+            type NetConn = { effectiveType?: string };
+            const nav = (typeof navigator !== 'undefined' ? navigator : undefined) as
+              | (Navigator & { connection?: NetConn })
+              | undefined;
+            const effType = nav?.connection?.effectiveType;
+            if (!effType || effType === '4g') {
+              prefetch(`/${slug}/cardapio`);
+              prefetch(`/${slug}/assistente`);
+            }
+
             const customer = await apiPost<CustomerWelcomeResponseDto>(
               `/${slug}/customer/recognize`,
               { location },
@@ -324,6 +358,7 @@ export default function MesaPage() {
             if (!customer || !customer.customerId) {
               throw new Error('not recognized');
             }
+            setLocationCheck(customer.locationCheck ?? null);
             setCustomer({
               customerId: customer.customerId,
               visitId: customer.visitId,
@@ -354,7 +389,13 @@ export default function MesaPage() {
             clearDeliveredContinuationHint(home?.continuationMessage?.kind);
             transitionTo('home');
             return;
-          } catch {
+          } catch (err) {
+            if (err instanceof ApiRequestError && err.statusCode === 403) {
+              clearSession();
+              setErrorMessage(err.message);
+              transitionTo('error');
+              return;
+            }
             /* token invalido, cai pro welcome */
           }
         }
@@ -375,7 +416,16 @@ export default function MesaPage() {
       cancelled = true;
       window.clearTimeout(hardCap);
     };
-  }, [slug, tableCode, setSession, setCustomer, prefetch, sessionResetNonce, checkParticipantStatus]);
+  }, [
+    slug,
+    tableCode,
+    setSession,
+    setCustomer,
+    clearSession,
+    prefetch,
+    sessionResetNonce,
+    checkParticipantStatus,
+  ]);
 
   useEffect(() => {
     // Se a URL aponta pra outro tableCode que o da sessao atual, o usuario
@@ -405,6 +455,47 @@ export default function MesaPage() {
     return () => window.removeEventListener('customer:continuation-refresh', refresh);
   }, [pageState, refreshHomeContinuation]);
 
+  const handleRepeatLastVisit = useCallback(async () => {
+    if (repeatBusy) return;
+    setRepeatBusy(true);
+    setRepeatError(null);
+    try {
+      const repeat = await apiGet<LastVisitRepeatResponse>(
+        `/${slug}/customer/last-visit`,
+      );
+      if (repeat.items.length === 0) {
+        const unavailable = repeat.unavailableItems[0];
+        setRepeatError(
+          unavailable?.substitute
+            ? `${unavailable.name} saiu do cardápio. Sugestão: ${unavailable.substitute.name}.`
+            : 'Não encontrei itens disponíveis da última visita.',
+        );
+        return;
+      }
+      clearDraft();
+      const mode = commandMode ?? 'individual';
+      repeat.items.forEach((item) => {
+        addItem({
+          menuItemId: item.menuItemId,
+          name: item.name,
+          priceCents: item.priceCents,
+          quantity: item.quantity,
+          note: item.note ?? undefined,
+          commandMode: mode,
+        });
+      });
+      push(`/${slug}/pedido/revisar`);
+    } catch (err) {
+      const message =
+        err instanceof ApiRequestError
+          ? err.message
+          : 'Não consegui repetir a última visita agora.';
+      setRepeatError(message);
+    } finally {
+      setRepeatBusy(false);
+    }
+  }, [addItem, clearDraft, commandMode, push, repeatBusy, slug]);
+
   const handleWelcomeComplete = useCallback(
     async (customer: CustomerWelcomeResponseDto | null) => {
       try {
@@ -428,6 +519,7 @@ export default function MesaPage() {
           setReclaimBanner(true);
           setTimeout(() => setReclaimBanner(false), 5000);
         }
+        setLocationCheck(customer?.locationCheck ?? null);
         const url = cid ? `/${slug}/home?customerId=${cid}` : `/${slug}/home`;
         const home = await apiGet<HomeData>(url);
         setHomeData(home);
@@ -648,10 +740,24 @@ export default function MesaPage() {
           {isReturning && lastItems.length > 0 && (
             <PillButton
               variant="filled"
-              onClick={() => push(`/${slug}/cardapio?repeat=1`)}
+              onClick={handleRepeatLastVisit}
+              disabled={repeatBusy}
             >
-              ↻ Repetir última visita
+              {repeatBusy ? 'Carregando…' : '↻ Repetir última visita'}
             </PillButton>
+          )}
+          {repeatError && (
+            <div className="max-w-[320px] rounded-[12px] border border-danger/30 bg-danger/5 px-3.5 py-2.5 text-center text-[12px] leading-[1.4] text-danger">
+              {repeatError}
+            </div>
+          )}
+          {locationCheck?.insideRadius === true && (
+            <div className="rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-center text-[10px] font-bold uppercase tracking-[1px] text-success">
+              Dentro da área do restaurante
+              {typeof locationCheck.distanceMeters === 'number'
+                ? ` · ${Math.round(locationCheck.distanceMeters)}m`
+                : ''}
+            </div>
           )}
         </div>
 

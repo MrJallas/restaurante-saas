@@ -14,7 +14,6 @@ function WaiterNewEntryPageInner() {
       onClose={() => router.back()}
       onScanQr={() => router.push(`/waiter/scan-qr?tenant=${tenantSlug}`)}
       onPedidoDireto={() => router.push(`/waiter/scan-qr/picker?tenant=${tenantSlug}&direct=1`)}
-      onReservar={() => router.push(`/host/reservations?tenant=${tenantSlug}`)}
       onContactManager={() => router.push(`/waiter/qr-issue?tenant=${tenantSlug}`)}
     />
   );

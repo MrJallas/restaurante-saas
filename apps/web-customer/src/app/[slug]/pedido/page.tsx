@@ -19,6 +19,7 @@ interface OrderItemApi {
   unitPriceCents: number;
   subtotalCents: number;
   notes?: string;
+  customerId?: string | null;
 }
 
 interface OrderApi {
@@ -31,8 +32,6 @@ interface OrderApi {
   created_at: string;
   items: OrderItemApi[];
 }
-
-const SERVICE_RATE = 0.1;
 
 const STATUS_LABELS: Record<string, string> = {
   pending_confirmation: 'Aguardando confirmação',
@@ -48,6 +47,20 @@ const STATUS_COLORS: Record<string, string> = {
   in_progress: 'bg-success',
   ready: 'bg-success',
   delivered: 'bg-mute',
+};
+
+const PROGRESS_STEPS: { key: string; label: string }[] = [
+  { key: 'received', label: 'Recebido pela cozinha' },
+  { key: 'in_progress', label: 'Em preparo' },
+  { key: 'ready', label: 'Pronto para servir' },
+  { key: 'delivered', label: 'Na sua mesa' },
+];
+
+const STATUS_INDEX: Record<string, number> = {
+  received: 0,
+  in_progress: 1,
+  ready: 2,
+  delivered: 3,
 };
 
 function timeAgo(iso: string): string {
@@ -67,7 +80,7 @@ export default function PedidoPage() {
   const router = useRouter();
   const { push } = useNav();
   const { openCallWaiterSheet } = useUIState();
-  const { tableLabel, sessionId } = useSession();
+  const { tableLabel, sessionId, customerId } = useSession();
   const slug = params.slug as string;
 
   useEffect(() => {
@@ -78,6 +91,7 @@ export default function PedidoPage() {
 
   const [orders, setOrders] = useState<OrderApi[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scope, setScope] = useState<'table' | 'mine'>('table');
   const stopRef = useRef(false);
 
   // Refetch sob demanda — chamada inicial, polling de fallback (60s — antes
@@ -129,14 +143,19 @@ export default function PedidoPage() {
           name: it.name,
           note: it.notes,
           lineTotal: it.subtotalCents,
+          customerId: it.customerId ?? null,
         })),
       ),
     [activeOrders],
   );
 
-  const subtotalCents = activeOrders.reduce((s, o) => s + o.total_cents, 0);
-  const serviceCents = Math.round(subtotalCents * SERVICE_RATE);
-  const totalCents = subtotalCents + serviceCents;
+  const hasMineItems = flatItems.some((item) => item.customerId === customerId);
+  const visibleItems =
+    scope === 'mine' && customerId
+      ? flatItems.filter((item) => item.customerId === customerId)
+      : flatItems;
+
+  const subtotalCents = visibleItems.reduce((s, item) => s + item.lineTotal, 0);
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 
   const latestOrder = useMemo(() => {
@@ -148,6 +167,19 @@ export default function PedidoPage() {
 
   const statusLabel = latestOrder ? STATUS_LABELS[latestOrder.status] ?? latestOrder.status : '';
   const statusDotClass = latestOrder ? STATUS_COLORS[latestOrder.status] ?? 'bg-mute' : '';
+  const latestKitchenOrder = useMemo(
+    () =>
+      activeOrders.find((order) =>
+        !['cancelled', 'canceled', 'delivered', 'pending_confirmation'].includes(order.status),
+      ) ?? null,
+    [activeOrders],
+  );
+  const currentProgressIndex = latestKitchenOrder
+    ? STATUS_INDEX[latestKitchenOrder.status] ?? 0
+    : 0;
+  const latestSummary =
+    latestKitchenOrder?.items.map((item) => `${item.quantity}× ${item.name}`).join(' · ') ??
+    '';
 
   if (loading) {
     return (
@@ -223,7 +255,97 @@ export default function PedidoPage() {
         </div>
 
         <div className="flex-1 overflow-auto px-[22px] pb-5">
-          {flatItems.map((it, idx) => (
+          {latestKitchenOrder && (
+            <div className="mb-5 rounded-[18px] border-[1.5px] border-ink p-[18px]">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[1.2px] text-mute">
+                    Em preparo agora
+                  </div>
+                  <div className="mt-0.5 text-[22px] font-semibold tracking-[-0.02em] tabular-nums">
+                    22–28 minutos
+                  </div>
+                </div>
+                <div className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-full border-[1.5px] border-ink text-[20px]">
+                  ◷
+                </div>
+              </div>
+              <div className="pl-1">
+                {PROGRESS_STEPS.map((step, index) => {
+                  const done = index < currentProgressIndex;
+                  const active = index === currentProgressIndex;
+                  const isLast = index === PROGRESS_STEPS.length - 1;
+                  return (
+                    <div key={step.key} className="relative flex gap-3.5">
+                      <div className="flex flex-col items-center">
+                        <div
+                          className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border-[1.5px] text-[10px] text-white ${
+                            done
+                              ? 'border-ink bg-ink'
+                              : active
+                                ? 'animate-pulse-dot border-ink bg-bg'
+                                : 'border-border-soft bg-bg'
+                          }`}
+                        >
+                          {done && '✓'}
+                        </div>
+                        {!isLast && (
+                          <div
+                            className={`min-h-[22px] w-[1.5px] flex-1 ${
+                              done ? 'bg-ink' : 'bg-border-soft'
+                            }`}
+                          />
+                        )}
+                      </div>
+                      <div className="flex-1 pb-[14px]">
+                        <div
+                          className={`text-[14px] ${
+                            active
+                              ? 'font-semibold text-ink'
+                              : done
+                                ? 'font-medium text-ink'
+                                : 'font-medium text-faint'
+                          }`}
+                        >
+                          {step.label}
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-mute">
+                          {active ? 'agora' : done ? 'concluído' : ''}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {latestSummary && (
+                <div className="mt-1 rounded-[12px] border border-border-soft bg-surface px-3 py-2 text-[12px] leading-[1.5] text-mute">
+                  {latestSummary}
+                </div>
+              )}
+            </div>
+          )}
+
+          {hasMineItems && (
+            <div className="mb-3 flex gap-2">
+              {[
+                ['table', 'Mesa'],
+                ['mine', 'Minha comanda'],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setScope(value as 'table' | 'mine')}
+                  className={`rounded-full border-[1.2px] border-ink px-3.5 py-[7px] text-[12px] font-medium ${
+                    scope === value ? 'bg-ink text-white' : 'bg-bg text-ink'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {visibleItems.map((it, idx) => (
             <div
               key={`${it.key}-${idx}`}
               className="flex items-start gap-3.5 border-b border-border-soft py-4"
@@ -247,11 +369,10 @@ export default function PedidoPage() {
 
           <div className="mt-[18px] border-t-[1.3px] border-ink pt-4">
             <Row label="Subtotal" value={fmt(subtotalCents)} />
-            <Row label="Taxa de serviço (10%)" value={fmt(serviceCents)} />
             <div className="h-2.5" />
             <Row
               label={<b className="text-[16px] text-ink">Total</b>}
-              value={<b className="text-[20px] text-ink tabular-nums">{fmt(totalCents)}</b>}
+              value={<b className="text-[20px] text-ink tabular-nums">{fmt(subtotalCents)}</b>}
             />
           </div>
         </div>

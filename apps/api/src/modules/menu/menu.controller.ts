@@ -9,7 +9,7 @@ import {
   UseGuards,
   NotFoundException,
 } from '@nestjs/common';
-import { SessionGuard } from '../../common/guards/session.guard';
+import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { RedisService } from '../../infra/redis/redis.service';
 import { MenuService } from './menu.service';
 
@@ -28,21 +28,21 @@ export class MenuController {
   ) {}
 
   @Get('categories')
-  @UseGuards(SessionGuard)
+  @UseGuards(StaffOrSessionGuard)
   async getCategories() {
     const categories = await this.menuService.getCategories();
     return { categories };
   }
 
   @Get('items')
-  @UseGuards(SessionGuard)
+  @UseGuards(StaffOrSessionGuard)
   async getItems(@Query('categoryId') categoryId?: string) {
     const items = await this.menuService.getItems(categoryId);
     return { items };
   }
 
   @Get('items/:id')
-  @UseGuards(SessionGuard)
+  @UseGuards(StaffOrSessionGuard)
   async getItemById(@Param('id') id: string) {
     const item = await this.menuService.getItemById(id);
     if (!item) {
@@ -59,7 +59,7 @@ export class MenuController {
    *   bloqueia abuse.
    */
   @Get('search')
-  @UseGuards(SessionGuard)
+  @UseGuards(StaffOrSessionGuard)
   async search(
     @Query('q') query: string,
     @Req() req: { ip?: string; headers: Record<string, string | string[]> },
@@ -82,7 +82,7 @@ export class MenuController {
   }
 
   @Get('featured')
-  @UseGuards(SessionGuard)
+  @UseGuards(StaffOrSessionGuard)
   async getFeatured() {
     const items = await this.menuService.getFeatured();
     return { items };

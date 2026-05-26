@@ -2,57 +2,35 @@
 
 // ScreenHostAppearance — preferência de tema do app (claro · escuro · automático).
 // Round 18 backlog cleanup: ActionRow "Aparência" em /host/profile virou
-// link real pra cá. Estado persiste em localStorage('appearance'); aplicação
-// global do dark mode no staff app fica pro round 19 (hoje só registra a
-// preferência).
+// link real pra cá. Estado persiste no dispositivo e aplica imediatamente
+// nas telas da recepcionista.
 
 import * as React from 'react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
-
-type Mode = 'light' | 'dark' | 'auto';
-
-const STORAGE_KEY = 'host:appearance';
+import { type StaffThemeMode, useStaffTheme } from '../../lib/theme';
 
 interface ScreenHostAppearanceProps {
   onBack?: () => void;
   onTabChange?: (tab: string) => void;
 }
 
-const OPTIONS: Array<{ id: Mode; label: string; sub: string }> = [
+const OPTIONS: Array<{ id: StaffThemeMode; label: string; sub: string }> = [
   { id: 'light', label: 'Claro', sub: 'Tema claro o tempo todo' },
   { id: 'dark', label: 'Escuro', sub: 'Tema escuro o tempo todo' },
   { id: 'auto', label: 'Automático', sub: 'Acompanha o sistema (claro de dia · escuro de noite)' },
 ];
 
 export const ScreenHostAppearance: React.FC<ScreenHostAppearanceProps> = ({ onBack, onTabChange }) => {
-  const dark = false;
+  const { mode, dark, setMode } = useStaffTheme();
   const C = useG(dark);
-  const [mode, setMode] = useState<Mode>('light');
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
-  // Lê preferência salva no mount.
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw === 'light' || raw === 'dark' || raw === 'auto') {
-        setMode(raw);
-      }
-    } catch {
-      /* localStorage indisponível em SSR/private */
-    }
-  }, []);
-
-  const choose = (next: Mode) => {
+  const choose = (next: StaffThemeMode) => {
     setMode(next);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, next);
-      setSavedAt(Date.now());
-    } catch {
-      /* swallow */
-    }
+    setSavedAt(Date.now());
   };
 
   return (
@@ -115,7 +93,7 @@ export const ScreenHostAppearance: React.FC<ScreenHostAppearanceProps> = ({ onBa
                   padding: '14px 14px',
                   borderRadius: 12,
                   border: `1.5px solid ${selected ? C.ink : C.borderSoft}`,
-                  background: selected ? '#F4F0E8' : C.bg,
+                  background: selected ? (dark ? '#24242A' : '#F4F0E8') : C.bg,
                   display: 'flex',
                   alignItems: 'center',
                   gap: 12,
@@ -171,12 +149,9 @@ export const ScreenHostAppearance: React.FC<ScreenHostAppearanceProps> = ({ onBa
               textAlign: 'center',
             }}
           >
-            Preferência salva. Aplicação global do tema chega no round 19.
+            Preferência salva e aplicada neste dispositivo.
           </div>
         )}
-
-        {/* TODO(round19): consumir essa preferência globalmente no staff app · hoje
-            só persiste; cada screen ainda usa dark={false} hardcoded. */}
       </div>
 
       <HBottomNav active="me" dark={dark} onTabChange={(id) => onTabChange?.(id)} />

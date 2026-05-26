@@ -324,10 +324,11 @@ export function ScreenWaiterCalls({ dark = false, tenantSlug }: { dark?: boolean
       <GBottomNav
         active="calls"
         dark={dark}
+        onNewEntry={() => router.push(`/waiter/new-entry?tenant=${tenantSlug}`)}
         onTabChange={(id) => {
           if (id === 'home') router.push(`/waiter?tenant=${tenantSlug}`);
           else if (id === 'me') router.push(`/waiter/eu?tenant=${tenantSlug}`);
-          else if (id === 'scan') router.push(`/waiter/scan-qr?tenant=${tenantSlug}`);
+          else if (id === 'shift') router.push(`/waiter/eu?tenant=${tenantSlug}&focus=shift`);
         }}
       />
     </div>

@@ -18,6 +18,7 @@ import {
   listPendingScanVerifications,
   type HostTableEntry,
 } from '../../lib/api/host';
+import { useStaffTheme } from '../../lib/theme';
 import type {
   LateArrivalRequestDto,
   ScanVerificationRequestDto,
@@ -25,11 +26,25 @@ import type {
 } from '@restaurant/shared-types';
 import { useHostEvents } from '../../hooks/useHostEvents';
 
+function formatScanDistance(request: ScanVerificationRequestDto): string {
+  const meters = request.locationDistanceMeters ?? request.distanceMeters;
+  if (typeof meters === 'number' && Number.isFinite(meters)) {
+    const value = new Intl.NumberFormat('pt-BR', {
+      maximumFractionDigits: meters < 10 ? 1 : 0,
+      minimumFractionDigits: meters < 10 ? 1 : 0,
+    }).format(meters);
+    return `${value}m do centro do salão`;
+  }
+  if (request.locationStatus === 'granted') return 'localização capturada';
+  return 'localização sem distância confirmada';
+}
+
 interface ScreenHostHomeProps {
   tenantSlug: string;
   hostId: string;
   hostInitials?: string;
   onLiberate?: (tableNumber: number) => void;
+  onOpenTableStatus?: (status: HostTableEntry['status']) => void;
   onOpenLateArrival?: (id: string) => void;
   onOpenScanVerification?: (id: string) => void;
   onTabChange?: (tab: string) => void;
@@ -37,9 +52,9 @@ interface ScreenHostHomeProps {
 
 export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
   tenantSlug, hostId, hostInitials = 'EU',
-  onLiberate, onOpenLateArrival, onOpenScanVerification, onTabChange,
+  onLiberate, onOpenTableStatus, onOpenLateArrival, onOpenScanVerification, onTabChange,
 }) => {
-  const dark = false;
+  const { dark } = useStaffTheme();
   const C = useG(dark);
   const router = useRouter();
   const [tables, setTables] = useState<HostTableEntry[]>([]);
@@ -130,7 +145,7 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
             icon={Icon.bell(20)}
             dark={dark}
             badge={alerta > 0 ? String(alerta) : undefined}
-            onClick={() => router.push('/host/notifications')}
+            onClick={() => router.push(`/host/notifications?tenant=${tenantSlug}&hostId=${hostId}`)}
             ariaLabel="Notificações"
           />
         }
@@ -149,9 +164,12 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
           ).map((s) => {
             const t = HSt[s.st];
             return (
-              <div
+              <button
                 key={s.st}
+                type="button"
+                onClick={() => onOpenTableStatus?.(s.st)}
                 style={{
+                  all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
                   background: t.bg,
                   border: `${t.dashed ? '1.5px dashed' : '1.5px solid'} ${t.bd}`,
                   borderRadius: 12, padding: '10px 8px',
@@ -173,7 +191,7 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
                 >
                   {s.label}
                 </span>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -225,8 +243,26 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
                     <div style={{ fontSize: 14, fontWeight: 700, color: '#1d1c19', marginTop: 2 }}>
                       Mesa {sv.tableNumber} · {sv.requesterName}
                     </div>
-                    <div style={{ fontSize: 12, color: '#176C45', fontWeight: 500, marginTop: 2 }}>
-                      Localização: {sv.locationStatus} · CPF {sv.cpfMasked ?? '—'}
+                    <div
+                      style={{
+                        fontSize: 12, color: '#176C45', fontWeight: 500, marginTop: 2,
+                        display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center',
+                      }}
+                    >
+                      <span>{formatScanDistance(sv)} · CPF {sv.cpfMasked ?? '—'}</span>
+                      {(sv.locationWithinRestaurant ?? sv.insideRadius) === true && (
+                        <span
+                          style={{
+                            padding: '2px 7px', borderRadius: 100,
+                            background: '#E2F2E8', color: '#176C45',
+                            border: '1px solid #BFE0CA',
+                            fontSize: 10, fontWeight: 800,
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          dentro da área do restaurante
+                        </span>
+                      )}
                     </div>
                   </div>
                   <span style={{ color: '#176C45', flexShrink: 0 }}>{Icon.arrow(16)}</span>

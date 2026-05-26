@@ -6,6 +6,9 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 
 interface ApiError {
   message: string | string[];
+  message_user?: string;
+  error_code?: string;
+  code?: string;
   statusCode: number;
 }
 
@@ -59,7 +62,7 @@ export async function api<T>(
     const body = (await res.json().catch(() => ({}))) as ApiError;
     const message = Array.isArray(body.message)
       ? body.message.join(', ')
-      : body.message;
+      : body.message_user || body.message;
     if (res.status === 401) {
       // Sessao expirada. NAO redirecionamos pra `/` daqui — esse path
       // levaria o usuario pra placeholder root e ele perderia o slug

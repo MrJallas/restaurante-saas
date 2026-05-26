@@ -58,11 +58,11 @@ export const ScreenWaiterDeliveryConfirm: React.FC<ScreenWaiterDeliveryConfirmPr
               {Icon.check(18)}
             </div>
             <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: 700 }}>
-              Pedido pronto
+              Pedido em trânsito
             </div>
           </div>
           <div style={{ fontSize: 30, fontWeight: 700, letterSpacing: -0.6, marginTop: 18, lineHeight: 1 }}>
-            Pedido entregue
+            Confirmar entrega
           </div>
           <div style={{ fontSize: 14, marginTop: 8, opacity: 0.92 }}>
             {tableLabel} · {tableTimeAgo}

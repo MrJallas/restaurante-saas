@@ -24,6 +24,9 @@ function HostHomePageInner() {
       tenantSlug={tenantSlug}
       hostId={hostId}
       onLiberate={(t) => router.push(`/host/liberate/${t}?tenant=${tenantSlug}`)}
+      onOpenTableStatus={(status) =>
+        router.push(`/host/tables/${status}?tenant=${tenantSlug}&hostId=${hostId}`)
+      }
       onOpenLateArrival={(id) =>
         router.push(`/host/late-arrival/${id}?tenant=${tenantSlug}&hostId=${hostId}`)
       }
@@ -34,7 +37,7 @@ function HostHomePageInner() {
         if (tab === 'waitlist') router.push(`/host/waitlist?tenant=${tenantSlug}`);
         if (tab === 'reserva') router.push(`/host/reservations?tenant=${tenantSlug}`);
         if (tab === 'me') router.push(`/host/profile?tenant=${tenantSlug}&hostId=${hostId}`);
-        if (tab === 'inbox') router.push(`/host?tenant=${tenantSlug}#inbox`);
+        if (tab === 'inbox') router.push(`/host/notifications?tenant=${tenantSlug}&hostId=${hostId}`);
       }}
     />
   );

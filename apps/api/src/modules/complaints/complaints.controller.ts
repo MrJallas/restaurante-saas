@@ -152,6 +152,20 @@ export class ComplaintsController {
     );
   }
 
+  @Get('mine')
+  @UseGuards(SessionGuard)
+  async listMine(@Req() req: Request) {
+    const callerCustomerId = await this.callerResolver.requireCustomerId(req);
+    return this.service.listForCustomer(callerCustomerId);
+  }
+
+  @Get(':id')
+  @UseGuards(SessionGuard)
+  async getMine(@Param('id') id: string, @Req() req: Request) {
+    const callerCustomerId = await this.callerResolver.requireCustomerId(req);
+    return this.service.getForCustomer(id, callerCustomerId);
+  }
+
   /**
    * Round 10 (B-NEW-49): staffId derivado do `x-staff-id` header em vez
    * de aceitar via body. ManagerOnlyGuard já valida role+DB; aqui só

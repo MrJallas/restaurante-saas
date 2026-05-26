@@ -13,10 +13,12 @@ import {
   createReservation, listReservations,
   type ReservationEntry,
 } from '../../lib/api/host';
+import { useStaffTheme } from '../../lib/theme';
 
 interface ScreenHostReservationsProps {
   tenantSlug: string;
   onBack?: () => void;
+  onOpenReservation?: (id: string) => void;
   onTabChange?: (tab: string) => void;
 }
 
@@ -24,9 +26,9 @@ const STATUS_FILTERS = ['all', 'awaited', 'arrived'] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 
 export const ScreenHostReservations: React.FC<ScreenHostReservationsProps> = ({
-  tenantSlug, onBack, onTabChange,
+  tenantSlug, onBack, onOpenReservation, onTabChange,
 }) => {
-  const dark = false;
+  const { dark } = useStaffTheme();
   const C = useG(dark);
   const [list, setList] = useState<ReservationEntry[]>([]);
   const [filter, setFilter] = useState<StatusFilter>('all');
@@ -128,9 +130,12 @@ export const ScreenHostReservations: React.FC<ScreenHostReservationsProps> = ({
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {visible.map((r) => (
-              <div
+              <button
                 key={r.id}
+                type="button"
+                onClick={() => onOpenReservation?.(r.id)}
                 style={{
+                  all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
                   display: 'flex', alignItems: 'center', gap: 12,
                   padding: '12px 14px', borderRadius: 14,
                   background: C.bg, border: `1.5px solid ${C.borderSoft}`,
@@ -167,7 +172,8 @@ export const ScreenHostReservations: React.FC<ScreenHostReservationsProps> = ({
                     </div>
                   )}
                 </div>
-              </div>
+                <span style={{ color: C.faint, flexShrink: 0 }}>{Icon.arrow(15)}</span>
+              </button>
             ))}
           </div>
         )}

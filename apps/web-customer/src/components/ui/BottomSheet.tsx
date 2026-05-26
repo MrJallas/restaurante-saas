@@ -41,11 +41,12 @@ export function BottomSheet({
         onClick={closeOnOverlayClick ? onClose : undefined}
       />
       <div
-        className="absolute inset-x-0 bottom-0 rounded-t-[28px] border border-b-0 border-ink bg-bg px-6 pb-safe pt-2.5 shadow-[0_-20px_60px_rgba(0,0,0,0.2)]"
+        className="absolute inset-x-0 bottom-0 max-h-[calc(100dvh-32px)] overflow-y-auto rounded-t-[28px] border border-b-0 border-ink bg-bg px-6 pt-2.5 shadow-[0_-20px_60px_rgba(0,0,0,0.2)]"
         onClick={(e) => e.stopPropagation()}
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)' }}
       >
         <div className="mx-auto mb-4 h-[5px] w-11 rounded-full bg-border-soft" />
-        <div className="pb-6">{children}</div>
+        <div>{children}</div>
       </div>
     </div>
   );

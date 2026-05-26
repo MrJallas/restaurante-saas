@@ -62,6 +62,7 @@ export default function CardapioPage() {
   const { push } = useNav();
   const searchParams = useSearchParams();
   const session = useSession();
+  const { commandMode, setCommandMode } = session;
   const slug = params.slug as string;
 
   useEffect(() => {
@@ -213,6 +214,35 @@ export default function CardapioPage() {
     <div className="flex flex-1 flex-col">
       <div className="shrink-0 px-[22px] pb-2.5 pt-1">
         <h1 className="text-[26px] font-semibold tracking-[-0.02em]">Cardápio</h1>
+        {commandMode && !isEmbed && (
+          <div className="mt-2 flex items-center gap-2 rounded-full border border-border-soft bg-surface px-3 py-2 text-[11px] text-mute">
+            <span className="min-w-0 flex-1 truncate">
+              Lançando em:{' '}
+              <b className="text-ink">
+                {commandMode === 'individual' ? 'Minha comanda' : 'Comanda da mesa'}
+              </b>
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                setCommandMode(
+                  commandMode === 'individual' ? 'table' : 'individual',
+                  true,
+                )
+              }
+              className="shrink-0 rounded-full border border-ink px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.8px] text-ink"
+            >
+              Trocar
+            </button>
+            <button
+              type="button"
+              onClick={() => setCommandMode(null, true)}
+              className="shrink-0 rounded-full border border-border-soft px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.8px] text-mute"
+            >
+              Redefinir
+            </button>
+          </div>
+        )}
       </div>
 
         <div className="shrink-0 px-[22px] pb-2.5">

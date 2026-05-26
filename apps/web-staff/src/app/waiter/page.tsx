@@ -29,7 +29,7 @@ function WaiterHomePageInner() {
       onTabChange={(tab) => {
         if (tab === 'me') router.push(`/waiter/eu?tenant=${tenantSlug}&waiterId=${waiterId}`);
         else if (tab === 'calls') router.push(`/waiter/chamados?tenant=${tenantSlug}`);
-        else if (tab === 'scan') router.push(`/waiter/scan-qr?tenant=${tenantSlug}`);
+        else if (tab === 'shift') router.push(`/waiter/eu?tenant=${tenantSlug}&waiterId=${waiterId}&focus=shift`);
       }}
       fab
     />

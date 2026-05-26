@@ -11,9 +11,15 @@
 // Comportamento sem login: se `customerId === null`, renderiza guard CTA
 // que leva pra /identify em vez de mostrar a tela vazia.
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from '../../hooks/useSession';
+import { ApiRequestError } from '../../lib/api';
+import { deleteAllThreads as deleteAllAiThreads } from '../../lib/api/chat-history';
+import { deleteAllThreads as deleteAllStaffThreads } from '../../lib/api/staff-messages';
 import { AppShell } from '../../components/layout/AppShell';
+import { BottomSheet } from '../../components/ui/BottomSheet';
+import { PillButton } from '../../components/ui/PillButton';
 
 interface ScreenCustomerMeProps {
   slug: string;
@@ -31,6 +37,11 @@ function getInitials(name: string | null | undefined): string {
 export function ScreenCustomerMe({ slug, restaurantName = '' }: ScreenCustomerMeProps) {
   const session = useSession();
   const router = useRouter();
+  const [privacySheetOpen, setPrivacySheetOpen] = useState(false);
+  const [deleteScope, setDeleteScope] = useState<'staff' | 'ai' | 'all'>('staff');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const handleTrocarPerfil = () => {
     router.push(`/${slug}`);
@@ -43,6 +54,36 @@ export function ScreenCustomerMe({ slug, restaurantName = '' }: ScreenCustomerMe
       /* ignore */
     }
     router.push('/');
+  };
+
+  const handleDeleteConversations = async () => {
+    if (!session.customerId) return;
+    setDeleting(true);
+    setDeleteError(null);
+    setDeleteMessage(null);
+    try {
+      if (deleteScope === 'staff' || deleteScope === 'all') {
+        await deleteAllStaffThreads(slug);
+      }
+      if (deleteScope === 'ai' || deleteScope === 'all') {
+        await deleteAllAiThreads(slug, session.customerId);
+      }
+      setDeleteMessage(
+        deleteScope === 'staff'
+          ? 'Nenhuma mensagem com a equipe por aqui ainda.'
+          : deleteScope === 'ai'
+            ? 'Nenhuma conversa com IA por aqui ainda.'
+            : 'Nenhuma mensagem por aqui ainda.',
+      );
+    } catch (err) {
+      const message =
+        err instanceof ApiRequestError
+          ? err.message
+          : 'Não consegui apagar agora. Tente de novo em instantes.';
+      setDeleteError(message);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   // Guard: sem identificação, manda pra /identify em vez de tela vazia
@@ -167,11 +208,7 @@ export function ScreenCustomerMe({ slug, restaurantName = '' }: ScreenCustomerMe
         </div>
         <button
           type="button"
-          onClick={() =>
-            router.push(
-              `/${slug}/assistente?prefill=${encodeURIComponent('Quero apagar meus dados')}`,
-            )
-          }
+          onClick={() => setPrivacySheetOpen(true)}
           className="mb-2 flex w-full items-center gap-3.5 rounded-[12px] border border-border-soft bg-bg px-4 py-3 text-left active:bg-surface"
         >
           <span className="flex h-7 w-7 items-center justify-center rounded-full border border-ink text-[12px]">
@@ -180,11 +217,17 @@ export function ScreenCustomerMe({ slug, restaurantName = '' }: ScreenCustomerMe
           <span className="flex-1">
             <span className="block text-[14px] font-medium text-ink">Apagar minhas conversas</span>
             <span className="mt-0.5 block text-[11px] text-mute">
-              Pelo assistente · efeito imediato
+              Equipe, IA ou todas · efeito imediato
             </span>
           </span>
           <span className="text-[14px] text-faint">›</span>
         </button>
+
+        {deleteMessage && (
+          <div className="mb-2 rounded-[12px] border border-success/30 bg-success/10 px-3.5 py-2.5 text-[13px] text-success">
+            {deleteMessage}
+          </div>
+        )}
 
         <div className="mt-6 flex flex-col gap-2">
           <button
@@ -203,6 +246,67 @@ export function ScreenCustomerMe({ slug, restaurantName = '' }: ScreenCustomerMe
           </button>
         </div>
       </div>
+
+      <BottomSheet
+        open={privacySheetOpen}
+        onClose={() => (deleting ? null : setPrivacySheetOpen(false))}
+        ariaLabel="Apagar conversas"
+      >
+        <h2 className="mb-2 text-[20px] font-semibold tracking-[-0.02em] text-ink">
+          Apagar minhas conversas?
+        </h2>
+        <p className="mb-4 text-[14px] leading-[1.5] text-mute">
+          Vai sumir todas as conversas com a equipe · não tem volta.
+        </p>
+        <div className="mb-5 grid grid-cols-3 gap-2">
+          {[
+            ['staff', 'Equipe'],
+            ['ai', 'IA'],
+            ['all', 'Todas'],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setDeleteScope(value as 'staff' | 'ai' | 'all')}
+              disabled={deleting}
+              className={`rounded-full border px-3 py-2 text-[12px] font-semibold ${
+                deleteScope === value
+                  ? 'border-ink bg-ink text-bg'
+                  : 'border-border-soft bg-bg text-ink'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {deleteError && (
+          <div className="mb-4 rounded-[12px] border border-danger bg-[#fdf2f2] px-3.5 py-2.5 text-[13px] text-[#7a1f1f]">
+            {deleteError}
+          </div>
+        )}
+        <div className="flex flex-col gap-2.5">
+          <PillButton
+            variant="filled"
+            fullWidth
+            onClick={handleDeleteConversations}
+            disabled={deleting}
+            className="!bg-danger !border-danger"
+          >
+            {deleting ? 'Apagando…' : 'Sim, apagar tudo'}
+          </PillButton>
+          <PillButton
+            variant="outline"
+            fullWidth
+            onClick={() => setPrivacySheetOpen(false)}
+            disabled={deleting}
+          >
+            Cancelar
+          </PillButton>
+        </div>
+        <p className="mt-5 px-2 text-center text-[10px] font-semibold uppercase leading-[1.5] tracking-[1.2px] text-faint">
+          Suas mensagens ficam aqui por 30 dias e são apagadas automaticamente · LGPD Art. 18
+        </p>
+      </BottomSheet>
     </AppShell>
   );
 }

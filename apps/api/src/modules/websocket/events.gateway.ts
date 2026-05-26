@@ -529,6 +529,29 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  emitOrderHandoffCalled(
+    slug: string,
+    data: {
+      orderId: string;
+      deliveryId: string;
+      tableLabel: string;
+      tableCode: string;
+      targetWaiterId: string | null;
+      targetWaiterName?: string | null;
+    },
+  ) {
+    const payload = {
+      ...data,
+      timestamp: new Date().toISOString(),
+    };
+    this.server.to(`tenant:${slug}:kitchen`).emit('order:handoff_called', payload);
+    if (data.targetWaiterId) {
+      this.server.to(`staff:${data.targetWaiterId}`).emit('order:handoff_called', payload);
+    } else {
+      this.server.to(`tenant:${slug}:waiter`).emit('order:handoff_called', payload);
+    }
+  }
+
   emitKitchenReorder(
     slug: string,
     data: { orderIds: string[]; reason?: string | null; requestedBy?: string | null },
@@ -539,6 +562,36 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     };
     this.server.to(`tenant:${slug}:kitchen`).emit('kitchen:reorder', payload);
     this.server.to(`tenant:${slug}:manager`).emit('kitchen:reorder', payload);
+  }
+
+  emitKitchenPriorityRequest(
+    slug: string,
+    data: { requestId: string; orderIds: string[]; reason?: string | null; requestedBy?: string | null },
+  ) {
+    const payload = {
+      ...data,
+      timestamp: new Date().toISOString(),
+    };
+    this.server.to(`tenant:${slug}:kitchen`).emit('kitchen:priority_request', payload);
+    this.server.to(`tenant:${slug}:manager`).emit('kitchen:priority_request', payload);
+  }
+
+  emitKitchenPriorityResponse(
+    slug: string,
+    data: {
+      requestId: string;
+      orderIds: string[];
+      status: 'accepted' | 'next';
+      protectedOrderIds?: string[];
+      respondedBy?: string | null;
+    },
+  ) {
+    const payload = {
+      ...data,
+      timestamp: new Date().toISOString(),
+    };
+    this.server.to(`tenant:${slug}:kitchen`).emit('kitchen:priority_response', payload);
+    this.server.to(`tenant:${slug}:manager`).emit('kitchen:priority_response', payload);
   }
 
   emitWaiterCall(

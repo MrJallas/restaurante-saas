@@ -10,6 +10,7 @@ import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitives';
 import { liberateTable } from '../../lib/api/host';
+import { useStaffTheme } from '../../lib/theme';
 
 interface ScreenHostTableLiberateProps {
   tenantSlug: string;
@@ -25,7 +26,7 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
   tenantSlug, tableNumber, capacity = 4, sector = 'Salão', partySize: initialParty = capacity,
   onBack, onDone,
 }) => {
-  const dark = false;
+  const { dark } = useStaffTheme();
   const C = useG(dark);
   const [partySize, setPartySize] = useState(initialParty);
   const [submitting, setSubmitting] = useState(false);

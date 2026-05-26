@@ -352,6 +352,42 @@ export interface WsWaiterAcknowledged {
   };
 }
 
+export interface WsOrderHandoffCalled {
+  event: 'order:handoff_called';
+  payload: {
+    orderId: string;
+    deliveryId: string;
+    tableLabel: string;
+    tableCode: string;
+    targetWaiterId: string | null;
+    targetWaiterName?: string | null;
+    timestamp: string;
+  };
+}
+
+export interface WsKitchenPriorityRequest {
+  event: 'kitchen:priority_request';
+  payload: {
+    requestId: string;
+    orderIds: string[];
+    reason?: string | null;
+    requestedBy?: string | null;
+    timestamp: string;
+  };
+}
+
+export interface WsKitchenPriorityResponse {
+  event: 'kitchen:priority_response';
+  payload: {
+    requestId: string;
+    orderIds: string[];
+    status: 'accepted' | 'next';
+    protectedOrderIds?: string[];
+    respondedBy?: string | null;
+    timestamp: string;
+  };
+}
+
 // ─── Zone pause ───
 
 export interface WsZonePauseStarted {
@@ -519,6 +555,9 @@ export type WsEvent =
   | WsStaffMessageRead
   | WsStaffMessagesCustomerReplied
   | WsOrderReady
+  | WsOrderHandoffCalled
+  | WsKitchenPriorityRequest
+  | WsKitchenPriorityResponse
   | WsWaiterCall
   | WsWaiterAcknowledged
   | WsZonePauseStarted

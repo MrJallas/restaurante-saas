@@ -52,6 +52,18 @@ function getStaffEventThreadId(payload: unknown): string | null {
   return null;
 }
 
+function hasShiftEndRequest(content: string): boolean {
+  return /SHIFT_END_REQUEST:[0-9a-f-]{36}/i.test(content);
+}
+
+function cleanSystemToken(content: string): string {
+  return content.replace(/\n?SHIFT_END_REQUEST:[0-9a-f-]{36}/i, '').trim();
+}
+
+function messageContent(message: StaffMessageDto): string {
+  return message.content ?? (message as unknown as { body?: string }).body ?? '';
+}
+
 export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> = ({
   tenantSlug, threadId, role = 'waiter', myUserId, onBack,
 }) => {
@@ -124,6 +136,12 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
   const activePause = useMemo(
     () => pauses.find((p) => p.active && new Date(p.endsAt).getTime() > Date.now()),
     [pauses],
+  );
+  const hasPendingShiftEndRequest = useMemo(
+    () =>
+      messages.some((m) => hasShiftEndRequest(messageContent(m))) &&
+      !messages.some((m) => /Encerramento (aprovado|recusado)/i.test(messageContent(m))),
+    [messages],
   );
   const sentBubbleBg = dark ? '#F4F4F5' : C.ink;
   const sentBubbleInk = dark ? '#111827' : '#fff';
@@ -242,6 +260,22 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
         </div>
       )}
 
+      {role === 'waiter' && hasPendingShiftEndRequest && (
+        <div
+          role="status"
+          style={{
+            padding: '11px 14px',
+            background: '#FFF7E6',
+            borderBottom: '1px solid #F0DCB6',
+            color: '#7A4D10',
+            fontSize: 12.5,
+            fontWeight: 700,
+          }}
+        >
+          Gerente está analisando seu pedido. Você continua no turno até receber a resposta.
+        </div>
+      )}
+
       <div
         style={{
           flex: 1, overflow: 'auto', padding: '6px 0 14px',
@@ -250,6 +284,7 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
       >
         {messages.map((m) => {
           const isMe = isAuthoredByMe(m);
+          const visibleContent = cleanSystemToken(messageContent(m));
           if (isMe) {
             return (
               <div
@@ -272,7 +307,7 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
                       lineHeight: 1.45, whiteSpace: 'pre-wrap',
                     }}
                   >
-                    {m.content}
+                    {visibleContent}
                   </div>
                   <div
                     style={{
@@ -309,7 +344,7 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
                     lineHeight: 1.45, whiteSpace: 'pre-wrap',
                   }}
                 >
-                  {m.content}
+                  {visibleContent}
                 </div>
               </div>
             </div>
