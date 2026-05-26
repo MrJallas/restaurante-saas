@@ -43,6 +43,7 @@ import { CourtesiesModule } from './modules/courtesies/courtesies.module';
 import { ShiftsModule } from './modules/shifts/shifts.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { ContinuationModule } from './modules/continuation/continuation.module';
+import { StaffAuthModule } from './modules/staff-auth/staff-auth.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { ContinuationModule } from './modules/continuation/continuation.module';
     PromotionsModule,
     DashboardModule,
     StaffModule,
+    StaffAuthModule,
     // Phase 2 modules:
     LateArrivalModule,
     ScanVerificationModule,

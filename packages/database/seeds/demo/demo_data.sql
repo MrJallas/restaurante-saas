@@ -91,12 +91,24 @@ INSERT INTO tables (
 
 -- === Staff (PIN 1234 everywhere = sha256) ===
 -- sha256('1234') = 03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4
-INSERT INTO staff (name, role, pin_hash, is_active) VALUES
-  ('Ana Garcom',       'waiter',  '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true),
-  ('Bruno Garcom',     'waiter',  '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true),
-  ('Carlos Cozinha',   'cook',    '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true),
-  ('Diana Cozinha',    'cook',    '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true),
-  ('Erica Gerente',    'manager', '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true);
+INSERT INTO staff (name, role, pin_hash, is_active, cpf, phone, email) VALUES
+  ('Ana Garcom',       'waiter',  '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true, NULL, NULL, NULL),
+  ('Bruno Garcom',     'waiter',  '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true, NULL, NULL, NULL),
+  ('Carlos Cozinha',   'cook',    '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true, NULL, NULL, NULL),
+  ('Diana Cozinha',    'cook',    '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true, NULL, NULL, NULL),
+  ('Erica Gerente',    'manager', '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true, NULL, NULL, NULL),
+  ('Gerente Demo',     'manager', '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true, '90000000001', '+5511990000001', 'gerente.demo@example.test'),
+  ('Recepcao Demo',    'host',    '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true, '90000000002', '+5511990000002', 'recepcao.demo@example.test'),
+  ('Garcom Demo',      'waiter',  '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true, '90000000003', '+5511990000003', 'garcom.demo@example.test'),
+  ('Cozinha Demo',     'cook',    '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true, '90000000004', '+5511990000004', 'cozinha.demo@example.test')
+ON CONFLICT (cpf) WHERE cpf IS NOT NULL DO UPDATE
+  SET name = EXCLUDED.name,
+      role = EXCLUDED.role,
+      pin_hash = EXCLUDED.pin_hash,
+      is_active = EXCLUDED.is_active,
+      phone = EXCLUDED.phone,
+      email = EXCLUDED.email,
+      updated_at = now();
 
 -- === Menu items ===
 -- (category ids from default_categories seed; fetch by name)

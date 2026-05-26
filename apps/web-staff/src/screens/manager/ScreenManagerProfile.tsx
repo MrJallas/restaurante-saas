@@ -78,6 +78,7 @@ export function ScreenManagerProfile({
       window.sessionStorage.clear();
       window.localStorage.removeItem('staffId');
       window.localStorage.removeItem('staffRole');
+      window.localStorage.removeItem('staffName');
     } catch {
       /* ignore */
     }

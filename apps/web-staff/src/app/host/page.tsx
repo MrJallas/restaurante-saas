@@ -3,20 +3,33 @@
 import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenHostHome } from '../../screens/host/ScreenHostHome';
+import { defaultTenantSlug, readStaffSession, type StaffSession } from '../../lib/api';
 
 function HostHomePageInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const tenantSlug = params.get('tenant') ?? process.env.NEXT_PUBLIC_DEFAULT_TENANT ?? 'demo';
-  const hostId = params.get('hostId') ?? '';
+  const [session, setSession] = React.useState<StaffSession | null | undefined>(undefined);
+  const tenantSlug = params.get('tenant') ?? defaultTenantSlug();
+  const hostIdParam = params.get('hostId');
+  const hostId = hostIdParam ?? session?.staffId ?? '';
+
+  React.useEffect(() => {
+    setSession(readStaffSession());
+  }, []);
+
+  if (!hostIdParam && session === undefined) return null;
 
   return (
     <ScreenHostHome
       tenantSlug={tenantSlug}
       hostId={hostId}
       onLiberate={(t) => router.push(`/host/liberate/${t}?tenant=${tenantSlug}`)}
-      onOpenLateArrival={(id) => router.push(`/host/late-arrival/${id}?tenant=${tenantSlug}&hostId=${hostId}`)}
-      onOpenScanVerification={(id) => router.push(`/host/scan-verification/${id}?tenant=${tenantSlug}&hostId=${hostId}`)}
+      onOpenLateArrival={(id) =>
+        router.push(`/host/late-arrival/${id}?tenant=${tenantSlug}&hostId=${hostId}`)
+      }
+      onOpenScanVerification={(id) =>
+        router.push(`/host/scan-verification/${id}?tenant=${tenantSlug}&hostId=${hostId}`)
+      }
       onTabChange={(tab) => {
         if (tab === 'waitlist') router.push(`/host/waitlist?tenant=${tenantSlug}`);
         if (tab === 'reserva') router.push(`/host/reservations?tenant=${tenantSlug}`);
