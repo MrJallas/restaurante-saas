@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
+import { authErrorResponse } from './auth-error-response';
 import { getCachedActiveStaffRole } from './staff-role-cache';
 
 /**
@@ -37,27 +38,23 @@ export class HostOrManagerGuard implements CanActivate {
     const staffId = Array.isArray(staffIdHeader) ? staffIdHeader[0] : staffIdHeader;
 
     if (!staffId || typeof staffId !== 'string') {
-      throw new UnauthorizedException(
-        'host-or-manager endpoint exige x-staff-id',
-      );
+      throw new UnauthorizedException(authErrorResponse('AUTH_MISSING', 'Sessão expirada'));
     }
 
-    if (
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        staffId,
-      )
-    ) {
-      throw new UnauthorizedException('x-staff-id inválido');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(staffId)) {
+      throw new UnauthorizedException(authErrorResponse('AUTH_INVALID', 'Sessão expirada'));
     }
 
     const role = await getCachedActiveStaffRole(this.tenantConn, staffId);
 
     if (!role) {
-      throw new ForbiddenException('staff não encontrado ou inativo');
+      throw new UnauthorizedException(authErrorResponse('AUTH_INVALID', 'Sessão expirada'));
     }
 
     if (role !== 'host' && role !== 'manager') {
-      throw new ForbiddenException('host- or manager-only endpoint');
+      throw new ForbiddenException(
+        authErrorResponse('AUTH_FORBIDDEN', 'Acesso não permitido para este perfil'),
+      );
     }
 
     return true;

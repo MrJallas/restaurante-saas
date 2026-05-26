@@ -1,9 +1,6 @@
-import {
-  HttpException,
-  HttpStatus,
-  Injectable,
-} from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import type { Request } from 'express';
+import { authErrorResponse } from '../guards/auth-error-response';
 import { CustomersService } from '../../modules/customers/customers.service';
 import { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
 
@@ -47,10 +44,7 @@ export class CallerResolverService {
     }
     const resolved = await this.customers.resolveByRecognitionToken(token);
     if (!resolved) {
-      throw new HttpException(
-        'Identificação inválida ou expirada.',
-        HttpStatus.UNAUTHORIZED,
-      );
+      throw new HttpException('Identificação inválida ou expirada.', HttpStatus.UNAUTHORIZED);
     }
     return resolved.customerId;
   }
@@ -64,8 +58,7 @@ export class CallerResolverService {
   }
 
   private extractToken(req: Request): string | null {
-    const cookies = (req as Request & { cookies?: Record<string, string> })
-      .cookies;
+    const cookies = (req as Request & { cookies?: Record<string, string> }).cookies;
     return cookies?.recognition_token ?? null;
   }
 
@@ -90,17 +83,16 @@ export class CallerResolverService {
 
     if (!staffId || typeof staffId !== 'string') {
       throw new HttpException(
-        'x-staff-id header obrigatório.',
+        authErrorResponse('AUTH_MISSING', 'Sessão expirada'),
         HttpStatus.UNAUTHORIZED,
       );
     }
 
-    if (
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        staffId,
-      )
-    ) {
-      throw new HttpException('x-staff-id inválido.', HttpStatus.UNAUTHORIZED);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(staffId)) {
+      throw new HttpException(
+        authErrorResponse('AUTH_INVALID', 'Sessão expirada'),
+        HttpStatus.UNAUTHORIZED,
+      );
     }
 
     return staffId;
@@ -123,7 +115,7 @@ export class CallerResolverService {
     )) as unknown[];
     if (!rows.length) {
       throw new HttpException(
-        'staff não encontrado ou inativo.',
+        authErrorResponse('AUTH_INVALID', 'Sessão expirada'),
         HttpStatus.UNAUTHORIZED,
       );
     }

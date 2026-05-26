@@ -3,7 +3,9 @@ import {
   NotFoundException,
   BadRequestException,
   Optional,
+  ForbiddenException,
 } from '@nestjs/common';
+import { authErrorResponse } from '../../common/guards/auth-error-response';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -32,6 +34,45 @@ export interface AlertRow {
 }
 
 const VALID_SEV: AlertSeverity[] = ['crítica', 'atenção', 'info'];
+const MANAGEMENT_ROLES = new Set(['manager', 'owner']);
+const ROLE_ALERT_PATTERNS: Record<string, string[]> = {
+  host: [
+    'host',
+    'recepc',
+    'waitlist',
+    'lista',
+    'late_arrival',
+    'late-arrival',
+    'scan',
+    'qr',
+    'table',
+  ],
+  waiter: [
+    'waiter',
+    'garcom',
+    'garçom',
+    'chamado',
+    'call',
+    'delivery',
+    'entrega',
+    'order',
+    'table',
+  ],
+  cook: ['cook', 'cozinha', 'kitchen', 'pedido', 'order', 'priority', 'fila'],
+  bartender: ['bar', 'drink', 'bebida', 'pedido', 'order'],
+  cashier: ['cashier', 'caixa', 'payment', 'pagamento', 'conta', 'bill'],
+};
+
+export function alertVisibleForRole(
+  alert: Pick<AlertRow, 'kind' | 'title' | 'sub'>,
+  role: string,
+): boolean {
+  if (MANAGEMENT_ROLES.has(role)) return true;
+  const patterns = ROLE_ALERT_PATTERNS[role] ?? [];
+  if (!patterns.length) return false;
+  const haystack = alert.kind.toLowerCase();
+  return patterns.some((pattern) => haystack.includes(pattern));
+}
 
 /**
  * Round 18 (Onda 4 batch 2): persistencia de alertas operacionais
@@ -50,11 +91,13 @@ export class AlertsService {
     @Optional() private readonly events?: EventsGateway,
   ) {}
 
-  async list(filters: {
-    sev?: AlertSeverity | 'all';
-    status?: AlertStatus | 'all';
-    limit?: number;
-  } = {}): Promise<AlertRow[]> {
+  async list(
+    filters: {
+      sev?: AlertSeverity | 'all';
+      status?: AlertStatus | 'all';
+      limit?: number;
+    } = {},
+  ): Promise<AlertRow[]> {
     const where: string[] = [];
     const params: unknown[] = [];
     let idx = 1;
@@ -100,6 +143,34 @@ export class AlertsService {
     return rows;
   }
 
+  async resolveActiveStaffRole(staffId: string): Promise<string | null> {
+    const rows = (await this.tenantConn.query(
+      `SELECT role FROM staff WHERE id = $1 AND is_active = true`,
+      [staffId],
+    )) as { role: string }[];
+    return rows[0]?.role ?? null;
+  }
+
+  async listForRole(
+    role: string,
+    filters: {
+      sev?: AlertSeverity | 'all';
+      status?: AlertStatus | 'all';
+      limit?: number;
+    } = {},
+  ): Promise<AlertRow[]> {
+    if (MANAGEMENT_ROLES.has(role)) return this.list(filters);
+
+    const requestedLimit = Math.min(Math.max(filters.limit ?? 100, 1), 500);
+    const rows = await this.list({
+      ...filters,
+      // Fetch a wider window before role filtering so staff roles do not get
+      // an empty page just because manager-only alerts were newer.
+      limit: 500,
+    });
+    return rows.filter((alert) => alertVisibleForRole(alert, role)).slice(0, requestedLimit);
+  }
+
   async create(data: {
     sev: AlertSeverity;
     kind: string;
@@ -109,9 +180,7 @@ export class AlertsService {
     actions?: AlertActionDescriptor[];
   }): Promise<AlertRow> {
     if (!VALID_SEV.includes(data.sev)) {
-      throw new BadRequestException(
-        `Severidade invalida. Use: ${VALID_SEV.join(', ')}.`,
-      );
+      throw new BadRequestException(`Severidade invalida. Use: ${VALID_SEV.join(', ')}.`);
     }
     if (!data.title || data.title.length > 500) {
       throw new BadRequestException('Title obrigatorio (max 500 chars).');
@@ -144,10 +213,7 @@ export class AlertsService {
     // alert metadata to other tenants and even customer sockets.
     const tenantSlug = this.tenantConn.getTenantSlug();
     if (this.events && tenantSlug) {
-      this.events.emitAlertCreated(
-        tenantSlug,
-        alert as unknown as Record<string, unknown>,
-      );
+      this.events.emitAlertCreated(tenantSlug, alert as unknown as Record<string, unknown>);
     }
 
     return alert;
@@ -167,11 +233,14 @@ export class AlertsService {
       ),
     );
     if (!rows.length) {
-      throw new NotFoundException(
-        'Alerta nao encontrado ou ja tratado.',
-      );
+      throw new NotFoundException('Alerta nao encontrado ou ja tratado.');
     }
     return rows[0];
+  }
+
+  async dismissForRole(id: string, role: string): Promise<AlertRow> {
+    await this.ensureRoleCanActOnAlert(id, role);
+    return this.dismiss(id);
   }
 
   async resolve(id: string): Promise<AlertRow> {
@@ -188,10 +257,34 @@ export class AlertsService {
       ),
     );
     if (!rows.length) {
-      throw new NotFoundException(
-        'Alerta nao encontrado ou ja tratado.',
-      );
+      throw new NotFoundException('Alerta nao encontrado ou ja tratado.');
     }
     return rows[0];
+  }
+
+  async resolveForRole(id: string, role: string): Promise<AlertRow> {
+    await this.ensureRoleCanActOnAlert(id, role);
+    return this.resolve(id);
+  }
+
+  private async ensureRoleCanActOnAlert(id: string, role: string): Promise<void> {
+    if (MANAGEMENT_ROLES.has(role)) return;
+
+    const rows = (await this.tenantConn.query(
+      `SELECT id, kind, title, sub
+         FROM alerts
+        WHERE id = $1
+          AND dismissed_at IS NULL
+          AND resolved_at IS NULL`,
+      [id],
+    )) as Pick<AlertRow, 'id' | 'kind' | 'title' | 'sub'>[];
+    if (!rows.length) {
+      throw new NotFoundException('Alerta nao encontrado ou ja tratado.');
+    }
+    if (!alertVisibleForRole(rows[0], role)) {
+      throw new ForbiddenException(
+        authErrorResponse('AUTH_FORBIDDEN', 'Acesso não permitido para este perfil'),
+      );
+    }
   }
 }

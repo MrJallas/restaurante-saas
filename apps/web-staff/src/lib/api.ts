@@ -5,51 +5,102 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/a
 // qualquer tenant). Em prod evolui pra JWT via PIN.
 const STAFF_API_KEY =
   process.env.NEXT_PUBLIC_STAFF_API_KEY ||
-  (process.env.NODE_ENV !== 'production'
-    ? 'dev-staff-api-key-change-in-prod'
-    : '');
+  (process.env.NODE_ENV !== 'production' ? 'dev-staff-api-key-change-in-prod' : '');
+
+const STAFF_ID_QUERY_KEYS = ['staffId', 'hostId', 'managerId', 'waiterId', 'cookId'] as const;
+
+const STAFF_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function roleFromIdentityParam(key: (typeof STAFF_ID_QUERY_KEYS)[number]): string | null {
+  if (key === 'managerId') return 'manager';
+  if (key === 'hostId') return 'host';
+  if (key === 'waiterId') return 'waiter';
+  if (key === 'cookId') return 'cook';
+  return null;
+}
+
+function firstUrlStaffIdentity(params: URLSearchParams): {
+  key: (typeof STAFF_ID_QUERY_KEYS)[number];
+  value: string;
+} | null {
+  for (const key of STAFF_ID_QUERY_KEYS) {
+    if (params.has(key)) {
+      return { key, value: params.get(key) ?? '' };
+    }
+  }
+  return null;
+}
+
+type StaffIdentityStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 /**
- * Read identity headers from `localStorage`. Manager-only endpoints
- * (zone-pause start/end, complaint respond, VIP/allergy session flags)
- * are guarded by `ManagerOnlyGuard`, which inspects `x-staff-role`. The
- * websocket gateway and audit fields also key off `x-staff-id`. The
- * staff-login flow seeds these two keys on success; SSR has no
- * `localStorage` so we guard with `typeof window`.
+ * Read identity headers from query params/localStorage. Role guards trust the
+ * DB role for `x-staff-id`; query params only seed the current authenticated
+ * staff UUID. Invalid explicit IDs are never sent, so placeholders such as
+ * `cookId=kitchen-display` cannot poison manager requests later.
  */
-function staffIdentityHeaders(): Record<string, string> {
-  if (typeof window === 'undefined') return {};
+export function resolveStaffIdentityHeaders(
+  params: URLSearchParams,
+  storage: StaffIdentityStorage,
+): Record<string, string> {
   const headers: Record<string, string> = {};
+  const explicitIdentity = firstUrlStaffIdentity(params);
+  const explicitRole = params.get('staffRole');
 
-  const params = new URLSearchParams(window.location.search);
-  const urlStaffId =
-    params.get('staffId') ||
-    params.get('hostId') ||
-    params.get('managerId') ||
-    params.get('waiterId') ||
-    params.get('cookId');
-  const urlStaffRole =
-    params.get('staffRole') ||
-    (params.get('managerId') ? 'manager' : null) ||
-    (params.get('hostId') ? 'host' : null) ||
-    (params.get('waiterId') ? 'waiter' : null) ||
-    (params.get('cookId') ? 'cook' : null);
+  let staffId: string | null = null;
+  let staffRole: string | null = null;
 
-  const staffId = urlStaffId || window.localStorage.getItem('staffId');
-  const staffRole = urlStaffRole || window.localStorage.getItem('staffRole');
+  if (explicitIdentity) {
+    if (!STAFF_ID_RE.test(explicitIdentity.value)) {
+      return headers;
+    }
 
-  if (urlStaffId) window.localStorage.setItem('staffId', urlStaffId);
-  if (urlStaffRole) window.localStorage.setItem('staffRole', urlStaffRole);
+    staffId = explicitIdentity.value;
+    staffRole =
+      explicitRole || roleFromIdentityParam(explicitIdentity.key) || storage.getItem('staffRole');
+    storage.setItem('staffId', staffId);
+    if (staffRole) storage.setItem('staffRole', staffRole);
+  } else {
+    const storedStaffId = storage.getItem('staffId');
+    if (storedStaffId && STAFF_ID_RE.test(storedStaffId)) {
+      staffId = storedStaffId;
+      staffRole = explicitRole || storage.getItem('staffRole');
+      if (explicitRole) storage.setItem('staffRole', explicitRole);
+    } else if (storedStaffId) {
+      storage.removeItem('staffId');
+    }
+  }
 
   if (staffId) headers['x-staff-id'] = staffId;
   if (staffRole) headers['x-staff-role'] = staffRole;
   return headers;
 }
 
-export async function staffApi<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+function staffIdentityHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  return resolveStaffIdentityHeaders(
+    new URLSearchParams(window.location.search),
+    window.localStorage,
+  );
+}
+
+function extractApiErrorMessage(body: unknown): string {
+  if (!body || typeof body !== 'object') return 'Erro inesperado.';
+  const record = body as {
+    message_user?: unknown;
+    message?: unknown;
+    error?: unknown;
+  };
+  if (typeof record.message_user === 'string') return record.message_user;
+  if (typeof record.message === 'string') return record.message;
+  if (Array.isArray(record.message) && record.message.length > 0) {
+    return 'Dados inválidos. Revise e tente novamente.';
+  }
+  if (typeof record.error === 'string') return record.error;
+  return 'Erro inesperado.';
+}
+
+export async function staffApi<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
 
   // Header merge order — defaults first, then caller overrides last so an
@@ -68,7 +119,16 @@ export async function staffApi<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error((body as { message?: string }).message || 'Erro inesperado.');
+    const error = new Error(extractApiErrorMessage(body)) as Error & {
+      code?: string;
+    };
+    const code =
+      body && typeof body === 'object'
+        ? ((body as { code?: unknown; error_code?: unknown }).code ??
+          (body as { error_code?: unknown }).error_code)
+        : undefined;
+    if (typeof code === 'string') error.code = code;
+    throw error;
   }
 
   return res.json() as Promise<T>;
