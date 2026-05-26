@@ -317,14 +317,15 @@ export class ShiftsService {
     const status = (updated[0]?.status ?? data.decision) as 'approved' | 'rejected';
 
     if (request.thread_id) {
+      const responseBody =
+        status === 'approved'
+          ? `Encerramento aprovado. ${request.waiter_name} pode sair do turno.`
+          : `Encerramento recusado.${data.responseMessage ? ` Motivo: ${data.responseMessage}` : ''}`;
       await this.staffMessages.send(
         {
           senderStaffId: data.managerId,
           threadId: request.thread_id,
-          body:
-            status === 'approved'
-              ? `Encerramento aprovado. ${request.waiter_name} pode sair do turno.`
-              : `Encerramento recusado.${data.responseMessage ? ` Motivo: ${data.responseMessage}` : ''}`,
+          body: `${responseBody}\nSHIFT_END_REQUEST:${request.id}`,
         },
         data.slug,
       );

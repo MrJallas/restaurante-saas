@@ -365,6 +365,10 @@ function extractShiftEndRequestId(content: string): string | null {
   return match?.[1] ?? null;
 }
 
+function hasShiftEndDecision(content: string): boolean {
+  return /Encerramento (aprovado|recusado)/i.test(content);
+}
+
 function cleanSystemToken(content: string): string {
   return content.replace(/\n?SHIFT_END_REQUEST:[0-9a-f-]{36}/i, '').trim();
 }
@@ -680,6 +684,16 @@ export function ScreenStaffMessageThread({
   const [error, setError] = useState('');
   const [myStaffId, setMyStaffId] = useState(managerId ?? '');
   const [pendingDecisionId, setPendingDecisionId] = useState<string | null>(null);
+  const decidedShiftEndRequests = useMemo(() => {
+    const ids = new Set<string>();
+    for (const message of messages) {
+      const content = message.content ?? (message as unknown as { body?: string }).body ?? '';
+      if (!hasShiftEndDecision(content)) continue;
+      const requestId = extractShiftEndRequestId(content);
+      if (requestId) ids.add(requestId);
+    }
+    return ids;
+  }, [messages]);
 
   useEffect(() => {
     if (managerId) {
@@ -807,10 +821,20 @@ export function ScreenStaffMessageThread({
             Sem mensagens nesta conversa.
           </div>
         ) : (
-          messages.map((m) => {
+          messages.map((m, index) => {
             const isMine = m.fromRole === 'staff' && !!myStaffId && m.staffId === myStaffId;
             const content = m.content ?? (m as unknown as { body?: string }).body ?? '';
             const shiftEndRequestId = extractShiftEndRequestId(content);
+            const hasLaterTokenlessDecision = messages
+              .slice(index + 1)
+              .some((message) => {
+                const laterContent =
+                  message.content ?? (message as unknown as { body?: string }).body ?? '';
+                return hasShiftEndDecision(laterContent) && !extractShiftEndRequestId(laterContent);
+              });
+            const shiftEndRequestDecided =
+              !!shiftEndRequestId &&
+              (decidedShiftEndRequests.has(shiftEndRequestId) || hasLaterTokenlessDecision);
             const visibleContent = cleanSystemToken(content);
             const createdAt =
               m.createdAt ?? (m as unknown as { sentAt?: string }).sentAt ?? new Date().toISOString();
@@ -842,7 +866,7 @@ export function ScreenStaffMessageThread({
                   {m.staffName ?? (m.fromRole === 'staff' ? 'Staff' : 'Cliente')} · {new Date(createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                 </div>
                 <div>{visibleContent}</div>
-                {shiftEndRequestId && (
+                {shiftEndRequestId && !shiftEndRequestDecided && (
                   <div
                     style={{
                       display: 'flex',
