@@ -67,7 +67,11 @@ function ManagerMesaInner() {
           const qs = new URLSearchParams({
             slug,
             tableNumber: String(n),
+            seats: String(t.capacity),
           });
+          const party = t.party ?? t.seats;
+          if (party != null) qs.set('party', String(party));
+          if (t.observation) qs.set('observation', t.observation);
           router.replace(`/manager/table-menu/${t.active_session_id}?${qs.toString()}`);
           setState({ kind: 'redirecting', sessionId: t.active_session_id });
         } else {

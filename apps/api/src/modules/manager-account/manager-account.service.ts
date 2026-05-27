@@ -217,7 +217,7 @@ export class ManagerAccountService {
         `SELECT COUNT(*)::int AS critical_alerts
            FROM complaints
           WHERE submitted_at >= CURRENT_DATE
-            AND status NOT IN ('closed', 'resolved')`,
+            AND closed_at IS NULL`,
       ),
       this.tenantConn.query(
         `SELECT name

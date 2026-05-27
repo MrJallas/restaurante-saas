@@ -32,6 +32,8 @@ interface TableRow {
   active_session_id: string | null;
   active_session_started_at: string | null;
   participant_count: number | null;
+  staff_party_override: number | null;
+  staff_note: string | null;
   has_vip: boolean | null;
   open_release_id: string | null;
   open_release_expires_at: string | null;
@@ -121,6 +123,8 @@ export class HostService {
          active_ts.id                            AS active_session_id,
          active_ts.created_at                    AS active_session_started_at,
          active_ts.participant_count             AS participant_count,
+         active_ts.staff_party_override          AS staff_party_override,
+         active_ts.staff_note                    AS staff_note,
          active_ts.has_vip                       AS has_vip,
          open_release.id                         AS open_release_id,
          open_release.expires_at                 AS open_release_expires_at
@@ -129,7 +133,9 @@ export class HostService {
        LEFT JOIN LATERAL (
          SELECT ts.id,
                 ts.created_at,
-                COALESCE(pc.cnt, 0)                              AS participant_count,
+                ts.staff_party_override,
+                ts.staff_note,
+                COALESCE(ts.staff_party_override, pc.cnt, 0)      AS participant_count,
                 ('vip' = ANY(COALESCE(ts.flags, '{}'::text[])))  AS has_vip
          FROM table_sessions ts
          LEFT JOIN (
@@ -729,6 +735,78 @@ export class HostService {
     };
   }
 
+  async updateTableSessionMeta(
+    tableNumber: number,
+    body: { sessionId?: string; party?: number; note?: string; staffId?: string },
+    slug: string,
+  ): Promise<HostTableDto> {
+    if (body.party == null && body.note == null) {
+      throw new HttpException(
+        'Informe pessoas ou observacao pra atualizar a mesa.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (body.party != null && (!Number.isInteger(body.party) || body.party < 1 || body.party > 99)) {
+      throw new HttpException(
+        'A quantidade de pessoas deve ficar entre 1 e 99.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const tableRow = await this.findTableByNumber(tableNumber);
+    if (!tableRow) {
+      throw new NotFoundException(`Mesa ${tableNumber} nao encontrada.`);
+    }
+
+    const activeSession = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `SELECT id FROM table_sessions
+          WHERE table_id = $1 AND status = 'active'
+          ORDER BY created_at DESC LIMIT 1`,
+        [tableRow.id],
+      ),
+    )[0];
+    if (!activeSession) {
+      throw new HttpException(
+        'Sem sessao ativa pra atualizar a mesa.',
+        HttpStatus.CONFLICT,
+      );
+    }
+    if (body.sessionId && body.sessionId !== activeSession.id) {
+      throw new HttpException(
+        'A sessao informada nao corresponde a mesa ativa.',
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    const setClause: string[] = ['updated_at = now()'];
+    const params: unknown[] = [activeSession.id];
+    if (body.party != null) {
+      setClause.push(`staff_party_override = $${params.length + 1}`);
+      params.push(body.party);
+    }
+    if (body.note != null) {
+      setClause.push(`staff_note = NULLIF($${params.length + 1}, '')`);
+      params.push(body.note.trim());
+    }
+    setClause.push(`staff_meta_updated_by = $${params.length + 1}`);
+    params.push(body.staffId ?? null);
+    setClause.push('staff_meta_updated_at = now()');
+
+    await this.tenantConn.query(
+      `UPDATE table_sessions
+          SET ${setClause.join(', ')}
+        WHERE id = $1 AND status = 'active'`,
+      params,
+    );
+
+    const table = (await this.listTables()).find((row) => row.number === tableNumber);
+    if (!table) {
+      throw new NotFoundException(`Mesa ${tableNumber} nao encontrada apos atualizar.`);
+    }
+    return table;
+  }
+
   // ─── Waitlist ───
 
   async listWaitlist(): Promise<WaitlistEntryDto[]> {
@@ -961,6 +1039,8 @@ export class HostService {
       seats: row.participant_count ?? undefined,
       since: row.active_session_started_at ?? undefined,
       waiter_initial: null,
+      party: row.participant_count ?? undefined,
+      observation: row.staff_note ?? null,
       active_session_id: row.active_session_id,
     };
   }

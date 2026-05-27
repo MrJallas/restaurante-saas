@@ -23,6 +23,7 @@ import {
   LiberateTableDto,
   ToggleVipDto,
   UpdateReservationDto,
+  UpdateTableSessionMetaDto,
   UpdateSwapDto,
 } from './dto/host.dto';
 import { HostService } from './host.service';
@@ -97,6 +98,17 @@ export class HostController {
   ) {
     const staffId = this.callerResolver.requireStaffId(req);
     return this.service.toggleVip(tableNumber, { ...body, staffId }, slug);
+  }
+
+  @Patch('tables/:tableNumber/session')
+  async updateTableSessionMeta(
+    @Param('slug') slug: string,
+    @Param('tableNumber', ParseIntPipe) tableNumber: number,
+    @Body() body: UpdateTableSessionMetaDto,
+    @Req() req: Request,
+  ) {
+    const staffId = this.callerResolver.requireStaffId(req);
+    return this.service.updateTableSessionMeta(tableNumber, { ...body, staffId }, slug);
   }
 
   // ─── Swap ───

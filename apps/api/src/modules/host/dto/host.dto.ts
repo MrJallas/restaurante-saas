@@ -7,6 +7,7 @@ import {
   IsUUID,
   Length,
   Matches,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -77,6 +78,29 @@ export class ToggleVipDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+
+  @IsOptional()
+  @IsUUID()
+  staffId?: string;
+}
+
+// ─── Active table session metadata ───
+
+export class UpdateTableSessionMetaDto {
+  @IsOptional()
+  @IsUUID()
+  sessionId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  party?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(180)
+  note?: string;
 
   @IsOptional()
   @IsUUID()

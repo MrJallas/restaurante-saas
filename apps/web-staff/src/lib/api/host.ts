@@ -15,6 +15,8 @@ export interface HostTableEntry {
   sector: string;
   status: 'livre' | 'liberada' | 'ocupada' | 'alerta';
   seats?: number;
+  party?: number;
+  observation?: string | null;
   since?: string;
   waiter_initial?: string | null;
   /** UUID do table_sessions ativo (null se livre). */
@@ -64,6 +66,17 @@ export function swapTable(
   body: { fromTable: number; toTable: number; sessionId?: string },
 ): Promise<{ ok: true; sessionId: string }> {
   return staffPost<{ ok: true; sessionId: string }>(`/${tenantSlug}/host/tables/swap`, body);
+}
+
+export function updateHostTableSession(
+  tenantSlug: string,
+  tableNumber: number,
+  body: { sessionId?: string; party?: number; note?: string },
+): Promise<HostTableEntry> {
+  return staffPatch<HostTableEntry>(
+    `/${tenantSlug}/host/tables/${tableNumber}/session`,
+    body,
+  );
 }
 
 // ─── Host inbox / avisos ───

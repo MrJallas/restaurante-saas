@@ -16,3 +16,4 @@ Slug: restaurant_dev
 - 09-notificacoes: http://localhost:3003/manager/notifications?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager | forbidden=[] | hasError=false
 - 10-seguranca: http://localhost:3003/manager/seguranca?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager | forbidden=[] | hasError=false
 - 11-aparencia: http://localhost:3003/manager/aparencia?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager | forbidden=[] | hasError=false
+- 15-table-menu-persisted: http://localhost:3004/manager/mesa/91?slug=restaurant_dev&managerId=b629f117-1337-42a0-a08d-591f584ecca5 | API worktree=http://localhost:3011/api | editou pessoas/observacao, recarregou e manteve o valor vindo do backend | hasError=false

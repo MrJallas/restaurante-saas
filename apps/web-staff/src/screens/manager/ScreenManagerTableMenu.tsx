@@ -7,7 +7,7 @@
 // Transferir, Fechar). VIP toggle lives in the MoreSheet of this screen
 // (per docs/features/vip-customer.md).
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -19,7 +19,12 @@ import {
   MContactClientSheet,
 } from '../../components/manager';
 import { manager } from '../../lib/api/manager';
-import { liberateTable, swapTable } from '../../lib/api/host';
+import {
+  liberateTable,
+  listHostTables,
+  swapTable,
+  updateHostTableSession,
+} from '../../lib/api/host';
 import type { SessionFlag, SessionFlagToggleResponseDto } from '@restaurant/shared-types';
 
 export interface ScreenManagerTableMenuProps {
@@ -62,7 +67,7 @@ export function ScreenManagerTableMenu({
 }: ScreenManagerTableMenuProps) {
   const C = useG(!!dark);
   const router = useRouter();
-  const api = manager(tenantSlug);
+  const api = useMemo(() => manager(tenantSlug), [tenantSlug]);
   const [flags, setFlags] = useState<SessionFlag[]>(initialFlags);
   const [moreOpen, setMoreOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
@@ -106,29 +111,42 @@ export function ScreenManagerTableMenu({
   }, [tableSessionId, api]);
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(`manager:table-menu:${tableSessionId}`);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { partyCount?: number; note?: string };
-      if (typeof parsed.partyCount === 'number') setPartyCount(parsed.partyCount);
-      if (typeof parsed.note === 'string') setNote(parsed.note);
-    } catch {
-      /* ignore local override load */
-    }
-  }, [tableSessionId]);
+    let cancelled = false;
+    listHostTables(tenantSlug)
+      .then((tables) => {
+        if (cancelled) return;
+        const table = tables.find(
+          (row) => row.active_session_id === tableSessionId || row.number === tableNumber,
+        );
+        if (!table) return;
+        const nextParty = table.party ?? table.seats;
+        if (nextParty != null) setPartyCount(nextParty);
+        setNote(table.observation ?? '');
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantSlug, tableSessionId, tableNumber]);
 
-  const saveLocalTableEdit = (nextParty: number, nextNote: string) => {
-    setPartyCount(nextParty);
-    setNote(nextNote);
+  const saveTableEdit = async (nextParty: number, nextNote: string) => {
+    if (busy) return;
+    setBusy(true);
     try {
-      window.localStorage.setItem(
-        `manager:table-menu:${tableSessionId}`,
-        JSON.stringify({ partyCount: nextParty, note: nextNote }),
-      );
-    } catch {
-      /* ignore local override save */
+      const table = await updateHostTableSession(tenantSlug, tableNumber, {
+        sessionId: tableSessionId,
+        party: nextParty,
+        note: nextNote,
+      });
+      setPartyCount(table.party ?? table.seats ?? nextParty);
+      setNote(table.observation ?? nextNote);
+      setEditOpen(false);
+      flash('Dados da mesa salvos.');
+    } catch (err) {
+      flash(err instanceof Error ? err.message : 'Não foi possível atualizar a mesa.');
+    } finally {
+      setBusy(false);
     }
-    flash('Dados da mesa atualizados.');
   };
 
   const isVip = flags.includes('vip');
@@ -150,7 +168,7 @@ export function ScreenManagerTableMenu({
   };
 
   const addPerson = () => {
-    saveLocalTableEdit(partyCount + 1, note);
+    void saveTableEdit(Math.min(99, partyCount + 1), note);
   };
 
   const closeTable = async () => {
@@ -401,10 +419,10 @@ export function ScreenManagerTableMenu({
           initialParty={partyCount}
           initialNote={note}
           seats={seats}
+          busy={busy}
           onClose={() => setEditOpen(false)}
           onSave={(nextParty, nextNote) => {
-            saveLocalTableEdit(nextParty, nextNote);
-            setEditOpen(false);
+            void saveTableEdit(nextParty, nextNote);
           }}
         />
       )}
@@ -626,6 +644,7 @@ function EditTableSheet({
   initialParty,
   initialNote,
   seats,
+  busy,
   onClose,
   onSave,
 }: {
@@ -633,6 +652,7 @@ function EditTableSheet({
   initialParty: number;
   initialNote: string;
   seats: number;
+  busy: boolean;
   onClose: () => void;
   onSave: (party: number, note: string) => void;
 }) {
@@ -714,11 +734,16 @@ function EditTableSheet({
           />
         </label>
         <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-          <button type="button" onClick={onClose} style={sheetSecondaryStyle(C)}>
+          <button type="button" onClick={onClose} disabled={busy} style={sheetSecondaryStyle(C)}>
             Cancelar
           </button>
-          <button type="button" onClick={() => onSave(party, note)} style={sheetPrimaryStyle(C)}>
-            Salvar
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onSave(party, note)}
+            style={{ ...sheetPrimaryStyle(C), cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.62 : 1 }}
+          >
+            {busy ? 'Salvando...' : 'Salvar'}
           </button>
         </div>
       </div>
