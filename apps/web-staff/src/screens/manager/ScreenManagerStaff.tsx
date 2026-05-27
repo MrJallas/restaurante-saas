@@ -110,13 +110,6 @@ export function ScreenManagerStaff({
   const [roleFilter, setRoleFilter] = useState<'todos' | StaffMember['role'] | 'cozinha+bar'>('todos');
   const [openShift, setOpenShift] = useState<ShiftId | null>(null);
   const [contactTarget, setContactTarget] = useState<ManagerStaffTarget | null>(null);
-  // Round 18 (Onda 2A): stub feedback pra ActionPills sem backend ainda.
-  // Antes: 3 de 4 pills sem onClick (silencioso). Agora: toast curto.
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
-  const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -478,7 +471,6 @@ export function ScreenManagerStaff({
                 dark={dark}
                 p={p}
                 onContact={(t) => setContactTarget(t)}
-                onStubAction={showStub}
               />
             ))
           )}
@@ -703,31 +695,6 @@ export function ScreenManagerStaff({
         target={contactTarget ?? { staffId: '', name: '' }}
         onClose={() => setContactTarget(null)}
       />
-
-      {stubMsg && (
-        <div
-          role="status"
-          style={{
-            position: 'fixed',
-            left: '50%',
-            bottom: 90,
-            transform: 'translateX(-50%)',
-            zIndex: 80,
-            padding: '12px 18px',
-            borderRadius: 999,
-            background: C.ink,
-            color: C.bg,
-            fontSize: 13,
-            fontWeight: 600,
-            letterSpacing: -0.1,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-            maxWidth: 'calc(100vw - 32px)',
-            textAlign: 'center',
-          }}
-        >
-          {stubMsg}
-        </div>
-      )}
     </div>
   );
 }
@@ -829,12 +796,10 @@ function ChipRow({
 function StaffCard({
   p,
   onContact,
-  onStubAction,
   dark,
 }: {
   p: StaffMember;
   onContact: (t: ManagerStaffTarget) => void;
-  onStubAction?: (action: string) => void;
   dark?: boolean;
 }) {
   const router = useRouter();
@@ -857,6 +822,13 @@ function StaffCard({
     );
     const slug = search.get('slug') ?? '';
     router.push(`/manager/equipe/${p.id}${slug ? `?slug=${slug}` : ''}`);
+  };
+  const withSlug = (path: string) => {
+    const search = new URLSearchParams(
+      typeof window !== 'undefined' ? window.location.search : '',
+    );
+    const slug = search.get('slug');
+    return slug ? `${path}?slug=${slug}` : path;
   };
 
   return (
@@ -963,7 +935,7 @@ function StaffCard({
               <ActionPill
                 filled
                 dark={dark}
-                onClick={() => onStubAction?.('Realocar mesas')}
+                onClick={() => router.push(withSlug('/manager/equipe/sobrecarga'))}
               >
                 Realocar mesas
               </ActionPill>
@@ -985,10 +957,10 @@ function StaffCard({
             </>
           ) : (
             <>
-              <ActionPill dark={dark} onClick={() => onStubAction?.('Ver mesas')}>
+              <ActionPill dark={dark} onClick={() => router.push(withSlug('/manager/operacoes/mesas-ativas'))}>
                 Ver mesas
               </ActionPill>
-              <ActionPill dark={dark} onClick={() => onStubAction?.('Mover mesa')}>
+              <ActionPill dark={dark} onClick={() => router.push(withSlug('/manager/equipe/sobrecarga'))}>
                 Mover mesa
               </ActionPill>
             </>

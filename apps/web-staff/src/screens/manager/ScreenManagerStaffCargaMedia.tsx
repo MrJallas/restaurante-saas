@@ -9,10 +9,7 @@
 //
 // Backend wiring (Round 18 Onda 4):
 //   • REAL: GET /:slug/staff?activeOnly=true → conta garçons ativos.
-//     TODO(round19): wire GET /:slug/staff/load endpoint pra distribuição
-//     real. Por enquanto mock derivado igual ao do ScreenManagerStaff.
-//   • STUB: "Realocar mesas", "Pausar pedidos novos", "Chamar funcionário
-//     da folga" — sem endpoints específicos pra esse fluxo ainda.
+//     Ações navegam para redistribuição, pausa de zona e editor de turnos.
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -52,7 +49,6 @@ export function ScreenManagerStaffCargaMedia({ dark, tenantSlug }: ScreenManager
   const backHref = slugQs ? `/manager/equipe?slug=${slugQs}` : '/manager/equipe';
 
   const [waiters, setWaiters] = useState<WaiterLoad[]>([]);
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,11 +79,6 @@ export function ScreenManagerStaffCargaMedia({ dark, tenantSlug }: ScreenManager
       cancelled = true;
     };
   }, [tenantSlug]);
-
-  const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 4 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
-  };
 
   const totalTables = waiters.reduce((acc, w) => acc + w.tables, 0);
   const heroNum = waiters.length > 0 ? totalTables / waiters.length : 0;
@@ -309,7 +300,7 @@ export function ScreenManagerStaffCargaMedia({ dark, tenantSlug }: ScreenManager
                 C={C}
                 filled
                 icon={Icon.table(13)}
-                onClick={() => showStub('Realocar mesas')}
+                onClick={() => router.push(slugQs ? `/manager/equipe/sobrecarga?slug=${slugQs}` : '/manager/equipe/sobrecarga')}
               >
                 Realocar mesas
               </ActionPill>
@@ -323,9 +314,9 @@ export function ScreenManagerStaffCargaMedia({ dark, tenantSlug }: ScreenManager
               <ActionPill
                 C={C}
                 icon={Icon.user(13)}
-                onClick={() => showStub('Chamar funcionário da folga')}
+                onClick={() => router.push(slugQs ? `/manager/equipe/turnos?slug=${slugQs}` : '/manager/equipe/turnos')}
               >
-                Chamar funcionário da folga
+                Ajustar reforço no turno
               </ActionPill>
             </div>
           </>
@@ -340,7 +331,6 @@ export function ScreenManagerStaffCargaMedia({ dark, tenantSlug }: ScreenManager
 
       <MBottomNav active="staff" dark={dark} onTo={(r) => router.push(r)} />
 
-      {stubMsg && <StubToast C={C}>{stubMsg}</StubToast>}
     </div>
   );
 }
@@ -501,33 +491,6 @@ function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.
         Como esse número é calculado
       </div>
       <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>{children}</div>
-    </div>
-  );
-}
-
-function StubToast({ C, children }: { C: ReturnType<typeof useG>; children: React.ReactNode }) {
-  return (
-    <div
-      role="status"
-      style={{
-        position: 'fixed',
-        left: '50%',
-        bottom: 90,
-        transform: 'translateX(-50%)',
-        zIndex: 80,
-        padding: '12px 18px',
-        borderRadius: 999,
-        background: C.ink,
-        color: C.bg,
-        fontSize: 13,
-        fontWeight: 600,
-        letterSpacing: -0.1,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-        maxWidth: 'calc(100vw - 32px)',
-        textAlign: 'center',
-      }}
-    >
-      {children}
     </div>
   );
 }

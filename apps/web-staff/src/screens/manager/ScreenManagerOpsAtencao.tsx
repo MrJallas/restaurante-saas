@@ -4,14 +4,10 @@
 //
 // Canvas spec: docs/design-canvas/handoff/garcom/garcom-screens-e.jsx:669-769
 // (variant `atencao`). Hero "N" mostarda + lista cada com 2 ações inline
-// + ActionPill "Adiantar todos" + Fórmula.
+// + Fórmula.
 //
 // Backend wiring (Round 18 Onda 4):
-//   • REAL: parcial via complaints / order-ratings list que estão a 80% da
-//     meta. Sem endpoint dedicado pra "alerts.severity=med" ainda, mock
-//     inline igual ao FALLBACK_ALERTS (sev=med) do ScreenManagerOps.
-//     TODO(round19): wire GET /:slug/alerts?severity=med.
-//   • STUB: ações inline + ActionPill "Adiantar todos" — toast stub.
+//   • REAL: reservado para GET /:slug/alerts?severity=med quando existir.
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -38,25 +34,6 @@ export interface ScreenManagerOpsAtencaoProps {
   tenantSlug: string;
 }
 
-// Mock fallback mirror FALLBACK_ALERTS (sev=med) do ScreenManagerOps.
-// TODO(round19): wire GET /:slug/alerts?severity=med.
-const FALLBACK_ATTENTION: AttentionAlert[] = [
-  {
-    id: 'a1',
-    msg: 'Mesa 6 sem garçom há 7 min',
-    sub: 'Olivia atende · 5 mesas · ainda dentro',
-    ts: '7 min',
-    actions: ['Avisar Olivia', 'Realocar'],
-  },
-  {
-    id: 'a2',
-    msg: 'Filé da mesa 11 está há 9 min na pass',
-    sub: 'meta cozinha 12 min · vai virar crítico',
-    ts: '9 min',
-    actions: ['Adiantar', 'Avisar cozinha'],
-  },
-];
-
 export function ScreenManagerOpsAtencao({ dark, tenantSlug: _tenantSlug }: ScreenManagerOpsAtencaoProps) {
   const C = useG(!!dark);
   const router = useRouter();
@@ -64,13 +41,7 @@ export function ScreenManagerOpsAtencao({ dark, tenantSlug: _tenantSlug }: Scree
   const slugQs = params.get('slug');
   const backHref = slugQs ? `/manager/operacoes?slug=${slugQs}` : '/manager/operacoes';
 
-  const items = FALLBACK_ATTENTION;
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
-
-  const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 4 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
-  };
+  const items: AttentionAlert[] = [];
 
   const empty = items.length === 0;
   // Render-time `new Date()` causa hydration mismatch (server em UTC,
@@ -166,17 +137,10 @@ export function ScreenManagerOpsAtencao({ dark, tenantSlug: _tenantSlug }: Scree
                   key={a.id}
                   C={C}
                   alert={a}
-                  onAction0={() => showStub(a.actions[0])}
-                  onAction1={() => showStub(a.actions[1])}
+                  onAction0={() => router.push(slugQs ? `/manager/mensagens?slug=${slugQs}` : '/manager/mensagens')}
+                  onAction1={() => router.push(slugQs ? `/manager/operacoes?slug=${slugQs}` : '/manager/operacoes')}
                 />
               ))}
-            </div>
-
-            <SectionLabel C={C}>O que fazer agora</SectionLabel>
-            <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <ActionPill C={C} icon={Icon.clock(13)} onClick={() => showStub('Adiantar todos')}>
-                Adiantar todos
-              </ActionPill>
             </div>
           </>
         )}
@@ -189,7 +153,6 @@ export function ScreenManagerOpsAtencao({ dark, tenantSlug: _tenantSlug }: Scree
 
       <MBottomNav active="ops" dark={dark} onTo={(r) => router.push(r)} alerts={items.length} />
 
-      {stubMsg && <StubToast C={C}>{stubMsg}</StubToast>}
     </div>
   );
 }
@@ -316,65 +279,6 @@ function AlertCard({
   );
 }
 
-function ActionPill({
-  C,
-  filled,
-  accent,
-  icon,
-  children,
-  onClick,
-}: {
-  C: ReturnType<typeof useG>;
-  filled?: boolean;
-  accent?: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        all: 'unset',
-        cursor: 'pointer',
-        boxSizing: 'border-box',
-        width: '100%',
-        padding: '12px 14px',
-        borderRadius: 12,
-        border: filled ? 'none' : `1px solid ${C.borderSoft}`,
-        background: filled ? accent || C.ink : 'transparent',
-        color: filled ? '#fff' : C.ink,
-        fontSize: 13.5,
-        fontWeight: 700,
-        letterSpacing: -0.1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'flex-start',
-        gap: 10,
-      }}
-    >
-      {icon && (
-        <span
-          style={{
-            width: 22,
-            height: 22,
-            borderRadius: 6,
-            background: filled ? 'rgba(255,255,255,0.18)' : C.surface,
-            color: filled ? '#fff' : C.ink,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          {icon}
-        </span>
-      )}
-      {children}
-    </button>
-  );
-}
-
 function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.ReactNode }) {
   return (
     <div
@@ -400,33 +304,6 @@ function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.
         Como esse número é calculado
       </div>
       <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>{children}</div>
-    </div>
-  );
-}
-
-function StubToast({ C, children }: { C: ReturnType<typeof useG>; children: React.ReactNode }) {
-  return (
-    <div
-      role="status"
-      style={{
-        position: 'fixed',
-        left: '50%',
-        bottom: 132,
-        transform: 'translateX(-50%)',
-        zIndex: 80,
-        padding: '12px 18px',
-        borderRadius: 999,
-        background: C.ink,
-        color: C.bg,
-        fontSize: 13,
-        fontWeight: 600,
-        letterSpacing: -0.1,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-        maxWidth: 'calc(100vw - 32px)',
-        textAlign: 'center',
-      }}
-    >
-      {children}
     </div>
   );
 }

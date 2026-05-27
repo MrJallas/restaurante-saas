@@ -131,11 +131,6 @@ export function ScreenManagerStaffDetail({
   const [performanceLoading, setPerformanceLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeWindow, setActiveWindow] = useState<Window>('7d');
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
-  const showStub = (m: string) => {
-    setStubMsg(`${m} · em desenvolvimento (Onda 4 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -215,7 +210,6 @@ export function ScreenManagerStaffDetail({
         dark={dark}
         title="Desempenho"
         left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={goBack} ariaLabel="Voltar" />}
-        right={<GIconBtn dark={dark} icon={Icon.more(20)} onClick={() => showStub('Mais ações')} ariaLabel="Mais ações" />}
       />
 
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: 100 }}>
@@ -498,31 +492,6 @@ export function ScreenManagerStaffDetail({
       )}
 
       <MBottomNav active="staff" dark={dark} onTo={(r) => router.push(r)} />
-
-      {stubMsg && (
-        <div
-          role="status"
-          style={{
-            position: 'fixed',
-            left: '50%',
-            bottom: 90,
-            transform: 'translateX(-50%)',
-            zIndex: 80,
-            padding: '12px 18px',
-            borderRadius: 999,
-            background: C.ink,
-            color: C.bg,
-            fontSize: 13,
-            fontWeight: 600,
-            letterSpacing: -0.1,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-            maxWidth: 'calc(100vw - 32px)',
-            textAlign: 'center',
-          }}
-        >
-          {stubMsg}
-        </div>
-      )}
     </div>
   );
 }

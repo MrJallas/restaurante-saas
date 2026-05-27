@@ -16,7 +16,7 @@
 // (M_TEAM, NEXT_RESERVATIONS) are clearly marked.
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   useG,
   G_FONT,
@@ -28,11 +28,13 @@ import {
   MPill,
   MQuickActionsBar,
   MInProgressCard,
+  MContactClientSheet,
   type InProgressKind,
   type InProgressState,
 } from '../../components/manager';
 import { manager, staffRosterApi } from '../../lib/api/manager';
 import { useManagerEvents } from '../../hooks/useManagerEvents';
+import type { ComplaintDto } from '@restaurant/shared-types';
 
 // ─── Mock data — bottlenecks + reservations ────────────────────
 // Will be wired to /alerts and /host/reservations once those endpoints land.
@@ -113,6 +115,7 @@ interface InProgressItem {
   complaintTable?: number;
   complaintCustomer?: string;
   complaintSummary?: string;
+  complaint?: ComplaintDto;
   requesterName?: string;
   requestedTable?: number;
   lgpdRequestNumber?: string;
@@ -138,9 +141,12 @@ export function ScreenManagerHomeA({
 }: ScreenManagerHomeAProps) {
   const C = useG(!!dark);
   const router = useRouter();
-  const api = manager(tenantSlug);
+  const searchParams = useSearchParams();
+  const replyComplaintId = searchParams.get('replyComplaint');
+  const api = useMemo(() => manager(tenantSlug), [tenantSlug]);
 
   const [inProgress, setInProgress] = useState<InProgressItem[]>([]);
+  const [replyComplaint, setReplyComplaint] = useState<ComplaintDto | null>(null);
   const [team, setTeam] = useState(M_TEAM_FALLBACK);
   const [, setRefreshTick] = useState(0);
   // Round 18 (Onda 2A): alerts agora é state pra que o X (Dispensar)
@@ -204,8 +210,17 @@ export function ScreenManagerHomeA({
             complaintTable: c.tableNumber,
             complaintCustomer: c.customerName,
             complaintSummary: c.description,
+            complaint: c,
             toRoute: `/manager/chamado/${c.id}?kind=complaint`,
           });
+        }
+        if (replyComplaintId && !replyComplaint) {
+          const pendingReply = complaints.find(
+            (c) => c.id === replyComplaintId && c.status !== 'resolved',
+          );
+          if (pendingReply?.tableSessionId && pendingReply.customerId) {
+            setReplyComplaint(pendingReply);
+          }
         }
 
         // Pending late-arrivals
@@ -252,7 +267,7 @@ export function ScreenManagerHomeA({
         // silent — keep last good state
       }
     },
-    [api],
+    [api, replyComplaint, replyComplaintId],
   );
 
   useEffect(() => {
@@ -390,8 +405,20 @@ export function ScreenManagerHomeA({
                   staffMessageFromName={op.staffMessageFromName}
                   staffMessagePreview={op.staffMessagePreview}
                   staffMessageCount={op.staffMessageCount}
-                  onTap={() => router.push(op.toRoute)}
-                  onPrimary={() => router.push(op.toRoute)}
+                  onTap={() =>
+                    op.kind === 'complaint' &&
+                    op.complaint?.tableSessionId &&
+                    op.complaint.customerId
+                      ? setReplyComplaint(op.complaint)
+                      : router.push(op.toRoute)
+                  }
+                  onPrimary={() =>
+                    op.kind === 'complaint' &&
+                    op.complaint?.tableSessionId &&
+                    op.complaint.customerId
+                      ? setReplyComplaint(op.complaint)
+                      : router.push(op.toRoute)
+                  }
                 />
               ))}
             </div>
@@ -704,6 +731,57 @@ export function ScreenManagerHomeA({
       </div>
 
       <MBottomNav active="home" dark={dark} onTo={(r) => router.push(r)} alerts={alerts.length} />
+
+      {replyComplaint && replyComplaint.tableSessionId && replyComplaint.customerId && (
+        <MContactClientSheet
+          open={!!replyComplaint}
+          dark={dark}
+          tenantSlug={tenantSlug}
+          tenantId={tenantSlug}
+          tableSessionId={replyComplaint.tableSessionId}
+          customerId={replyComplaint.customerId}
+          customerName={replyComplaint.customerName}
+          tableNumber={replyComplaint.tableNumber}
+          waitingContext="reclamação aberta"
+          orderHint={replyComplaint.description}
+          managerName="Gerência"
+          draftStorageKey={`manager:complaint-draft:${replyComplaint.id}`}
+          suggestionOverrides={[
+            { id: 'on-the-way', text: 'Estou indo até a mesa agora.', icon: 'user' },
+            {
+              id: 'kitchen-check',
+              text: 'Vou verificar com a cozinha e já volto com uma resposta.',
+              icon: 'clock',
+            },
+            {
+              id: 'courtesy',
+              text: 'Vou registrar uma cortesia pela espera.',
+              icon: 'gift',
+              linksTo: 'mgr-compensate',
+            },
+          ]}
+          onClose={() => setReplyComplaint(null)}
+          onLinkTo={(route) => {
+            if (route === 'mgr-compensate') {
+              const qs = new URLSearchParams({
+                slug: tenantSlug,
+                tableNumber: String(replyComplaint.tableNumber),
+                tableSessionId: replyComplaint.tableSessionId,
+              });
+              router.push(`/manager/compensate?${qs.toString()}`);
+            }
+          }}
+          onSent={(content) => {
+            api.complaints
+              .respond(replyComplaint.id, {
+                content,
+                chipAction: 'custom',
+              })
+              .then(() => refreshAll())
+              .catch(() => refreshAll());
+          }}
+        />
+      )}
 
     </div>
   );

@@ -48,6 +48,11 @@ export function ScreenCallDetail({
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState('');
   const [chipAction, setChipAction] = useState<ComplaintChipAction>('on-the-way');
+  const quickReplies: Array<{ id: ComplaintChipAction; label: string; text: string }> = [
+    { id: 'on-the-way', label: 'Estou indo', text: 'Estou indo até a mesa agora.' },
+    { id: 'kitchen-check', label: 'Vou ver na cozinha', text: 'Vou verificar com a cozinha e já volto com uma resposta.' },
+    { id: 'courtesy', label: 'Cortesia', text: 'Vou registrar uma cortesia pela espera.' },
+  ];
 
   useEffect(() => {
     if (kind !== 'complaint') return;
@@ -145,19 +150,15 @@ export function ScreenCallDetail({
               Resposta padrão
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {(
-                [
-                  { id: 'on-the-way', label: 'Estou indo' },
-                  { id: 'kitchen-check', label: 'Vou ver na cozinha' },
-                  { id: 'courtesy', label: 'Cortesia' },
-                  { id: 'custom', label: 'Texto livre' },
-                ] as { id: ComplaintChipAction; label: string }[]
-              ).map((c) => {
+              {quickReplies.map((c) => {
                 const sel = chipAction === c.id;
                 return (
                   <button
                     key={c.id}
-                    onClick={() => setChipAction(c.id)}
+                    onClick={() => {
+                      setChipAction(c.id);
+                      setDraft(c.text);
+                    }}
                     style={{
                       all: 'unset',
                       cursor: 'pointer',

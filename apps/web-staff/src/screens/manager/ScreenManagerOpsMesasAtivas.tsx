@@ -12,7 +12,7 @@
 //     endpoint). A LISTA inteira de mesas com sessão aberta precisa de
 //     endpoint dedicado `/tables/open` que não existe ainda.
 //     TODO(round19): wire GET /:slug/tables/open com tempo aberta + R$.
-//   • STUB: nenhum (a single ActionPill é navegação real pro mapa).
+//   • Ação inferior navega de volta para o mapa.
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';

@@ -4,17 +4,12 @@
 //
 // Canvas spec: docs/design-canvas/handoff/garcom/garcom-screens-e.jsx:569-667
 // (variant `criticos`). Hero "N" críticos vermelho + lista cada com 2
-// ações inline + 2 ActionPills "Resolver todos em sequência" / "Avisar
-// todos os garçons" + Fórmula.
+// ações inline + Fórmula.
 //
 // Backend wiring (Round 18 Onda 4):
 //   • REAL: GET /:slug/complaints + GET /:slug/late-arrival-requests
 //     populam o pool. Aqui filtramos só os "críticos" (status pendente
-//     + além da meta). Por enquanto mock inline igual aos FALLBACK_ALERTS
-//     do ScreenManagerOps quando os endpoints vierem vazios.
-//   • STUB: ações inline ("Resolver", "Avisar Caleb", etc) e ActionPills
-//     do bottom ("Resolver todos", "Avisar garçons") — sem endpoint
-//     dedicado pra alert.resolve(id) ainda. Toast stub.
+//     + além da meta).
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -43,27 +38,6 @@ export interface ScreenManagerOpsCriticosProps {
   tenantSlug: string;
 }
 
-// Mock fallback bate com FALLBACK_ALERTS (sev=high) do ScreenManagerOps.
-// TODO(round19): replace com GET /:slug/alerts?severity=high quando endpoint existir.
-const FALLBACK_CRITICALS: CriticalAlert[] = [
-  {
-    id: 'c1',
-    mesa: 14,
-    msg: 'Risoto da mesa 14 esfriou',
-    sub: '12 min na pass · cliente esperando',
-    ts: '4 min',
-    actions: ['Resolver', 'Avisar Caleb'],
-  },
-  {
-    id: 'c2',
-    mesa: 21,
-    msg: 'Mesa 21 chamou 3× sem resposta',
-    sub: 'Caleb atende · sobrecarga 7 mesas',
-    ts: '6 min',
-    actions: ['Atender agora', 'Realocar'],
-  },
-];
-
 export function ScreenManagerOpsCriticos({ dark, tenantSlug }: ScreenManagerOpsCriticosProps) {
   const C = useG(!!dark);
   const router = useRouter();
@@ -71,12 +45,11 @@ export function ScreenManagerOpsCriticos({ dark, tenantSlug }: ScreenManagerOpsC
   const slugQs = params.get('slug');
   const backHref = slugQs ? `/manager/operacoes?slug=${slugQs}` : '/manager/operacoes';
 
-  const [items, setItems] = useState<CriticalAlert[]>(FALLBACK_CRITICALS);
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
+  const [items, setItems] = useState<CriticalAlert[]>([]);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     // Tenta puxar complaints reais (= "críticos" mais próximos do que temos).
-    // Se vier vazio, mantém fallback canvas.
     let cancelled = false;
     manager(tenantSlug)
       .complaints.list()
@@ -106,9 +79,19 @@ export function ScreenManagerOpsCriticos({ dark, tenantSlug }: ScreenManagerOpsC
     };
   }, [tenantSlug]);
 
-  const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 4 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
+  const setTimedFeedback = (message: string) => {
+    setFeedback(message);
+    setTimeout(() => setFeedback(null), 2800);
+  };
+
+  const resolveComplaint = async (id: string) => {
+    try {
+      await manager(tenantSlug).complaints.resolve(id);
+      setItems((prev) => prev.filter((item) => item.id !== id));
+      setTimedFeedback('Chamado marcado como resolvido.');
+    } catch (err) {
+      setTimedFeedback(err instanceof Error ? err.message : 'Não foi possível resolver o chamado.');
+    }
   };
 
   // Render-time `new Date()` causa hydration mismatch (server em UTC,
@@ -204,23 +187,14 @@ export function ScreenManagerOpsCriticos({ dark, tenantSlug }: ScreenManagerOpsC
                   key={a.id}
                   C={C}
                   alert={a}
-                  onAction0={() => showStub(a.actions[0])}
-                  onAction1={() => showStub(a.actions[1])}
+                  onAction0={() => router.push(`/manager?slug=${tenantSlug}&replyComplaint=${encodeURIComponent(a.id)}`)}
+                  onAction1={() => resolveComplaint(a.id)}
                 />
               ))}
             </div>
 
             <SectionLabel C={C}>O que fazer agora</SectionLabel>
             <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <ActionPill
-                C={C}
-                filled
-                accent="#A12626"
-                icon={Icon.flame(13)}
-                onClick={() => showStub('Resolver todos em sequência')}
-              >
-                Resolver todos em sequência
-              </ActionPill>
               <ActionPill
                 C={C}
                 icon={Icon.bell(13)}
@@ -241,7 +215,7 @@ export function ScreenManagerOpsCriticos({ dark, tenantSlug }: ScreenManagerOpsC
 
       <MBottomNav active="ops" dark={dark} onTo={(r) => router.push(r)} alerts={items.length} />
 
-      {stubMsg && <StubToast C={C}>{stubMsg}</StubToast>}
+      {feedback && <InlineToast C={C}>{feedback}</InlineToast>}
     </div>
   );
 }
@@ -456,7 +430,7 @@ function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.
   );
 }
 
-function StubToast({ C, children }: { C: ReturnType<typeof useG>; children: React.ReactNode }) {
+function InlineToast({ C, children }: { C: ReturnType<typeof useG>; children: React.ReactNode }) {
   return (
     <div
       role="status"

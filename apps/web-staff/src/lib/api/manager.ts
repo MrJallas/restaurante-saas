@@ -389,6 +389,75 @@ export const alertsApi = (slug: string) => ({
 });
 
 // ─────────────────────────────────────────────────────────────
+// Manager account/preferences/shift logs
+// ─────────────────────────────────────────────────────────────
+
+export interface ManagerPreferences {
+  notifications: Record<string, boolean>;
+  theme: 'light' | 'dark' | 'auto';
+  twoFactorEnabled: boolean;
+  updatedAt: string | null;
+}
+
+export interface ManagerSecuritySession {
+  id: string;
+  label: string;
+  ip: string;
+  userAgent: string;
+  current: boolean;
+  lastSeenAt: string;
+}
+
+export interface ManagerShiftLog {
+  id: string;
+  staffId: string;
+  staffName: string;
+  shiftLabel: string;
+  startedAt: string;
+  endedAt: string;
+  salesCents: number;
+  orders: number;
+  tablesServed: number;
+  criticalAlerts: number;
+  avgTicketCents: number;
+  waitersOnShift: string[];
+  createdAt: string;
+}
+
+export const managerAccountApi = (slug: string) => ({
+  getPreferences: () => staffGet<ManagerPreferences>(`/${slug}/manager/preferences`),
+  updatePreferences: (body: Partial<ManagerPreferences>) =>
+    staffApi<ManagerPreferences>(`/${slug}/manager/preferences`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  changePin: (body: { currentPin: string; nextPin: string }) =>
+    staffPost<{ message_user: string; code: string }>(
+      `/${slug}/manager/security/change-pin`,
+      body,
+    ),
+  sessions: () =>
+    staffGet<{ sessions: ManagerSecuritySession[] }>(
+      `/${slug}/manager/security/sessions`,
+    ),
+  revokeSession: (sessionId: string) =>
+    staffDelete<{ ok: true }>(
+      `/${slug}/manager/security/sessions/${encodeURIComponent(sessionId)}`,
+    ),
+  endShift: () => staffPost<ManagerShiftLog>(`/${slug}/manager/shift-logs/end`, {}),
+  shiftLogs: (params?: { date?: string; staff?: string; shift?: string }) => {
+    const search = new URLSearchParams();
+    if (params?.date) search.set('date', params.date);
+    if (params?.staff) search.set('staff', params.staff);
+    if (params?.shift) search.set('shift', params.shift);
+    const query = search.toString();
+    return staffGet<{ shifts: ManagerShiftLog[] }>(
+      `/${slug}/manager/shift-logs${query ? `?${query}` : ''}`,
+    );
+  },
+});
+
+// ─────────────────────────────────────────────────────────────
 // Kitchen queue / reorder
 // ─────────────────────────────────────────────────────────────
 
@@ -689,6 +758,7 @@ export function manager(slug: string) {
     shifts: shiftsApi(slug),
     assistant: assistantApi(slug),
     alerts: alertsApi(slug),
+    account: managerAccountApi(slug),
     kitchen: kitchenApi(slug),
     me: managerMe(slug),
   };

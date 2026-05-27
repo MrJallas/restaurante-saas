@@ -1,0 +1,146 @@
+[
+  {
+    "name": "01-painel",
+    "url": "http://localhost:3003/manager?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager",
+    "file": "/Users/calebmedeiros/meus_projetos/restauranteSaaS-worktrees/prompt-05-gerente/qa-reports/gerente-prompt-05-browser/01-painel.png",
+    "forbidden": [],
+    "hasError": false,
+    "h1": [
+      "Painel"
+    ],
+    "hasInProgress": false
+  },
+  {
+    "name": "02-reclamacao-overlay",
+    "url": "http://localhost:3003/manager?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager&replyComplaint=8c6ea6a6-def9-4c31-9555-961a81b3b35f",
+    "file": "/Users/calebmedeiros/meus_projetos/restauranteSaaS-worktrees/prompt-05-gerente/qa-reports/gerente-prompt-05-browser/02-reclamacao-overlay.png",
+    "forbidden": [],
+    "hasError": false,
+    "h1": [
+      "Painel"
+    ],
+    "hasInProgress": false
+  },
+  {
+    "name": "02-reclamacao-quick-reply",
+    "url": "http://localhost:3003/manager?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager&replyComplaint=8c6ea6a6-def9-4c31-9555-961a81b3b35f",
+    "file": "/Users/calebmedeiros/meus_projetos/restauranteSaaS-worktrees/prompt-05-gerente/qa-reports/gerente-prompt-05-browser/02-reclamacao-overlay-after-quick-reply.png",
+    "forbidden": [],
+    "hasError": false,
+    "h1": [],
+    "hasInProgress": false,
+    "quickReplyCount": 1,
+    "sendButtonsBefore": [
+      {
+        "disabled": true,
+        "text": "Enviar como Gerência"
+      }
+    ],
+    "sendButtonsAfter": [
+      {
+        "disabled": false,
+        "text": "Enviar como Gerência"
+      }
+    ]
+  },
+  {
+    "name": "03-operacoes",
+    "url": "http://localhost:3003/manager/operacoes?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager",
+    "file": "/Users/calebmedeiros/meus_projetos/restauranteSaaS-worktrees/prompt-05-gerente/qa-reports/gerente-prompt-05-browser/03-operacoes.png",
+    "forbidden": [],
+    "hasError": false,
+    "h1": [
+      "Operação"
+    ],
+    "hasInProgress": false
+  },
+  {
+    "name": "04-equipe",
+    "url": "http://localhost:3003/manager/equipe?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager",
+    "file": "/Users/calebmedeiros/meus_projetos/restauranteSaaS-worktrees/prompt-05-gerente/qa-reports/gerente-prompt-05-browser/04-equipe.png",
+    "forbidden": [],
+    "hasError": false,
+    "h1": [
+      "Equipe"
+    ],
+    "hasInProgress": false
+  },
+  {
+    "name": "05-financeiro",
+    "url": "http://localhost:3003/manager/financeiro?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager&period=30d",
+    "file": "/Users/calebmedeiros/meus_projetos/restauranteSaaS-worktrees/prompt-05-gerente/qa-reports/gerente-prompt-05-browser/05-financeiro.png",
+    "forbidden": [],
+    "hasError": false,
+    "h1": [
+      "Financeiro"
+    ],
+    "hasInProgress": false
+  },
+  {
+    "name": "06-eu",
+    "url": "http://localhost:3003/manager/configuracoes?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager",
+    "file": "/Users/calebmedeiros/meus_projetos/restauranteSaaS-worktrees/prompt-05-gerente/qa-reports/gerente-prompt-05-browser/06-eu.png",
+    "forbidden": [],
+    "hasError": false,
+    "h1": [
+      "Eu"
+    ],
+    "hasInProgress": false
+  },
+  {
+    "name": "07-table-menu",
+    "url": "http://localhost:3003/manager/table-menu/37ce9bb1-1ecf-45c8-9ab5-87b460a693d0?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager&tableNumber=1",
+    "file": "/Users/calebmedeiros/meus_projetos/restauranteSaaS-worktrees/prompt-05-gerente/qa-reports/gerente-prompt-05-browser/07-table-menu.png",
+    "forbidden": [],
+    "hasError": false,
+    "h1": [
+      "Mesa 1",
+      "Mesa 1"
+    ],
+    "hasInProgress": false
+  },
+  {
+    "name": "08-cortesias",
+    "url": "http://localhost:3003/manager/cortesias?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager",
+    "file": "/Users/calebmedeiros/meus_projetos/restauranteSaaS-worktrees/prompt-05-gerente/qa-reports/gerente-prompt-05-browser/08-cortesias.png",
+    "forbidden": [],
+    "hasError": false,
+    "h1": [
+      "Cortesias"
+    ],
+    "hasInProgress": false
+  },
+  {
+    "name": "09-notificacoes",
+    "url": "http://localhost:3003/manager/notifications?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager",
+    "file": "/Users/calebmedeiros/meus_projetos/restauranteSaaS-worktrees/prompt-05-gerente/qa-reports/gerente-prompt-05-browser/09-notificacoes.png",
+    "forbidden": [],
+    "hasError": false,
+    "h1": [
+      "Notificações"
+    ],
+    "hasInProgress": false
+  },
+  {
+    "name": "10-seguranca",
+    "url": "http://localhost:3003/manager/seguranca?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager",
+    "file": "/Users/calebmedeiros/meus_projetos/restauranteSaaS-worktrees/prompt-05-gerente/qa-reports/gerente-prompt-05-browser/10-seguranca.png",
+    "forbidden": [],
+    "hasError": false,
+    "h1": [
+      "Segurança e senha"
+    ],
+    "hasInProgress": false
+  },
+  {
+    "name": "11-aparencia",
+    "url": "http://localhost:3003/manager/aparencia?slug=restaurant_dev&staffId=b629f117-1337-42a0-a08d-591f584ecca5&staffRole=manager",
+    "file": "/Users/calebmedeiros/meus_projetos/restauranteSaaS-worktrees/prompt-05-gerente/qa-reports/gerente-prompt-05-browser/11-aparencia.png",
+    "forbidden": [],
+    "hasError": false,
+    "h1": [
+      "Aparência"
+    ],
+    "hasInProgress": false
+  }
+]

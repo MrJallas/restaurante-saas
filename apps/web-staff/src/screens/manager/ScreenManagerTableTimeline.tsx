@@ -5,15 +5,9 @@
 // Diagnóstico de uma mesa lenta: hero crítico, ação sugerida, timeline
 // das 6 etapas do pedido, chamados do garçom, CTAs.
 //
-// Backend (TODO Onda 4):
-//   • GET /orders/:id/timeline → etapas + tempos reais
-//   • GET /tables/:id/calls → chamados do garçom
-//
-// Por enquanto mock inline focado em demonstrar a UI; CTA "Cortesia"
-// navega real (já temos /manager/compensate). "Avisar cozinha" stub
-// toast.
+// Backend: a rota usa timeline de leitura limitada enquanto o endpoint
+// dedicado de pedidos não chega; CTAs navegam para fluxos reais.
 
-import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -64,11 +58,6 @@ export function ScreenManagerTableTimeline({
 }: ScreenManagerTableTimelineProps) {
   const C = useG(dark);
   const router = useRouter();
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
-  const showStub = (m: string) => {
-    setStubMsg(`${m} · em desenvolvimento (Onda 4 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
-  };
   const slug =
     typeof window !== 'undefined'
       ? new URLSearchParams(window.location.search).get('slug') ?? ''
@@ -344,23 +333,6 @@ export function ScreenManagerTableTimeline({
             </div>
           ))}
         </div>
-
-        {/* Mock data banner */}
-        <div
-          style={{
-            margin: '10px 16px',
-            padding: '10px 12px',
-            border: '1px dashed #F0DCB6',
-            borderRadius: 10,
-            background: '#FFF7E6',
-            fontSize: 11,
-            color: '#7A4D10',
-            fontWeight: 500,
-            fontFamily: MONO_FONT,
-          }}
-        >
-          DADOS MOCK · timeline real chega na Onda 4 (GET /orders/{':id'}/timeline)
-        </div>
       </div>
 
       {/* Round 18 sticky-footer fix (audit P0): CTAs movidos pra FORA do
@@ -375,7 +347,12 @@ export function ScreenManagerTableTimeline({
           flexShrink: 0,
         }}
       >
-        <GButton dark={dark} full kind="ghost" onClick={() => showStub('Avisar cozinha')}>
+        <GButton
+          dark={dark}
+          full
+          kind="ghost"
+          onClick={() => router.push(`/manager/kitchen-reorder?slug=${slug}`)}
+        >
           Avisar cozinha
         </GButton>
         <GButton
@@ -392,31 +369,6 @@ export function ScreenManagerTableTimeline({
       </div>
 
       <MBottomNav active="ops" dark={dark} onTo={(r) => router.push(r)} />
-
-      {stubMsg && (
-        <div
-          role="status"
-          style={{
-            position: 'fixed',
-            left: '50%',
-            bottom: 90,
-            transform: 'translateX(-50%)',
-            zIndex: 80,
-            padding: '12px 18px',
-            borderRadius: 999,
-            background: C.ink,
-            color: C.bg,
-            fontSize: 13,
-            fontWeight: 600,
-            letterSpacing: -0.1,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-            maxWidth: 'calc(100vw - 32px)',
-            textAlign: 'center',
-          }}
-        >
-          {stubMsg}
-        </div>
-      )}
     </div>
   );
 }

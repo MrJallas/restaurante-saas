@@ -534,12 +534,13 @@ export class TableMergeService {
   }
 
   async list(filters: { status?: string; tableSessionId?: string }) {
+    await this.expireOverdueRequests();
     const where: string[] = [];
     const params: unknown[] = [];
     let i = 1;
     if (filters.status) {
       where.push(`mr.status = $${i++}`);
-      params.push(filters.status);
+      params.push(filters.status === 'timeout' ? 'expired' : filters.status);
     }
     if (filters.tableSessionId) {
       where.push(
@@ -579,6 +580,7 @@ export class TableMergeService {
   }
 
   async getById(id: string) {
+    await this.expireOverdueRequests();
     const rows = (await this.tenantConn.query(
       `SELECT mr.*,
               CAST(NULLIF(regexp_replace(src_t.code, '[^0-9]', '', 'g'), '') AS INT) AS origin_table_number,
@@ -641,6 +643,17 @@ export class TableMergeService {
       approvedByBAt: (row.approved_by_b_at as string | null) ?? null,
       createdAt: row.created_at as string,
     };
+  }
+
+  private async expireOverdueRequests() {
+    await this.tenantConn.query(
+      `UPDATE table_merge_requests
+          SET status = 'expired',
+              decided_at = now(),
+              updated_at = now()
+        WHERE status = 'pending'
+          AND ttl_expires_at < now()`,
+    );
   }
 }
 

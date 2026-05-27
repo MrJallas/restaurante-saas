@@ -554,7 +554,6 @@ export function MInProgressCard(props: MInProgressCardProps) {
   } else if (kind === 'complaint') {
     actions = (
       <div style={{ display: 'flex', gap: 6 }}>
-        <PillBtn label="Encaminhar" onClick={onSecondary} dark={dark} />
         <PillBtn filled label="Responder" onClick={onPrimary} dark={dark} />
       </div>
     );

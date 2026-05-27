@@ -121,13 +121,24 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
   // Round 18 (Onda 2A): alerts é state mutável pra Dispensar funcionar.
   // Antes era const sem setter — clique no X era silencioso.
   const [alerts, setAlerts] = useState(FALLBACK_ALERTS);
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
   const dismissAlert = (id: number) => {
     setAlerts((prev) => prev.filter((a) => a.id !== id));
   };
-  const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
+  const handleAlertAction = (action: string) => {
+    const qs = `?slug=${tenantSlug}`;
+    if (/cozinha|fila|entregar/i.test(action)) {
+      router.push(`/manager/kitchen-reorder${qs}`);
+      return;
+    }
+    if (/realocar/i.test(action)) {
+      router.push(`/manager/equipe/sobrecarga${qs}`);
+      return;
+    }
+    if (/pausar/i.test(action)) {
+      router.push(`/manager/pausa-zona${qs}`);
+      return;
+    }
+    router.push(`/manager/mensagens/nova${qs}`);
   };
   const [pauseRemaining, setPauseRemaining] = useState<number | null>(null);
 
@@ -204,7 +215,7 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
             high={high}
             med={med}
             onDismiss={dismissAlert}
-            onAction={showStub}
+            onAction={handleAlertAction}
           />
         )}
         {active === 'map' && <OpsMap dark={dark} tables={FALLBACK_TABLES} />}
@@ -230,30 +241,6 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
       />
       <MBottomNav active="ops" dark={dark} onTo={(r) => router.push(r)} alerts={alerts.length} />
 
-      {stubMsg && (
-        <div
-          role="status"
-          style={{
-            position: 'fixed',
-            left: '50%',
-            bottom: 132,
-            transform: 'translateX(-50%)',
-            zIndex: 80,
-            padding: '12px 18px',
-            borderRadius: 999,
-            background: C.ink,
-            color: C.bg,
-            fontSize: 13,
-            fontWeight: 600,
-            letterSpacing: -0.1,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-            maxWidth: 'calc(100vw - 32px)',
-            textAlign: 'center',
-          }}
-        >
-          {stubMsg}
-        </div>
-      )}
     </div>
   );
 }

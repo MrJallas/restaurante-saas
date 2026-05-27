@@ -9,13 +9,8 @@
 //
 // Backend wiring (Round 18 Onda 4):
 //   • REAL (parcial): GET /:slug/staff?activeOnly=true → derive overload
-//     candidates. Sem endpoint pra `mesas atendidas por garçom` ainda,
-//     uso TODO mock realista (mesma estratégia de ScreenManagerStaff).
-//     TODO(round19): wire GET /:slug/staff/load endpoint.
-//   • STUB: "Aplicar sugestão", "Realocar mesas manualmente",
-//     "Mensagem direta", "Pausar mesas por 5 min" — last one PODE
-//     usar zonePauseApi.create depois de selecionar staffId. Por ora
-//     toast stub porque o flow precisa de UI vaul (canvas spec V9).
+//     candidates. Ações usam redistribuição/manual, mensagem direta e pausa
+//     de zona já existentes.
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -28,6 +23,8 @@ import {
   GIconBtn,
   MBottomNav,
   MAvatar,
+  MContactStaffSheet,
+  type ManagerStaffTarget,
 } from '../../components/manager';
 import { staffRosterApi, type StaffRosterEntry } from '../../lib/api/manager';
 
@@ -54,7 +51,7 @@ export function ScreenManagerStaffSobrecarga({ dark, tenantSlug }: ScreenManager
   const backHref = slugQs ? `/manager/equipe?slug=${slugQs}` : '/manager/equipe';
 
   const [overloaded, setOverloaded] = useState<OverloadedPerson[]>([]);
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
+  const [contactTarget, setContactTarget] = useState<ManagerStaffTarget | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -90,11 +87,6 @@ export function ScreenManagerStaffSobrecarga({ dark, tenantSlug }: ScreenManager
       cancelled = true;
     };
   }, [tenantSlug]);
-
-  const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 4 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
-  };
 
   const count = overloaded.length;
   // Render-time `new Date()` causa hydration mismatch (server em UTC,
@@ -251,24 +243,23 @@ export function ScreenManagerStaffSobrecarga({ dark, tenantSlug }: ScreenManager
               <ActionPill
                 C={C}
                 filled
-                accent="#9A7212"
-                icon={Icon.sparkle(13)}
-                onClick={() => showStub('Aplicar sugestão · mover 1 mesa')}
-              >
-                Aplicar sugestão · mover 1 mesa
-              </ActionPill>
-              <ActionPill
-                C={C}
-                filled
                 icon={Icon.table(13)}
-                onClick={() => showStub('Realocar mesas manualmente')}
+                onClick={() => router.push(slugQs ? `/manager/operacoes/mesas-ativas?slug=${slugQs}` : '/manager/operacoes/mesas-ativas')}
               >
                 Realocar mesas manualmente
               </ActionPill>
               <ActionPill
                 C={C}
                 icon={Icon.chat(13)}
-                onClick={() => router.push(slugQs ? `/manager/mensagens?slug=${slugQs}` : '/manager/mensagens')}
+                onClick={() => {
+                  if (!firstOverloaded) return;
+                  setContactTarget({
+                    staffId: firstOverloaded.id,
+                    name: firstOverloaded.name,
+                    color: firstOverloaded.color,
+                    contextHint: `${firstOverloaded.tables.length} mesas`,
+                  });
+                }}
               >
                 Mensagem direta pro {firstOverloaded?.name.split(' ')[0] ?? 'garçom'}
               </ActionPill>
@@ -297,7 +288,13 @@ export function ScreenManagerStaffSobrecarga({ dark, tenantSlug }: ScreenManager
 
       <MBottomNav active="staff" dark={dark} onTo={(r) => router.push(r)} />
 
-      {stubMsg && <StubToast C={C}>{stubMsg}</StubToast>}
+      <MContactStaffSheet
+        open={!!contactTarget}
+        dark={dark}
+        tenantSlug={tenantSlug}
+        target={contactTarget ?? { staffId: '', name: '' }}
+        onClose={() => setContactTarget(null)}
+      />
     </div>
   );
 }
@@ -522,33 +519,6 @@ function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.
         Como esse número é calculado
       </div>
       <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>{children}</div>
-    </div>
-  );
-}
-
-function StubToast({ C, children }: { C: ReturnType<typeof useG>; children: React.ReactNode }) {
-  return (
-    <div
-      role="status"
-      style={{
-        position: 'fixed',
-        left: '50%',
-        bottom: 90,
-        transform: 'translateX(-50%)',
-        zIndex: 80,
-        padding: '12px 18px',
-        borderRadius: 999,
-        background: C.ink,
-        color: C.bg,
-        fontSize: 13,
-        fontWeight: 600,
-        letterSpacing: -0.1,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-        maxWidth: 'calc(100vw - 32px)',
-        textAlign: 'center',
-      }}
-    >
-      {children}
     </div>
   );
 }

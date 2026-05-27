@@ -42,6 +42,9 @@ export interface MContactClientSheetProps {
   managerName?: string;
   onClose?: () => void;
   onSent?: (preview: string) => void;
+  initialDraft?: string;
+  draftStorageKey?: string;
+  suggestionOverrides?: SmartSuggestionChip[];
   /** Optional: linked routes (e.g. courtesy chip). */
   onLinkTo?: (route: string) => void;
 }
@@ -71,6 +74,9 @@ export function MContactClientSheet({
   managerName = 'Gerência',
   onClose,
   onSent,
+  initialDraft,
+  draftStorageKey,
+  suggestionOverrides,
   onLinkTo,
 }: MContactClientSheetProps) {
   const C = useG(!!dark);
@@ -88,6 +94,10 @@ export function MContactClientSheet({
   const [dragOffsetY, setDragOffsetY] = useState(0);
 
   const loadSuggestions = useCallback(async () => {
+    if (suggestionOverrides) {
+      setSuggestions(suggestionOverrides);
+      return;
+    }
     try {
       const r = await fetchSmartSuggestions({
         tenantId,
@@ -98,18 +108,29 @@ export function MContactClientSheet({
     } catch {
       setSuggestions([]);
     }
-  }, [tenantId, customerId]);
+  }, [tenantId, customerId, suggestionOverrides]);
 
   useEffect(() => {
     if (open) {
       loadSuggestions();
       setSelectedIdx(-1);
-      setDraft('');
-      setState('idle');
+      const storedDraft =
+        draftStorageKey && typeof window !== 'undefined'
+          ? window.localStorage.getItem(draftStorageKey)
+          : null;
+      const nextDraft = storedDraft ?? initialDraft ?? '';
+      setDraft(nextDraft);
+      setState(nextDraft.trim() ? 'selected' : 'idle');
       setErrorMsg(null);
       setDragOffsetY(0);
     }
-  }, [open, loadSuggestions]);
+  }, [open, loadSuggestions, initialDraft, draftStorageKey]);
+
+  useEffect(() => {
+    if (!open || !draftStorageKey || typeof window === 'undefined' || state === 'sent') return;
+    if (draft.trim()) window.localStorage.setItem(draftStorageKey, draft);
+    else window.localStorage.removeItem(draftStorageKey);
+  }, [draft, draftStorageKey, open, state]);
 
   const onPickChip = (i: number) => {
     setSelectedIdx(i);
@@ -147,6 +168,9 @@ export function MContactClientSheet({
         message: draft.trim(),
         fromStaffId,
       });
+      if (draftStorageKey && typeof window !== 'undefined') {
+        window.localStorage.removeItem(draftStorageKey);
+      }
       setState('sent');
       onSent?.(draft.trim());
     } catch (e) {

@@ -19,6 +19,8 @@ import {
   MSection,
   GIconBtn,
 } from '../../components/manager';
+import { clearStaffSession } from '../../lib/api';
+import { manager, type ManagerShiftLog } from '../../lib/api/manager';
 
 export interface ScreenManagerProfileProps {
   dark?: boolean;
@@ -39,6 +41,7 @@ export interface ScreenManagerProfileProps {
   buildDate?: string;
   /** Linha discreta abaixo da versão (nome + endereço do estabelecimento). */
   establishment?: string;
+  tenantSlug?: string;
 }
 
 export function ScreenManagerProfile({
@@ -57,6 +60,7 @@ export function ScreenManagerProfile({
   appVersion = '1.1.0',
   buildDate = '2026-05-06',
   establishment,
+  tenantSlug = process.env.NEXT_PUBLIC_DEFAULT_TENANT || process.env.NEXT_PUBLIC_TENANT_SLUG || 'restaurant_dev',
 }: ScreenManagerProfileProps) {
   const C = useG(!!dark);
   const router = useRouter();
@@ -64,25 +68,37 @@ export function ScreenManagerProfile({
   const initials =
     managerInitials ??
     managerName.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
-  // Round 18 (Onda 2A): stub feedback pra ActionRows sem backend ainda.
-  // Antes 9 de 13 rows não tinham onClick — clique silencioso. Agora
-  // toast curto explica que está em desenvolvimento.
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
-  const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
-  };
+  const [confirmEndShift, setConfirmEndShift] = useState(false);
+  const [shiftSummary, setShiftSummary] = useState<ManagerShiftLog | null>(null);
+  const [shiftBusy, setShiftBusy] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleLogout = () => {
     try {
-      window.sessionStorage.clear();
-      window.localStorage.removeItem('staffId');
-      window.localStorage.removeItem('staffRole');
-      window.localStorage.removeItem('staffName');
+      clearStaffSession();
     } catch {
       /* ignore */
     }
     router.push('/');
+  };
+
+  const endShift = async () => {
+    setShiftBusy(true);
+    setErrorMsg(null);
+    try {
+      const summary = await manager(tenantSlug).account.endShift();
+      setConfirmEndShift(false);
+      setShiftSummary(summary);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Não foi possível encerrar o turno.');
+    } finally {
+      setShiftBusy(false);
+    }
+  };
+
+  const finishEndShiftFlow = () => {
+    clearStaffSession();
+    router.replace('/');
   };
 
   // Helpers de formatação BRL.
@@ -228,7 +244,7 @@ export function ScreenManagerProfile({
           <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <button
               type="button"
-              onClick={() => showStub('Encerrar turno')}
+              onClick={() => setConfirmEndShift(true)}
               style={{
                 all: 'unset',
                 cursor: 'pointer',
@@ -274,7 +290,7 @@ export function ScreenManagerProfile({
               icon={Icon.list(18)}
               lbl="Histórico de turnos"
               sub="Vendas, mesas e desempenho dos turnos passados"
-              onClick={() => showStub('Histórico de turnos')}
+              onClick={() => router.push(`/manager/turnos-historico?slug=${tenantSlug}`)}
             />
             <ActionRow
               dark={dark}
@@ -301,60 +317,24 @@ export function ScreenManagerProfile({
               icon={Icon.bell(18)}
               lbl="Notificações"
               sub="Avisos do turno · push · sons · lock screen"
-              onClick={() => showStub('Notificações')}
+              onClick={() => router.push(`/manager/notificacoes-prefs?slug=${tenantSlug}`)}
             />
             <ActionRow
               dark={dark}
               icon={Icon.shield(18)}
               lbl="Segurança e senha"
               sub="Trocar senha · 2FA · sessões ativas"
-              onClick={() => showStub('Segurança e senha')}
+              onClick={() => router.push(`/manager/seguranca?slug=${tenantSlug}`)}
             />
             <ActionRow
               dark={dark}
               icon={Icon.flame(18)}
               lbl="Aparência"
               sub="Modo claro · escuro · automático"
-              onClick={() => showStub('Aparência')}
+              onClick={() => router.push(`/manager/aparencia?slug=${tenantSlug}`)}
             />
           </div>
         </MSection>
-
-        {/* 6 · ESTABELECIMENTO · só owners */}
-        {isOwner && (
-          <MSection dark={dark} title="Estabelecimento · só donos">
-            <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <ActionRow
-                dark={dark}
-                icon={Icon.table(18)}
-                lbl="Configuração de mesas"
-                sub="Número, capacidade, setores · imprimir QR codes"
-                onClick={() => showStub('Configuração de mesas')}
-              />
-              <ActionRow
-                dark={dark}
-                icon={Icon.clock(18)}
-                lbl="Horários do restaurante"
-                sub="Abertura, fechamento, dias da semana"
-                onClick={() => showStub('Horários do restaurante')}
-              />
-              <ActionRow
-                dark={dark}
-                icon={Icon.list(18)}
-                lbl="Cardápio"
-                sub="Editar pratos, preços, fotos, categorias"
-                onClick={() => showStub('Cardápio')}
-              />
-              <ActionRow
-                dark={dark}
-                icon={Icon.receipt(18)}
-                lbl="Plano e cobrança"
-                sub="Plano atual · histórico · método de pagamento"
-                onClick={() => showStub('Plano e cobrança')}
-              />
-            </div>
-          </MSection>
-        )}
 
         {/* 7 · SAIR · destrutivo · brick */}
         <div style={{ padding: '24px 16px 16px' }}>
@@ -392,9 +372,9 @@ export function ScreenManagerProfile({
 
       <MBottomNav active="me" dark={dark} onTo={(r) => router.push(r)} />
 
-      {stubMsg && (
+      {errorMsg && (
         <div
-          role="status"
+          role="alert"
           style={{
             position: 'fixed',
             left: '50%',
@@ -413,8 +393,26 @@ export function ScreenManagerProfile({
             textAlign: 'center',
           }}
         >
-          {stubMsg}
+          {errorMsg}
         </div>
+      )}
+
+      {confirmEndShift && (
+        <EndShiftConfirmSheet
+          C={C}
+          onCancel={() => setConfirmEndShift(false)}
+          onConfirm={endShift}
+          busy={shiftBusy}
+        />
+      )}
+
+      {shiftSummary && (
+        <EndShiftSummarySheet
+          C={C}
+          summary={shiftSummary}
+          onFinish={finishEndShiftFlow}
+          fmtCents={fmtCents}
+        />
       )}
 
       {/* Pulse keyframe — usado pelo dot "em turno desde …". CSS inline no
@@ -523,6 +521,174 @@ function ActionRow({
       )}
       <div style={{ color: C.faint, opacity: 0.5, flexShrink: 0 }}>{Icon.arrow(16)}</div>
     </button>
+  );
+}
+
+function EndShiftConfirmSheet({
+  C,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  C: ReturnType<typeof useG>;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 120,
+        background: 'rgba(0,0,0,0.32)',
+        display: 'flex',
+        alignItems: 'flex-end',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          borderRadius: '18px 18px 0 0',
+          background: C.bg,
+          color: C.ink,
+          padding: '18px 16px 20px',
+          boxShadow: '0 -16px 34px rgba(0,0,0,0.22)',
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>Encerrar turno?</div>
+        <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.45, color: C.mute, fontWeight: 500 }}>
+          O sistema vai salvar o resumo do turno no histórico, limpar esta sessão e voltar para o login.
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            style={{
+              all: 'unset',
+              cursor: busy ? 'not-allowed' : 'pointer',
+              flex: 1,
+              textAlign: 'center',
+              padding: '13px 10px',
+              borderRadius: 12,
+              border: `1px solid ${C.borderSoft}`,
+              fontSize: 14,
+              fontWeight: 800,
+              color: C.ink,
+            }}
+          >
+            Voltar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            style={{
+              all: 'unset',
+              cursor: busy ? 'wait' : 'pointer',
+              flex: 1,
+              textAlign: 'center',
+              padding: '13px 10px',
+              borderRadius: 12,
+              background: '#9A7212',
+              color: '#fff',
+              fontSize: 14,
+              fontWeight: 800,
+            }}
+          >
+            {busy ? 'Encerrando...' : 'Encerrar turno'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EndShiftSummarySheet({
+  C,
+  summary,
+  fmtCents,
+  onFinish,
+}: {
+  C: ReturnType<typeof useG>;
+  summary: ManagerShiftLog;
+  fmtCents: (c?: number) => string | null;
+  onFinish: () => void;
+}) {
+  const metrics = [
+    ['Vendas', fmtCents(summary.salesCents) ?? 'R$ 0'],
+    ['Pedidos', String(summary.orders)],
+    ['Mesas', String(summary.tablesServed)],
+    ['Alertas', String(summary.criticalAlerts)],
+  ];
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 130,
+        background: 'rgba(0,0,0,0.34)',
+        display: 'flex',
+        alignItems: 'flex-end',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          borderRadius: '18px 18px 0 0',
+          background: C.bg,
+          color: C.ink,
+          padding: '18px 16px 20px',
+          boxShadow: '0 -16px 34px rgba(0,0,0,0.22)',
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>Turno encerrado</div>
+        <div style={{ marginTop: 5, fontSize: 12, color: C.faint, fontWeight: 700 }}>
+          {summary.staffName} · {new Date(summary.endedAt).toLocaleString('pt-BR')}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 14 }}>
+          {metrics.map(([label, value]) => (
+            <div
+              key={label}
+              style={{
+                borderRadius: 10,
+                border: `1px solid ${C.borderSoft}`,
+                background: C.surface,
+                padding: '10px 12px',
+              }}
+            >
+              <div style={{ fontSize: 10.5, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}>{label}</div>
+              <div style={{ marginTop: 4, fontSize: 18, fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onFinish}
+          style={{
+            all: 'unset',
+            cursor: 'pointer',
+            width: '100%',
+            boxSizing: 'border-box',
+            marginTop: 16,
+            textAlign: 'center',
+            padding: '13px 10px',
+            borderRadius: 12,
+            background: C.ink,
+            color: C.bg,
+            fontSize: 14,
+            fontWeight: 800,
+          }}
+        >
+          Sair do app
+        </button>
+      </div>
+    </div>
   );
 }
 

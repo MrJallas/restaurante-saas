@@ -13,8 +13,9 @@ import { SecurityAuditService } from '../security-audit/security-audit.service';
  *                                    escalation.advanced if the chain rolls)
  *  2. escalation chain advances   -> emit escalation.advanced or .completed
  *  3. zone-pause auto-end         -> emit zone_pause.ended (autoExpired=true)
- *  4. merge-cooldown notifications-> emit merge.cooldown_expired
- *  5. scan-verification cascade -> host -> manager -> waiter -> timeout
+ *  4. table-merge expirations    -> emit table_merge.rejected(timeout)
+ *  5. merge-cooldown notifications-> emit merge.cooldown_expired
+ *  6. scan-verification cascade -> host -> manager -> waiter -> timeout
  *
  * Each pass is wrapped in its own try/catch so a SQL failure in one pass
  * never blocks the others. We never use `TenantConnectionProvider` here
@@ -98,6 +99,7 @@ export class TtlTickService {
       'late_arrival_requests',
       'escalation_chains',
       'zone_pauses',
+      'table_merge_requests',
       'table_merge_cooldowns',
     ]);
     const jobs: Array<Promise<void>> = [];
@@ -122,6 +124,13 @@ export class TtlTickService {
         ),
       );
     }
+    if (tables.has('table_merge_requests')) {
+      jobs.push(
+        this.sweepTableMergeRequests(slug, schemaName).catch((e) =>
+          this.logger.error(`[${slug}] sweepTableMergeRequests`, e as Error),
+        ),
+      );
+    }
     if (tables.has('table_merge_cooldowns')) {
       jobs.push(
         this.sweepMergeCooldowns(slug, schemaName).catch((e) =>
@@ -130,6 +139,40 @@ export class TtlTickService {
       );
     }
     await Promise.allSettled(jobs);
+  }
+
+  // ───────────── Table-merge expirations ─────────────
+
+  private async sweepTableMergeRequests(slug: string, schemaName: string) {
+    const expired = await this.withTenant(schemaName, async (qr) =>
+      unwrapRows<{
+        id: string;
+        source_table_session_id: string;
+        target_table_session_id: string;
+      }>(
+        await qr.query(
+            `UPDATE table_merge_requests
+              SET status = 'expired',
+                  decided_at = now(),
+                  updated_at = now()
+              WHERE status = 'pending'
+                AND ttl_expires_at < now()
+          RETURNING id, source_table_session_id, target_table_session_id`,
+        ),
+      ),
+    );
+
+    for (const row of expired) {
+      this.gateway.emitTableMergeRejected(
+        slug,
+        row.source_table_session_id,
+        row.target_table_session_id,
+        {
+          requestId: row.id,
+          rejectedBy: 'timeout',
+        },
+      );
+    }
   }
 
   private async existingTables(
