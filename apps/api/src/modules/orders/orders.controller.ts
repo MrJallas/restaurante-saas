@@ -29,6 +29,7 @@ import type { Request } from 'express';
 import { SessionGuard, SessionData, SessionRequest } from '../../common/guards/session.guard';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { OrdersService } from './orders.service';
@@ -279,7 +280,7 @@ export class OrdersController {
   /**
    * Round 18 (Onda 4 batch 2): timeline aggregator pra
    * ScreenManagerTimeline (canvas /manager/timeline/[orderId]).
-   * Staff-only — manager dashboard view, nao customer-side. Retorna
+   * Manager-only — dashboard view, nao customer-side. Retorna
    * lista cronologica de status transitions com staff name resolvido
    * por join em `order_status_history.changed_by`.
    *
@@ -287,7 +288,7 @@ export class OrdersController {
    * nao cair em getOrder('timeline').
    */
   @Get(':orderId/timeline')
-  @UseGuards(StaffOrSessionGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async getTimeline(@Param('orderId') orderId: string) {
     return this.ordersService.getOrderTimeline(orderId);
   }

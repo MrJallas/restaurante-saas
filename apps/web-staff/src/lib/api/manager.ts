@@ -540,6 +540,39 @@ export const kitchenApi = (slug: string) => ({
 });
 
 // ─────────────────────────────────────────────────────────────
+// Manager order timeline
+// ─────────────────────────────────────────────────────────────
+
+export interface OrderTimelineEvent {
+  event: string;
+  at: string;
+  byStaffId: string | null;
+  byStaffName: string | null;
+  fromStatus: string | null;
+}
+
+export interface OrderTimelineResponse {
+  orderId: string;
+  tableNumber?: number | null;
+  tableLabel?: string | null;
+  totalCents?: number | null;
+  currentStatus?: string | null;
+  assignedStaffName?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  events: OrderTimelineEvent[];
+}
+
+export function getOrderTimeline(
+  slug: string,
+  orderId: string,
+): Promise<OrderTimelineResponse> {
+  return staffGet<OrderTimelineResponse>(
+    `/${slug}/orders/${encodeURIComponent(orderId)}/timeline`,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Staff roster — wraps the `{ staff: [...] }` envelope from the
 // API so callers receive a flat array. Centralised here so every
 // screen (Staff, Home, OrdersPause, Funcionarios) gets the same
@@ -760,6 +793,9 @@ export function manager(slug: string) {
     alerts: alertsApi(slug),
     account: managerAccountApi(slug),
     kitchen: kitchenApi(slug),
+    orderTimeline: {
+      get: (orderId: string) => getOrderTimeline(slug, orderId),
+    },
     me: managerMe(slug),
   };
 }

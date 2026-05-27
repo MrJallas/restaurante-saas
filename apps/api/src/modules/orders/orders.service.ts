@@ -88,8 +88,36 @@ export interface KitchenReorderRequestSummary {
   orders: KitchenQueueItem[];
 }
 
+export interface OrderTimelineEvent {
+  event: string;
+  at: string;
+  byStaffId: string | null;
+  byStaffName: string | null;
+  fromStatus: string | null;
+}
+
+export interface OrderTimelineResponse {
+  orderId: string;
+  tableNumber?: number | null;
+  tableLabel?: string | null;
+  totalCents?: number | null;
+  currentStatus?: string | null;
+  assignedStaffName?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  events: OrderTimelineEvent[];
+}
+
 type QueryExecutor = {
   query: (sql: string, params?: unknown[]) => Promise<unknown[]>;
+};
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const ORDER_NOT_FOUND_RESPONSE = {
+  message: 'Pedido não encontrado.',
+  message_user: 'Pedido não encontrado.',
+  code: 'ORDER_NOT_FOUND',
 };
 
 @Injectable()
@@ -835,27 +863,75 @@ export class OrdersService {
    * passado em `updateStatus(orderId, status, changedBy)`. O LEFT JOIN
    * em staff falha graciosamente pra labels não-UUID (NULL byStaffName).
    *
-   * Não exige session ownership — endpoint é staff-only (manager dashboard).
+   * Não exige session ownership porque o controller protege a rota com
+   * StaffOnlyGuard + ManagerOnlyGuard.
    */
-  async getOrderTimeline(orderId: string): Promise<{
-    orderId: string;
-    events: Array<{
-      event: string;
-      at: string;
-      byStaffId: string | null;
-      byStaffName: string | null;
-      fromStatus: string | null;
-    }>;
-  }> {
-    // Confirma que o pedido existe (404 limpo em vez de timeline vazia
-    // por orderId errado).
-    const orderRows = (await this.tenantConn.query(
-      `SELECT id FROM orders WHERE id = $1`,
-      [orderId],
-    )) as Array<{ id: string }>;
-    if (!orderRows.length) {
-      throw new NotFoundException('Pedido nao encontrado.');
+  async getOrderTimeline(orderId: string): Promise<OrderTimelineResponse> {
+    // Confirma que o pedido existe com 404 estruturado. O check de UUID evita
+    // vazar `invalid input syntax for type uuid` para a UI.
+    if (!UUID_RE.test(orderId)) {
+      throw new NotFoundException(ORDER_NOT_FOUND_RESPONSE);
     }
+
+    const orderRows = (await this.tenantConn.query(
+      `
+      SELECT o.id,
+             o.status,
+             o.total_cents,
+             o.created_at,
+             o.updated_at,
+             t.label AS table_label,
+             COALESCE(
+               CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT),
+               CAST(NULLIF(regexp_replace(t.label, '[^0-9]', '', 'g'), '') AS INT)
+             ) AS table_number,
+             COALESCE(
+               delivery.target_waiter_name,
+               delivery.claimed_by_name,
+               last_staff.staff_name,
+               created_staff.name
+             ) AS assigned_staff_name
+        FROM orders o
+        JOIN table_sessions ts ON ts.id = o.table_session_id
+        JOIN tables t ON t.id = ts.table_id
+        LEFT JOIN staff created_staff
+          ON created_staff.id::text = o.created_by
+        LEFT JOIN LATERAL (
+          SELECT target_staff.name AS target_waiter_name,
+                 claimed_staff.name AS claimed_by_name
+            FROM order_deliveries od
+            LEFT JOIN staff target_staff ON target_staff.id = od.target_waiter_id
+            LEFT JOIN staff claimed_staff ON claimed_staff.id = od.claimed_by
+           WHERE od.order_id = o.id
+             AND od.status != 'cancelled'
+           ORDER BY od.created_at DESC, od.id DESC
+           LIMIT 1
+        ) delivery ON true
+        LEFT JOIN LATERAL (
+          SELECT s.name AS staff_name
+            FROM order_status_history osh
+            JOIN staff s ON s.id::text = osh.changed_by
+           WHERE osh.order_id = o.id
+           ORDER BY osh.created_at DESC, osh.id DESC
+           LIMIT 1
+        ) last_staff ON true
+       WHERE o.id = $1
+      `,
+      [orderId],
+    )) as Array<{
+      id: string;
+      status: string;
+      total_cents: number;
+      created_at: string;
+      updated_at: string;
+      table_label: string | null;
+      table_number: number | null;
+      assigned_staff_name: string | null;
+    }>;
+    if (!orderRows.length) {
+      throw new NotFoundException(ORDER_NOT_FOUND_RESPONSE);
+    }
+    const order = orderRows[0];
 
     const rows = (await this.tenantConn.query(
       `
@@ -883,6 +959,13 @@ export class OrdersService {
 
     return {
       orderId,
+      tableNumber: order.table_number,
+      tableLabel: order.table_label,
+      totalCents: order.total_cents,
+      currentStatus: order.status,
+      assignedStaffName: order.assigned_staff_name,
+      createdAt: order.created_at,
+      updatedAt: order.updated_at,
       events: rows.map((r) => ({
         event: r.to_status,
         at: r.created_at,
