@@ -1,26 +1,6 @@
 import { test, expect, Page, Route } from '@playwright/test';
-import { execSync } from 'node:child_process';
 import { newSession } from '../helpers/session';
-
-/**
- * Limpa rate-limit do welcome (5 tentativas/15min por IP) + sessões abertas
- * na mesa QRTEST91. Sem isso, as 4 tests da suite estouram o limite após o 5º
- * `welcomeAs` da rodada (cada teste re-faz welcome com mesmo IP).
- */
-function resetWelcomeRateLimitAndSessions(): void {
-  try {
-    execSync(
-      'docker exec restaurant-redis redis-cli --no-raw del "$(docker exec restaurant-redis redis-cli keys \'customers:welcome:*\' | xargs)" >/dev/null 2>&1 || true',
-      { stdio: 'ignore' },
-    );
-    execSync(
-      `docker exec restaurant-postgres psql -h localhost -p 5434 -U postgres -d restaurant_saas -c "UPDATE restaurant_dev.table_sessions SET status='closed', closed_at=NOW() WHERE table_id IN (SELECT id FROM restaurant_dev.tables WHERE code='QRTEST91') AND closed_at IS NULL;" >/dev/null 2>&1`,
-      { stdio: 'ignore' },
-    );
-  } catch {
-    /* opcional — só roda local com Docker stack. */
-  }
-}
+import { resetWelcomeRateLimitAndSessions } from '../helpers/test-state';
 
 /**
  * Round C/D — chat UX polish.
@@ -62,6 +42,32 @@ interface MockResponseBody {
   linkedItems?: Array<{ id: string; name: string; priceCents: number; imageUrl: string | null }>;
 }
 
+let cpfSeed = Math.floor(Date.now() % 100_000);
+
+function cpfDigit(input: string): number {
+  let sum = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    sum += Number(input[i]) * (input.length + 1 - i);
+  }
+  const mod = (sum * 10) % 11;
+  return mod === 10 ? 0 : mod;
+}
+
+function nextCpf(): string {
+  cpfSeed += 1;
+  const base = String(840000000 + cpfSeed).slice(0, 9);
+  const d1 = cpfDigit(base);
+  const d2 = cpfDigit(`${base}${d1}`);
+  return `${base}${d1}${d2}`;
+}
+
+async function newChatSession(page: Page): Promise<void> {
+  await newSession(page, {
+    name: `Caleb Teste ${cpfSeed + 1}`,
+    cpf: nextCpf(),
+  });
+}
+
 async function mockAssistantMessage(page: Page, response: MockResponseBody): Promise<void> {
   await page.route('**/api/*/assistant/message', async (route: Route) => {
     await route.fulfill({
@@ -78,7 +84,7 @@ test.describe('Chat tool-call eyebrow + delay (C/D)', () => {
   });
 
   test('view_menu → eyebrow then ~1.5s before MenuOverlay', async ({ page }) => {
-    await newSession(page);
+    await newChatSession(page);
     await mockAssistantMessage(page, {
       response: '',
       wasBlocked: false,
@@ -107,7 +113,7 @@ test.describe('Chat tool-call eyebrow + delay (C/D)', () => {
   });
 
   test('call_waiter → eyebrow then ~1.5s before CallWaiterSheet', async ({ page }) => {
-    await newSession(page);
+    await newChatSession(page);
     await mockAssistantMessage(page, {
       response: '',
       wasBlocked: false,
@@ -133,7 +139,7 @@ test.describe('Chat tool-call eyebrow + delay (C/D)', () => {
   });
 
   test('ask_about_restaurant → eyebrow + text bubble (no duplicate stub)', async ({ page }) => {
-    await newSession(page);
+    await newChatSession(page);
     await mockAssistantMessage(page, {
       response: 'A gente fecha às 23h durante a semana e à 1h da manhã nos fins de semana.',
       wasBlocked: false,
@@ -157,7 +163,7 @@ test.describe('Chat tool-call eyebrow + delay (C/D)', () => {
   });
 
   test('add_to_order → eyebrow inline + linked card visual', async ({ page }) => {
-    await newSession(page);
+    await newChatSession(page);
     await mockAssistantMessage(page, {
       response: 'Adicionei à sua comanda.',
       wasBlocked: false,

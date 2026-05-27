@@ -376,7 +376,7 @@ test('noite realista: 3 clientes iOS + recepcao + garcom + gerente + cozinha + h
     ]);
 
     await kitchen.page.goto(`${STAFF_BASE_URL}/cozinha`, { waitUntil: 'domcontentloaded' });
-    await expect(kitchen.page.getByText(/Cozinha/i)).toBeVisible();
+    await expect(kitchen.page.getByRole('heading', { name: /Cozinha.*KDS/i })).toBeVisible();
     await expect
       .poll(() => kitchen.page.getByText(menuItems[0].name).count(), {
         timeout: 20_000,
