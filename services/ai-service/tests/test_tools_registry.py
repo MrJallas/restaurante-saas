@@ -255,12 +255,12 @@ def test_view_order_uses_adjust_copy_for_generic_change_request():
     assert "ajustar" in result.message.lower()
 
 
-def test_request_table_merge_no_target_returns_error():
-    """Canonical request_table_merge needs a targetTable."""
+def test_request_table_merge_no_target_requests_salon_picker():
+    """No explicit target should open the customer salon picker."""
     ctx = ToolContext(tenant_id="t1", customer_id="c1")
     result = dispatch_tool("request_table_merge", {}, ctx)
-    assert result.error is not None
-    assert result.error["code"] == "missing_target"
+    assert result.error is None
+    assert result.action_payload["requiresTargetSelection"] is True
 
 
 # ─────────────────────────────────────────────────────────────

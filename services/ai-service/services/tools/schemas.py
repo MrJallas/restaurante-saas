@@ -178,11 +178,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     ),
     _function(
         "request_table_merge",
-        "Pede para juntar a mesa do cliente com outra mesa. Requer o número/label da mesa-alvo.",
+        "Pede para juntar a mesa do cliente com outra mesa. Se o cliente não disser qual mesa, deixe targetTable ausente para abrir o mapa do salão.",
         {
             "targetTable": {"type": "string", "description": "Número ou label da mesa-alvo."},
         },
-        required=["targetTable"],
     ),
 
     # ── lgpd / history ───────────────────────────────────────

@@ -13,13 +13,13 @@ import { useCallback, useRef, useState } from 'react';
  *   1. `handleToolCall(call)` is invoked with the raw tool envelope
  *   2. If the call already has `targetTable`, it's passed through unchanged
  *   3. Otherwise the hook opens the salon-map overlay and returns a Promise
- *      that resolves when the customer taps a table — the resolved value is
- *      the SAME tool envelope re-emitted with `targetTable` filled in
+ *      that resolves when the customer confirms a table — the resolved value
+ *      carries the chosen table number plus session/label metadata
  *
- * The chat handler awaits the promise, then dispatches the resolved call
- * back to the AI service (which is now able to actually create the merge
- * request). Net effect: the customer sees `··· USANDO request_table_merge ···`
- * → overlay opens → tap mesa → overlay closes → confirmation bubble.
+ * The chat handler awaits the promise, then creates the merge request through
+ * the app API using the current customer session. Net effect: the customer
+ * sees `··· USANDO request_table_merge ···` → overlay opens → pick mesa →
+ * confirmation CTA → overlay closes → confirmation bubble.
  *
  * State machine (single in-flight slot — re-entrancy is rare in practice
  * because the overlay blocks the chat):
@@ -35,7 +35,14 @@ import { useCallback, useRef, useState } from 'react';
 
 interface ToolCallEnvelope {
   name: string;
-  arguments: { targetTable?: number;[key: string]: unknown } | undefined;
+  arguments:
+    | {
+        targetTable?: number;
+        targetTableSessionId?: string;
+        targetTableLabel?: string;
+        [key: string]: unknown;
+      }
+    | undefined;
 }
 
 export function useTableMerge() {
@@ -46,7 +53,7 @@ export function useTableMerge() {
   const pendingResolveRef = useRef<
     ((call: ToolCallEnvelope) => void) | null
   >(null);
-  // Holds the original call so we can re-emit it with `targetTable` filled.
+  // Holds the original call so we can enrich it with the selected table.
   const pendingCallRef = useRef<ToolCallEnvelope | null>(null);
 
   /**
@@ -81,13 +88,22 @@ export function useTableMerge() {
    * pending promise from `handleToolCall` with the enriched envelope and
    * closes the overlay.
    */
-  const selectTable = useCallback((targetTable: number) => {
+  const selectTable = useCallback((targetTable: {
+    num: number;
+    sessionId?: string;
+    label?: string;
+  }) => {
     const original = pendingCallRef.current;
     const resolve = pendingResolveRef.current;
     if (!original || !resolve) return;
     resolve({
       name: 'request_table_merge',
-      arguments: { ...(original.arguments ?? {}), targetTable },
+      arguments: {
+        ...(original.arguments ?? {}),
+        targetTable: targetTable.num,
+        targetTableSessionId: targetTable.sessionId,
+        targetTableLabel: targetTable.label,
+      },
     });
     pendingCallRef.current = null;
     pendingResolveRef.current = null;

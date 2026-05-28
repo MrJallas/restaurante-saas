@@ -936,7 +936,8 @@ USO DE FERRAMENTAS (function calling · OBRIGATÓRIO em mutações):
     garçom** (atendimento presencial). NÃO dispare quando ele só quer
     pagar, pedir, adicionar água/bebida do cardápio, ou ver cardápio —
     essas têm tools próprias.
-  · "junta com a mesa N" / "juntar mesas" → `request_table_merge(targetTable=N)`.
+  · "junta com a mesa N" → `request_table_merge(targetTable=N)`.
+    "juntar mesas" sem alvo claro → `request_table_merge()` para abrir o mapa.
   · "tem glúten?" / "é sem lactose?" / "tem alérgeno X?" → `check_allergens`.
   · "quero comparar X e Y" → `compare_dishes`.
   · "manda recado pro gerente" / "mensagem pra gerência" → se o texto já

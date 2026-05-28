@@ -25,14 +25,23 @@ import { CallerResolverService } from '../../common/services/caller-resolver.ser
 import { TableMergeService } from './table-merge.service';
 
 class CreateMergeDto {
+  @IsOptional()
   @IsUUID()
-  sourceTableSessionId!: string;
+  sourceTableSessionId?: string;
 
+  @IsOptional()
   @IsUUID()
-  targetTableSessionId!: string;
+  targetTableSessionId?: string;
 
+  @IsOptional()
   @IsUUID()
-  requestingCustomerId!: string;
+  requestingCustomerId?: string;
+
+  @IsOptional()
+  targetTableNumber?: number;
+
+  @IsOptional()
+  targetTableLabel?: string;
 
   @IsOptional()
   @IsUUID()
@@ -96,15 +105,22 @@ export class TableMergeController {
     @Session() session: SessionData,
     @Req() req: Request,
   ) {
-    if (dto.sourceTableSessionId !== session.sessionId) {
+    if (dto.sourceTableSessionId && dto.sourceTableSessionId !== session.sessionId) {
       throw new HttpException(
-        'sourceTableSessionId precisa ser sua própria mesa.',
+        {
+          message_user: 'A mesa de origem precisa ser a sua mesa atual.',
+          code: 'SOURCE_SESSION_MISMATCH',
+        },
         HttpStatus.FORBIDDEN,
       );
     }
     const callerCustomerId = await this.callerResolver.requireCustomerId(req);
-    return this.service.createRequest(
-      { ...dto, requestingCustomerId: callerCustomerId },
+    return this.service.createCustomerRequest(
+      {
+        ...dto,
+        sourceTableSessionId: session.sessionId,
+        requestingCustomerId: callerCustomerId,
+      },
       slug,
     );
   }

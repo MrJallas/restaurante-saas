@@ -1,0 +1,67 @@
+{
+  "createdAt": "2026-05-28T20:16:06.350Z",
+  "requestStatus": 201,
+  "request": {
+    "id": "433f25c8-f3f7-4631-88a0-6cd104df08bf",
+    "sourceTableSessionId": "1c8354f2-5257-44e1-bd54-e46fcb43b3e5",
+    "targetTableSessionId": "4789b056-cf3f-41ea-8b3b-fe0ed708218e",
+    "requestingCustomerId": "c0bbea06-a8b7-4e9a-ac4f-697e38189f5e",
+    "targetCustomerId": "b7a07796-4af8-4a99-9101-3d8fe3f9e878",
+    "decidedByCustomerId": null,
+    "status": "pending",
+    "originTableNumber": 14,
+    "targetTableNumber": 15,
+    "originHostName": "Prompt08 Origem",
+    "targetHostName": "Prompt08 Destino",
+    "originPartySize": 2,
+    "targetPartySize": 1,
+    "message": "QA prompt 08 websocket artifact 2026-05-28T20:16:05.113Z",
+    "ttlExpiresAt": "2026-05-28T20:17:05.141Z",
+    "expiresAt": "2026-05-28T20:17:05.141Z",
+    "cooldownEndsAt": null,
+    "decidedAt": null,
+    "approvedByAAt": null,
+    "approvedByBAt": null,
+    "createdAt": "2026-05-28T20:16:05.141Z"
+  },
+  "sessions": {
+    "sourceSession": "1c8354f2-5257-44e1-bd54-e46fcb43b3e5",
+    "targetSession": "4789b056-cf3f-41ea-8b3b-fe0ed708218e"
+  },
+  "events": {
+    "source": [
+      {
+        "event": "table_merge.created",
+        "payload": {
+          "requestId": "433f25c8-f3f7-4631-88a0-6cd104df08bf",
+          "originSessionId": "1c8354f2-5257-44e1-bd54-e46fcb43b3e5",
+          "targetSessionId": "4789b056-cf3f-41ea-8b3b-fe0ed708218e",
+          "originTableNumber": 14,
+          "targetTableNumber": 15,
+          "originHostName": "Prompt08 Origem",
+          "targetHostName": "Prompt08 Destino",
+          "originPartySize": 2,
+          "targetPartySize": 1,
+          "expiresAt": "2026-05-28T20:17:05.141Z"
+        }
+      }
+    ],
+    "target": [
+      {
+        "event": "table_merge.created",
+        "payload": {
+          "requestId": "433f25c8-f3f7-4631-88a0-6cd104df08bf",
+          "originSessionId": "1c8354f2-5257-44e1-bd54-e46fcb43b3e5",
+          "targetSessionId": "4789b056-cf3f-41ea-8b3b-fe0ed708218e",
+          "originTableNumber": 14,
+          "targetTableNumber": 15,
+          "originHostName": "Prompt08 Origem",
+          "targetHostName": "Prompt08 Destino",
+          "originPartySize": 2,
+          "targetPartySize": 1,
+          "expiresAt": "2026-05-28T20:17:05.141Z"
+        }
+      }
+    ]
+  }
+}

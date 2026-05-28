@@ -126,9 +126,11 @@ export type TableMergeCreateResult =
  * Returns either the new request or a typed cooldown error (HTTP 429).
  */
 export async function createTableMergeRequest(input: {
-  sourceTableSessionId: string;
-  targetTableSessionId: string;
-  requestingCustomerId: string;
+  sourceTableSessionId?: string;
+  targetTableSessionId?: string;
+  targetTableNumber?: number;
+  targetTableLabel?: string;
+  requestingCustomerId?: string;
   targetCustomerId?: string;
   message?: string;
   slug?: string;
@@ -140,6 +142,8 @@ export async function createTableMergeRequest(input: {
       {
         sourceTableSessionId: input.sourceTableSessionId,
         targetTableSessionId: input.targetTableSessionId,
+        targetTableNumber: input.targetTableNumber,
+        targetTableLabel: input.targetTableLabel,
         requestingCustomerId: input.requestingCustomerId,
         targetCustomerId: input.targetCustomerId,
         message: input.message,

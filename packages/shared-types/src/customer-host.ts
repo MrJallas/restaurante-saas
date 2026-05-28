@@ -143,8 +143,14 @@ export interface TableMergeRequestDto {
  * via OverlaySalonMap.
  */
 export interface TableMergeCreateDto {
+  /** Active table-session id selected from OverlaySalonMap. Preferred. */
+  targetTableSessionId?: string;
   /** Table number of the target side (e.g. 15 for "M14 -> M15" merge). */
-  targetTableNumber: number;
+  targetTableNumber?: number;
+  /** Human label/code fallback from the assistant, e.g. "M15" or "Mesa 15". */
+  targetTableLabel?: string;
+  /** Optional customer-facing note copied into the request. */
+  message?: string;
 }
 
 /**

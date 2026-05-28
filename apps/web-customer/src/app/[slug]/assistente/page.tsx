@@ -8,6 +8,7 @@ import { clearDeliveredContinuationHint } from '../../../lib/continuationHints';
 import { recordCustomerEvent } from '../../../lib/customerEvents';
 import { listMessages } from '../../../lib/api/chat-history';
 import { listCustomerCourtesies, respondCustomerCourtesy } from '../../../lib/api/courtesies';
+import { createTableMergeRequest } from '../../../lib/api/customer-host';
 import type { ChatMessageDto, CourtesyStatus, CustomerCourtesyDto } from '@restaurant/shared-types';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
@@ -108,6 +109,10 @@ interface AssistantToolHint {
    * When undefined the overlay falls back to its default 3×3 salon grid.
    */
   tables?: SalonTable[];
+}
+
+interface SalonTablesResponse {
+  tables: SalonTable[];
 }
 
 /**
@@ -1042,9 +1047,33 @@ export default function AssistentePage() {
   // handler awaits `handleToolCall(call)` and the customer's table tap
   // resolves with the enriched envelope.
   const tableMerge = useTableMerge();
-  // Tables to render in the overlay — empty default for now. C5 will wire
-  // `/salon/tables/adjacent?from={ourTable}` once the BE endpoint lands.
-  const salonTables = useMemo<SalonTable[]>(() => [], []);
+  const [salonTables, setSalonTables] = useState<SalonTable[]>([]);
+  const [salonLoading, setSalonLoading] = useState(false);
+  const [salonError, setSalonError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tableMerge.overlayOpen) return;
+    let cancelled = false;
+    setSalonLoading(true);
+    setSalonError(null);
+    apiGet<SalonTablesResponse>(`/${slug}/salon/tables/adjacent?radius=2`)
+      .then((res) => {
+        if (cancelled) return;
+        setSalonTables(res.tables ?? []);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn('[chat] failed to load salon map:', err);
+        setSalonTables([]);
+        setSalonError('Nao consegui carregar o mapa do salao agora.');
+      })
+      .finally(() => {
+        if (!cancelled) setSalonLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, tableMerge.overlayOpen]);
 
   const appendToolFeedback = (content: string) => {
     setMessages((prev) => [
@@ -1222,6 +1251,60 @@ export default function AssistentePage() {
     return null;
   };
 
+  const createTableMergeFromToolCall = async (call: AssistantToolCall): Promise<void> => {
+    const args = call.arguments ?? {};
+    const payload = actionPayload(call);
+    const targetTableSessionId =
+      stringValue(args.targetTableSessionId) ??
+      stringValue(args.target_session_id) ??
+      stringValue(payload.targetTableSessionId) ??
+      stringValue(payload.target_session_id);
+    const targetTableNumber =
+      numberValue(args.targetTableNumber) ??
+      numberValue(args.targetTable) ??
+      numberValue(args.target_table) ??
+      numberValue(payload.targetTableNumber) ??
+      numberValue(payload.targetTable);
+    const targetTableLabel =
+      stringValue(args.targetTableLabel) ??
+      stringValue(args.targetTable) ??
+      stringValue(args.target_table) ??
+      stringValue(payload.targetTableLabel) ??
+      stringValue(payload.targetTable);
+
+    if (!targetTableSessionId && targetTableNumber === null && !targetTableLabel) {
+      appendToolFeedback('Escolha uma mesa ocupada no mapa para pedir a junção.');
+      return;
+    }
+
+    const result = await createTableMergeRequest({
+      slug,
+      targetTableSessionId: targetTableSessionId ?? undefined,
+      targetTableNumber: targetTableNumber ?? undefined,
+      targetTableLabel: targetTableLabel ?? undefined,
+      message: 'Pedido feito pelo assistente do cliente.',
+    });
+
+    if (result.ok) {
+      const target =
+        result.request.targetTableNumber ||
+        targetTableNumber ||
+        targetTableLabel ||
+        'escolhida';
+      appendToolFeedback(
+        `Pedido enviado para juntar com a mesa ${target}. Agora os hosts das duas mesas precisam confirmar.`,
+      );
+      return;
+    }
+
+    if (result.error === 'cooldown') {
+      appendToolFeedback(result.cooldown.message || 'Essa junção foi tentada há pouco. Tente novamente em alguns minutos.');
+      return;
+    }
+
+    appendToolFeedback(result.message || 'Não consegui criar o pedido de junção agora.');
+  };
+
   const draftSummaryText = () => {
     if (draftItems.length === 0) {
       return 'Seu pedido tá vazio. Quer dar uma olhada no cardápio?';
@@ -1251,7 +1334,7 @@ export default function AssistentePage() {
    *
    * Tools handled fully:
    *  - `request_table_merge` (no targetTable) → opens OverlaySalonMap, awaits
-   *    pick, re-emits enriched call to BE
+   *    pick, then creates the merge request with the current session
    *  - `lgpd_data_request`, `show_lgpd_notice` → handled inline above via
    *    `toolHint`/chips (canonical text comes from `lgpd_messages.py`)
    *
@@ -1294,21 +1377,20 @@ export default function AssistentePage() {
         arguments: call.arguments,
       });
       // null → not handled (shouldn't happen given the if above)
-      // sync envelope → already had targetTable; nothing to re-dispatch
-      // Promise → resolved by overlay tap
+      // sync envelope -> already had a target; Promise -> resolved by the
+      // overlay after the customer confirms a table.
       if (!enriched) return;
       const final = await Promise.resolve(enriched);
-      if (final.arguments?.targetTable) {
-        // Re-emit the call to the BE so the merge request actually persists.
-        try {
-          await apiPost(`/${slug}/assistant/tool-result`, {
-            name: 'request_table_merge',
-            arguments: final.arguments,
-            customerId: session.customerId || undefined,
-          });
-        } catch (err) {
-          console.warn('[chat] table-merge re-emit failed:', err);
-        }
+      if (
+        final.arguments?.targetTable ||
+        final.arguments?.targetTableNumber ||
+        final.arguments?.targetTableLabel ||
+        final.arguments?.targetTableSessionId
+      ) {
+        await createTableMergeFromToolCall({
+          name: 'request_table_merge',
+          arguments: final.arguments,
+        });
       }
       return;
     }
@@ -2225,8 +2307,8 @@ export default function AssistentePage() {
       </div>
 
       {/* Salon-map overlay · driven by the LLM tool `request_table_merge`
-          when no `targetTable` is provided. Tap on a table resolves the
-          pending tool-call promise (see `useTableMerge`). */}
+          when no `targetTable` is provided. The CTA resolves the pending
+          tool-call promise after the customer confirms a table. */}
       <CommandPicker
         open={pendingOrderAdd !== null}
         priceCents={pendingOrderTotalCents}
@@ -2237,7 +2319,16 @@ export default function AssistentePage() {
       <OverlaySalonMap
         open={tableMerge.overlayOpen}
         tables={salonTables}
-        onSelectTable={(t) => tableMerge.selectTable(t.num)}
+        loading={salonLoading}
+        error={salonError}
+        emptyMessage="Nao encontrei mesas proximas para juntar agora."
+        onSelectTable={(t) =>
+          tableMerge.selectTable({
+            num: t.num,
+            sessionId: t.sessionId,
+            label: t.tableLabel ?? t.tableCode,
+          })
+        }
         onClose={tableMerge.cancelOverlay}
         title="Com qual mesa você quer juntar?"
         ctaLabel="Pedir pra juntar"
