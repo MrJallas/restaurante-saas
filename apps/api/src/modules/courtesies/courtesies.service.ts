@@ -2,10 +2,16 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import type { CustomerCourtesyDto } from '@restaurant/shared-types';
+import type {
+  CustomerCourtesyDto,
+  CustomerCourtesyHistoryDto,
+} from '@restaurant/shared-types';
+import { MongoService } from '../../infra/mongo/mongo.service';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -29,11 +35,37 @@ export interface CourtesyRow {
 
 const VALID_TYPES = ['Sobremesa', 'Drink', 'Desconto', 'Couvert', 'Mensagem', 'Outro'];
 const VALID_STATUS: CourtesyStatus[] = ['pendente', 'aceita', 'recusada'];
+const HISTORY_COLLECTION = 'customer_courtesy_history';
+const HISTORY_TTL_DAYS = 30;
+
+interface CourtesyHistoryDoc {
+  tenantId: string;
+  customerId: string;
+  courtesyId: string;
+  tableSessionId: string;
+  tableNumber: number | null;
+  type: string;
+  item: string;
+  status: CourtesyStatus;
+  managerName: string | null;
+  notes: string | null;
+  createdAt: Date;
+  respondedAt: Date | null;
+  receivedAt: Date;
+  updatedAt: Date;
+  expiresAt: Date;
+  validUntilSessionClose: boolean;
+  currentSessionOnly: boolean;
+}
 
 @Injectable()
 export class CourtesiesService {
+  private readonly logger = new Logger(CourtesiesService.name);
+  private historyIndexesEnsured = false;
+
   constructor(
     private readonly tenantConn: TenantConnectionProvider,
+    private readonly mongo: MongoService,
     @Optional() private readonly events?: EventsGateway,
   ) {}
 
@@ -134,6 +166,7 @@ export class CourtesiesService {
     if (!created) {
       throw new BadRequestException('Falha ao recuperar cortesia criada.');
     }
+    await this.recordCourtesyHistoryForActiveParticipants(created);
     this.emitCreated(data.slug, created);
     return created;
   }
@@ -158,13 +191,97 @@ export class CourtesiesService {
     }
     const found = await this.findById(rows[0].id);
     if (!found) throw new NotFoundException('Cortesia nao encontrada.');
+    await this.updateCourtesyHistoryStatus(found);
     this.emitUpdated(slug, found);
     return found;
   }
 
-  async listForSession(tableSessionId: string): Promise<CustomerCourtesyDto[]> {
+  async listForSession(
+    tableSessionId: string,
+    customerId?: string,
+  ): Promise<CustomerCourtesyDto[]> {
     await this.attachTableNumberCourtesiesToActiveSession(tableSessionId);
-    const rows = unwrapRows<CourtesyRow>(
+    const rows = await this.listRowsForOpenSession(tableSessionId);
+    if (customerId) {
+      await this.upsertCourtesyHistoryForCustomerRows(customerId, rows);
+    }
+    return rows.map((row) => this.toCustomerDto(row));
+  }
+
+  async listHistoryForCustomer(
+    customerId: string | undefined,
+    tableSessionId: string,
+  ): Promise<CustomerCourtesyHistoryDto[]> {
+    if (!customerId) return [];
+
+    await this.attachTableNumberCourtesiesToActiveSession(tableSessionId);
+    await this.upsertCourtesyHistoryForCustomerRows(
+      customerId,
+      await this.listRowsForOpenSession(tableSessionId),
+    );
+
+    const db = this.mongo.tryDb();
+    if (!db) {
+      throw new ServiceUnavailableException({
+        message_user: 'Histórico de cortesias indisponível agora.',
+        code: 'COURTESY_HISTORY_MONGO_UNAVAILABLE',
+      });
+    }
+    await this.ensureHistoryIndexes();
+
+    const docs = await db
+      .collection<CourtesyHistoryDoc>(HISTORY_COLLECTION)
+      .find({
+        tenantId: this.historyTenantId(),
+        customerId,
+        expiresAt: { $gt: new Date() },
+      })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .toArray();
+
+    return docs.map((doc) => this.toHistoryDto(doc, tableSessionId));
+  }
+
+  async respondForSession(
+    id: string,
+    status: CourtesyStatus,
+    tableSessionId: string,
+    slug?: string,
+    customerId?: string,
+  ): Promise<CustomerCourtesyDto> {
+    if (!VALID_STATUS.includes(status) || status === 'pendente') {
+      throw new BadRequestException({
+        message_user: 'Escolha aceitar ou recusar a cortesia.',
+        code: 'COURTESY_INVALID_STATUS',
+      });
+    }
+
+    await this.attachTableNumberCourtesiesToActiveSession(tableSessionId);
+    await this.ensureSessionOpen(tableSessionId);
+    const current = await this.findById(id);
+    if (!current || current.table_session_id !== tableSessionId) {
+      throw new ForbiddenException({
+        message_user: 'Essa cortesia nao pertence a esta mesa.',
+        code: 'COURTESY_NOT_OWNED',
+      });
+    }
+    if (current.status !== 'pendente') {
+      throw new BadRequestException({
+        message_user: 'Essa cortesia ja foi respondida.',
+        code: 'COURTESY_ALREADY_RESPONDED',
+      });
+    }
+
+    const updated = await this.respond(id, status, slug);
+    if (customerId) {
+      await this.upsertCourtesyHistoryForCustomerRows(customerId, [updated]);
+    }
+    return this.toCustomerDto(updated);
+  }
+
+  private async listRowsForOpenSession(tableSessionId: string): Promise<CourtesyRow[]> {
+    return unwrapRows<CourtesyRow>(
       await this.tenantConn.query(
         `
         SELECT
@@ -182,46 +299,16 @@ export class CourtesiesService {
           c.response_seconds
         FROM courtesies c
         JOIN staff s ON s.id = c.manager_staff_id
+        JOIN table_sessions ts ON ts.id = c.table_session_id
         WHERE c.table_session_id = $1
+          AND ts.status = 'active'
+          AND ts.closed_at IS NULL
         ORDER BY c.created_at DESC
         LIMIT 50
         `,
         [tableSessionId],
       ),
     );
-    return rows.map((row) => this.toCustomerDto(row));
-  }
-
-  async respondForSession(
-    id: string,
-    status: CourtesyStatus,
-    tableSessionId: string,
-    slug?: string,
-  ): Promise<CustomerCourtesyDto> {
-    if (!VALID_STATUS.includes(status) || status === 'pendente') {
-      throw new BadRequestException({
-        message_user: 'Escolha aceitar ou recusar a cortesia.',
-        code: 'COURTESY_INVALID_STATUS',
-      });
-    }
-
-    await this.attachTableNumberCourtesiesToActiveSession(tableSessionId);
-    const current = await this.findById(id);
-    if (!current || current.table_session_id !== tableSessionId) {
-      throw new ForbiddenException({
-        message_user: 'Essa cortesia nao pertence a esta mesa.',
-        code: 'COURTESY_NOT_OWNED',
-      });
-    }
-    if (current.status !== 'pendente') {
-      throw new BadRequestException({
-        message_user: 'Essa cortesia ja foi respondida.',
-        code: 'COURTESY_ALREADY_RESPONDED',
-      });
-    }
-
-    const updated = await this.respond(id, status, slug);
-    return this.toCustomerDto(updated);
   }
 
   private async findById(id: string): Promise<CourtesyRow | null> {
@@ -307,6 +394,163 @@ export class CourtesiesService {
     );
   }
 
+  private async ensureSessionOpen(tableSessionId: string): Promise<void> {
+    const rows = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `
+        SELECT id
+        FROM table_sessions
+        WHERE id = $1
+          AND status = 'active'
+          AND closed_at IS NULL
+        LIMIT 1
+        `,
+        [tableSessionId],
+      ),
+    );
+    if (rows.length > 0) return;
+    throw new BadRequestException({
+      message_user: 'Essa cortesia vale só até o fechamento da conta atual.',
+      code: 'COURTESY_SESSION_CLOSED',
+    });
+  }
+
+  private async recordCourtesyHistoryForActiveParticipants(row: CourtesyRow): Promise<void> {
+    if (!row.table_session_id) return;
+    const participants = unwrapRows<{ customer_id: string }>(
+      await this.tenantConn.query(
+        `
+        SELECT sp.customer_id
+        FROM session_participants sp
+        JOIN table_sessions ts ON ts.id = sp.table_session_id
+        WHERE sp.table_session_id = $1
+          AND sp.left_at IS NULL
+          AND sp.status = 'approved'
+          AND ts.status = 'active'
+          AND ts.closed_at IS NULL
+        `,
+        [row.table_session_id],
+      ),
+    );
+    for (const participant of participants) {
+      await this.upsertCourtesyHistoryForCustomerRows(participant.customer_id, [row]);
+    }
+  }
+
+  private async ensureHistoryIndexes(): Promise<void> {
+    if (this.historyIndexesEnsured) return;
+    const db = this.mongo.tryDb();
+    if (!db) return;
+    try {
+      const collection = db.collection<CourtesyHistoryDoc>(HISTORY_COLLECTION);
+      await collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+      await collection.createIndex({ tenantId: 1, customerId: 1, createdAt: -1 });
+      await collection.createIndex(
+        { tenantId: 1, customerId: 1, courtesyId: 1 },
+        { unique: true },
+      );
+      await collection.createIndex({ tenantId: 1, courtesyId: 1 });
+      this.historyIndexesEnsured = true;
+    } catch (err) {
+      this.logger.warn(
+        `Falha ao garantir indexes em ${HISTORY_COLLECTION}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private async upsertCourtesyHistoryForCustomerRows(
+    customerId: string,
+    rows: CourtesyRow[],
+  ): Promise<void> {
+    if (!rows.length) return;
+    const db = this.mongo.tryDb();
+    if (!db) {
+      this.logger.warn(`Mongo offline · skipping courtesy history for customer ${customerId}`);
+      return;
+    }
+    await this.ensureHistoryIndexes();
+
+    const tenantId = this.historyTenantId();
+    const now = new Date();
+    const collection = db.collection<CourtesyHistoryDoc>(HISTORY_COLLECTION);
+
+    for (const row of rows) {
+      if (!row.table_session_id) continue;
+      const createdAt = this.toDate(row.created_at, now);
+      const expiresAt = new Date(
+        createdAt.getTime() + HISTORY_TTL_DAYS * 24 * 60 * 60 * 1000,
+      );
+      try {
+        await collection.updateOne(
+          { tenantId, customerId, courtesyId: row.id },
+          {
+            $setOnInsert: {
+              tenantId,
+              customerId,
+              courtesyId: row.id,
+              receivedAt: createdAt,
+              validUntilSessionClose: true,
+              currentSessionOnly: true,
+            },
+            $set: {
+              tableSessionId: row.table_session_id,
+              tableNumber: row.table_number,
+              type: row.type,
+              item: row.item,
+              status: row.status,
+              managerName: row.manager_name ?? null,
+              notes: row.notes,
+              createdAt,
+              respondedAt: row.responded_at ? this.toDate(row.responded_at, now) : null,
+              updatedAt: now,
+              expiresAt,
+            },
+          },
+          { upsert: true },
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Falha ao persistir courtesy history ${row.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  private async updateCourtesyHistoryStatus(row: CourtesyRow): Promise<void> {
+    const db = this.mongo.tryDb();
+    if (!db) {
+      this.logger.warn(`Mongo offline · skipping courtesy history status for ${row.id}`);
+      return;
+    }
+    await this.ensureHistoryIndexes();
+    try {
+      await db.collection<CourtesyHistoryDoc>(HISTORY_COLLECTION).updateMany(
+        { tenantId: this.historyTenantId(), courtesyId: row.id },
+        {
+          $set: {
+            status: row.status,
+            respondedAt: row.responded_at ? this.toDate(row.responded_at, new Date()) : null,
+            updatedAt: new Date(),
+          },
+        },
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Falha ao atualizar courtesy history ${row.id}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private historyTenantId(): string {
+    return this.tenantConn.getTenantSlug() ?? 'unknown';
+  }
+
+  private toDate(value: string | Date, fallback: Date): Date {
+    if (value instanceof Date) return value;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+  }
+
   private toCustomerDto(row: CourtesyRow): CustomerCourtesyDto {
     return {
       id: row.id,
@@ -319,6 +563,29 @@ export class CourtesiesService {
       notes: row.notes,
       createdAt: row.created_at,
       respondedAt: row.responded_at,
+    };
+  }
+
+  private toHistoryDto(
+    doc: CourtesyHistoryDoc,
+    currentTableSessionId: string,
+  ): CustomerCourtesyHistoryDto {
+    return {
+      id: doc.courtesyId,
+      tableSessionId: doc.tableSessionId,
+      tableNumber: doc.tableNumber,
+      type: doc.type,
+      item: doc.item,
+      status: doc.status,
+      managerName: doc.managerName,
+      notes: doc.notes,
+      createdAt: doc.createdAt.toISOString(),
+      respondedAt: doc.respondedAt ? doc.respondedAt.toISOString() : null,
+      receivedAt: doc.receivedAt.toISOString(),
+      expiresAt: doc.expiresAt.toISOString(),
+      validInCurrentSession:
+        doc.tableSessionId === currentTableSessionId && doc.status === 'pendente',
+      validUntilSessionClose: doc.validUntilSessionClose !== false,
     };
   }
 

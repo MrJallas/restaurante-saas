@@ -4,6 +4,7 @@ import { CourtesiesService } from './courtesies.service';
 import { TenantModule } from '../tenant/tenant.module';
 import { CallerResolverModule } from '../../common/services/caller-resolver.module';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
+import { MongoModule } from '../../infra/mongo/mongo.module';
 
 /**
  * Round 18 (Onda 1 wiring): persistencia das cortesias do manager.
@@ -13,7 +14,7 @@ import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
  * (registrar aceite/recusa).
  */
 @Module({
-  imports: [TenantModule, CallerResolverModule],
+  imports: [TenantModule, CallerResolverModule, MongoModule],
   controllers: [CourtesiesController, CustomerCourtesiesController],
   providers: [CourtesiesService, ManagerOnlyGuard],
   exports: [CourtesiesService],

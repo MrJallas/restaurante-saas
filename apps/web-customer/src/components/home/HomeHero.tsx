@@ -19,7 +19,7 @@ export function HomeHero({
   const isString = typeof message === 'string';
 
   return (
-    <div className="mt-6">
+    <div data-testid="home-hero" className="mt-6">
       <div className="mb-2 text-[11px] font-medium uppercase tracking-[1px] text-mute">
         {kicker}
       </div>

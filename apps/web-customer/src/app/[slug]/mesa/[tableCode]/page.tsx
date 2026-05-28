@@ -19,7 +19,7 @@ import { AppShell } from '../../../../components/layout/AppShell';
 import { HomeHero } from '../../../../components/home/HomeHero';
 import { PillButton } from '../../../../components/ui/PillButton';
 import { SoftInput } from '../../../../components/ui/SoftInput';
-import { CourtesyArrival } from '../../../../components/ui/CourtesyArrival';
+import { HomeCourtesyNotice } from '../../../../components/ui/HomeCourtesyNotice';
 import { HostApprovalModal } from '../../../../components/host/HostApprovalModal';
 import { HostJoinRequestBanner } from '../../../../components/host/HostJoinRequestBanner';
 import { ScreenCustomerWaitingApproval } from '../../../../screens/customer-host-flows/ScreenCustomerWaitingApproval';
@@ -206,6 +206,7 @@ export default function MesaPage() {
 
   useTableSocket(sessionId, (event, data) => {
     if (event === 'courtesy.created' && isCustomerCourtesyDto(data)) {
+      if (data.status !== 'pendente') return;
       setCourtesies((prev) => {
         if (prev.some((c) => c.id === data.id)) return prev;
         return [data, ...prev];
@@ -213,7 +214,11 @@ export default function MesaPage() {
       return;
     }
     if (event === 'courtesy.updated' && isCustomerCourtesyDto(data)) {
-      setCourtesies((prev) => prev.map((c) => (c.id === data.id ? data : c)));
+      setCourtesies((prev) =>
+        data.status === 'pendente'
+          ? prev.map((c) => (c.id === data.id ? data : c))
+          : prev.filter((c) => c.id !== data.id),
+      );
       setCourtesyBusy((prev) => ({ ...prev, [data.id]: null }));
       setCourtesyErrors((prev) => ({ ...prev, [data.id]: null }));
     }
@@ -550,7 +555,11 @@ export default function MesaPage() {
       setCourtesyErrors((prev) => ({ ...prev, [courtesyId]: null }));
       try {
         const updated = await respondCustomerCourtesy(slug, courtesyId, status);
-        setCourtesies((prev) => prev.map((c) => (c.id === courtesyId ? updated : c)));
+        setCourtesies((prev) =>
+          updated.status === 'pendente'
+            ? prev.map((c) => (c.id === courtesyId ? updated : c))
+            : prev.filter((c) => c.id !== courtesyId),
+        );
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Não consegui responder essa cortesia agora.';
@@ -734,6 +743,8 @@ export default function MesaPage() {
     : isReturning
       ? 'Assistente · reconheceu você'
       : 'Assistente';
+  const pendingCourtesies = courtesies.filter((c) => c.status === 'pendente');
+  const featuredCourtesy = pendingCourtesies[0] ?? null;
   const keyboardAccessoryOffset =
     typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches ? 112 : 0;
   const focusedInputBottom = `calc(${Math.max(
@@ -786,42 +797,45 @@ export default function MesaPage() {
           </span>
         </div>
       )}
-      <div className="flex flex-1 flex-col justify-center gap-3.5 px-6 pb-8">
-        <div className="flex flex-col items-center gap-3">
-          <PillButton onClick={openCallWaiterSheet}>Chamar garçom</PillButton>
-          <PillButton onClick={() => push(`/${slug}/cardapio`)}>Ver cardápio</PillButton>
-          {isReturning && lastItems.length > 0 && (
-            <PillButton variant="filled" onClick={handleRepeatLastVisit} disabled={repeatBusy}>
-              {repeatBusy ? 'Carregando…' : '↻ Repetir última visita'}
-            </PillButton>
-          )}
-          {repeatError && (
-            <div className="max-w-[320px] rounded-[12px] border border-danger/30 bg-danger/5 px-3.5 py-2.5 text-center text-[12px] leading-[1.4] text-danger">
-              {repeatError}
-            </div>
-          )}
-          {locationCheck?.insideRadius === true && (
-            <div className="rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-center text-[10px] font-bold uppercase tracking-[1px] text-success">
-              Dentro da área do restaurante
-              {typeof locationCheck.distanceMeters === 'number'
-                ? ` · ${Math.round(locationCheck.distanceMeters)}m`
-                : ''}
-            </div>
-          )}
-          {courtesies.map((courtesy) => (
-            <CourtesyArrival
-              key={courtesy.id}
-              courtesy={courtesy}
-              busyStatus={courtesyBusy[courtesy.id]}
-              error={courtesyErrors[courtesy.id]}
-              onRespond={handleCourtesyRespond}
-              align="center"
-              className="bg-bg text-left"
-            />
-          ))}
+      <div className="flex flex-1 flex-col px-6 pb-4">
+        <div className="flex flex-1 flex-col justify-center gap-3.5">
+          <div className="flex flex-col items-center gap-3">
+            <PillButton onClick={openCallWaiterSheet}>Chamar garçom</PillButton>
+            <PillButton onClick={() => push(`/${slug}/cardapio`)}>Ver cardápio</PillButton>
+            {isReturning && lastItems.length > 0 && (
+              <PillButton variant="filled" onClick={handleRepeatLastVisit} disabled={repeatBusy}>
+                {repeatBusy ? 'Carregando…' : '↻ Repetir última visita'}
+              </PillButton>
+            )}
+            {repeatError && (
+              <div className="max-w-[320px] rounded-[12px] border border-danger/30 bg-danger/5 px-3.5 py-2.5 text-center text-[12px] leading-[1.4] text-danger">
+                {repeatError}
+              </div>
+            )}
+            {locationCheck?.insideRadius === true && (
+              <div className="rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-center text-[10px] font-bold uppercase tracking-[1px] text-success">
+                Dentro da área do restaurante
+                {typeof locationCheck.distanceMeters === 'number'
+                  ? ` · ${Math.round(locationCheck.distanceMeters)}m`
+                  : ''}
+              </div>
+            )}
+          </div>
+
+          <HomeHero message={homeHeroMessage} kicker={homeHeroKicker} />
         </div>
 
-        <HomeHero message={homeHeroMessage} kicker={homeHeroKicker} />
+        {featuredCourtesy && (
+          <div className="pb-3">
+            <HomeCourtesyNotice
+              courtesy={featuredCourtesy}
+              pendingCount={pendingCourtesies.length}
+              busyStatus={courtesyBusy[featuredCourtesy.id]}
+              error={courtesyErrors[featuredCourtesy.id]}
+              onRespond={handleCourtesyRespond}
+            />
+          </div>
+        )}
       </div>
 
       <div className="px-6 pb-safe pb-8">

@@ -16,3 +16,15 @@ export interface CustomerCourtesyDto {
 export interface CustomerCourtesiesResponse {
   courtesies: CustomerCourtesyDto[];
 }
+
+export interface CustomerCourtesyHistoryDto extends CustomerCourtesyDto {
+  receivedAt: string;
+  expiresAt: string;
+  validInCurrentSession: boolean;
+  validUntilSessionClose: boolean;
+}
+
+export interface CustomerCourtesyHistoryResponse {
+  courtesies: CustomerCourtesyHistoryDto[];
+  retentionDays: number;
+}

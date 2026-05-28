@@ -9,7 +9,11 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import type { CustomerCourtesiesResponse, CustomerCourtesyDto } from '@restaurant/shared-types';
+import type {
+  CustomerCourtesiesResponse,
+  CustomerCourtesyDto,
+  CustomerCourtesyHistoryResponse,
+} from '@restaurant/shared-types';
 import { IsIn, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 import type { Request } from 'express';
 import { Session } from '../../common/decorators/session.decorator';
@@ -114,7 +118,19 @@ export class CustomerCourtesiesController {
   @UseGuards(SessionGuard)
   async list(@Session() session: SessionData): Promise<CustomerCourtesiesResponse> {
     return {
-      courtesies: await this.service.listForSession(session.sessionId),
+      courtesies: await this.service.listForSession(session.sessionId, session.customerId),
+    };
+  }
+
+  @Get('history')
+  @UseGuards(SessionGuard)
+  async history(@Session() session: SessionData): Promise<CustomerCourtesyHistoryResponse> {
+    return {
+      courtesies: await this.service.listHistoryForCustomer(
+        session.customerId,
+        session.sessionId,
+      ),
+      retentionDays: 30,
     };
   }
 
@@ -127,6 +143,12 @@ export class CustomerCourtesiesController {
     @Body() dto: RespondCourtesyDto,
     @Session() session: SessionData,
   ): Promise<CustomerCourtesyDto> {
-    return this.service.respondForSession(id, dto.status, session.sessionId, slug);
+    return this.service.respondForSession(
+      id,
+      dto.status,
+      session.sessionId,
+      slug,
+      session.customerId,
+    );
   }
 }

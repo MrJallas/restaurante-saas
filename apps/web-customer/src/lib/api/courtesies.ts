@@ -2,6 +2,8 @@ import type {
   CourtesyStatus,
   CustomerCourtesiesResponse,
   CustomerCourtesyDto,
+  CustomerCourtesyHistoryDto,
+  CustomerCourtesyHistoryResponse,
 } from '@restaurant/shared-types';
 import { apiGet, apiPost } from '../api';
 
@@ -19,4 +21,13 @@ export function respondCustomerCourtesy(
     `/${slug}/customer/courtesies/${encodeURIComponent(id)}/respond`,
     { status },
   );
+}
+
+export async function listCustomerCourtesyHistory(
+  slug: string,
+): Promise<CustomerCourtesyHistoryDto[]> {
+  const res = await apiGet<CustomerCourtesyHistoryResponse>(
+    `/${slug}/customer/courtesies/history`,
+  );
+  return res.courtesies ?? [];
 }
