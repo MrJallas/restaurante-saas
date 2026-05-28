@@ -1,0 +1,5 @@
+5dc0fe73-cdca-4b55-b407-46c4a9abe2c9 | staff | staff | 8bd06156-1fe5-4c18-a82d-43d38287ed4a |  | Mensagem iOS live reload 150957
+3fa80ede-34b7-4b3f-b4e7-ee8233f32340 |  | openai | qwen/qwen3-coder-30b | Me indica uma sobremesa leve | Eu iria nessas opções hoje:
+- Pudim da Casa — R$ 15,90
+- Brownie com Sorvete — R$ 18,90
+- Petit Gateau — R$ 19,90
