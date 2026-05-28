@@ -1,0 +1,10 @@
+HTTP/1.1 302 Found
+X-Powered-By: Express
+Vary: Origin, Accept
+Access-Control-Allow-Credentials: true
+Location: http://localhost:3003/restaurant_dev/mesa/QRTEST91?hmac=7d4b00fb91b4ad46987f579e031b3b69e3ea3724c181a0d6e9b82ef719ddedc6&ts=1779926323425&accessToken=2026-05-27.64d93e6d026a4d20c76a5f663a6ffb8f99a7eb73f50fc23639764a9836846526
+Content-Type: text/plain; charset=utf-8
+Content-Length: 247
+Date: Wed, 27 May 2026 23:58:43 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
