@@ -315,6 +315,17 @@ const DEFAULT_SUGGESTIONS: ChipCanon[] = [
   },
 ];
 
+const TABLE_MERGE_APPROVED_TEXT =
+  'Mesas juntadas! A comanda virou uma só. Vocês já podem pedir juntos por aqui.';
+
+function tableMergeApprovedMessage(requestId?: string | null): ChatMessage {
+  return {
+    id: `table-merge-approved-${requestId || 'latest'}`,
+    role: 'ai',
+    content: TABLE_MERGE_APPROVED_TEXT,
+  };
+}
+
 /**
  * Coerce o `payload` (que é `unknown` no contrato) pra string com fallback
  * pro label. Backend pode mandar string|null|undefined; o handler precisa
@@ -764,6 +775,8 @@ export default function AssistentePage() {
   const slug = params.slug as string;
   const prefill = searchParams.get('prefill') ?? '';
   const itemId = searchParams.get('itemId') ?? '';
+  const mergeApprovedParam = searchParams.get('mergeApproved') === '1';
+  const mergeRequestIdParam = searchParams.get('mergeRequestId') ?? '';
   // Continuação explícita: só o menu de conversas arquivadas passa
   // `threadId`. Entrada normal em `/assistente` fica sempre nova.
   const threadIdParam = searchParams.get('threadId') ?? '';
@@ -807,10 +820,11 @@ export default function AssistentePage() {
   // bubble do usuario ja visivel + loading — sem exibir o greeting "Olá" —
   // porque do ponto de vista do cliente ele apenas enviou a pergunta.
   const initialMessages = useMemo<ChatMessage[]>(() => {
+    const initial: ChatMessage[] = [];
     if (prefill) {
-      return [{ id: 'prefill-user', role: 'user', content: prefill }];
+      initial.push({ id: 'prefill-user', role: 'user', content: prefill });
     }
-    return [];
+    return initial;
   }, [prefill]);
 
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
@@ -819,7 +833,9 @@ export default function AssistentePage() {
   // `/assistente` sem `threadId` sempre abre uma conversa ativa nova por
   // visita. Histórico salvo no Mongo só volta ao chat ativo pelo menu de
   // conversas, quando o usuário escolhe continuar aquele thread.
-  const [chatStarted, setChatStarted] = useState<boolean>(!!prefill || !!threadIdParam);
+  const [chatStarted, setChatStarted] = useState<boolean>(
+    !!prefill || !!threadIdParam || mergeApprovedParam,
+  );
   const [historyLoading, setHistoryLoading] = useState<boolean>(!!threadIdParam);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [landingGreeting, setLandingGreeting] = useState<string | null>(null);
@@ -848,6 +864,11 @@ export default function AssistentePage() {
       source: threadIdParam ? 'thread' : prefill ? 'prefill' : 'landing',
     });
   }, [slug, session.sessionId, threadIdParam, prefill]);
+
+  useEffect(() => {
+    if (!mergeApprovedParam) return;
+    router.replace(`/${slug}/assistente`);
+  }, [mergeApprovedParam, router, slug]);
 
   useEffect(() => {
     const refresh = () => setContinuationRefreshKey((key) => key + 1);
@@ -937,8 +958,12 @@ export default function AssistentePage() {
         const res = await apiGet<AssistantInlineHistoryResponse>(`/${slug}/assistant/history`);
         if (cancelled) return;
         const hydrated = mapInlineHistoryToChat(res.messages ?? []);
-        if (hydrated.length === 0) return;
-        setMessages((prev) => mergeUniqueChatMessages(prev, hydrated));
+        const automaticMergeMessage = mergeApprovedParam
+          ? [tableMergeApprovedMessage(mergeRequestIdParam)]
+          : [];
+        const nextMessages = [...hydrated, ...automaticMergeMessage];
+        if (nextMessages.length === 0) return;
+        setMessages((prev) => mergeUniqueChatMessages(prev, nextMessages));
         setChatStarted(true);
       } catch {
         /* ignore — realtime WS path still works, archived history remains separate */
@@ -947,7 +972,15 @@ export default function AssistentePage() {
     return () => {
       cancelled = true;
     };
-  }, [slug, threadIdParam, prefill, session.sessionId, session.customerId]);
+  }, [
+    slug,
+    threadIdParam,
+    prefill,
+    session.sessionId,
+    session.customerId,
+    mergeApprovedParam,
+    mergeRequestIdParam,
+  ]);
 
   useEffect(() => {
     if (!slug || !session.sessionId) return;
@@ -996,6 +1029,17 @@ export default function AssistentePage() {
    * o bubble fica escondido atrás do hero/PillButtons).
    */
   useTableSocket(session.sessionId, (event, data) => {
+    if (event === 'table_merge.approved') {
+      const payload = (data ?? {}) as { requestId?: string; side?: string };
+      if (payload.side !== 'both') return;
+      setChatStarted(true);
+      setMessages((prev) =>
+        mergeUniqueChatMessages(prev, [
+          tableMergeApprovedMessage(payload.requestId),
+        ]),
+      );
+      return;
+    }
     if (event === 'courtesy.created' && isCustomerCourtesyDto(data)) {
       setChatStarted(true);
       setMessages((prev) => mergeUniqueChatMessages(prev, [courtesyChatMessage(data)]));
@@ -1294,6 +1338,14 @@ export default function AssistentePage() {
       appendToolFeedback(
         `Pedido enviado para juntar com a mesa ${target}. Agora os hosts das duas mesas precisam confirmar.`,
       );
+      const params = new URLSearchParams({
+        mode: 'merge-origin',
+        requestId: result.request.id,
+        expiresAt: result.request.expiresAt,
+        hostName: result.request.targetHostName ?? `Mesa ${target}`,
+        redirect: `/${slug}/assistente?mergeApproved=1&mergeRequestId=${result.request.id}`,
+      });
+      router.push(`/${slug}/waiting-approval?${params.toString()}`);
       return;
     }
 

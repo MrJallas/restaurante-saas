@@ -932,7 +932,7 @@ export class AssistantService {
     // Step 2: Build context
     const { context: tenantContext, menuItems } = await this.buildTenantContext();
     const customerContext = safeCustomerId
-      ? await this.buildCustomerContext(safeCustomerId)
+      ? await this.buildCustomerContext(safeCustomerId, tableSessionId)
       : undefined;
     const history = recentHistory;
 
@@ -1530,6 +1530,7 @@ export class AssistantService {
 
   private async buildCustomerContext(
     customerId: string,
+    tableSessionId: string,
   ): Promise<Record<string, unknown>> {
     const customers = (await this.tenantConn.query(
       `SELECT name FROM customers WHERE id = $1`,
@@ -1541,10 +1542,34 @@ export class AssistantService {
       [customerId],
     )) as { last_items: unknown[]; favorite_items: unknown[] }[];
 
+    const mergeRows = (await this.tenantConn.query(
+      `SELECT mr.status,
+              mr.approved_by_a_at,
+              mr.approved_by_b_at,
+              mr.created_at,
+              CAST(NULLIF(regexp_replace(src_t.code, '[^0-9]', '', 'g'), '') AS INT) AS origin_table_number,
+              CAST(NULLIF(regexp_replace(tgt_t.code, '[^0-9]', '', 'g'), '') AS INT) AS target_table_number,
+              src_c.name AS origin_host_name,
+              tgt_c.name AS target_host_name
+         FROM table_merge_requests mr
+    LEFT JOIN table_sessions src_ts ON src_ts.id = mr.source_table_session_id
+    LEFT JOIN table_sessions tgt_ts ON tgt_ts.id = mr.target_table_session_id
+    LEFT JOIN tables src_t ON src_t.id = src_ts.table_id
+    LEFT JOIN tables tgt_t ON tgt_t.id = tgt_ts.table_id
+    LEFT JOIN customers src_c ON src_c.id = src_ts.host_customer_id
+    LEFT JOIN customers tgt_c ON tgt_c.id = tgt_ts.host_customer_id
+        WHERE (mr.source_table_session_id = $1 OR mr.target_table_session_id = $1)
+          AND (mr.requesting_customer_id = $2 OR mr.target_customer_id = $2)
+        ORDER BY mr.created_at DESC
+        LIMIT 1`,
+      [tableSessionId, customerId],
+    )) as Array<Record<string, unknown>>;
+
     return {
       name: customers[0]?.name || '',
       last_items: summaryRows[0]?.last_items || [],
       favorite_items: summaryRows[0]?.favorite_items || [],
+      latest_table_merge: mergeRows[0] ?? null,
     };
   }
 

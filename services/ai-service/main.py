@@ -131,6 +131,13 @@ _GLUTEN_FREE_RE = re.compile(
     r"\bsem\s+gl[uú]ten\b.*\b(op[cç][oõ]es?|pratos?|recomenda|indica|tem|quais|alguma)\b",
     re.IGNORECASE,
 )
+_TABLE_MERGE_STATUS_RE = re.compile(
+    r"\b(jun[cç][aã]o|juntar|juntou|juntadas?|juntas?)\b|"
+    r"\boutra\s+mesa\b|"
+    r"\b(mesa|mesas)\b.*\b(aceitou|confirmou|aprovou)\b|"
+    r"\b(aceitou|confirmou|aprovou)\b.*\b(mesa|mesas)\b",
+    re.IGNORECASE,
+)
 
 
 def _last_assistant_requested_manager_message(history: list["ChatMessage"]) -> bool:
@@ -187,6 +194,46 @@ def _rule_tool_response(
             }
         ],
     )
+
+
+def _latest_table_merge(customer_context: dict | None) -> dict | None:
+    if not customer_context:
+        return None
+    merge = customer_context.get("latest_table_merge")
+    if not isinstance(merge, dict) or not merge.get("status"):
+        return None
+    return merge
+
+
+def _table_label(value) -> str | None:
+    if value in (None, "", 0, "0"):
+        return None
+    return str(value)
+
+
+def _table_merge_status_response(merge: dict) -> str:
+    status = str(merge.get("status") or "")
+    origin = _table_label(
+        merge.get("origin_table_number") or merge.get("originTableNumber")
+    )
+    target = _table_label(
+        merge.get("target_table_number") or merge.get("targetTableNumber")
+    )
+    pair = f"as mesas {origin} e {target}" if origin and target else "as mesas"
+    approved_a = bool(merge.get("approved_by_a_at") or merge.get("approvedByAAt"))
+    approved_b = bool(merge.get("approved_by_b_at") or merge.get("approvedByBAt"))
+
+    if status == "approved":
+        return f"Sim, {pair} já estão juntas. A comanda virou uma só."
+    if status == "pending":
+        if approved_a and not approved_b:
+            return f"A junção ainda está pendente: a mesa de origem já confirmou, falta a outra mesa aceitar."
+        if approved_b and not approved_a:
+            return f"A junção ainda está pendente: a outra mesa já aceitou, falta o host da mesa de origem confirmar."
+        return f"A junção ainda está pendente: falta confirmação dos hosts das duas mesas."
+    if status == "rejected":
+        return f"A junção entre {pair} não foi aprovada."
+    return f"O status atual da junção entre {pair} é {status}."
 
 
 @app.on_event("startup")
@@ -505,6 +552,20 @@ async def chat(req: ChatRequest):
             latency_ms=int((time.time() - start_time) * 1000),
             estimated_cost_cents=0,
             layer="ack-silent",
+        )
+
+    latest_merge = _latest_table_merge(req.customer_context)
+    if latest_merge and _TABLE_MERGE_STATUS_RE.search(text):
+        return ChatResponse(
+            response=_table_merge_status_response(latest_merge),
+            tokens_in=0,
+            tokens_out=0,
+            model="rule-layer",
+            provider="local",
+            latency_ms=int((time.time() - start_time) * 1000),
+            estimated_cost_cents=0,
+            layer="rule-table-merge-status",
+            tool_calls=[],
         )
 
     if _ORDER_STATUS_RE.search(text) or _VIEW_ORDER_RE.search(text):
@@ -864,6 +925,9 @@ Nunca invente itens fora do cardápio; se faltar informação, consulte a equipe
                 prompt += f"\n\nCLIENTE: {name}"
             if customer_context.get("is_vip"):
                 prompt += "\nCliente VIP: tom mais atento."
+            merge = customer_context.get("latest_table_merge") or {}
+            if isinstance(merge, dict) and merge.get("status"):
+                prompt += _merge_status_prompt_line(merge)
         return prompt
 
     prompt = f"""Você é o assistente virtual do restaurante "{restaurant_name}".
@@ -972,5 +1036,42 @@ USO DE FERRAMENTAS (function calling · OBRIGATÓRIO em mutações):
         # VIP tone hint per vip-customer.md — affects copy via the system prompt.
         if customer_context.get("is_vip"):
             prompt += "\n\nObservação: este cliente é VIP nessa sessão. Tom mais caloroso e atento."
+        merge = customer_context.get("latest_table_merge") or {}
+        if isinstance(merge, dict) and merge.get("status"):
+            prompt += _merge_status_prompt_line(merge)
 
     return prompt
+
+
+def _merge_status_prompt_line(merge: dict) -> str:
+    status = str(merge.get("status") or "")
+    origin = merge.get("origin_table_number") or merge.get("originTableNumber") or "origem"
+    target = merge.get("target_table_number") or merge.get("targetTableNumber") or "destino"
+    approved_a = bool(merge.get("approved_by_a_at") or merge.get("approvedByAAt"))
+    approved_b = bool(merge.get("approved_by_b_at") or merge.get("approvedByBAt"))
+    if status == "approved":
+        return (
+            f"\n\nSTATUS DA JUNÇÃO DE MESAS: aprovado entre mesa {origin} e mesa {target}. "
+            "Se o cliente perguntar se a outra mesa aceitou ou se as mesas já estão juntas, responda que sim, de forma curta. "
+            "Não chame garçom, não abra cardápio e não chame nenhuma ferramenta para confirmar esse status."
+        )
+    if status == "pending":
+        if approved_a and not approved_b:
+            detail = "a mesa de origem já confirmou; falta a outra mesa confirmar"
+        elif approved_b and not approved_a:
+            detail = "a outra mesa já confirmou; falta o host da mesa de origem confirmar"
+        else:
+            detail = "ainda falta confirmação dos hosts"
+        return (
+            f"\n\nSTATUS DA JUNÇÃO DE MESAS: pendente entre mesa {origin} e mesa {target}; {detail}. "
+            "Se o cliente perguntar sobre a junção, explique esse status em texto. Não chame garçom nem nenhuma ferramenta para confirmar esse status."
+        )
+    if status == "rejected":
+        return (
+            f"\n\nSTATUS DA JUNÇÃO DE MESAS: recusado entre mesa {origin} e mesa {target}. "
+            "Se o cliente perguntar sobre a junção, diga que não foi aprovada."
+        )
+    return (
+        f"\n\nSTATUS DA JUNÇÃO DE MESAS: {status} entre mesa {origin} e mesa {target}. "
+        "Use esse status se o cliente perguntar sobre a junção."
+    )

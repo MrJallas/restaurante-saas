@@ -85,3 +85,27 @@ Evidencias principais:
 - `15-request-created.png`: chat confirmou pedido enviado para M15.
 
 Observacao operacional: o primeiro preenchimento no simulador concatenou CPF no campo de nome por coordenada instavel do teclado. A validacao foi corrigida no mesmo Safari com CPF valido, aprovacao do participante de QA e reabertura do QR real.
+
+## Pos-aceite da outra mesa
+
+Diretorio: `post-acceptance-2026-05-28/`
+
+Pedido validado: `2b4e8635-53ac-4780-9699-a11d0ac55e6c`.
+
+- A mesa origem ja sai pre-aprovada quando o host de origem pede para juntar.
+- Apos a mesa destino aceitar, o pedido ficou `approved` com `approvedByAAt` e `approvedByBAt` preenchidos.
+- A tela de espera mostrou `Mesas juntadas!` e redirecionou para `/restaurant_dev/assistente`.
+- O assistente exibiu automaticamente: `Mesas juntadas! A comanda virou uma só. Vocês já podem pedir juntos por aqui.`
+- Pergunta posterior ao LLM (`a outra mesa aceitou? as mesas ja estao juntas?`) respondeu `Sim, as mesas 14 e 15 já estão juntas. A comanda virou uma só.` com `toolCalls: []`.
+
+Screenshots:
+
+- `01-waiting-before-other-accepts.png`
+- `02-joined-success-screen.png`
+- `03-automatic-message-latest.png`
+- `04-automatic-message-bottom.png`
+
+Arquivos:
+
+- `results.json`
+- `llm-after-acceptance-response.json`

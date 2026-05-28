@@ -133,6 +133,10 @@ export class TableMergeService {
         targetTableSessionId: target.session_id,
         requestingCustomerId: input.requestingCustomerId,
         targetCustomerId: target.host_customer_id,
+        sourceApprovedByCustomerId:
+          input.requestingCustomerId === source.host_customer_id
+            ? input.requestingCustomerId
+            : null,
         message: input.message,
       },
       slug,
@@ -145,6 +149,7 @@ export class TableMergeService {
       targetTableSessionId: string;
       requestingCustomerId: string;
       targetCustomerId?: string | null;
+      sourceApprovedByCustomerId?: string | null;
       message?: string;
     },
     slug?: string,
@@ -204,8 +209,9 @@ export class TableMergeService {
       `INSERT INTO table_merge_requests
          (source_table_session_id, target_table_session_id,
           requesting_customer_id, target_customer_id,
-          status, message, ttl_expires_at)
-       VALUES ($1, $2, $3, $4, 'pending', $5, $6)
+          status, message, ttl_expires_at, approved_by_a_at)
+       VALUES ($1, $2, $3, $4, 'pending', $5, $6,
+               CASE WHEN $7::uuid IS NOT NULL THEN now() ELSE NULL END)
        RETURNING *`,
       [
         input.sourceTableSessionId,
@@ -214,6 +220,7 @@ export class TableMergeService {
         input.targetCustomerId ?? null,
         input.message ?? null,
         ttl,
+        input.sourceApprovedByCustomerId ?? null,
       ],
     )) as Array<Record<string, unknown>>;
 
