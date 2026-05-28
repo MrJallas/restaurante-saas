@@ -60,6 +60,67 @@ type AssistantHistoryMessage = {
   content: string;
 };
 
+type AssistantPublicHistoryMessage =
+  | {
+      id: string;
+      role: 'user';
+      content: string;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      role: 'assistant';
+      content: string;
+      toolCalls?: AiToolCall[] | null;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      role: 'staff';
+      content: string;
+      staffId: string | null;
+      staffName: string | null;
+      staffRole: string | null;
+      createdAt: string;
+    };
+
+const UUID_TEXT_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuidText(value: string | null | undefined): value is string {
+  return typeof value === 'string' && UUID_TEXT_PATTERN.test(value);
+}
+
+function cleanText(value: string | null | undefined): string | null {
+  const text = value?.trim() ?? '';
+  return text.length > 0 ? text : null;
+}
+
+function toIso(value: string | Date): string {
+  if (value instanceof Date) return value.toISOString();
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? value : new Date(parsed).toISOString();
+}
+
+function staffRoleLabel(role: string | null | undefined): string | null {
+  switch (role) {
+    case 'manager':
+      return 'Gerente';
+    case 'waiter':
+      return 'Garçom';
+    case 'cook':
+      return 'Cozinha';
+    case 'host':
+      return 'Recepção';
+    case 'bartender':
+      return 'Bar';
+    case 'cashier':
+      return 'Caixa';
+    default:
+      return cleanText(role) ?? null;
+  }
+}
+
 /**
  * Normalise the AI service's tool_calls into the flat shape FE consumers
  * expect (`{ name, arguments, result, silent, router, routerTarget,
@@ -1130,6 +1191,7 @@ export class AssistantService {
        FROM assistant_messages
        WHERE table_session_id = $1
          AND was_blocked = false
+         AND COALESCE(from_role, 'customer') <> 'staff'
          AND (
            ($2::uuid IS NOT NULL AND customer_id = $2)
            OR ($2::uuid IS NULL AND customer_id IS NULL)
@@ -1164,36 +1226,111 @@ export class AssistantService {
   async getHistoryWithToolCalls(
     tableSessionId: string,
     customerId: string | null = null,
-  ) {
+  ): Promise<AssistantPublicHistoryMessage[]> {
     const rows = (await this.tenantConn.query(
-      `SELECT user_message, assistant_response, tool_calls
-       FROM assistant_messages
-       WHERE table_session_id = $1
-         AND was_blocked = false
-         AND (
-           ($2::uuid IS NOT NULL AND customer_id = $2)
-           OR ($2::uuid IS NULL AND customer_id IS NULL)
-         )
-       ORDER BY created_at DESC
-       LIMIT 10`,
+      `WITH recent AS (
+         SELECT
+           am.id,
+           am.user_message,
+           am.assistant_response,
+           am.tool_calls,
+           am.from_role,
+           am.customer_id,
+           am.model_used,
+           am.created_at,
+           s.name AS staff_name,
+           s.role AS staff_role
+         FROM assistant_messages am
+         LEFT JOIN staff s
+           ON s.id = CASE
+             WHEN am.from_role = 'staff'
+              AND am.model_used ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+             THEN am.model_used::uuid
+             ELSE NULL
+           END
+          AND s.is_active = true
+         WHERE am.table_session_id = $1
+           AND am.was_blocked = false
+           AND (
+             (
+               COALESCE(am.from_role, 'customer') <> 'staff'
+               AND (
+                 ($2::uuid IS NOT NULL AND am.customer_id = $2)
+                 OR ($2::uuid IS NULL AND am.customer_id IS NULL)
+               )
+             )
+             OR (
+               am.from_role = 'staff'
+               AND am.customer_id IS NULL
+               AND (
+                 $2::uuid IS NULL
+                 OR EXISTS (
+                   SELECT 1
+                   FROM session_participants sp
+                   WHERE sp.table_session_id = am.table_session_id
+                     AND sp.customer_id = $2
+                     AND sp.status = 'approved'
+                     AND sp.left_at IS NULL
+                 )
+               )
+             )
+           )
+         ORDER BY am.created_at DESC
+         LIMIT 10
+       )
+       SELECT *
+       FROM recent
+       ORDER BY created_at ASC`,
       [tableSessionId, customerId],
     )) as {
+      id: string;
       user_message: string;
       assistant_response: string | null;
       tool_calls: AiToolCall[] | null;
+      from_role: string | null;
+      customer_id: string | null;
+      model_used: string | null;
+      created_at: string | Date;
+      staff_name: string | null;
+      staff_role: string | null;
     }[];
 
-    return rows.reverse().flatMap((row) => {
-      const msgs: {
-        role: 'user' | 'assistant';
-        content: string;
-        toolCalls?: AiToolCall[] | null;
-      }[] = [{ role: 'user', content: row.user_message }];
-      if (row.assistant_response) {
+    return rows.flatMap((row) => {
+      const createdAt = toIso(row.created_at);
+      const assistantResponse = cleanText(row.assistant_response);
+
+      if (row.from_role === 'staff') {
+        if (!assistantResponse) return [];
+        return [
+          {
+            id: row.id,
+            role: 'staff' as const,
+            content: assistantResponse,
+            staffId: isUuidText(row.model_used) ? row.model_used : null,
+            staffName: cleanText(row.staff_name),
+            staffRole: staffRoleLabel(row.staff_role),
+            createdAt,
+          },
+        ];
+      }
+
+      const msgs: AssistantPublicHistoryMessage[] = [];
+      const userMessage = cleanText(row.user_message);
+      if (userMessage) {
         msgs.push({
+          id: `${row.id}:user`,
+          role: 'user',
+          content: userMessage,
+          createdAt,
+        });
+      }
+      if (assistantResponse) {
+        msgs.push({
+          id: `${row.id}:assistant`,
           role: 'assistant',
-          content: row.assistant_response,
+          content: assistantResponse,
           toolCalls: row.tool_calls ?? null,
+          createdAt,
         });
       }
       return msgs;

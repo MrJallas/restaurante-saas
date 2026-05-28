@@ -126,6 +126,34 @@ interface AssistantToolCall {
   router?: boolean;
 }
 
+type AssistantInlineHistoryMessage =
+  | {
+      id?: string;
+      role: 'user';
+      content: string;
+      createdAt?: string;
+    }
+  | {
+      id?: string;
+      role: 'assistant';
+      content: string;
+      toolCalls?: AssistantToolCall[] | null;
+      createdAt?: string;
+    }
+  | {
+      id?: string;
+      role: 'staff';
+      content: string;
+      staffId?: string | null;
+      staffName?: string | null;
+      staffRole?: string | null;
+      createdAt?: string;
+    };
+
+interface AssistantInlineHistoryResponse {
+  messages?: AssistantInlineHistoryMessage[];
+}
+
 /**
  * Chip canon retornado pela tool dispatched (round 3 Cat 1 / K-1). Mirror
  * de `@restaurant/shared-types::ContextualChip`. Inline aqui pra evitar
@@ -413,6 +441,60 @@ function formatRelativeTime(iso: string | undefined): string {
   return 'há tempo';
 }
 
+function staffDisplayName(rawName: string | null | undefined): {
+  firstName: string;
+  initial: string;
+} {
+  const fullName = rawName?.trim() || 'Gerência';
+  const firstName = fullName.split(' ')[0] || 'Gerência';
+  return {
+    firstName,
+    initial: (firstName[0] ?? 'G').toUpperCase(),
+  };
+}
+
+function staffRoleDisplay(rawRole: string | null | undefined): string {
+  const role = rawRole?.trim();
+  switch (role) {
+    case 'manager':
+      return 'Gerente';
+    case 'waiter':
+      return 'Garçom';
+    case 'cook':
+      return 'Cozinha';
+    case 'host':
+      return 'Recepção';
+    case 'bartender':
+      return 'Bar';
+    case 'cashier':
+      return 'Caixa';
+    default:
+      return role || 'Gerente';
+  }
+}
+
+function isDuplicateStaffMessage(existing: ChatMessage, incoming: ChatMessage): boolean {
+  if (existing.role !== 'staff' || incoming.role !== 'staff') return false;
+  if (existing.id === incoming.id) return true;
+  if (existing.content.trim() !== incoming.content.trim()) return false;
+  return !!existing.staffCreatedAt && existing.staffCreatedAt === incoming.staffCreatedAt;
+}
+
+function mergeUniqueChatMessages(
+  current: ChatMessage[],
+  incoming: ChatMessage[],
+): ChatMessage[] {
+  const next = [...current];
+  for (const msg of incoming) {
+    const duplicate = next.some((existing) => {
+      if (existing.id === msg.id) return true;
+      return isDuplicateStaffMessage(existing, msg);
+    });
+    if (!duplicate) next.push(msg);
+  }
+  return next;
+}
+
 type ToolCategory =
   | 'menu'
   | 'order'
@@ -513,6 +595,53 @@ function mapHistoryToChat(msgs: ChatMessageDto[]): ChatMessage[] {
         ? { name: toolName, category: categorizeToolName(toolName) }
         : undefined,
     };
+  });
+}
+
+function mapInlineHistoryToChat(msgs: AssistantInlineHistoryMessage[]): ChatMessage[] {
+  return msgs.flatMap((m, i): ChatMessage[] => {
+    const content = m.content?.trim() ?? '';
+    if (!content) return [];
+
+    if (m.role === 'user') {
+      return [
+        {
+          id: `assistant-history-${m.id ?? `user-${m.createdAt ?? i}`}`,
+          role: 'user',
+          content,
+        },
+      ];
+    }
+
+    if (m.role === 'staff') {
+      const staff = staffDisplayName(m.staffName);
+      return [
+        {
+          id: `staff-${m.id ?? `${m.createdAt ?? i}-${content}`}`,
+          role: 'staff',
+          content,
+          staffName: staff.firstName,
+          staffInitial: staff.initial,
+          staffRole: staffRoleDisplay(m.staffRole),
+          staffCreatedAt: m.createdAt,
+        },
+      ];
+    }
+
+    const firstTool = Array.isArray(m.toolCalls) && m.toolCalls.length > 0
+      ? m.toolCalls[0]
+      : null;
+    const toolName = firstTool && typeof firstTool.name === 'string' ? firstTool.name : null;
+    return [
+      {
+        id: `assistant-history-${m.id ?? `assistant-${m.createdAt ?? i}`}`,
+        role: 'ai',
+        content,
+        toolCall: toolName
+          ? { name: toolName, category: categorizeToolName(toolName) }
+          : undefined,
+      },
+    ];
   });
 }
 
@@ -746,6 +875,31 @@ export default function AssistentePage() {
     };
   }, [slug, threadIdParam]);
 
+  // Inline assistant history (Postgres `assistant_messages`) is separate
+  // from archived Mongo `/chat-history` threads. It keeps staff bubbles visible
+  // after a hard reload of the active `/assistente` page.
+  useEffect(() => {
+    if (!slug || threadIdParam || prefill || !session.sessionId || !session.customerId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiGet<AssistantInlineHistoryResponse>(
+          `/${slug}/assistant/history`,
+        );
+        if (cancelled) return;
+        const hydrated = mapInlineHistoryToChat(res.messages ?? []);
+        if (hydrated.length === 0) return;
+        setMessages((prev) => mergeUniqueChatMessages(prev, hydrated));
+        setChatStarted(true);
+      } catch {
+        /* ignore — realtime WS path still works, archived history remains separate */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, threadIdParam, prefill, session.sessionId, session.customerId]);
+
   useEffect(() => {
     // Nas primeiras mensagens o "smooth" faz o chat animar de baixo pra cima
     // no primeiro paint — em iPhone real isso sai lag-ado. Acima do threshold
@@ -763,10 +917,9 @@ export default function AssistentePage() {
    * shape vem direto de `assistant.service.ts::sendStaffToCustomer`:
    *   { id, tableSessionId, message, fromStaffId, fromStaffName, createdAt }
    *
-   * O bubble é apendado on-the-fly (não há fetch de histórico aqui — a
-   * página opera ephemeral state, então quem chega depois do staff
-   * mandar a msg vai ler o histórico em `/chat-history` separadamente).
-   * Dedupe por `id` defende contra reconexão do socket re-emitindo.
+   * O bubble é apendado on-the-fly. O reload agora reidrata via
+   * `/assistant/history`, e o merge abaixo deduplica caso historico + socket
+   * entreguem o mesmo staff bubble.
    *
    * Trigger de transição landing→chat: se o customer ainda está na
    * landing (`!chatStarted`) e o manager mandar mensagem, faz sentido
@@ -783,28 +936,20 @@ export default function AssistentePage() {
       createdAt?: string;
     };
     if (!payload.id || !payload.message) return;
-    const rawName = (payload.fromStaffName ?? '').trim();
-    const fullName = rawName.length > 0 ? rawName : 'Gerência';
-    const firstName = fullName.split(' ')[0] || 'Gerência';
-    const initial = (firstName[0] ?? 'G').toUpperCase();
+    const staff = staffDisplayName(payload.fromStaffName);
     setChatStarted(true);
     setMessages((prev) => {
-      // Dedupe se reconectarmos e o servidor re-emitir o mesmo payload.
-      if (payload.id && prev.some((m) => m.id === `staff-${payload.id}`)) {
-        return prev;
-      }
-      return [
-        ...prev,
+      return mergeUniqueChatMessages(prev, [
         {
           id: `staff-${payload.id}`,
           role: 'staff' as const,
           content: payload.message ?? '',
-          staffName: firstName,
-          staffInitial: initial,
+          staffName: staff.firstName,
+          staffInitial: staff.initial,
           staffRole: 'Gerente',
           staffCreatedAt: payload.createdAt,
         },
-      ];
+      ]);
     });
   });
 

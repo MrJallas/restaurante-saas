@@ -1,0 +1,30 @@
+{
+  "message": "Mensagem P10B reload 0058",
+  "session": {
+    "sessionId": "51c78184-9826-4c99-8419-5b0bb1445587",
+    "tableCode": "QRTEST91",
+    "tableLabel": "QR Teste 91",
+    "slug": "restaurant_dev",
+    "customerId": "2aa16cc8-a01d-4494-bef6-d685586d8e55",
+    "visitId": "a9d85938-609f-49bf-8d99-c1b0882a8de3",
+    "customerName": "Cliente P10B",
+    "isReturning": false
+  },
+  "live": {
+    "staffBubbleCount": 1,
+    "messageOccurrences": 1,
+    "emptyUserBubbles": 0,
+    "text": "QR Teste 91\nE\nERICA · GERENTE\nAGORA\nMensagem P10B reload 0058\nNovidades\nMe indica\nAlgo leve\nCardápio"
+  },
+  "afterReload": {
+    "staffBubbleCount": 1,
+    "messageOccurrences": 1,
+    "emptyUserBubbles": 0,
+    "text": "QR Teste 91\nE\nERICA · GERENTE\nAGORA\nMensagem P10B reload 0058\nVer cardápio\nMe indica\nNovidades\nAlgo leve"
+  },
+  "screenshots": [
+    "01-before-staff.png",
+    "02-live-staffbubble.png",
+    "03-after-reload.png"
+  ]
+}

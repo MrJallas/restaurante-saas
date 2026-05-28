@@ -68,6 +68,7 @@ export function useTableSocket(
       'waiter:acknowledged',
       'participant:join_request',
       'participant:decision',
+      'assistant.staff_message_received',
     ] as const;
     for (const ev of events) {
       socket.on(ev, (data: unknown) => onEventRef.current(ev, data));

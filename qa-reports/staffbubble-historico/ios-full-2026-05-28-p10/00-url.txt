@@ -1,0 +1,1 @@
+http://localhost:3103/restaurant_dev/mesa/QRTEST92?hmac=3d06a9280b1dfed1509d659879a828c1e5dd29ba0180d215c61e0ba65afaa0aa&ts=1779991716683&accessToken=2026-05-28.df73dbfe9a28f386d70e997989103d0f1c21acb860f68d7a4f4bed7a897b6d6b
