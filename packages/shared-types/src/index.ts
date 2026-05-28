@@ -33,12 +33,7 @@ export type PaymentMethod = 'pix' | 'credit' | 'debit' | 'card' | 'cash';
 export type StaffRole = 'owner' | 'manager' | 'waiter' | 'kitchen';
 export type TableSessionStatus = 'active' | 'closed';
 export type WaiterCallStatus = 'pending' | 'acknowledged' | 'resolved' | 'cancelled';
-export type WaiterCallReason =
-  | 'bring_menu'
-  | 'place_order'
-  | 'serve_drink'
-  | 'ask_bill'
-  | 'other';
+export type WaiterCallReason = 'bring_menu' | 'place_order' | 'serve_drink' | 'ask_bill' | 'other';
 
 export type MenuItemKind = 'food' | 'drink';
 export type SplitMode = 'equal' | 'by_item' | 'custom';
@@ -109,5 +104,6 @@ export * from './vip';
 export * from './zone-pause';
 export * from './host';
 export * from './scan-verification';
+export * from './courtesy';
 export * from './ai';
 export * from './ws-events';

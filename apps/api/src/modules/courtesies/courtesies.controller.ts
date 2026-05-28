@@ -9,24 +9,15 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import {
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import type { CustomerCourtesiesResponse, CustomerCourtesyDto } from '@restaurant/shared-types';
+import { IsIn, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 import type { Request } from 'express';
+import { Session } from '../../common/decorators/session.decorator';
+import { SessionData, SessionGuard } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
-import {
-  CourtesiesService,
-  CourtesyRow,
-  CourtesyStatus,
-} from './courtesies.service';
+import { CourtesiesService, CourtesyRow, CourtesyStatus } from './courtesies.service';
 
 class ListCourtesiesQuery {
   @IsOptional() @IsString() today?: string;
@@ -87,6 +78,7 @@ export class CourtesiesController {
   @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   @HttpCode(201)
   async create(
+    @Param('slug') slug: string,
     @Body() dto: CreateCourtesyDto,
     @Req() req: Request,
   ): Promise<CourtesyRow> {
@@ -98,6 +90,7 @@ export class CourtesiesController {
       tableSessionId: dto.tableSessionId,
       tableNumber: dto.tableNumber,
       notes: dto.notes,
+      slug,
     });
   }
 
@@ -105,9 +98,35 @@ export class CourtesiesController {
   @UseGuards(StaffOnlyGuard)
   @HttpCode(200)
   async respond(
+    @Param('slug') slug: string,
     @Param('id') id: string,
     @Body() dto: RespondCourtesyDto,
   ): Promise<CourtesyRow> {
-    return this.service.respond(id, dto.status);
+    return this.service.respond(id, dto.status, slug);
+  }
+}
+
+@Controller(':slug/customer/courtesies')
+export class CustomerCourtesiesController {
+  constructor(private readonly service: CourtesiesService) {}
+
+  @Get()
+  @UseGuards(SessionGuard)
+  async list(@Session() session: SessionData): Promise<CustomerCourtesiesResponse> {
+    return {
+      courtesies: await this.service.listForSession(session.sessionId),
+    };
+  }
+
+  @Post(':id/respond')
+  @UseGuards(SessionGuard)
+  @HttpCode(200)
+  async respond(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: RespondCourtesyDto,
+    @Session() session: SessionData,
+  ): Promise<CustomerCourtesyDto> {
+    return this.service.respondForSession(id, dto.status, session.sessionId, slug);
   }
 }

@@ -36,6 +36,8 @@ import type {
   WsComplaintResolved,
   WsStaffMessageReceived,
   WsStaffMessageRead,
+  WsCourtesyCreated,
+  WsCourtesyUpdated,
   WsZonePauseStarted,
   WsZonePauseEnded,
   WsSessionFlagChanged,
@@ -100,11 +102,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private handshakeIp(client: AuthedSocket): string {
     const xff = client.handshake.headers['x-forwarded-for'];
     const xffStr = Array.isArray(xff) ? xff[0] : xff;
-    return (
-      (xffStr as string | undefined) ??
-      client.handshake.address ??
-      'unknown'
-    )
+    return ((xffStr as string | undefined) ?? client.handshake.address ?? 'unknown')
       .toString()
       .split(',')[0]
       .trim();
@@ -147,11 +145,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     )) as unknown[];
 
     if (customerRows.length) {
-      await this.redis.set(
-        `customer_tenant:${customerId}`,
-        staffTenantSlug,
-        300,
-      );
+      await this.redis.set(`customer_tenant:${customerId}`, staffTenantSlug, 300);
       return true;
     }
     return false;
@@ -206,12 +200,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           (client.handshake.auth?.tenantSlug as string);
 
         if (!staffId) {
-          this.logger.warn(
-            `Staff WS connection without x-staff-id rejected: ${client.id}`,
-          );
+          this.logger.warn(`Staff WS connection without x-staff-id rejected: ${client.id}`);
           client.emit('error', {
-            message:
-              'Staff WS handshake exige x-staff-id pra join:staff/manager rooms.',
+            message: 'Staff WS handshake exige x-staff-id pra join:staff/manager rooms.',
           });
           client.disconnect(true);
           return;
@@ -222,12 +213,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         // `client.data.staffTenantSlug && ...` em join:tenant/session e
         // entrava em rooms de outros tenants recebendo eventos cross-tenant.
         if (!tenantSlug) {
-          this.logger.warn(
-            `Staff WS connection without x-tenant-slug rejected: ${client.id}`,
-          );
+          this.logger.warn(`Staff WS connection without x-tenant-slug rejected: ${client.id}`);
           client.emit('error', {
-            message:
-              'Staff WS handshake exige x-tenant-slug pra cross-tenant isolation.',
+            message: 'Staff WS handshake exige x-tenant-slug pra cross-tenant isolation.',
           });
           client.disconnect(true);
           return;
@@ -310,10 +298,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Round 14 (P1-NEW-1): handshake agora EXIGE x-tenant-slug, então
     // staffTenantSlug está sempre presente. O check anterior `&& ...`
     // curto-circuitava se faltasse — agora exigimos explicitamente.
-    if (
-      !client.data.staffTenantSlug ||
-      client.data.staffTenantSlug !== data.slug
-    ) {
+    if (!client.data.staffTenantSlug || client.data.staffTenantSlug !== data.slug) {
       client.emit('error', { message: 'Tenant slug mismatch' });
       return;
     }
@@ -331,10 +316,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { sessionId: string },
   ) {
     // Customer: cross-check próprio sessionId.
-    if (
-      client.data.authType === 'session' &&
-      client.data.sessionId !== data.sessionId
-    ) {
+    if (client.data.authType === 'session' && client.data.sessionId !== data.sessionId) {
       client.emit('error', { message: 'Session mismatch' });
       return;
     }
@@ -360,10 +342,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // então o check anterior `&& ...` virou `!staffTenantSlug ||` pra
       // não curto-circuitar caso futura regressão volte a stamping
       // condicional.
-      if (
-        !client.data.staffTenantSlug ||
-        parsed.schemaName !== client.data.staffTenantSlug
-      ) {
+      if (!client.data.staffTenantSlug || parsed.schemaName !== client.data.staffTenantSlug) {
         client.emit('error', { message: 'Cross-tenant session join blocked.' });
         return;
       }
@@ -397,10 +376,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.emit('error', { message: 'Tenant slug missing in handshake.' });
         return;
       }
-      const ok = await this.validateCustomerInTenant(
-        data.customerId,
-        client.data.staffTenantSlug,
-      );
+      const ok = await this.validateCustomerInTenant(data.customerId, client.data.staffTenantSlug);
       if (!ok) {
         client.emit('error', {
           message: 'Cross-tenant customer join blocked.',
@@ -408,15 +384,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
       client.join(`customer:${data.customerId}`);
-      this.logger.log(
-        `Staff ${client.id} joined customer room ${data.customerId}`,
-      );
+      this.logger.log(`Staff ${client.id} joined customer room ${data.customerId}`);
       return;
     }
-    if (
-      client.data.authType !== 'session' ||
-      client.data.customerId !== data.customerId
-    ) {
+    if (client.data.authType !== 'session' || client.data.customerId !== data.customerId) {
       client.emit('error', { message: 'Customer mismatch' });
       return;
     }
@@ -566,7 +537,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   emitKitchenPriorityRequest(
     slug: string,
-    data: { requestId: string; orderIds: string[]; reason?: string | null; requestedBy?: string | null },
+    data: {
+      requestId: string;
+      orderIds: string[];
+      reason?: string | null;
+      requestedBy?: string | null;
+    },
   ) {
     const payload = {
       ...data,
@@ -717,39 +693,27 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     this.server.to(`tenant:${slug}`).emit('late_arrival.created', payload);
     if (hostCustomerId) {
-      this.server
-        .to(`customer:${hostCustomerId}`)
-        .emit('late_arrival.created', payload);
+      this.server.to(`customer:${hostCustomerId}`).emit('late_arrival.created', payload);
     }
-    this.server
-      .to(`customer:${payload.requesterCustomerId}`)
-      .emit('late_arrival.created', payload);
+    this.server.to(`customer:${payload.requesterCustomerId}`).emit('late_arrival.created', payload);
   }
 
   /**
    * Routing: tenant dashboards + requester customer (the late-arriver who
    * was approved) so their FE can transition to "approved" screen.
    */
-  emitLateArrivalApproved(
-    slug: string,
-    payload: WsLateArrivalApproved['payload'],
-  ) {
+  emitLateArrivalApproved(slug: string, payload: WsLateArrivalApproved['payload']) {
     this.server.to(`tenant:${slug}`).emit('late_arrival.approved', payload);
     this.server
       .to(`customer:${payload.requesterCustomerId}`)
       .emit('late_arrival.approved', payload);
-    this.server
-      .to(`session:${payload.tableSessionId}`)
-      .emit('late_arrival.approved', payload);
+    this.server.to(`session:${payload.tableSessionId}`).emit('late_arrival.approved', payload);
   }
 
   /**
    * Routing: tenant dashboards + requester customer for the rejection screen.
    */
-  emitLateArrivalRejected(
-    slug: string,
-    payload: WsLateArrivalRejected['payload'],
-  ) {
+  emitLateArrivalRejected(slug: string, payload: WsLateArrivalRejected['payload']) {
     this.server.to(`tenant:${slug}`).emit('late_arrival.rejected', payload);
     this.server
       .to(`customer:${payload.requesterCustomerId}`)
@@ -766,13 +730,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     payload: WsLateArrivalExpired['payload'],
   ) {
     this.server.to(`tenant:${slug}`).emit('late_arrival.expired', payload);
-    this.server
-      .to(`session:${payload.tableSessionId}`)
-      .emit('late_arrival.expired', payload);
+    this.server.to(`session:${payload.tableSessionId}`).emit('late_arrival.expired', payload);
     if (requesterCustomerId) {
-      this.server
-        .to(`customer:${requesterCustomerId}`)
-        .emit('late_arrival.expired', payload);
+      this.server.to(`customer:${requesterCustomerId}`).emit('late_arrival.expired', payload);
     }
   }
 
@@ -780,14 +740,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * Routing: all staff dashboards + host room first. Customer stays in the
    * table session waiting screen until a resolved event/participant decision.
    */
-  emitScanVerificationCreated(
-    slug: string,
-    payload: WsScanVerificationCreated['payload'],
-  ) {
+  emitScanVerificationCreated(slug: string, payload: WsScanVerificationCreated['payload']) {
     this.server.to(`tenant:${slug}`).emit('scan_verification.created', payload);
-    this.server
-      .to(`tenant:${slug}:host`)
-      .emit('scan_verification.created', payload);
+    this.server.to(`tenant:${slug}:host`).emit('scan_verification.created', payload);
   }
 
   /**
@@ -798,30 +753,19 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     assigneeRole: 'host' | 'manager' | 'waiter',
     payload: WsScanVerificationEscalated['payload'],
   ) {
-    this.server
-      .to(`tenant:${slug}`)
-      .emit('scan_verification.escalated', payload);
-    this.server
-      .to(`tenant:${slug}:${assigneeRole}`)
-      .emit('scan_verification.escalated', payload);
+    this.server.to(`tenant:${slug}`).emit('scan_verification.escalated', payload);
+    this.server.to(`tenant:${slug}:${assigneeRole}`).emit('scan_verification.escalated', payload);
   }
 
   /**
    * Routing: staff dashboards + requester customer + table session room.
    */
-  emitScanVerificationResolved(
-    slug: string,
-    payload: WsScanVerificationResolved['payload'],
-  ) {
-    this.server
-      .to(`tenant:${slug}`)
-      .emit('scan_verification.resolved', payload);
+  emitScanVerificationResolved(slug: string, payload: WsScanVerificationResolved['payload']) {
+    this.server.to(`tenant:${slug}`).emit('scan_verification.resolved', payload);
     this.server
       .to(`customer:${payload.requesterCustomerId}`)
       .emit('scan_verification.resolved', payload);
-    this.server
-      .to(`session:${payload.tableSessionId}`)
-      .emit('scan_verification.resolved', payload);
+    this.server.to(`session:${payload.tableSessionId}`).emit('scan_verification.resolved', payload);
   }
 
   /**
@@ -835,20 +779,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     payload: WsTableMergeCreated['payload'],
   ) {
     this.server.to(`tenant:${slug}`).emit('table_merge.created', payload);
-    this.server
-      .to(`customer:${originCustomerId}`)
-      .emit('table_merge.created', payload);
+    this.server.to(`customer:${originCustomerId}`).emit('table_merge.created', payload);
     if (targetCustomerId) {
-      this.server
-        .to(`customer:${targetCustomerId}`)
-        .emit('table_merge.created', payload);
+      this.server.to(`customer:${targetCustomerId}`).emit('table_merge.created', payload);
     }
-    this.server
-      .to(`session:${payload.originSessionId}`)
-      .emit('table_merge.created', payload);
-    this.server
-      .to(`session:${payload.targetSessionId}`)
-      .emit('table_merge.created', payload);
+    this.server.to(`session:${payload.originSessionId}`).emit('table_merge.created', payload);
+    this.server.to(`session:${payload.targetSessionId}`).emit('table_merge.created', payload);
   }
 
   /**
@@ -902,10 +838,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * Tenant broadcast lets analytics dashboards close the "active cooldown"
    * count.
    */
-  emitMergeCooldownExpired(
-    slug: string,
-    payload: WsMergeCooldownExpired['payload'],
-  ) {
+  emitMergeCooldownExpired(slug: string, payload: WsMergeCooldownExpired['payload']) {
     this.server.to(`tenant:${slug}`).emit('merge.cooldown_expired', payload);
   }
 
@@ -913,14 +846,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * Routing: the affected customer's room (their own UI shows the protocol
    * confirmation) + tenant manager dashboards (audit trail).
    */
-  emitLgpdRequestFulfilled(
-    slug: string,
-    payload: WsLgpdRequestFulfilled['payload'],
-  ) {
+  emitLgpdRequestFulfilled(slug: string, payload: WsLgpdRequestFulfilled['payload']) {
     this.server.to(`tenant:${slug}`).emit('lgpd.request_fulfilled', payload);
-    this.server
-      .to(`customer:${payload.customerId}`)
-      .emit('lgpd.request_fulfilled', payload);
+    this.server.to(`customer:${payload.customerId}`).emit('lgpd.request_fulfilled', payload);
   }
 
   /**
@@ -929,12 +857,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * be omitted when the protocol is created in-flight; we mint a transient
    * id so subscribers always have a stable correlation key.
    */
-  emitLgpdFulfilled(
-    slug: string,
-    customerId: string,
-    protocolNumber: string,
-    requestId?: string,
-  ) {
+  emitLgpdFulfilled(slug: string, customerId: string, protocolNumber: string, requestId?: string) {
     this.emitLgpdRequestFulfilled(slug, {
       requestId: requestId ?? protocolNumber,
       customerId,
@@ -960,9 +883,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     this.server.to(`tenant:${slug}`).emit('complaint.received', payload);
     if (assignedManagerId) {
-      this.server
-        .to(`manager:${assignedManagerId}`)
-        .emit('complaint.received', payload);
+      this.server.to(`manager:${assignedManagerId}`).emit('complaint.received', payload);
     }
   }
 
@@ -982,11 +903,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   /**
    * Routing: assigned manager (read-receipt) + tenant dashboards.
    */
-  emitComplaintRead(
-    slug: string,
-    managerId: string | null,
-    payload: WsComplaintRead['payload'],
-  ) {
+  emitComplaintRead(slug: string, managerId: string | null, payload: WsComplaintRead['payload']) {
     this.server.to(`tenant:${slug}`).emit('complaint.read', payload);
     if (managerId) {
       this.server.to(`manager:${managerId}`).emit('complaint.read', payload);
@@ -1018,9 +935,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     payload: WsStaffMessageReceived['payload'],
   ) {
     this.server.to(`tenant:${slug}`).emit('staff_message.received', payload);
-    this.server
-      .to(`customer:${customerId}`)
-      .emit('staff_message.received', payload);
+    this.server.to(`customer:${customerId}`).emit('staff_message.received', payload);
     if (staffId) {
       this.server.to(`staff:${staffId}`).emit('staff_message.received', payload);
     }
@@ -1036,9 +951,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     staffIds: string[],
     payload: WsStaffMessageReceived['payload'],
   ) {
-    const rooms = Array.from(new Set(staffIds.filter(Boolean))).map(
-      (id) => `staff:${id}`,
-    );
+    const rooms = Array.from(new Set(staffIds.filter(Boolean))).map((id) => `staff:${id}`);
     this.server.to(rooms).emit('staff_message.received', payload);
   }
 
@@ -1056,14 +969,31 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
+   * Routing: the table session gets the customer-facing card immediately;
+   * tenant dashboards get the same payload so manager/waiter views can refresh
+   * their status without polling.
+   */
+  emitCourtesyCreated(slug: string, payload: WsCourtesyCreated['payload']) {
+    this.server.to(`tenant:${slug}`).emit('courtesy.created', payload);
+    this.server.to(`session:${payload.tableSessionId}`).emit('courtesy.created', payload);
+  }
+
+  /**
+   * Routing: customer tabs/devices update the pending card after accept/deny,
+   * and staff dashboards receive the status transition.
+   */
+  emitCourtesyUpdated(slug: string, payload: WsCourtesyUpdated['payload']) {
+    this.server.to(`tenant:${slug}`).emit('courtesy.updated', payload);
+    this.server.to(`session:${payload.tableSessionId}`).emit('courtesy.updated', payload);
+  }
+
+  /**
    * Routing: tenant dashboards (managers + waiter app banner). Customers
    * affected get implicit ETA adjustments via REST (no per-customer event).
    */
   emitZonePauseStarted(slug: string, payload: WsZonePauseStarted['payload']) {
     this.server.to(`tenant:${slug}`).emit('zone_pause.started', payload);
-    this.server
-      .to(`staff:${payload.waiterId}`)
-      .emit('zone_pause.started', payload);
+    this.server.to(`staff:${payload.waiterId}`).emit('zone_pause.started', payload);
   }
 
   /**
@@ -1072,9 +1002,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    */
   emitZonePauseEnded(slug: string, payload: WsZonePauseEnded['payload']) {
     this.server.to(`tenant:${slug}`).emit('zone_pause.ended', payload);
-    this.server
-      .to(`staff:${payload.waiterId}`)
-      .emit('zone_pause.ended', payload);
+    this.server.to(`staff:${payload.waiterId}`).emit('zone_pause.ended', payload);
   }
 
   /**
@@ -1082,14 +1010,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * (allergy/VIP banner) updates instantly on every connected device on the
    * table.
    */
-  emitSessionFlagChanged(
-    slug: string,
-    payload: WsSessionFlagChanged['payload'],
-  ) {
+  emitSessionFlagChanged(slug: string, payload: WsSessionFlagChanged['payload']) {
     this.server.to(`tenant:${slug}`).emit('session.flag_changed', payload);
-    this.server
-      .to(`session:${payload.sessionId}`)
-      .emit('session.flag_changed', payload);
+    this.server.to(`session:${payload.sessionId}`).emit('session.flag_changed', payload);
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -1104,14 +1027,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * decrementa contador) + sala da sessao fechada (clientes recebem o close
    * em tempo real, sem polling).
    */
-  emitHostTableLiberated(
-    slug: string,
-    payload: WsHostTableLiberated['payload'],
-  ) {
+  emitHostTableLiberated(slug: string, payload: WsHostTableLiberated['payload']) {
     this.server.to(`tenant:${slug}`).emit('host.table_liberated', payload);
-    this.server
-      .to(`session:${payload.sessionId}`)
-      .emit('host.table_liberated', payload);
+    this.server.to(`session:${payload.sessionId}`).emit('host.table_liberated', payload);
   }
 
   /**
@@ -1119,14 +1037,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * (origem ja tem comanda aberta — recebe pra atualizar UI pra "movendo
    * pra mesa X"; destino pode estar livre, ainda assim emite pra uniformizar).
    */
-  emitHostSwapRequested(
-    slug: string,
-    payload: WsHostSwapRequested['payload'],
-  ) {
+  emitHostSwapRequested(slug: string, payload: WsHostSwapRequested['payload']) {
     this.server.to(`tenant:${slug}`).emit('host.swap_requested', payload);
-    this.server
-      .to(`session:${payload.sessionId}`)
-      .emit('host.swap_requested', payload);
+    this.server.to(`session:${payload.sessionId}`).emit('host.swap_requested', payload);
   }
 
   /**
@@ -1134,28 +1047,18 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * ou "cancelado" sem polling). Estados intermediarios (in_progress)
    * ainda sao broadcast pra que UIs de monitoria vejam o progresso.
    */
-  emitHostSwapStateChanged(
-    slug: string,
-    payload: WsHostSwapStateChanged['payload'],
-  ) {
+  emitHostSwapStateChanged(slug: string, payload: WsHostSwapStateChanged['payload']) {
     this.server.to(`tenant:${slug}`).emit('host.swap_state_changed', payload);
-    this.server
-      .to(`session:${payload.sessionId}`)
-      .emit('host.swap_state_changed', payload);
+    this.server.to(`session:${payload.sessionId}`).emit('host.swap_state_changed', payload);
   }
 
   /**
    * Routing: tenant dashboards (manager + waiter map flag VIP) + sala da
    * sessao (banner VIP no overlay do menu).
    */
-  emitHostVipFlagged(
-    slug: string,
-    payload: WsHostVipFlagged['payload'],
-  ) {
+  emitHostVipFlagged(slug: string, payload: WsHostVipFlagged['payload']) {
     this.server.to(`tenant:${slug}`).emit('host.vip_flagged', payload);
-    this.server
-      .to(`session:${payload.sessionId}`)
-      .emit('host.vip_flagged', payload);
+    this.server.to(`session:${payload.sessionId}`).emit('host.vip_flagged', payload);
   }
 
   /**

@@ -7,7 +7,8 @@ import { apiPost, apiGet } from '../../../lib/api';
 import { clearDeliveredContinuationHint } from '../../../lib/continuationHints';
 import { recordCustomerEvent } from '../../../lib/customerEvents';
 import { listMessages } from '../../../lib/api/chat-history';
-import type { ChatMessageDto } from '@restaurant/shared-types';
+import { listCustomerCourtesies, respondCustomerCourtesy } from '../../../lib/api/courtesies';
+import type { ChatMessageDto, CourtesyStatus, CustomerCourtesyDto } from '@restaurant/shared-types';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
@@ -17,20 +18,15 @@ import { useDraftOrder } from '../../../providers/DraftOrderProvider';
 import { AppShell } from '../../../components/layout/AppShell';
 import { Bubble } from '../../../components/ui/Bubble';
 import { StaffBubble } from '../../../components/ui/StaffBubble';
+import { CourtesyArrival } from '../../../components/ui/CourtesyArrival';
 import { SoftInput } from '../../../components/ui/SoftInput';
 import { ToolCallIndicator } from '../../../components/ui/ToolCallIndicator';
 import { SuggestionChip } from '../../../components/ui/SuggestionChip';
 import { PillButton } from '../../../components/ui/PillButton';
 import { HomeHero } from '../../../components/home/HomeHero';
-import {
-  CommandPicker,
-  type CommandModeChoice,
-} from '../../../components/cardapio/CommandPicker';
+import { CommandPicker, type CommandModeChoice } from '../../../components/cardapio/CommandPicker';
 import { useUIState } from '../../../providers/UIStateProvider';
-import {
-  OverlaySalonMap,
-  type SalonTable,
-} from '../../../components/ui/OverlaySalonMap';
+import { OverlaySalonMap, type SalonTable } from '../../../components/ui/OverlaySalonMap';
 import { createLgpdRequest } from '../../../lib/api/feedback';
 
 interface LinkedItem {
@@ -89,6 +85,10 @@ interface ChatMessage {
     name: string;
     category: 'menu' | 'order' | 'session' | 'info' | 'staff' | 'payment' | 'destructive' | 'lgpd';
   };
+  /** Customer-side courtesy card, hydrated by REST or WS. */
+  courtesy?: CustomerCourtesyDto;
+  courtesyBusy?: CourtesyDecision | null;
+  courtesyError?: string | null;
 }
 
 interface AssistantToolHint {
@@ -153,6 +153,8 @@ type AssistantInlineHistoryMessage =
 interface AssistantInlineHistoryResponse {
   messages?: AssistantInlineHistoryMessage[];
 }
+
+type CourtesyDecision = Exclude<CourtesyStatus, 'pendente'>;
 
 /**
  * Chip canon retornado pela tool dispatched (round 3 Cat 1 / K-1). Mirror
@@ -257,9 +259,7 @@ function stripDiacritics(value: string): string {
 
 function wantsLastVisitItems(text: string): boolean {
   const normalized = stripDiacritics(text);
-  return /ultima vez|ultima visita|vez passada|pedido passado|mesma coisa|repetir/.test(
-    normalized,
-  );
+  return /ultima vez|ultima visita|vez passada|pedido passado|mesma coisa|repetir/.test(normalized);
 }
 
 function filterLastVisitItems(
@@ -267,9 +267,7 @@ function filterLastVisitItems(
   items: LastVisitRepeatResponse['items'],
 ): LastVisitRepeatResponse['items'] {
   const normalized = stripDiacritics(text);
-  const wantsDrinks = /bebida|bebidas|drink|vinho|cerveja|suco|agua|refrigerante/.test(
-    normalized,
-  );
+  const wantsDrinks = /bebida|bebidas|drink|vinho|cerveja|suco|agua|refrigerante/.test(normalized);
   const wantsStarters = /entrada|entradas|petisco|aperitivo/.test(normalized);
   if (!wantsDrinks && !wantsStarters) return items;
   return items.filter((item) => {
@@ -286,10 +284,30 @@ function filterLastVisitItems(
 // `chips` quando vier de uma tool com chips populated; aí esses defaults
 // somem.
 const DEFAULT_SUGGESTIONS: ChipCanon[] = [
-  { id: 'default-leve', label: 'Sugestão leve', action: 'send' as const, payload: 'me indica algo leve' },
-  { id: 'default-sobremesa', label: 'Sobremesa combina?', action: 'send' as const, payload: 'que sobremesa combina?' },
-  { id: 'default-camarao', label: 'Pratos com camarão', action: 'send' as const, payload: 'tem prato com camarão?' },
-  { id: 'default-pagar', label: 'Como pagar?', action: 'send' as const, payload: 'como pago a conta?' },
+  {
+    id: 'default-leve',
+    label: 'Sugestão leve',
+    action: 'send' as const,
+    payload: 'me indica algo leve',
+  },
+  {
+    id: 'default-sobremesa',
+    label: 'Sobremesa combina?',
+    action: 'send' as const,
+    payload: 'que sobremesa combina?',
+  },
+  {
+    id: 'default-camarao',
+    label: 'Pratos com camarão',
+    action: 'send' as const,
+    payload: 'tem prato com camarão?',
+  },
+  {
+    id: 'default-pagar',
+    label: 'Como pagar?',
+    action: 'send' as const,
+    payload: 'como pago a conta?',
+  },
 ];
 
 /**
@@ -299,7 +317,8 @@ const DEFAULT_SUGGESTIONS: ChipCanon[] = [
  */
 function chipText(chip: ChipCanon): string {
   const normalized = normalizeChipCopy(chip);
-  if (typeof normalized.payload === 'string' && normalized.payload.length > 0) return normalized.payload;
+  if (typeof normalized.payload === 'string' && normalized.payload.length > 0)
+    return normalized.payload;
   return normalized.label;
 }
 
@@ -473,6 +492,26 @@ function staffRoleDisplay(rawRole: string | null | undefined): string {
   }
 }
 
+function isCustomerCourtesyDto(value: unknown): value is CustomerCourtesyDto {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === 'string' &&
+    typeof value.tableSessionId === 'string' &&
+    typeof value.item === 'string' &&
+    typeof value.status === 'string' &&
+    ['pendente', 'aceita', 'recusada'].includes(value.status)
+  );
+}
+
+function courtesyChatMessage(courtesy: CustomerCourtesyDto): ChatMessage {
+  return {
+    id: `courtesy-${courtesy.id}`,
+    role: 'ai',
+    content: '',
+    courtesy,
+  };
+}
+
 function isDuplicateStaffMessage(existing: ChatMessage, incoming: ChatMessage): boolean {
   if (existing.role !== 'staff' || incoming.role !== 'staff') return false;
   if (existing.id === incoming.id) return true;
@@ -480,10 +519,7 @@ function isDuplicateStaffMessage(existing: ChatMessage, incoming: ChatMessage): 
   return !!existing.staffCreatedAt && existing.staffCreatedAt === incoming.staffCreatedAt;
 }
 
-function mergeUniqueChatMessages(
-  current: ChatMessage[],
-  incoming: ChatMessage[],
-): ChatMessage[] {
+function mergeUniqueChatMessages(current: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
   const next = [...current];
   for (const msg of incoming) {
     const duplicate = next.some((existing) => {
@@ -541,14 +577,36 @@ const TEXT_ONLY_TOOLS = new Set<string>([
   'search_dish',
   'check_allergens',
   'compare_dishes',
-  'view_courtesy',
 ]);
 
 function categorizeToolName(name: string): ToolCategory {
-  if (name === 'view_menu' || name === 'search_dish' || name === 'check_allergens' || name === 'compare_dishes') return 'menu';
-  if (name === 'add_to_order' || name === 'view_order' || name === 'confirm_order' || name === 'place_order' || name === 'remove_from_cart' || name === 'change_order' || name === 'cancel_order') return 'order';
-  if (name === 'call_waiter' || name === 'send_complaint' || name === 'send_message_to_manager') return 'staff';
-  if (name === 'request_bill' || name === 'split_bill' || name === 'pay_individual' || name === 'pay_full' || name === 'open_payment_screen') return 'payment';
+  if (
+    name === 'view_menu' ||
+    name === 'search_dish' ||
+    name === 'check_allergens' ||
+    name === 'compare_dishes'
+  )
+    return 'menu';
+  if (
+    name === 'add_to_order' ||
+    name === 'view_order' ||
+    name === 'confirm_order' ||
+    name === 'place_order' ||
+    name === 'remove_from_cart' ||
+    name === 'change_order' ||
+    name === 'cancel_order'
+  )
+    return 'order';
+  if (name === 'call_waiter' || name === 'send_complaint' || name === 'send_message_to_manager')
+    return 'staff';
+  if (
+    name === 'request_bill' ||
+    name === 'split_bill' ||
+    name === 'pay_individual' ||
+    name === 'pay_full' ||
+    name === 'open_payment_screen'
+  )
+    return 'payment';
   if (name === 'lgpd_data_request' || name === 'lgpd_notice') return 'lgpd';
   if (name === 'delete_chat' || name === 'delete_all_chats') return 'destructive';
   if (name === 'request_table_merge' || name === 'late_arrival') return 'session';
@@ -569,9 +627,8 @@ function mapHistoryToChat(msgs: ChatMessageDto[]): ChatMessage[] {
     }
     if (m.role === 'manager') {
       const meta = (m.metadata ?? {}) as Record<string, unknown>;
-      const rawName = typeof meta.staffName === 'string' && meta.staffName.length > 0
-        ? meta.staffName
-        : 'Renata';
+      const rawName =
+        typeof meta.staffName === 'string' && meta.staffName.length > 0 ? meta.staffName : 'Renata';
       const firstName = rawName.split(' ')[0] || 'Renata';
       return {
         id,
@@ -583,17 +640,13 @@ function mapHistoryToChat(msgs: ChatMessageDto[]): ChatMessage[] {
         staffCreatedAt: m.createdAt,
       };
     }
-    const firstTool = Array.isArray(m.toolCalls) && m.toolCalls.length > 0
-      ? m.toolCalls[0]
-      : null;
+    const firstTool = Array.isArray(m.toolCalls) && m.toolCalls.length > 0 ? m.toolCalls[0] : null;
     const toolName = firstTool && typeof firstTool.name === 'string' ? firstTool.name : null;
     return {
       id,
       role: 'ai',
       content: m.content,
-      toolCall: toolName
-        ? { name: toolName, category: categorizeToolName(toolName) }
-        : undefined,
+      toolCall: toolName ? { name: toolName, category: categorizeToolName(toolName) } : undefined,
     };
   });
 }
@@ -628,26 +681,21 @@ function mapInlineHistoryToChat(msgs: AssistantInlineHistoryMessage[]): ChatMess
       ];
     }
 
-    const firstTool = Array.isArray(m.toolCalls) && m.toolCalls.length > 0
-      ? m.toolCalls[0]
-      : null;
+    const firstTool = Array.isArray(m.toolCalls) && m.toolCalls.length > 0 ? m.toolCalls[0] : null;
     const toolName = firstTool && typeof firstTool.name === 'string' ? firstTool.name : null;
     return [
       {
         id: `assistant-history-${m.id ?? `assistant-${m.createdAt ?? i}`}`,
         role: 'ai',
         content,
-        toolCall: toolName
-          ? { name: toolName, category: categorizeToolName(toolName) }
-          : undefined,
+        toolCall: toolName ? { name: toolName, category: categorizeToolName(toolName) } : undefined,
       },
     ];
   });
 }
 
 function newAssistantConversationId(): string {
-  const cryptoApi =
-    typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+  const cryptoApi = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
   if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
     return cryptoApi.randomUUID();
   }
@@ -683,9 +731,7 @@ function detectOrderIntent(
   }
 
   // Se o usuario mencionou nomes especificos → filtra
-  const picked = previousLinkedItems.filter((it) =>
-    msg.includes(normalize(it.name)),
-  );
+  const picked = previousLinkedItems.filter((it) => msg.includes(normalize(it.name)));
   if (picked.length > 0) return picked;
 
   // "quero pedir" sem especificar e um so item na lista → pega esse
@@ -883,9 +929,7 @@ export default function AssistentePage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await apiGet<AssistantInlineHistoryResponse>(
-          `/${slug}/assistant/history`,
-        );
+        const res = await apiGet<AssistantInlineHistoryResponse>(`/${slug}/assistant/history`);
         if (cancelled) return;
         const hydrated = mapInlineHistoryToChat(res.messages ?? []);
         if (hydrated.length === 0) return;
@@ -899,6 +943,26 @@ export default function AssistentePage() {
       cancelled = true;
     };
   }, [slug, threadIdParam, prefill, session.sessionId, session.customerId]);
+
+  useEffect(() => {
+    if (!slug || !session.sessionId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const courtesies = await listCustomerCourtesies(slug);
+        if (cancelled) return;
+        const pending = courtesies.filter((c) => c.status === 'pendente');
+        if (pending.length === 0) return;
+        setChatStarted(true);
+        setMessages((prev) => mergeUniqueChatMessages(prev, pending.map(courtesyChatMessage)));
+      } catch {
+        /* ignore — WS arrival still works while the customer is online */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, session.sessionId]);
 
   useEffect(() => {
     // Nas primeiras mensagens o "smooth" faz o chat animar de baixo pra cima
@@ -927,6 +991,21 @@ export default function AssistentePage() {
    * o bubble fica escondido atrás do hero/PillButtons).
    */
   useTableSocket(session.sessionId, (event, data) => {
+    if (event === 'courtesy.created' && isCustomerCourtesyDto(data)) {
+      setChatStarted(true);
+      setMessages((prev) => mergeUniqueChatMessages(prev, [courtesyChatMessage(data)]));
+      return;
+    }
+    if (event === 'courtesy.updated' && isCustomerCourtesyDto(data)) {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.courtesy?.id === data.id
+            ? { ...msg, courtesy: data, courtesyBusy: null, courtesyError: null }
+            : msg,
+        ),
+      );
+      return;
+    }
     if (event !== 'assistant.staff_message_received') return;
     const payload = (data ?? {}) as {
       id?: string;
@@ -978,12 +1057,55 @@ export default function AssistentePage() {
     ]);
   };
 
+  const showCourtesiesFromTool = async () => {
+    try {
+      const courtesies = await listCustomerCourtesies(slug);
+      if (courtesies.length === 0) {
+        appendToolFeedback('Não há cortesia pendente para esta mesa agora.');
+        return;
+      }
+      setChatStarted(true);
+      setMessages((prev) =>
+        mergeUniqueChatMessages(prev, courtesies.slice(0, 3).map(courtesyChatMessage)),
+      );
+    } catch {
+      appendToolFeedback('Não consegui carregar suas cortesias agora.');
+    }
+  };
+
+  const handleCourtesyRespond = async (
+    messageId: string,
+    courtesyId: string,
+    status: CourtesyDecision,
+  ) => {
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === messageId ? { ...msg, courtesyBusy: status, courtesyError: null } : msg,
+      ),
+    );
+    try {
+      const updated = await respondCustomerCourtesy(slug, courtesyId, status);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, courtesy: updated, courtesyBusy: null, courtesyError: null }
+            : msg,
+        ),
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Não consegui responder essa cortesia agora.';
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId ? { ...msg, courtesyBusy: null, courtesyError: message } : msg,
+        ),
+      );
+    }
+  };
+
   const pendingOrderTotalCents = useMemo(
     () =>
-      pendingOrderAdd?.items.reduce(
-        (sum, item) => sum + item.priceCents * item.quantity,
-        0,
-      ) ?? 0,
+      pendingOrderAdd?.items.reduce((sum, item) => sum + item.priceCents * item.quantity, 0) ?? 0,
     [pendingOrderAdd],
   );
 
@@ -1006,13 +1128,10 @@ export default function AssistentePage() {
       });
       if (options?.sourceMessageId) {
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === options.sourceMessageId ? { ...m, orderPlaced: true } : m,
-          ),
+          prev.map((m) => (m.id === options.sourceMessageId ? { ...m, orderPlaced: true } : m)),
         );
       }
-      const label =
-        itemsToAdd.length === 1 ? itemsToAdd[0].name : `${itemsToAdd.length} itens`;
+      const label = itemsToAdd.length === 1 ? itemsToAdd[0].name : `${itemsToAdd.length} itens`;
       appendToolFeedback(
         `${label} ${itemsToAdd.length === 1 ? 'foi adicionado' : 'foram adicionados'} à ${
           rememberedMode === 'individual' ? 'sua comanda' : 'comanda da mesa'
@@ -1145,9 +1264,7 @@ export default function AssistentePage() {
    * The stubs exist so an unexpected tool name doesn't break the chat — F4
    * fixes the contract; C5/C6 will fill the UX for each tool individually.
    */
-  const dispatchToolCall = async (
-    call: AssistantToolCall,
-  ): Promise<void> => {
+  const dispatchToolCall = async (call: AssistantToolCall): Promise<void> => {
     const name = call.name;
     // Round C (chat UX polish) — para tools text-only (ask_about_restaurant,
     // search_dish, etc.), a aiMsg principal já carregou o texto da resposta.
@@ -1166,6 +1283,11 @@ export default function AssistentePage() {
       await new Promise((resolve) => setTimeout(resolve, 1500));
     }
     // 1) Tools the FE owns end-to-end.
+    if (name === 'view_courtesy') {
+      await showCourtesiesFromTool();
+      return;
+    }
+
     if (name === 'request_table_merge') {
       const enriched = await tableMerge.handleToolCall({
         name: call.name,
@@ -1209,9 +1331,7 @@ export default function AssistentePage() {
     // do cardápio, que já entende "bebidas" como filtro de tab.
     if (name === 'view_menu') {
       const category =
-        typeof call.arguments?.category === 'string'
-          ? call.arguments.category
-          : null;
+        typeof call.arguments?.category === 'string' ? call.arguments.category : null;
       openMenuOverlay(category);
       return;
     }
@@ -1261,7 +1381,9 @@ export default function AssistentePage() {
     if (name === 'add_to_order') {
       const item = await resolveToolMenuItem(call);
       if (!item) {
-        appendToolFeedback('Não consegui localizar esse item no cardápio para atualizar seu pedido.');
+        appendToolFeedback(
+          'Não consegui localizar esse item no cardápio para atualizar seu pedido.',
+        );
         return;
       }
       const payload = actionPayload(call);
@@ -1273,13 +1395,15 @@ export default function AssistentePage() {
         stringValue(args.notes) ??
         stringValue(args.note) ??
         undefined;
-      queueOrderAdd([{
-        id: item.id,
-        name: item.name,
-        priceCents: item.priceCents,
-        quantity,
-        note,
-      }]);
+      queueOrderAdd([
+        {
+          id: item.id,
+          name: item.name,
+          priceCents: item.priceCents,
+          quantity,
+          note,
+        },
+      ]);
       return;
     }
 
@@ -1319,9 +1443,7 @@ export default function AssistentePage() {
           ? args.changes
           : {};
       const itemId =
-        stringValue(payload.itemId) ??
-        stringValue(args.itemId) ??
-        stringValue(args.item_id);
+        stringValue(payload.itemId) ?? stringValue(args.itemId) ?? stringValue(args.item_id);
       const line = findDraftLine(itemId);
       if (!line) {
         appendToolFeedback('Não encontrei esse item no pedido atual.');
@@ -1374,7 +1496,6 @@ export default function AssistentePage() {
       'compare_dishes',
       'delete_chat',
       'delete_all_chats',
-      'view_courtesy',
       'ask_about_restaurant',
     ]);
     if (stubbedTools.has(name)) {
@@ -1451,9 +1572,7 @@ export default function AssistentePage() {
     if (wantsLastVisitItems(trimmed)) {
       setLoading(true);
       try {
-        const repeat = await apiGet<LastVisitRepeatResponse>(
-          `/${slug}/customer/last-visit`,
-        );
+        const repeat = await apiGet<LastVisitRepeatResponse>(`/${slug}/customer/last-visit`);
         const selected = filterLastVisitItems(trimmed, repeat.items);
         if (selected.length === 0) {
           const substitute = repeat.unavailableItems.find((item) => item.substitute);
@@ -1514,22 +1633,14 @@ export default function AssistentePage() {
     const lastAiWithItems = [...messages]
       .reverse()
       .find(
-        (m) =>
-          m.role === 'ai' &&
-          !!m.linkedItems &&
-          m.linkedItems.length > 0 &&
-          !m.orderPlaced,
+        (m) => m.role === 'ai' && !!m.linkedItems && m.linkedItems.length > 0 && !m.orderPlaced,
       );
     if (lastAiWithItems?.linkedItems) {
       const picked = detectOrderIntent(trimmed, lastAiWithItems.linkedItems);
       if (picked && picked.length > 0) {
         const names = picked
           .map((p, i, arr) =>
-            i === 0
-              ? p.name
-              : i === arr.length - 1
-                ? ` e ${p.name}`
-                : `, ${p.name}`,
+            i === 0 ? p.name : i === arr.length - 1 ? ` e ${p.name}` : `, ${p.name}`,
           )
           .join('');
         setMessages((prev) => [
@@ -1552,7 +1663,7 @@ export default function AssistentePage() {
         message: trimmed,
         customerId: session.customerId || undefined,
         itemId: itemId || undefined,
-        conversationId: activeThreadId ? undefined : conversationIdRef.current ?? undefined,
+        conversationId: activeThreadId ? undefined : (conversationIdRef.current ?? undefined),
         continueThreadId: activeThreadId ?? undefined,
       });
 
@@ -1570,11 +1681,7 @@ export default function AssistentePage() {
         ? res.toolCalls
             .filter((tc) => tc.name !== 'call_waiter')
             .sort((a, b) =>
-              a.name === 'open_payment_screen'
-                ? -1
-                : b.name === 'open_payment_screen'
-                  ? 1
-                  : 0,
+              a.name === 'open_payment_screen' ? -1 : b.name === 'open_payment_screen' ? 1 : 0,
             )
         : (res.toolCalls ?? []);
       // Round C (chat UX polish) — eyebrow `··· USANDO X ···` aparece pra
@@ -1661,10 +1768,8 @@ export default function AssistentePage() {
       // Distingue erros de validacao (mensagem muito longa, formato
       // invalido) do erro generico de rede pra que o usuario saiba se
       // pode editar e tentar de novo. Backend valida @MaxLength(2000).
-      const isTimeout =
-        err instanceof Error && err.message === 'TIMEOUT';
-      const isValidationError =
-        err instanceof Error && /400/.test(err.message);
+      const isTimeout = err instanceof Error && err.message === 'TIMEOUT';
+      const isValidationError = err instanceof Error && /400/.test(err.message);
       const isLengthError =
         err instanceof Error && /shorter than|2000 characters/i.test(err.message);
       const content = isTimeout
@@ -1784,8 +1889,7 @@ export default function AssistentePage() {
           .concat({
             id: `lgpd-error-${Date.now()}`,
             role: 'ai',
-            content:
-              'Não consegui registrar a solicitação agora. Tente de novo em instantes.',
+            content: 'Não consegui registrar a solicitação agora. Tente de novo em instantes.',
           }),
       );
     } finally {
@@ -1836,12 +1940,8 @@ export default function AssistentePage() {
               className="flex flex-1 flex-col justify-center gap-7"
             >
               <div className="flex flex-col items-center gap-3">
-                <PillButton onClick={openCallWaiterSheet}>
-                  Chamar garçom
-                </PillButton>
-                <PillButton onClick={() => push(`/${slug}/cardapio`)}>
-                  Ver cardápio
-                </PillButton>
+                <PillButton onClick={openCallWaiterSheet}>Chamar garçom</PillButton>
+                <PillButton onClick={() => push(`/${slug}/cardapio`)}>Ver cardápio</PillButton>
               </div>
               <HomeHero
                 kicker="Assistente"
@@ -1854,6 +1954,18 @@ export default function AssistentePage() {
             </div>
           )}
           {messages.map((msg) => {
+            if (msg.courtesy) {
+              return (
+                <div key={msg.id} className="flex flex-col gap-2">
+                  <CourtesyArrival
+                    courtesy={msg.courtesy}
+                    busyStatus={msg.courtesyBusy}
+                    error={msg.courtesyError}
+                    onRespond={(id, status) => handleCourtesyRespond(msg.id, id, status)}
+                  />
+                </div>
+              );
+            }
             const selected = msg.selectedIds ?? [];
             const hasCards = !!msg.linkedItems && msg.linkedItems.length > 0;
             const showConfirm = hasCards && selected.length > 0 && !msg.orderPlaced;
@@ -1864,10 +1976,7 @@ export default function AssistentePage() {
             if (msg.toolCall && !msg.content) {
               return (
                 <div key={msg.id} className="flex flex-col gap-2 self-start">
-                  <ToolCallIndicator
-                    name={msg.toolCall.name}
-                    category={msg.toolCall.category}
-                  />
+                  <ToolCallIndicator name={msg.toolCall.name} category={msg.toolCall.category} />
                 </div>
               );
             }
@@ -1886,9 +1995,7 @@ export default function AssistentePage() {
                   <span className="font-mono text-[16px] font-bold tracking-[0.5px] text-ink">
                     {msg.lgpdProtocol.protocolNumber}
                   </span>
-                  <span style={{ textWrap: 'pretty' as never }}>
-                    {msg.content}
-                  </span>
+                  <span style={{ textWrap: 'pretty' as never }}>{msg.content}</span>
                 </div>
               );
             }
@@ -1920,10 +2027,7 @@ export default function AssistentePage() {
                     <span className="font-mono text-[10px] uppercase tracking-[1.5px] text-mute">
                       Assistente · agora
                     </span>
-                    <ToolCallIndicator
-                      name={msg.toolCall.name}
-                      category={msg.toolCall.category}
-                    />
+                    <ToolCallIndicator name={msg.toolCall.name} category={msg.toolCall.category} />
                   </>
                 )}
                 <Bubble role={msg.role}>{msg.content}</Bubble>
@@ -1984,9 +2088,7 @@ export default function AssistentePage() {
                               onClick={() => toggleLinkedSelection(msg.id, it.id)}
                               disabled={msg.orderPlaced}
                               className={`mt-auto flex items-center justify-center rounded-full border-[1.2px] px-3 py-1.5 text-[11px] font-semibold transition-colors ${
-                                isSel
-                                  ? 'border-ink bg-ink text-white'
-                                  : 'border-ink bg-bg text-ink'
+                                isSel ? 'border-ink bg-ink text-white' : 'border-ink bg-bg text-ink'
                               } disabled:opacity-60`}
                             >
                               {isSel ? '✓ Selecionado' : 'Pedir'}
@@ -2018,7 +2120,11 @@ export default function AssistentePage() {
                         disabled={placingOrder || !!pendingOrderAdd}
                         className="flex-1 rounded-full bg-ink px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-60"
                       >
-                        {pendingOrderAdd ? 'Escolhendo…' : placingOrder ? 'Enviando…' : 'Sim, pedir'}
+                        {pendingOrderAdd
+                          ? 'Escolhendo…'
+                          : placingOrder
+                            ? 'Enviando…'
+                            : 'Sim, pedir'}
                       </button>
                       <button
                         type="button"
@@ -2106,8 +2212,7 @@ export default function AssistentePage() {
             // input vai pra mesa (host/staff) e não mais pra IA conversar.
             placeholder={
               expandedInputPlaceholder ??
-              (lastToolName === 'send_complaint' ||
-              lastToolName === 'send_message_to_manager'
+              (lastToolName === 'send_complaint' || lastToolName === 'send_message_to_manager'
                 ? 'Mensagem para a casa'
                 : 'Pergunte alguma coisa...')
             }

@@ -181,18 +181,19 @@ def test_send_message_to_manager_works_without_api_client():
 
 
 # ─────────────────────────────────────────────────────────────
-# view_courtesy — silent navigation, NO HTTP call
+# view_courtesy — browser-session action, NO HTTP call
 # ─────────────────────────────────────────────────────────────
 
 
 def test_view_courtesy_does_not_call_api():
-    """No `/courtesy` endpoint exists on apps/api — tool is FE-only fallback."""
+    """Customer courtesy endpoint is session-protected; FE fetches it."""
     api = RecordingApiClient()
     ctx = ToolContext(tenant_id="my-rest", customer_id="cust-1", api_client=api)
     result = dispatch_tool("view_courtesy", {}, ctx)
     assert result.error is None
-    assert len(api.calls) == 0, "view_courtesy must NOT issue an HTTP call (route 404)"
-    assert result.action_payload.get("status") == "not_implemented"
+    assert len(api.calls) == 0, "view_courtesy must NOT issue an HTTP call without browser session"
+    assert result.action_payload.get("action") == "show_courtesies"
+    assert "endpoint" not in (result.message or "").lower()
 
 
 # ─────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { CourtesiesController } from './courtesies.controller';
+import { CourtesiesController, CustomerCourtesiesController } from './courtesies.controller';
 import { CourtesiesService } from './courtesies.service';
 import { TenantModule } from '../tenant/tenant.module';
 import { CallerResolverModule } from '../../common/services/caller-resolver.module';
@@ -14,7 +14,7 @@ import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
  */
 @Module({
   imports: [TenantModule, CallerResolverModule],
-  controllers: [CourtesiesController],
+  controllers: [CourtesiesController, CustomerCourtesiesController],
   providers: [CourtesiesService, ManagerOnlyGuard],
   exports: [CourtesiesService],
 })

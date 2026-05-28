@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { ApiRequestError, apiPost, apiGet } from '../../../../lib/api';
+import { listCustomerCourtesies, respondCustomerCourtesy } from '../../../../lib/api/courtesies';
 import { clearDeliveredContinuationHint } from '../../../../lib/continuationHints';
 import { recordCustomerEvent } from '../../../../lib/customerEvents';
 import { captureCustomerLocationSignal } from '../../../../lib/location';
@@ -18,11 +19,14 @@ import { AppShell } from '../../../../components/layout/AppShell';
 import { HomeHero } from '../../../../components/home/HomeHero';
 import { PillButton } from '../../../../components/ui/PillButton';
 import { SoftInput } from '../../../../components/ui/SoftInput';
+import { CourtesyArrival } from '../../../../components/ui/CourtesyArrival';
 import { HostApprovalModal } from '../../../../components/host/HostApprovalModal';
 import { HostJoinRequestBanner } from '../../../../components/host/HostJoinRequestBanner';
 import { ScreenCustomerWaitingApproval } from '../../../../screens/customer-host-flows/ScreenCustomerWaitingApproval';
 import type {
   CustomerLocationCheck,
+  CourtesyStatus,
+  CustomerCourtesyDto,
   SessionResponseDto,
   CustomerWelcomeResponseDto,
 } from '@restaurant/shared-types';
@@ -94,11 +98,27 @@ interface LastVisitRepeatResponse {
   }>;
 }
 
+type CourtesyDecision = Exclude<CourtesyStatus, 'pendente'>;
+
 function getInitials(name: string | null | undefined, fallback = 'TL'): string {
   if (!name) return fallback;
   const words = name.trim().split(/\s+/).slice(0, 2);
   const initials = words.map((w) => w[0]?.toUpperCase() ?? '').join('');
   return initials || fallback;
+}
+
+function isCustomerCourtesyDto(value: unknown): value is CustomerCourtesyDto {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.id === 'string' &&
+    typeof row.tableSessionId === 'string' &&
+    typeof row.item === 'string' &&
+    typeof row.status === 'string' &&
+    ['pendente', 'aceita', 'recusada'].includes(row.status)
+  );
 }
 
 export default function MesaPage() {
@@ -117,6 +137,7 @@ export default function MesaPage() {
     customerName,
     customerId,
     commandMode,
+    sessionId,
     tableCode: sessionTableCode,
     tableLabel: sessionTableLabel,
   } = useSession();
@@ -134,6 +155,9 @@ export default function MesaPage() {
   const [locationCheck, setLocationCheck] = useState<CustomerLocationCheck | null>(null);
   const [repeatBusy, setRepeatBusy] = useState(false);
   const [repeatError, setRepeatError] = useState<string | null>(null);
+  const [courtesies, setCourtesies] = useState<CustomerCourtesyDto[]>([]);
+  const [courtesyBusy, setCourtesyBusy] = useState<Record<string, CourtesyDecision | null>>({});
+  const [courtesyErrors, setCourtesyErrors] = useState<Record<string, string | null>>({});
 
   // Verifica status do participant atual (apos welcome ou rehydrate).
   // Se status='pending', renderiza a tela de espera ate host/staff aprovar.
@@ -142,9 +166,7 @@ export default function MesaPage() {
     async (cid: string | null): Promise<'approved' | 'pending' | 'rejected' | null> => {
       if (!cid) return null;
       try {
-        const res = await apiGet<ParticipantsResponse>(
-          `/${slug}/table/participants`,
-        );
+        const res = await apiGet<ParticipantsResponse>(`/${slug}/table/participants`);
         const me = res.participants.find((p) => p.customerId === cid);
         const host = res.participants.find((p) => p.isHost);
         setHostName(host?.name ?? (me?.status === 'pending' ? 'equipe' : null));
@@ -163,6 +185,38 @@ export default function MesaPage() {
   // pra nao bater no endpoint enquanto o welcome modal nao fechou.
   const activePause = useZonePause(slug, {
     enabled: pageState === 'home',
+  });
+
+  useEffect(() => {
+    if (pageState !== 'home' || !sessionId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await listCustomerCourtesies(slug);
+        if (cancelled) return;
+        setCourtesies(rows.filter((c) => c.status === 'pendente'));
+      } catch {
+        /* ignore — realtime socket still handles new arrivals */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pageState, sessionId, slug]);
+
+  useTableSocket(sessionId, (event, data) => {
+    if (event === 'courtesy.created' && isCustomerCourtesyDto(data)) {
+      setCourtesies((prev) => {
+        if (prev.some((c) => c.id === data.id)) return prev;
+        return [data, ...prev];
+      });
+      return;
+    }
+    if (event === 'courtesy.updated' && isCustomerCourtesyDto(data)) {
+      setCourtesies((prev) => prev.map((c) => (c.id === data.id ? data : c)));
+      setCourtesyBusy((prev) => ({ ...prev, [data.id]: null }));
+      setCourtesyErrors((prev) => ({ ...prev, [data.id]: null }));
+    }
   });
 
   useEffect(() => {
@@ -226,9 +280,7 @@ export default function MesaPage() {
       try {
         const [pubSettings, home] = await Promise.all([
           apiGet<PublicSettings>(`/${slug}/settings/public`),
-          apiGet<HomeData>(
-            `/${slug}/home${customerId ? `?customerId=${customerId}` : ''}`,
-          ),
+          apiGet<HomeData>(`/${slug}/home${customerId ? `?customerId=${customerId}` : ''}`),
         ]);
         if (cancelled) return;
         setSettings(pubSettings);
@@ -239,7 +291,9 @@ export default function MesaPage() {
         // vezes em vez do pool de 35 templates rotativos.
         if (!home || !home.heroMessage || home.heroMessage.trim().length === 0) {
           // eslint-disable-next-line no-console
-          console.warn('[mesa] /home retornou heroMessage vazio — caindo no fallback estático', { home });
+          console.warn('[mesa] /home retornou heroMessage vazio — caindo no fallback estático', {
+            home,
+          });
         }
         setHomeData(home);
         clearDeliveredContinuationHint(home?.continuationMessage?.kind);
@@ -317,9 +371,7 @@ export default function MesaPage() {
             });
             if (location.status !== 'granted') {
               clearSession();
-              setErrorMessage(
-                'Permita o acesso à localização para entrar no app do restaurante.',
-              );
+              setErrorMessage('Permita o acesso à localização para entrar no app do restaurante.');
               transitionTo('error');
               return;
             }
@@ -381,9 +433,7 @@ export default function MesaPage() {
               return;
             }
 
-            const home = await apiGet<HomeData>(
-              `/${slug}/home?customerId=${customer.customerId}`,
-            );
+            const home = await apiGet<HomeData>(`/${slug}/home?customerId=${customer.customerId}`);
             if (cancelled) return;
             setHomeData(home);
             clearDeliveredContinuationHint(home?.continuationMessage?.kind);
@@ -460,9 +510,7 @@ export default function MesaPage() {
     setRepeatBusy(true);
     setRepeatError(null);
     try {
-      const repeat = await apiGet<LastVisitRepeatResponse>(
-        `/${slug}/customer/last-visit`,
-      );
+      const repeat = await apiGet<LastVisitRepeatResponse>(`/${slug}/customer/last-visit`);
       if (repeat.items.length === 0) {
         const unavailable = repeat.unavailableItems[0];
         setRepeatError(
@@ -495,6 +543,24 @@ export default function MesaPage() {
       setRepeatBusy(false);
     }
   }, [addItem, clearDraft, commandMode, push, repeatBusy, slug]);
+
+  const handleCourtesyRespond = useCallback(
+    async (courtesyId: string, status: CourtesyDecision) => {
+      setCourtesyBusy((prev) => ({ ...prev, [courtesyId]: status }));
+      setCourtesyErrors((prev) => ({ ...prev, [courtesyId]: null }));
+      try {
+        const updated = await respondCustomerCourtesy(slug, courtesyId, status);
+        setCourtesies((prev) => prev.map((c) => (c.id === courtesyId ? updated : c)));
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Não consegui responder essa cortesia agora.';
+        setCourtesyErrors((prev) => ({ ...prev, [courtesyId]: message }));
+      } finally {
+        setCourtesyBusy((prev) => ({ ...prev, [courtesyId]: null }));
+      }
+    },
+    [slug],
+  );
 
   const handleWelcomeComplete = useCallback(
     async (customer: CustomerWelcomeResponseDto | null) => {
@@ -614,9 +680,7 @@ export default function MesaPage() {
         onApproved={async () => {
           try {
             await checkParticipantStatus(customerId);
-            const url = customerId
-              ? `/${slug}/home?customerId=${customerId}`
-              : `/${slug}/home`;
+            const url = customerId ? `/${slug}/home?customerId=${customerId}` : `/${slug}/home`;
             const home = await apiGet<HomeData>(url);
             setHomeData(home);
             clearDeliveredContinuationHint(home?.continuationMessage?.kind);
@@ -648,8 +712,7 @@ export default function MesaPage() {
     );
   }
 
-  const restaurantName =
-    settings?.restaurantName || homeData?.restaurantName || 'Restaurante';
+  const restaurantName = settings?.restaurantName || homeData?.restaurantName || 'Restaurante';
   const tableLabel = homeData?.tableLabel || '';
   const isReturning = homeData?.isReturning;
   const lastItems = homeData?.lastVisitSummary?.last_items ?? [];
@@ -657,9 +720,7 @@ export default function MesaPage() {
 
   const heroMessage = homeData?.heroMessage ?? defaultHeroMessage(firstName, restaurantName);
   const returningHighlight =
-    isReturning && lastItems.length > 0
-      ? buildReturningMessage(firstName, lastItems)
-      : null;
+    isReturning && lastItems.length > 0 ? buildReturningMessage(firstName, lastItems) : null;
   const continuationMessage = homeData?.continuationMessage;
   const continuationText =
     typeof continuationMessage?.rendered === 'string' && continuationMessage.rendered.trim()
@@ -674,10 +735,7 @@ export default function MesaPage() {
       ? 'Assistente · reconheceu você'
       : 'Assistente';
   const keyboardAccessoryOffset =
-    typeof window !== 'undefined' &&
-    window.matchMedia('(pointer: coarse)').matches
-      ? 112
-      : 0;
+    typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches ? 112 : 0;
   const focusedInputBottom = `calc(${Math.max(
     keyboardInset,
     keyboardAccessoryOffset,
@@ -723,26 +781,17 @@ export default function MesaPage() {
               Conta reconhecida
             </span>
             <span className="mt-1 block">
-              Bem-vindo de volta. Se não foi você quem fez login agora, é só
-              avisar o garçom.
+              Bem-vindo de volta. Se não foi você quem fez login agora, é só avisar o garçom.
             </span>
           </span>
         </div>
       )}
       <div className="flex flex-1 flex-col justify-center gap-3.5 px-6 pb-8">
         <div className="flex flex-col items-center gap-3">
-          <PillButton onClick={openCallWaiterSheet}>
-            Chamar garçom
-          </PillButton>
-          <PillButton onClick={() => push(`/${slug}/cardapio`)}>
-            Ver cardápio
-          </PillButton>
+          <PillButton onClick={openCallWaiterSheet}>Chamar garçom</PillButton>
+          <PillButton onClick={() => push(`/${slug}/cardapio`)}>Ver cardápio</PillButton>
           {isReturning && lastItems.length > 0 && (
-            <PillButton
-              variant="filled"
-              onClick={handleRepeatLastVisit}
-              disabled={repeatBusy}
-            >
+            <PillButton variant="filled" onClick={handleRepeatLastVisit} disabled={repeatBusy}>
               {repeatBusy ? 'Carregando…' : '↻ Repetir última visita'}
             </PillButton>
           )}
@@ -759,12 +808,20 @@ export default function MesaPage() {
                 : ''}
             </div>
           )}
+          {courtesies.map((courtesy) => (
+            <CourtesyArrival
+              key={courtesy.id}
+              courtesy={courtesy}
+              busyStatus={courtesyBusy[courtesy.id]}
+              error={courtesyErrors[courtesy.id]}
+              onRespond={handleCourtesyRespond}
+              align="center"
+              className="bg-bg text-left"
+            />
+          ))}
         </div>
 
-        <HomeHero
-          message={homeHeroMessage}
-          kicker={homeHeroKicker}
-        />
+        <HomeHero message={homeHeroMessage} kicker={homeHeroKicker} />
       </div>
 
       <div className="px-6 pb-safe pb-8">
@@ -783,9 +840,7 @@ export default function MesaPage() {
           }
         >
           <SoftInput
-            placeholder={
-              homeInputFocused ? 'Escreva sua mensagem...' : 'Digite aqui'
-            }
+            placeholder={homeInputFocused ? 'Escreva sua mensagem...' : 'Digite aqui'}
             value={inputValue}
             onChange={setInputValue}
             onSubmit={handleAssistantSubmit}
@@ -890,9 +945,7 @@ function SplashS1({
           {restaurantName ?? 'Restaurante'}
         </div>
         {tableLabel && (
-          <div className="mt-1 text-[11px] uppercase tracking-[2px] text-mute">
-            {tableLabel}
-          </div>
+          <div className="mt-1 text-[11px] uppercase tracking-[2px] text-mute">{tableLabel}</div>
         )}
       </div>
       <div className="mt-5">
@@ -918,8 +971,7 @@ function SplashS1({
  * `err.message` direto. Mapeamos os casos conhecidos pra texto curto em pt-BR.
  */
 function humanizeInitError(err: unknown): string {
-  const raw =
-    err instanceof Error ? err.message : 'Erro ao iniciar sessão.';
+  const raw = err instanceof Error ? err.message : 'Erro ao iniciar sessão.';
   const isValidatorBag =
     /should not be empty/i.test(raw) ||
     /must be a string/i.test(raw) ||
