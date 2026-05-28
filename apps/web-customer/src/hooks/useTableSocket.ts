@@ -69,6 +69,8 @@ export function useTableSocket(
       'participant:join_request',
       'participant:decision',
       'assistant.staff_message_received',
+      'courtesy.created',
+      'courtesy.updated',
     ] as const;
     for (const ev of events) {
       socket.on(ev, (data: unknown) => onEventRef.current(ev, data));

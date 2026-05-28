@@ -197,6 +197,14 @@ export function MenuDrawer({
             active={activeHref?.endsWith('/pedido/mesa')}
           />
           <DrawerLink
+            href={`/${slug}/cortesias`}
+            onNavigate={closeDrawer}
+            icon="✶"
+            label="Cortesias"
+            sub="Histórico dos últimos 30 dias"
+            active={activeHref?.startsWith(`/${slug}/cortesias`)}
+          />
+          <DrawerLink
             href={`/${slug}/assistente`}
             onNavigate={closeDrawer}
             icon="✦"
