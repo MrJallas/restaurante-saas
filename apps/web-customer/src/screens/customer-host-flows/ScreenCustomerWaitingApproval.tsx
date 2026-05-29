@@ -196,7 +196,7 @@ export function ScreenCustomerWaitingApproval({
     if (state === 'approved') {
       return mode === 'late-arrival'
         ? 'Te conectando ao chat da mesa em 1 s…'
-        : 'Comanda virou uma só. Te levando pro chat…';
+        : 'Te levando para escolher como ficam as comandas…';
     }
     if (state === 'expired') {
       return mode === 'late-arrival'

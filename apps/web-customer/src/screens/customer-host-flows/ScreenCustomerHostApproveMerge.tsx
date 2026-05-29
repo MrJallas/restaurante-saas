@@ -140,14 +140,14 @@ export function ScreenCustomerHostApproveMerge({
         </h1>
 
         <p className="mt-2 text-[14px] font-medium leading-[1.5] tracking-[-0.05px] text-mute">
-          Vão virar uma mesa só com <b>{totalParty} pessoas</b> · uma comanda só
-          · uma conta só.
+          Vão virar uma mesa só com <b>{totalParty} pessoas</b>. Depois vocês
+          escolhem se juntam as comandas ou seguem separados.
         </p>
 
         <div className="mt-4">
           <TypewriterBubble
             eyebrow={`Junção Mesa ${request.originTableNumber} → Mesa ${request.targetTableNumber} · agora`}
-            text={`${request.originHostName || 'A outra mesa'} pediu para juntar as mesas. Se você aceitar, os pedidos e a conta passam a ser tratados juntos.`}
+            text={`${request.originHostName || 'A outra mesa'} pediu para juntar as mesas. Se você aceitar, abrimos a escolha de comandas na sequência.`}
             skipAnimation={skipTypewriter}
             urgent={!autoExpired}
           />

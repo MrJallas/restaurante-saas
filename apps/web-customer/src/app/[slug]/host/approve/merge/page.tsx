@@ -100,5 +100,12 @@ export default function HostApproveMergePage() {
     );
   }
 
-  return <ScreenCustomerHostApproveMerge slug={slug} request={request} skipTypewriter={skipTypewriter} />;
+  return (
+    <ScreenCustomerHostApproveMerge
+      slug={slug}
+      request={request}
+      skipTypewriter={skipTypewriter}
+      onCloseHref={`/${slug}/assistente?mergeApproved=1&mergeRequestId=${request.id}`}
+    />
+  );
 }

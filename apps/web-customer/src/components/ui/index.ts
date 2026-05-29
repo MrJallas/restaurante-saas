@@ -28,6 +28,7 @@ export { PlayIcon } from './PlayIcon';
 export { QRPattern } from './QRPattern';
 export { Row } from './Row';
 export { SoftInput } from './SoftInput';
+export { TableMergeCommandSheet } from './TableMergeCommandSheet';
 
 // Chips com action='expand' preparam o input contextual sem enviar payload
 // como mensagem direta.

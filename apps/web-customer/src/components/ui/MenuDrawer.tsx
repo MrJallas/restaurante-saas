@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { ReactNode, useContext, useEffect } from 'react';
+import { Merge } from 'lucide-react';
 import { SessionContext } from '../../providers/SessionProvider';
 import { useUIState } from '../../providers/UIStateProvider';
 import { useNav } from '../../hooks/useNav';
@@ -16,6 +17,7 @@ interface MenuDrawerProps {
     people: number;
     newCount?: number;
   } | null;
+  onOpenTableMerge?: () => void;
   activeHref?: string;
   participantsCount?: number;
 }
@@ -26,6 +28,7 @@ export function MenuDrawer({
   tableLabel,
   orderSummary,
   tableOrderSummary,
+  onOpenTableMerge,
   activeHref,
   participantsCount,
 }: MenuDrawerProps) {
@@ -195,6 +198,15 @@ export function MenuDrawer({
             sub={tableSub}
             badge={tableBadge}
             active={activeHref?.endsWith('/pedido/mesa')}
+          />
+          <DrawerAction
+            onClick={() => {
+              closeDrawer();
+              onOpenTableMerge?.();
+            }}
+            icon={<Merge size={16} strokeWidth={1.8} aria-hidden />}
+            label="Juntar mesas"
+            sub="Abrir mapa do salão"
           />
           <DrawerLink
             href={`/${slug}/cortesias`}

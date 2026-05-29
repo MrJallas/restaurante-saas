@@ -224,7 +224,7 @@ def _table_merge_status_response(merge: dict) -> str:
     approved_b = bool(merge.get("approved_by_b_at") or merge.get("approvedByBAt"))
 
     if status == "approved":
-        return f"Sim, {pair} já estão juntas. A comanda virou uma só."
+        return f"Sim, {pair} já estão juntas. Vocês podem escolher se juntam as comandas ou continuam separadas."
     if status == "pending":
         if approved_a and not approved_b:
             return f"A junção ainda está pendente: a mesa de origem já confirmou, falta a outra mesa aceitar."

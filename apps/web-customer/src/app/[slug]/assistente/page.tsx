@@ -316,7 +316,7 @@ const DEFAULT_SUGGESTIONS: ChipCanon[] = [
 ];
 
 const TABLE_MERGE_APPROVED_TEXT =
-  'Mesas juntadas! A comanda virou uma só. Vocês já podem pedir juntos por aqui.';
+  'Mesas juntadas! Agora escolha se os próximos pedidos ficam em comanda conjunta ou separada.';
 
 function tableMergeApprovedMessage(requestId?: string | null): ChatMessage {
   return {

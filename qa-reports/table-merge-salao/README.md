@@ -95,8 +95,7 @@ Pedido validado: `2b4e8635-53ac-4780-9699-a11d0ac55e6c`.
 - A mesa origem ja sai pre-aprovada quando o host de origem pede para juntar.
 - Apos a mesa destino aceitar, o pedido ficou `approved` com `approvedByAAt` e `approvedByBAt` preenchidos.
 - A tela de espera mostrou `Mesas juntadas!` e redirecionou para `/restaurant_dev/assistente`.
-- O assistente exibiu automaticamente: `Mesas juntadas! A comanda virou uma só. Vocês já podem pedir juntos por aqui.`
-- Pergunta posterior ao LLM (`a outra mesa aceitou? as mesas ja estao juntas?`) respondeu `Sim, as mesas 14 e 15 já estão juntas. A comanda virou uma só.` com `toolCalls: []`.
+- A validacao posterior `menu-command-choice-2026-05-28/` atualiza o comportamento: depois de juntar, o cliente escolhe se os proximos pedidos entram em comanda conjunta ou separada.
 
 Screenshots:
 
@@ -109,3 +108,26 @@ Arquivos:
 
 - `results.json`
 - `llm-after-acceptance-response.json`
+
+## Menu hamburguer e escolha de comandas
+
+Diretorio: `menu-command-choice-2026-05-28/`
+
+- O drawer do hamburger agora mostra `Juntar mesas`.
+- Tocar em `Juntar mesas` fecha o drawer e abre o mapa do salao em sheet drag.
+- O mapa carregou M14 como `you` e M15 como mesa ocupada selecionavel.
+- Ao chegar em `/assistente?mergeApproved=1&mergeRequestId=...`, sobe o sheet `Como ficam as comandas?`.
+- Escolher `Juntar comandas` gravou `commandMode:<sessionId> = table` para os proximos pedidos feitos neste aparelho.
+- Pergunta posterior ao LLM (`a outra mesa aceitou? as mesas ja estao juntas?`) respondeu `Sim, as mesas 14 e 15 já estão juntas. Vocês podem escolher se juntam as comandas ou continuam separadas.` com `toolCalls: []`.
+
+Screenshots:
+
+- `01-drawer-merge-action.png`
+- `02-salon-map-from-drawer.png`
+- `03-command-choice-sheet.png`
+- `04-after-join-command-choice.png`
+
+Arquivos:
+
+- `results.json`
+- `llm-after-command-choice-copy.json`

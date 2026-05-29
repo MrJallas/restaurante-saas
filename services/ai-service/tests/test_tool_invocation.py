@@ -335,7 +335,10 @@ def test_chat_answers_approved_table_merge_status_without_tools(chat_client):
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["layer"] == "rule-table-merge-status"
-    assert body["response"] == "Sim, as mesas 14 e 15 já estão juntas. A comanda virou uma só."
+    assert body["response"] == (
+        "Sim, as mesas 14 e 15 já estão juntas. "
+        "Vocês podem escolher se juntam as comandas ou continuam separadas."
+    )
     assert body["tool_calls"] == []
     assert provider.chat.await_count == 0
 
