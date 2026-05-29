@@ -122,6 +122,7 @@ export function ScreenCustomerHostApproveMerge({
     () => request.originPartySize + request.targetPartySize,
     [request.originPartySize, request.targetPartySize],
   );
+  const originHost = request.originHostName?.trim() || 'A outra mesa';
 
   return (
     <main className="flex min-h-dvh flex-col bg-bg">
@@ -134,7 +135,7 @@ export function ScreenCustomerHostApproveMerge({
 
         <h1 className="text-[22px] font-bold leading-[1.2] tracking-[-0.4px] text-ink">
           <span className="font-bold">
-            {request.originHostName} (Mesa {request.originTableNumber})
+            {originHost} (Mesa {request.originTableNumber})
           </span>{' '}
           quer juntar com a sua mesa
         </h1>
@@ -194,11 +195,11 @@ export function ScreenCustomerHostApproveMerge({
           <ul className="mt-3 flex flex-col gap-2.5">
             <PersonRow
               key="origin-host"
-              name={request.originHostName}
+              name={originHost}
               sub="Host da mesa"
             />
             {theirPartyNames
-              .filter((n) => n !== request.originHostName)
+              .filter((n) => n !== originHost)
               .map((name, i) => (
                 <PersonRow key={`t-${name}-${i}`} name={name} />
               ))}

@@ -126,7 +126,7 @@ export interface TableMergeRequestDto {
   /** Target table label (e.g. number 15). */
   targetTableNumber: number;
   /** Display name of customer-host on origin side (Caleb da Mesa 14...). */
-  originHostName: string;
+  originHostName: string | null;
   /** Display name of customer-host on target side. NULL if walkin (no host). */
   targetHostName: string | null;
   /** Party size on each side, used in merge prose. */
@@ -188,11 +188,22 @@ export interface TableMergeCooldown {
 export interface MergeCooldownDto {
   originTable: number;
   targetTable: number;
+  originTableNumber?: number;
+  targetTableNumber?: number;
+  originSessionId?: string;
+  targetSessionId?: string;
+  originHostName?: string | null;
+  targetHostName?: string | null;
+  originPartySize?: number;
+  targetPartySize?: number;
   reason: MergeCooldownReason;
   /** ISO datetime when the cooldown expires; UI shows the countdown. */
   cooldownEndsAt: string;
+  retryAfterSeconds?: number;
+  code?: string;
   /** Pre-formatted human message returned by API for direct rendering. */
   message: string;
+  message_user?: string;
 }
 
 // ─────────────────────────────────────────────────────────────

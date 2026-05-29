@@ -369,6 +369,32 @@ def test_chat_answers_pending_table_merge_status_without_tools(chat_client):
     assert provider.chat.await_count == 0
 
 
+def test_chat_blocks_table_merge_retry_during_cooldown(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={
+            "message": "quero tentar juntar com essa mesa de novo",
+            "tenantId": "t1",
+            "customer_context": {
+                "latest_table_merge": {
+                    "status": "rejected",
+                    "origin_table_number": 14,
+                    "target_table_number": 15,
+                    "cooldown_expires_at": "2026-05-28T20:51:42.513Z",
+                    "retry_after_seconds": 420,
+                },
+            },
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] == "rule-table-merge-status"
+    assert "tentar de novo em 7 min" in body["response"]
+    assert body["tool_calls"] == []
+    assert provider.chat.await_count == 0
+
+
 def test_chat_routes_join_accept_before_ack_without_llm(chat_client):
     client, provider = chat_client
     res = client.post(

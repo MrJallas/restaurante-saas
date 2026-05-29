@@ -154,12 +154,24 @@ export interface WsTableMergeCreated {
     targetSessionId: string;
     originTableNumber: number;
     targetTableNumber: number;
-    originHostName: string;
+    originHostName: string | null;
     targetHostName: string | null;
     originPartySize: number;
     targetPartySize: number;
     expiresAt: string;
   };
+}
+
+export interface WsTableMergeLifecycleDetails {
+  originSessionId?: string;
+  targetSessionId?: string;
+  originTableNumber?: number;
+  targetTableNumber?: number;
+  originHostName?: string | null;
+  targetHostName?: string | null;
+  originPartySize?: number;
+  targetPartySize?: number;
+  expiresAt?: string;
 }
 
 export interface WsTableMergeApproved {
@@ -170,7 +182,7 @@ export interface WsTableMergeApproved {
     side: 'a' | 'b' | 'both';
     status: TableMergeStatus;
     mergeId?: string;
-  };
+  } & WsTableMergeLifecycleDetails;
 }
 
 export interface WsTableMergeRejected {
@@ -179,7 +191,7 @@ export interface WsTableMergeRejected {
     requestId: string;
     /** Which side rejected ('timeout' on auto-expiration). */
     rejectedBy: 'a' | 'b' | 'timeout';
-  };
+  } & WsTableMergeLifecycleDetails;
 }
 
 export interface WsMergeCooldownStarted {
@@ -191,7 +203,9 @@ export interface WsMergeCooldownStarted {
     targetTable: number;
     reason: MergeCooldownReason;
     expiresAt: string;
-  };
+    cooldownEndsAt?: string;
+    retryAfterSeconds?: number;
+  } & WsTableMergeLifecycleDetails;
 }
 
 export interface WsMergeCooldownExpired {

@@ -8,8 +8,21 @@ import { clearDeliveredContinuationHint } from '../../../lib/continuationHints';
 import { recordCustomerEvent } from '../../../lib/customerEvents';
 import { listMessages } from '../../../lib/api/chat-history';
 import { listCustomerCourtesies, respondCustomerCourtesy } from '../../../lib/api/courtesies';
-import { createTableMergeRequest } from '../../../lib/api/customer-host';
-import type { ChatMessageDto, CourtesyStatus, CustomerCourtesyDto } from '@restaurant/shared-types';
+import {
+  approveTableMerge,
+  createTableMergeRequest,
+  rejectTableMerge,
+} from '../../../lib/api/customer-host';
+import type {
+  ChatMessageDto,
+  CourtesyStatus,
+  CustomerCourtesyDto,
+  MergeCooldownDto,
+  WsMergeCooldownStarted,
+  WsTableMergeApproved,
+  WsTableMergeCreated,
+  WsTableMergeRejected,
+} from '@restaurant/shared-types';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
@@ -29,6 +42,10 @@ import { CommandPicker, type CommandModeChoice } from '../../../components/carda
 import { useUIState } from '../../../providers/UIStateProvider';
 import { OverlaySalonMap, type SalonTable } from '../../../components/ui/OverlaySalonMap';
 import { TypewriterBubble } from '../../../screens/customer-host-flows/TypewriterBubble';
+import { MergeTypewriterBubble } from '../../../screens/customer-host-flows/MergeTypewriterBubble';
+import { ScreenCustomerMergeCooldown } from '../../../screens/customer-host-flows/ScreenCustomerMergeCooldown';
+import { ScreenCustomerPostMergeApproved } from '../../../screens/customer-host-flows/ScreenCustomerPostMergeApproved';
+import { ScreenCustomerPostMergeRejected } from '../../../screens/customer-host-flows/ScreenCustomerPostMergeRejected';
 import { createLgpdRequest } from '../../../lib/api/feedback';
 
 interface LinkedItem {
@@ -49,6 +66,29 @@ interface PendingJoinRequest {
 interface JoinRequestChatState extends PendingJoinRequest {
   decision?: 'approved' | 'rejected';
   busy?: boolean;
+  error?: string | null;
+}
+
+type TableMergeChatKind = 'incoming' | 'waiting' | 'approved' | 'rejected' | 'cooldown';
+
+interface TableMergeChatState {
+  kind: TableMergeChatKind;
+  requestId?: string | null;
+  originSessionId?: string | null;
+  targetSessionId?: string | null;
+  originTableNumber?: number | null;
+  targetTableNumber?: number | null;
+  originHostName?: string | null;
+  targetHostName?: string | null;
+  originPartySize?: number | null;
+  targetPartySize?: number | null;
+  expiresAt?: string | null;
+  cooldownEndsAt?: string | null;
+  retryAfterSeconds?: number | null;
+  message?: string | null;
+  side?: 'a' | 'b' | 'both' | null;
+  rejectedBy?: 'a' | 'b' | 'timeout' | null;
+  busy?: 'approving' | 'rejecting' | null;
   error?: string | null;
 }
 
@@ -106,6 +146,8 @@ interface ChatMessage {
   courtesyError?: string | null;
   /** Host-side pending participant approval shown as a typewriter bubble. */
   joinRequest?: JoinRequestChatState;
+  /** Table-merge final states shown inline in the assistant chat. */
+  tableMerge?: TableMergeChatState;
 }
 
 interface AssistantToolHint {
@@ -354,14 +396,107 @@ const DEFAULT_SUGGESTIONS: ChipCanon[] = [
   },
 ];
 
-const TABLE_MERGE_APPROVED_TEXT =
-  'Mesas juntadas! Agora escolha se os próximos pedidos ficam em comanda conjunta ou separada.';
+function tableMergeStateFromPayload(
+  payload: Partial<
+    WsTableMergeCreated['payload'] &
+      WsTableMergeApproved['payload'] &
+      WsTableMergeRejected['payload'] &
+      WsMergeCooldownStarted['payload'] &
+      MergeCooldownDto
+  >,
+): Omit<TableMergeChatState, 'kind'> {
+  return {
+    requestId: payload.requestId ?? null,
+    originSessionId: payload.originSessionId ?? null,
+    targetSessionId: payload.targetSessionId ?? null,
+    originTableNumber:
+      payload.originTableNumber ?? payload.originTable ?? null,
+    targetTableNumber:
+      payload.targetTableNumber ?? payload.targetTable ?? null,
+    originHostName: payload.originHostName ?? null,
+    targetHostName: payload.targetHostName ?? null,
+    originPartySize: payload.originPartySize ?? null,
+    targetPartySize: payload.targetPartySize ?? null,
+    expiresAt: payload.expiresAt ?? null,
+    cooldownEndsAt: payload.cooldownEndsAt ?? payload.expiresAt ?? null,
+    retryAfterSeconds: payload.retryAfterSeconds ?? null,
+  };
+}
 
-function tableMergeApprovedMessage(requestId?: string | null): ChatMessage {
+function tableMergeCreatedMessage(payload: WsTableMergeCreated['payload']): ChatMessage {
+  return {
+    id: `table-merge-created-${payload.requestId}`,
+    role: 'ai',
+    content: '',
+    tableMerge: {
+      kind: 'incoming',
+      ...tableMergeStateFromPayload(payload),
+    },
+  };
+}
+
+function tableMergeWaitingMessage(
+  requestId: string | null | undefined,
+  payload: Partial<WsTableMergeApproved['payload']> = {},
+): ChatMessage {
+  return {
+    id: `table-merge-waiting-${requestId || 'latest'}`,
+    role: 'ai',
+    content: 'Sua confirmação foi registrada. Agora falta a outra mesa responder.',
+    tableMerge: {
+      kind: 'waiting',
+      ...tableMergeStateFromPayload({ ...payload, requestId: requestId ?? undefined }),
+    },
+  };
+}
+
+function tableMergeApprovedMessage(
+  requestId?: string | null,
+  payload: Partial<WsTableMergeApproved['payload']> = {},
+): ChatMessage {
   return {
     id: `table-merge-approved-${requestId || 'latest'}`,
     role: 'ai',
-    content: TABLE_MERGE_APPROVED_TEXT,
+    content: '',
+    tableMerge: {
+      kind: 'approved',
+      ...tableMergeStateFromPayload({ ...payload, requestId: requestId ?? undefined }),
+      side: payload.side ?? 'both',
+    },
+  };
+}
+
+function tableMergeRejectedMessage(
+  requestId?: string | null,
+  payload: Partial<WsTableMergeRejected['payload']> = {},
+): ChatMessage {
+  return {
+    id: `table-merge-rejected-${requestId || 'latest'}`,
+    role: 'ai',
+    content: '',
+    tableMerge: {
+      kind: 'rejected',
+      ...tableMergeStateFromPayload({ ...payload, requestId: requestId ?? undefined }),
+      rejectedBy: payload.rejectedBy ?? null,
+    },
+  };
+}
+
+function tableMergeCooldownMessage(
+  payload: Partial<WsMergeCooldownStarted['payload'] & MergeCooldownDto & { requestId: string }>,
+): ChatMessage {
+  const requestId = payload.requestId ?? payload.cooldownId ?? 'latest';
+  return {
+    id: `table-merge-cooldown-${requestId}`,
+    role: 'ai',
+    content: '',
+    tableMerge: {
+      kind: 'cooldown',
+      ...tableMergeStateFromPayload(payload),
+      message: payload.message ?? payload.message_user ?? null,
+      cooldownEndsAt:
+        payload.cooldownEndsAt ?? payload.expiresAt ?? new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    },
   };
 }
 
@@ -400,6 +535,39 @@ function isJoinDecisionSocketPayload(value: unknown): value is JoinDecisionSocke
     isRecord(value) &&
     typeof value.customerId === 'string' &&
     (value.status === 'approved' || value.status === 'rejected')
+  );
+}
+
+function isTableMergeCreatedPayload(value: unknown): value is WsTableMergeCreated['payload'] {
+  return (
+    isRecord(value) &&
+    typeof value.requestId === 'string' &&
+    typeof value.originSessionId === 'string' &&
+    typeof value.targetSessionId === 'string'
+  );
+}
+
+function isTableMergeApprovedPayload(value: unknown): value is WsTableMergeApproved['payload'] {
+  return (
+    isRecord(value) &&
+    typeof value.requestId === 'string' &&
+    (value.side === 'a' || value.side === 'b' || value.side === 'both')
+  );
+}
+
+function isTableMergeRejectedPayload(value: unknown): value is WsTableMergeRejected['payload'] {
+  return (
+    isRecord(value) &&
+    typeof value.requestId === 'string' &&
+    (value.rejectedBy === 'a' || value.rejectedBy === 'b' || value.rejectedBy === 'timeout')
+  );
+}
+
+function isMergeCooldownStartedPayload(value: unknown): value is WsMergeCooldownStarted['payload'] {
+  return (
+    isRecord(value) &&
+    typeof value.cooldownId === 'string' &&
+    typeof value.expiresAt === 'string'
   );
 }
 
@@ -480,6 +648,17 @@ function numberValue(value: unknown): number | null {
   if (typeof value === 'string' && value.trim().length > 0) {
     const n = Number(value);
     if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function tableMergeDecisionFromText(text: string): 'approve' | 'reject' | null {
+  const normalized = stripDiacritics(text);
+  if (/\b(agora nao|melhor nao|nao|recusa|recusar|separad[oa]s?)\b/.test(normalized)) {
+    return 'reject';
+  }
+  if (/\b(pode|pode juntar|sim|claro|libera|liberar|aceita|aceitar|junta|ok|beleza)\b/.test(normalized)) {
+    return 'approve';
   }
   return null;
 }
@@ -634,6 +813,19 @@ function mergeUniqueChatMessages(current: ChatMessage[], incoming: ChatMessage[]
     if (!duplicate) next.push(msg);
   }
   return next;
+}
+
+function upsertTableMergeChatMessage(current: ChatMessage[], incoming: ChatMessage): ChatMessage[] {
+  if (!incoming.tableMerge?.requestId) {
+    return mergeUniqueChatMessages(current, [incoming]);
+  }
+  let replaced = false;
+  const next = current.map((msg) => {
+    if (msg.tableMerge?.requestId !== incoming.tableMerge?.requestId) return msg;
+    replaced = true;
+    return { ...incoming, id: msg.id };
+  });
+  return replaced ? next : mergeUniqueChatMessages(current, [incoming]);
 }
 
 type ToolCategory =
@@ -965,6 +1157,18 @@ export default function AssistentePage() {
       tableSessionId: active.tableSessionId,
     };
   }, [messages]);
+  const activeTableMergeMessage = useMemo<ChatMessage | null>(() => {
+    return (
+      [...messages]
+        .reverse()
+        .find(
+          (msg) =>
+            msg.tableMerge?.kind === 'incoming' &&
+            !msg.tableMerge.busy &&
+            !msg.tableMerge.error,
+        ) ?? null
+    );
+  }, [messages]);
 
   useEffect(() => {
     if (!slug || !session.sessionId) return;
@@ -982,8 +1186,12 @@ export default function AssistentePage() {
 
   useEffect(() => {
     if (!mergeApprovedParam) return;
-    router.replace(`/${slug}/assistente`);
-  }, [mergeApprovedParam, router, slug]);
+    setChatStarted(true);
+    setMessages((prev) =>
+      upsertTableMergeChatMessage(prev, tableMergeApprovedMessage(mergeRequestIdParam)),
+    );
+    window.history.replaceState(null, '', `/${slug}/assistente`);
+  }, [mergeApprovedParam, mergeRequestIdParam, slug]);
 
   useEffect(() => {
     const refresh = () => setContinuationRefreshKey((key) => key + 1);
@@ -1181,14 +1389,91 @@ export default function AssistentePage() {
    * o bubble fica escondido atrás do hero/PillButtons).
    */
   useTableSocket(session.sessionId, (event, data) => {
-    if (event === 'table_merge.approved') {
-      const payload = (data ?? {}) as { requestId?: string; side?: string };
-      if (payload.side !== 'both') return;
+    if (event === 'table_merge.created' && isTableMergeCreatedPayload(data)) {
+      try {
+        window.sessionStorage.setItem(
+          `table-merge:${data.requestId}`,
+          JSON.stringify({
+            id: data.requestId,
+            status: 'pending',
+            originTableNumber: data.originTableNumber,
+            targetTableNumber: data.targetTableNumber,
+            originHostName: data.originHostName,
+            targetHostName: data.targetHostName,
+            originPartySize: data.originPartySize,
+            targetPartySize: data.targetPartySize,
+            approvedByAAt: null,
+            approvedByBAt: null,
+            expiresAt: data.expiresAt,
+            createdAt: new Date().toISOString(),
+          }),
+        );
+      } catch {
+        /* sessionStorage is a convenience for the deep-link route */
+      }
+      if (data.targetSessionId !== session.sessionId) return;
       setChatStarted(true);
       setMessages((prev) =>
-        mergeUniqueChatMessages(prev, [
-          tableMergeApprovedMessage(payload.requestId),
-        ]),
+        mergeUniqueChatMessages(prev, [tableMergeCreatedMessage(data)]),
+      );
+      return;
+    }
+    if (event === 'table_merge.approved') {
+      if (!isTableMergeApprovedPayload(data)) return;
+      const payload = data;
+      if (
+        payload.originSessionId &&
+        payload.targetSessionId &&
+        session.sessionId !== payload.originSessionId &&
+        session.sessionId !== payload.targetSessionId
+      ) {
+        return;
+      }
+      if (payload.side !== 'both') {
+        setMessages((prev) =>
+          upsertTableMergeChatMessage(
+            prev,
+            tableMergeWaitingMessage(payload.requestId, payload),
+          ),
+        );
+        return;
+      }
+      setChatStarted(true);
+      setMessages((prev) =>
+        upsertTableMergeChatMessage(
+          prev,
+          tableMergeApprovedMessage(payload.requestId, payload),
+        ),
+      );
+      return;
+    }
+    if (event === 'table_merge.rejected' && isTableMergeRejectedPayload(data)) {
+      const payload = data;
+      if (
+        payload.originSessionId &&
+        payload.targetSessionId &&
+        session.sessionId !== payload.originSessionId &&
+        session.sessionId !== payload.targetSessionId
+      ) {
+        return;
+      }
+      setChatStarted(true);
+      setMessages((prev) =>
+        upsertTableMergeChatMessage(
+          prev,
+          tableMergeRejectedMessage(payload.requestId, payload),
+        ),
+      );
+      return;
+    }
+    if (event === 'merge.cooldown_started' && isMergeCooldownStartedPayload(data)) {
+      const payload = data;
+      if (payload.originSessionId && session.sessionId !== payload.originSessionId) {
+        return;
+      }
+      setChatStarted(true);
+      setMessages((prev) =>
+        upsertTableMergeChatMessage(prev, tableMergeCooldownMessage(payload)),
       );
       return;
     }
@@ -1334,6 +1619,69 @@ export default function AssistentePage() {
       );
     } catch {
       appendToolFeedback('Não consegui carregar suas cortesias agora.');
+    }
+  };
+
+  const patchTableMergeMessage = (
+    messageId: string,
+    patch: Partial<TableMergeChatState>,
+  ) => {
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === messageId && msg.tableMerge
+          ? { ...msg, tableMerge: { ...msg.tableMerge, ...patch } }
+          : msg,
+      ),
+    );
+  };
+
+  const decideTableMergeFromChat = async (
+    messageId: string,
+    decision: 'approve' | 'reject',
+  ) => {
+    const msg = messages.find((m) => m.id === messageId);
+    const merge = msg?.tableMerge;
+    if (!merge?.requestId || merge.busy) return;
+    patchTableMergeMessage(messageId, {
+      busy: decision === 'approve' ? 'approving' : 'rejecting',
+      error: null,
+    });
+    try {
+      if (decision === 'approve') {
+        const updated = await approveTableMerge(merge.requestId, { slug });
+        patchTableMergeMessage(messageId, {
+          busy: null,
+          kind: updated.status === 'approved' ? 'approved' : 'waiting',
+          originTableNumber: updated.originTableNumber,
+          targetTableNumber: updated.targetTableNumber,
+          originHostName: updated.originHostName,
+          targetHostName: updated.targetHostName,
+          originPartySize: updated.originPartySize,
+          targetPartySize: updated.targetPartySize,
+          expiresAt: updated.expiresAt,
+        });
+        return;
+      }
+      const updated = await rejectTableMerge(merge.requestId, {
+        slug,
+        reason: 'Recusado pelo chat do cliente.',
+      });
+      patchTableMergeMessage(messageId, {
+        busy: null,
+        kind: 'rejected',
+        originTableNumber: updated.originTableNumber,
+        targetTableNumber: updated.targetTableNumber,
+        originHostName: updated.originHostName,
+        targetHostName: updated.targetHostName,
+        originPartySize: updated.originPartySize,
+        targetPartySize: updated.targetPartySize,
+        cooldownEndsAt: updated.cooldownEndsAt ?? merge.cooldownEndsAt ?? null,
+      });
+    } catch (err) {
+      patchTableMergeMessage(messageId, {
+        busy: null,
+        error: err instanceof Error ? err.message : 'Não consegui responder agora.',
+      });
     }
   };
 
@@ -1541,7 +1889,31 @@ export default function AssistentePage() {
     }
 
     if (result.error === 'cooldown') {
-      appendToolFeedback(result.cooldown.message || 'Essa junção foi tentada há pouco. Tente novamente em alguns minutos.');
+      setChatStarted(true);
+      setMessages((prev) =>
+        mergeUniqueChatMessages(prev, [tableMergeCooldownMessage(result.cooldown)]),
+      );
+      setSuggestions([
+        {
+          id: 'merge-cooldown-host',
+          label: 'Chamar recepcionista',
+          action: 'send',
+          payload: 'chamar recepcionista',
+          primary: true,
+        },
+        {
+          id: 'merge-cooldown-another',
+          label: 'Tentar outra mesa',
+          action: 'send',
+          payload: 'quero tentar juntar com outra mesa',
+        },
+        {
+          id: 'merge-cooldown-stay',
+          label: 'Continuar aqui',
+          action: 'send',
+          payload: 'vamos continuar aqui',
+        },
+      ]);
       return;
     }
 
@@ -2033,6 +2405,14 @@ export default function AssistentePage() {
       }
     }
 
+    if (activeTableMergeMessage?.tableMerge?.kind === 'incoming') {
+      const decision = tableMergeDecisionFromText(trimmed);
+      if (decision) {
+        await decideTableMergeFromChat(activeTableMergeMessage.id, decision);
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -2332,6 +2712,69 @@ export default function AssistentePage() {
             </div>
           )}
           {messages.map((msg) => {
+            if (msg.tableMerge) {
+              const merge = msg.tableMerge;
+              const origin = merge.originTableNumber ?? undefined;
+              const target = merge.targetTableNumber ?? undefined;
+              if (merge.kind === 'incoming' || merge.kind === 'waiting') {
+                return (
+                  <div key={msg.id} className="flex max-w-[92%] flex-col gap-2 self-start">
+                    <MergeTypewriterBubble
+                      originHostName={merge.originHostName}
+                      originTableNumber={origin}
+                      targetTableNumber={target}
+                      originPartySize={merge.originPartySize ?? 0}
+                      targetPartySize={merge.targetPartySize ?? 0}
+                      busy={merge.busy ?? null}
+                      decided={merge.kind === 'waiting' ? 'waiting' : null}
+                      error={merge.error}
+                      onApprove={() => decideTableMergeFromChat(msg.id, 'approve')}
+                      onReject={() => decideTableMergeFromChat(msg.id, 'reject')}
+                      onOpenDetails={() =>
+                        push(`/${slug}/host/approve/merge?requestId=${merge.requestId ?? ''}`)
+                      }
+                    />
+                  </div>
+                );
+              }
+              if (merge.kind === 'approved') {
+                return (
+                  <ScreenCustomerPostMergeApproved
+                    key={msg.id}
+                    originTableNumber={origin}
+                    targetTableNumber={target}
+                    onViewOrder={() => push(`/${slug}/pedido`)}
+                    onCallWaiter={openCallWaiterSheet}
+                    onViewMenu={() => push(`/${slug}/cardapio`)}
+                  />
+                );
+              }
+              if (merge.kind === 'rejected') {
+                return (
+                  <ScreenCustomerPostMergeRejected
+                    key={msg.id}
+                    originTableNumber={origin}
+                    targetTableNumber={target}
+                    onCallHost={openCallWaiterSheet}
+                    onTryAnother={() => sendMessage('quero tentar juntar com outra mesa')}
+                    onContinueHere={() => setSuggestions(DEFAULT_SUGGESTIONS)}
+                  />
+                );
+              }
+              return (
+                <ScreenCustomerMergeCooldown
+                  key={msg.id}
+                  targetTableNumber={target}
+                  cooldownEndsAt={
+                    merge.cooldownEndsAt ?? new Date(Date.now() + 10 * 60 * 1000).toISOString()
+                  }
+                  message={merge.message}
+                  onCallHost={openCallWaiterSheet}
+                  onTryAnother={() => sendMessage('quero tentar juntar com outra mesa')}
+                  onContinueHere={() => setSuggestions(DEFAULT_SUGGESTIONS)}
+                />
+              );
+            }
             if (msg.joinRequest) {
               const decided = msg.joinRequest.decision;
               const busy = !!msg.joinRequest.busy;

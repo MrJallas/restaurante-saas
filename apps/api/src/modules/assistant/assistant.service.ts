@@ -1611,7 +1611,13 @@ export class AssistantService {
               CAST(NULLIF(regexp_replace(src_t.code, '[^0-9]', '', 'g'), '') AS INT) AS origin_table_number,
               CAST(NULLIF(regexp_replace(tgt_t.code, '[^0-9]', '', 'g'), '') AS INT) AS target_table_number,
               src_c.name AS origin_host_name,
-              tgt_c.name AS target_host_name
+              tgt_c.name AS target_host_name,
+              cm.cooldown_expires_at,
+              cm.reason AS cooldown_reason,
+              CASE
+                WHEN cm.cooldown_expires_at IS NULL THEN NULL
+                ELSE GREATEST(0, CEIL(EXTRACT(EPOCH FROM (cm.cooldown_expires_at - now()))))::int
+              END AS retry_after_seconds
          FROM table_merge_requests mr
     LEFT JOIN table_sessions src_ts ON src_ts.id = mr.source_table_session_id
     LEFT JOIN table_sessions tgt_ts ON tgt_ts.id = mr.target_table_session_id
@@ -1619,6 +1625,10 @@ export class AssistantService {
     LEFT JOIN tables tgt_t ON tgt_t.id = tgt_ts.table_id
     LEFT JOIN customers src_c ON src_c.id = src_ts.host_customer_id
     LEFT JOIN customers tgt_c ON tgt_c.id = tgt_ts.host_customer_id
+    LEFT JOIN table_merge_cooldowns cm
+           ON cm.source_table_session_id = mr.source_table_session_id
+          AND cm.target_table_session_id = mr.target_table_session_id
+          AND cm.cooldown_expires_at > now()
         WHERE (mr.source_table_session_id = $1 OR mr.target_table_session_id = $1)
           AND (mr.requesting_customer_id = $2 OR mr.target_customer_id = $2)
         ORDER BY mr.created_at DESC

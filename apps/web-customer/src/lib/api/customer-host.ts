@@ -20,6 +20,53 @@ function getSlugFromPath(): string {
   return seg[0] ?? '';
 }
 
+function numberFromBody(body: Record<string, unknown> | undefined, key: string): number | null {
+  const value = body?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function stringFromBody(body: Record<string, unknown> | undefined, key: string): string | null {
+  const value = body?.[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function cooldownFromError(err: ApiRequestError): MergeCooldownDto {
+  const body = err.body as Record<string, unknown> | undefined;
+  const retryAfterSeconds = numberFromBody(body, 'retryAfterSeconds');
+  const cooldownEndsAt =
+    stringFromBody(body, 'cooldownEndsAt') ??
+    new Date(Date.now() + Math.max(retryAfterSeconds ?? 600, 60) * 1000).toISOString();
+  const originTable =
+    numberFromBody(body, 'originTable') ??
+    numberFromBody(body, 'originTableNumber') ??
+    0;
+  const targetTable =
+    numberFromBody(body, 'targetTable') ??
+    numberFromBody(body, 'targetTableNumber') ??
+    0;
+  return {
+    originTable,
+    targetTable,
+    originTableNumber: numberFromBody(body, 'originTableNumber') ?? originTable,
+    targetTableNumber: numberFromBody(body, 'targetTableNumber') ?? targetTable,
+    originSessionId: stringFromBody(body, 'originSessionId') ?? undefined,
+    targetSessionId: stringFromBody(body, 'targetSessionId') ?? undefined,
+    originHostName: stringFromBody(body, 'originHostName'),
+    targetHostName: stringFromBody(body, 'targetHostName'),
+    originPartySize: numberFromBody(body, 'originPartySize') ?? undefined,
+    targetPartySize: numberFromBody(body, 'targetPartySize') ?? undefined,
+    reason: body?.reason === 'timeout' ? 'timeout' : 'rejected',
+    cooldownEndsAt,
+    retryAfterSeconds: retryAfterSeconds ?? undefined,
+    code: stringFromBody(body, 'code') ?? undefined,
+    message:
+      stringFromBody(body, 'message_user') ??
+      stringFromBody(body, 'message') ??
+      err.message,
+    message_user: stringFromBody(body, 'message_user') ?? undefined,
+  };
+}
+
 // ─── Customer identify (CPF lookup) ──────────────────────────────────────────
 
 /**
@@ -152,17 +199,7 @@ export async function createTableMergeRequest(input: {
     return { ok: true, request };
   } catch (err) {
     if (err instanceof ApiRequestError && err.statusCode === 429) {
-      // Backend's 429 body matches MergeCooldownDto. ApiRequestError flattens
-      // the message but loses the body; fallback to a synthetic dto with the
-      // text the backend gave us so the UI can still show the countdown.
-      const cooldown: MergeCooldownDto = {
-        originTable: 0,
-        targetTable: 0,
-        reason: 'rejected',
-        cooldownEndsAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-        message: err.message,
-      };
-      return { ok: false, error: 'cooldown', cooldown };
+      return { ok: false, error: 'cooldown', cooldown: cooldownFromError(err) };
     }
     return {
       ok: false,

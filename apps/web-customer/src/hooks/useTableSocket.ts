@@ -71,7 +71,11 @@ export function useTableSocket(
       'assistant.staff_message_received',
       'courtesy.created',
       'courtesy.updated',
+      'table_merge.created',
       'table_merge.approved',
+      'table_merge.rejected',
+      'merge.cooldown_started',
+      'merge.cooldown_expired',
     ] as const;
     for (const ev of events) {
       socket.on(ev, (data: unknown) => onEventRef.current(ev, data));

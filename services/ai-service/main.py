@@ -256,6 +256,15 @@ def _table_merge_status_response(merge: dict) -> str:
     pair = f"as mesas {origin} e {target}" if origin and target else "as mesas"
     approved_a = bool(merge.get("approved_by_a_at") or merge.get("approvedByAAt"))
     approved_b = bool(merge.get("approved_by_b_at") or merge.get("approvedByBAt"))
+    retry_after = merge.get("retry_after_seconds") or merge.get("retryAfterSeconds")
+    cooldown_ends = merge.get("cooldown_expires_at") or merge.get("cooldownEndsAt")
+
+    if cooldown_ends or retry_after:
+        try:
+            minutes = max(1, int((int(retry_after) + 59) / 60))
+            return f"Ainda tem uma pausa nessa junção. Você pode tentar de novo em {minutes} min."
+        except Exception:
+            return "Ainda tem uma pausa nessa junção. Você pode tentar de novo em alguns minutos."
 
     if status == "approved":
         return f"Sim, {pair} já estão juntas. Vocês podem escolher se juntam as comandas ou continuam separadas."
@@ -1121,6 +1130,14 @@ def _merge_status_prompt_line(merge: dict) -> str:
     target = merge.get("target_table_number") or merge.get("targetTableNumber") or "destino"
     approved_a = bool(merge.get("approved_by_a_at") or merge.get("approvedByAAt"))
     approved_b = bool(merge.get("approved_by_b_at") or merge.get("approvedByBAt"))
+    retry_after = merge.get("retry_after_seconds") or merge.get("retryAfterSeconds")
+    cooldown_ends = merge.get("cooldown_expires_at") or merge.get("cooldownEndsAt")
+    if cooldown_ends or retry_after:
+        return (
+            f"\n\nSTATUS DA JUNÇÃO DE MESAS: cooldown ativo entre mesa {origin} e mesa {target}. "
+            "Se o cliente pedir para tentar de novo, responda que precisa aguardar o tempo restante. "
+            "Não chame request_table_merge enquanto o cooldown estiver ativo."
+        )
     if status == "approved":
         return (
             f"\n\nSTATUS DA JUNÇÃO DE MESAS: aprovado entre mesa {origin} e mesa {target}. "

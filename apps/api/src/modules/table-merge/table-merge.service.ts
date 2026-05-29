@@ -38,6 +38,16 @@ export interface MergeCooldownPayload {
   message: string;
   message_user: string;
   code: string;
+  originTable: number;
+  targetTable: number;
+  originTableNumber: number;
+  targetTableNumber: number;
+  originSessionId: string;
+  targetSessionId: string;
+  originHostName: string | null;
+  targetHostName: string | null;
+  originPartySize: number;
+  targetPartySize: number;
   pair: { a: string; b: string };
 }
 
@@ -49,6 +59,17 @@ interface SessionResolution {
   table_code: string;
   table_label: string;
   table_number: number | null;
+}
+
+interface TableMergeLifecycleDetails {
+  originSessionId: string;
+  targetSessionId: string;
+  originTableNumber: number;
+  targetTableNumber: number;
+  originHostName: string | null;
+  targetHostName: string | null;
+  originPartySize: number;
+  targetPartySize: number;
 }
 
 function userError(code: string, message: string, status: HttpStatus) {
@@ -184,13 +205,27 @@ export class TableMergeService {
         0,
         Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000),
       );
+      const details = await this.getMergeLifecycleDetails(
+        input.sourceTableSessionId,
+        input.targetTableSessionId,
+      );
       const payload: MergeCooldownPayload = {
         cooldownEndsAt: expiresAt,
         retryAfterSeconds: retryAfter,
         reason: c.reason ?? 'rejected',
-        message: 'Voce pode tentar de novo em alguns minutos.',
-        message_user: 'Essa mesa recusou ha pouco. Tente novamente em alguns minutos.',
+        message: this.cooldownMessage(details, retryAfter),
+        message_user: this.cooldownMessage(details, retryAfter),
         code: 'MERGE_COOLDOWN_ACTIVE',
+        originTable: details.originTableNumber,
+        targetTable: details.targetTableNumber,
+        originTableNumber: details.originTableNumber,
+        targetTableNumber: details.targetTableNumber,
+        originSessionId: details.originSessionId,
+        targetSessionId: details.targetSessionId,
+        originHostName: details.originHostName,
+        targetHostName: details.targetHostName,
+        originPartySize: details.originPartySize,
+        targetPartySize: details.targetPartySize,
         // `pair` mantém a forma { a, b } no payload por compat com FE — mas
         // agora reflete a direção real (a = source, b = target).
         pair: {
@@ -237,7 +272,7 @@ export class TableMergeService {
           targetSessionId: result.targetTableSessionId,
           originTableNumber: result.originTableNumber,
           targetTableNumber: result.targetTableNumber,
-          originHostName: result.originHostName,
+          originHostName: result.originHostName || null,
           targetHostName: result.targetHostName,
           originPartySize: result.originPartySize,
           targetPartySize: result.targetPartySize,
@@ -268,6 +303,74 @@ export class TableMergeService {
       [sessionId],
     )) as SessionResolution[];
     return rows[0] ?? null;
+  }
+
+  private async getMergeLifecycleDetails(
+    originSessionId: string,
+    targetSessionId: string,
+  ): Promise<TableMergeLifecycleDetails> {
+    const rows = (await this.tenantConn.query(
+      `SELECT
+          CAST(NULLIF(regexp_replace(src_t.code, '[^0-9]', '', 'g'), '') AS INT) AS origin_table_number,
+          CAST(NULLIF(regexp_replace(tgt_t.code, '[^0-9]', '', 'g'), '') AS INT) AS target_table_number,
+          src_c.name AS origin_host_name,
+          tgt_c.name AS target_host_name,
+          (SELECT COUNT(*)::int
+             FROM session_participants sp
+            WHERE sp.table_session_id = $1
+              AND sp.status = 'approved'
+              AND sp.left_at IS NULL) AS origin_party_size,
+          (SELECT COUNT(*)::int
+             FROM session_participants sp
+            WHERE sp.table_session_id = $2
+              AND sp.status = 'approved'
+              AND sp.left_at IS NULL) AS target_party_size
+         FROM table_sessions src_ts
+         JOIN table_sessions tgt_ts ON tgt_ts.id = $2
+    LEFT JOIN tables src_t ON src_t.id = src_ts.table_id
+    LEFT JOIN tables tgt_t ON tgt_t.id = tgt_ts.table_id
+    LEFT JOIN customers src_c ON src_c.id = src_ts.host_customer_id
+    LEFT JOIN customers tgt_c ON tgt_c.id = tgt_ts.host_customer_id
+        WHERE src_ts.id = $1
+        LIMIT 1`,
+      [originSessionId, targetSessionId],
+    )) as Array<Record<string, unknown>>;
+    const row = rows[0] ?? {};
+    return {
+      originSessionId,
+      targetSessionId,
+      originTableNumber: Number(row.origin_table_number ?? 0),
+      targetTableNumber: Number(row.target_table_number ?? 0),
+      originHostName: (row.origin_host_name as string | null) ?? null,
+      targetHostName: (row.target_host_name as string | null) ?? null,
+      originPartySize: Number(row.origin_party_size ?? 0),
+      targetPartySize: Number(row.target_party_size ?? 0),
+    };
+  }
+
+  private tableMergeLifecyclePayload(details: TableMergeLifecycleDetails) {
+    return {
+      originSessionId: details.originSessionId,
+      targetSessionId: details.targetSessionId,
+      originTableNumber: details.originTableNumber,
+      targetTableNumber: details.targetTableNumber,
+      originHostName: details.originHostName,
+      targetHostName: details.targetHostName,
+      originPartySize: details.originPartySize,
+      targetPartySize: details.targetPartySize,
+    };
+  }
+
+  private cooldownMessage(
+    details: Pick<TableMergeLifecycleDetails, 'targetTableNumber'>,
+    retryAfterSeconds: number,
+  ): string {
+    const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+    const target =
+      details.targetTableNumber > 0
+        ? ` com a mesa ${details.targetTableNumber}`
+        : '';
+    return `Essa tentativa${target} entrou em pausa. Tente de novo em ${minutes} min.`;
   }
 
   private async resolveTargetSession(input: {
@@ -467,10 +570,20 @@ export class TableMergeService {
       );
     }
     const row = updated[0];
-    const result = this.mapRow(row);
+    const result = await this.getById(id);
     const fullyApproved = row.status === 'approved';
 
     if (slug && this.events) {
+      const details = this.tableMergeLifecyclePayload({
+        originSessionId: result.sourceTableSessionId,
+        targetSessionId: result.targetTableSessionId,
+        originTableNumber: result.originTableNumber,
+        targetTableNumber: result.targetTableNumber,
+        originHostName: result.originHostName || null,
+        targetHostName: result.targetHostName,
+        originPartySize: result.originPartySize,
+        targetPartySize: result.targetPartySize,
+      });
       this.events.emitTableMergeApproved(
         slug,
         result.sourceTableSessionId,
@@ -481,6 +594,8 @@ export class TableMergeService {
           // distinguish "still waiting on counterpart" from "consummated".
           side: fullyApproved ? 'both' : side,
           status: fullyApproved ? 'approved' : 'pending',
+          ...details,
+          expiresAt: result.expiresAt,
         },
       );
     }
@@ -521,10 +636,12 @@ export class TableMergeService {
       );
     }
     const { src_host, tgt_host } = sideRows[0];
-    if (
-      decidedByCustomerId !== src_host &&
-      decidedByCustomerId !== tgt_host
-    ) {
+    let rejectedBy: 'a' | 'b';
+    if (src_host && decidedByCustomerId === src_host) {
+      rejectedBy = 'a';
+    } else if (tgt_host && decidedByCustomerId === tgt_host) {
+      rejectedBy = 'b';
+    } else {
       throw new HttpException(
         'Apenas o host de cada mesa pode rejeitar a juncao.',
         HttpStatus.FORBIDDEN,
@@ -587,34 +704,52 @@ export class TableMergeService {
       };
     });
 
+    const enriched = await this.getById(id);
     if (slug && this.events) {
+      const retryAfterSeconds = Math.max(
+        0,
+        Math.ceil((new Date(result.cooldownEndsAt).getTime() - Date.now()) / 1000),
+      );
+      const details = this.tableMergeLifecyclePayload({
+        originSessionId: enriched.sourceTableSessionId,
+        targetSessionId: enriched.targetTableSessionId,
+        originTableNumber: enriched.originTableNumber,
+        targetTableNumber: enriched.targetTableNumber,
+        originHostName: enriched.originHostName || null,
+        targetHostName: enriched.targetHostName,
+        originPartySize: enriched.originPartySize,
+        targetPartySize: enriched.targetPartySize,
+      });
       this.events.emitTableMergeRejected(
         slug,
-        result.mapped.sourceTableSessionId,
-        result.mapped.targetTableSessionId,
+        enriched.sourceTableSessionId,
+        enriched.targetTableSessionId,
         {
-          requestId: result.mapped.id,
-          rejectedBy: 'b',
+          requestId: enriched.id,
+          rejectedBy,
+          ...details,
+          expiresAt: enriched.expiresAt,
         },
       );
-      // TODO(payload): originTable / targetTable need a join to resolve
-      // table numbers. Using 0 placeholders — subscribers can re-fetch.
       this.events.emitMergeCooldownStarted(
         slug,
-        result.mapped.sourceTableSessionId,
-        result.mapped.targetTableSessionId,
+        enriched.sourceTableSessionId,
+        enriched.targetTableSessionId,
         {
           cooldownId: result.cooldownId,
           tenantId: slug,
-          originTable: 0,
-          targetTable: 0,
+          originTable: enriched.originTableNumber,
+          targetTable: enriched.targetTableNumber,
+          ...details,
           reason: 'rejected',
           expiresAt: result.cooldownEndsAt,
+          cooldownEndsAt: result.cooldownEndsAt,
+          retryAfterSeconds,
         },
       );
     }
 
-    return { ...result.mapped, cooldownEndsAt: result.cooldownEndsAt };
+    return { ...enriched, cooldownEndsAt: result.cooldownEndsAt };
   }
 
   /**
@@ -846,7 +981,7 @@ export class TableMergeService {
       status: row.status as string,
       originTableNumber: Number(row.origin_table_number ?? 0),
       targetTableNumber: Number(row.target_table_number ?? 0),
-      originHostName: (row.origin_host_name as string | null) ?? '',
+      originHostName: (row.origin_host_name as string | null) ?? null,
       targetHostName: (row.target_host_name as string | null) ?? null,
       originPartySize: Number(row.origin_party_size ?? 0),
       targetPartySize: Number(row.target_party_size ?? 0),

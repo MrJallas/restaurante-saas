@@ -580,46 +580,42 @@ export class TtlTickService {
       // returns `[rows[], rowCount]` under pg; unwrapRows normalises.
       const rows = unwrapRows<{
         id: string;
-        table_session_a_id: string;
-        table_session_b_id: string;
+        origin_session_id: string;
+        target_session_id: string;
+        origin_table: number | null;
+        target_table: number | null;
       }>(
         await qr.query(
-          `DELETE FROM table_merge_cooldowns
-            WHERE cooldown_expires_at < now()
+          `WITH deleted AS (
+             DELETE FROM table_merge_cooldowns
+              WHERE cooldown_expires_at < now()
           RETURNING id,
-                    table_session_a_id,
-                    table_session_b_id`,
+                    COALESCE(source_table_session_id, table_session_a_id) AS origin_session_id,
+                    COALESCE(target_table_session_id, table_session_b_id) AS target_session_id
+           )
+           SELECT d.id,
+                  d.origin_session_id,
+                  d.target_session_id,
+                  CAST(NULLIF(regexp_replace(src_t.code, '[^0-9]', '', 'g'), '') AS INT) AS origin_table,
+                  CAST(NULLIF(regexp_replace(tgt_t.code, '[^0-9]', '', 'g'), '') AS INT) AS target_table
+             FROM deleted d
+        LEFT JOIN table_sessions src_ts ON src_ts.id = d.origin_session_id
+        LEFT JOIN table_sessions tgt_ts ON tgt_ts.id = d.target_session_id
+        LEFT JOIN tables src_t ON src_t.id = src_ts.table_id
+        LEFT JOIN tables tgt_t ON tgt_t.id = tgt_ts.table_id`,
         ),
       );
       return rows;
     });
 
     for (const row of expired) {
-      // The WS payload wants table NUMBERS, not session ids. We don't have a
-      // cheap join here without two extra queries per row, so we resolve in
-      // a single batch: best effort — if lookup fails, fall back to 0.
-      let originTable = 0;
-      let targetTable = 0;
-      try {
-        const labels = (await this.withTenant(schemaName, async (qr) => {
-          const r = await qr.query(
-            `SELECT ts.id, t.label
-               FROM table_sessions ts
-               JOIN tables t ON t.id = ts.table_id
-              WHERE ts.id = ANY($1::uuid[])`,
-            [[row.table_session_a_id, row.table_session_b_id]],
-          );
-          return r as Array<{ id: string; label: string }>;
-        })) as Array<{ id: string; label: string }>;
-        for (const l of labels) {
-          const n = Number.parseInt(l.label.replace(/\D/g, ''), 10) || 0;
-          if (l.id === row.table_session_a_id) originTable = n;
-          if (l.id === row.table_session_b_id) targetTable = n;
-        }
-      } catch (e) {
+      const originTable = Number(row.origin_table ?? 0);
+      const targetTable = Number(row.target_table ?? 0);
+      if (originTable <= 0 || targetTable <= 0) {
         this.logger.warn(
-          `[${slug}] cooldown table label lookup failed: ${(e as Error).message}`,
+          `[${slug}] cooldown expired without table numbers; event skipped for ${row.id}`,
         );
+        continue;
       }
 
       this.gateway.emitMergeCooldownExpired(slug, {

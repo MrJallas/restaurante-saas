@@ -54,6 +54,11 @@ def test_request_table_merge_without_target_opens_salon_picker():
     result = dispatch_tool("request_table_merge", {}, ctx)
     assert result.error is None
     assert result.action_payload.get("requiresTargetSelection") is True
+    assert [chip["label"] for chip in result.chips] == [
+        "Escolher mesa",
+        "Chamar recepcionista",
+        "Ver cardápio",
+    ]
 
 
 @pytest.mark.parametrize(

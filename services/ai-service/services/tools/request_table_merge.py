@@ -18,8 +18,9 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return ToolResult(
             message="Abri o mapa do salão para você escolher a mesa.",
             chips=[
+                {"id": "merge_choose_table", "label": "Escolher mesa", "action": "send", "payload": "quero escolher a mesa para juntar"},
+                {"id": "call_host", "label": "Chamar recepcionista", "action": "send", "payload": "chamar recepcionista"},
                 {"id": "view_menu", "label": "Ver cardápio", "action": "navigate", "payload": "cardapio"},
-                {"id": "call_waiter", "label": "Chamar garçom", "action": "send", "payload": "chamar o garçom"},
             ],
             action_payload={"requiresTargetSelection": True},
         )
@@ -31,8 +32,8 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         ),
         chips=[
             {"id": "view_menu", "label": "Ver cardápio", "action": "navigate", "payload": "cardapio"},
-            {"id": "call_waiter", "label": "Chamar garçom", "action": "send", "payload": "chamar o garçom"},
-            {"id": "view_order", "label": "Ver pedido", "action": "send", "payload": "ver meu pedido"},
+            {"id": "call_host", "label": "Chamar recepcionista", "action": "send", "payload": "chamar recepcionista"},
+            {"id": "view_order", "label": "Ver pedido da mesa", "action": "send", "payload": "ver pedido da mesa"},
         ],
         action_payload={"targetTableLabel": str(target_table)},
     )
