@@ -44,6 +44,7 @@ export async function api<T>(
   try {
     res = await fetch(url, {
       ...options,
+      cache: options.cache ?? 'no-store',
       signal,
       credentials: 'include',
       headers: {
