@@ -60,6 +60,19 @@ type AssistantHistoryMessage = {
   content: string;
 };
 
+type PendingJoinRequestInput = {
+  targetCustomerId: string;
+  joinerName?: string;
+  requestedAt?: string;
+  tableSessionId?: string;
+};
+
+type PendingJoinRequestContext = {
+  targetCustomerId: string;
+  joinerName: string;
+  requestedAt: string | null;
+};
+
 type AssistantPublicHistoryMessage =
   | {
       id: string;
@@ -812,6 +825,45 @@ export class AssistantService {
     return this.getHistory(tableSessionId, customerId);
   }
 
+  private async resolvePendingJoinRequest(
+    tableSessionId: string,
+    hostCustomerId: string | null,
+    input?: PendingJoinRequestInput | null,
+  ): Promise<PendingJoinRequestContext | null> {
+    if (!hostCustomerId || !input?.targetCustomerId) return null;
+    if (input.tableSessionId && input.tableSessionId !== tableSessionId) return null;
+
+    const rows = (await this.tenantConn.query(
+      `SELECT sp.customer_id,
+              sp.joined_at,
+              c.name,
+              ts.host_customer_id
+         FROM session_participants sp
+         JOIN table_sessions ts ON ts.id = sp.table_session_id
+         JOIN customers c ON c.id = sp.customer_id
+        WHERE sp.table_session_id = $1
+          AND sp.customer_id = $2
+          AND sp.status = 'pending'
+          AND sp.left_at IS NULL
+        LIMIT 1`,
+      [tableSessionId, input.targetCustomerId],
+    )) as {
+      customer_id: string;
+      joined_at: string | Date | null;
+      name: string | null;
+      host_customer_id: string | null;
+    }[];
+
+    const row = rows[0];
+    if (!row || row.host_customer_id !== hostCustomerId) return null;
+
+    return {
+      targetCustomerId: row.customer_id,
+      joinerName: cleanText(row.name) ?? cleanText(input.joinerName) ?? 'Cliente',
+      requestedAt: row.joined_at ? toIso(row.joined_at) : cleanText(input.requestedAt),
+    };
+  }
+
   async sendMessage(
     tableSessionId: string,
     customerId: string | null,
@@ -824,6 +876,7 @@ export class AssistantService {
     conversationId?: string | null,
     continueThreadId?: string | null,
     tenantSlug?: string | null,
+    pendingJoinRequest?: PendingJoinRequestInput | null,
   ) {
     // IDOR guard: cliente nao pode passar `customerId` de outro cliente
     // pra extrair contexto de consumo / historico alheio. Validamos que
@@ -934,6 +987,14 @@ export class AssistantService {
     const customerContext = safeCustomerId
       ? await this.buildCustomerContext(safeCustomerId, tableSessionId)
       : undefined;
+    const pendingJoinContext = await this.resolvePendingJoinRequest(
+      tableSessionId,
+      safeCustomerId,
+      pendingJoinRequest,
+    );
+    if (customerContext && pendingJoinContext) {
+      customerContext.pending_join_request = pendingJoinContext;
+    }
     const history = recentHistory;
 
     // Step 3: Call AI

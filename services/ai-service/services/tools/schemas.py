@@ -183,6 +183,36 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "targetTable": {"type": "string", "description": "Número ou label da mesa-alvo."},
         },
     ),
+    _function(
+        "accept_join_request",
+        "Aprova um pedido pendente de entrada de participante na mesa. Use quando o host responder 'pode', 'sim', 'deixa entrar' ou equivalente a uma solicitação pendente.",
+        {
+            "targetCustomerId": {
+                "type": "string",
+                "description": "UUID do cliente pendente que pediu para entrar.",
+            },
+            "reason": {
+                "type": "string",
+                "description": "Texto opcional com a confirmação do host.",
+            },
+        },
+        required=["targetCustomerId"],
+    ),
+    _function(
+        "reject_join_request",
+        "Recusa um pedido pendente de entrada de participante na mesa. Use quando o host responder 'não', 'agora não', 'recusa' ou equivalente a uma solicitação pendente.",
+        {
+            "targetCustomerId": {
+                "type": "string",
+                "description": "UUID do cliente pendente que pediu para entrar.",
+            },
+            "reason": {
+                "type": "string",
+                "description": "Texto opcional com a recusa do host.",
+            },
+        },
+        required=["targetCustomerId"],
+    ),
 
     # ── lgpd / history ───────────────────────────────────────
     _function(

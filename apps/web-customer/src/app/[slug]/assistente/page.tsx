@@ -28,6 +28,7 @@ import { HomeHero } from '../../../components/home/HomeHero';
 import { CommandPicker, type CommandModeChoice } from '../../../components/cardapio/CommandPicker';
 import { useUIState } from '../../../providers/UIStateProvider';
 import { OverlaySalonMap, type SalonTable } from '../../../components/ui/OverlaySalonMap';
+import { TypewriterBubble } from '../../../screens/customer-host-flows/TypewriterBubble';
 import { createLgpdRequest } from '../../../lib/api/feedback';
 
 interface LinkedItem {
@@ -36,6 +37,19 @@ interface LinkedItem {
   priceCents: number;
   imageUrl: string | null;
   categoryName?: string;
+}
+
+interface PendingJoinRequest {
+  targetCustomerId: string;
+  joinerName: string;
+  requestedAt: string;
+  tableSessionId: string;
+}
+
+interface JoinRequestChatState extends PendingJoinRequest {
+  decision?: 'approved' | 'rejected';
+  busy?: boolean;
+  error?: string | null;
 }
 
 interface ChatMessage {
@@ -90,6 +104,8 @@ interface ChatMessage {
   courtesy?: CustomerCourtesyDto;
   courtesyBusy?: CourtesyDecision | null;
   courtesyError?: string | null;
+  /** Host-side pending participant approval shown as a typewriter bubble. */
+  joinRequest?: JoinRequestChatState;
 }
 
 interface AssistantToolHint {
@@ -113,6 +129,29 @@ interface AssistantToolHint {
 
 interface SalonTablesResponse {
   tables: SalonTable[];
+}
+
+interface TableParticipantsResponse {
+  participants?: Array<{
+    customerId: string;
+    name: string;
+    status: 'pending' | 'approved' | 'rejected';
+    isHost: boolean;
+    requestedAt?: string | null;
+  }>;
+}
+
+interface JoinRequestSocketPayload {
+  customerId: string;
+  name?: string;
+  requestedAt?: string;
+  tableSessionId?: string;
+}
+
+interface JoinDecisionSocketPayload {
+  customerId: string;
+  status: 'approved' | 'rejected';
+  decidedAt?: string;
 }
 
 /**
@@ -326,6 +365,44 @@ function tableMergeApprovedMessage(requestId?: string | null): ChatMessage {
   };
 }
 
+function joinRequestKey(req: Pick<PendingJoinRequest, 'targetCustomerId' | 'requestedAt'>): string {
+  return `${req.targetCustomerId}:${req.requestedAt || 'pending'}`;
+}
+
+function joinRequestBubbleText(joinerName: string, hostName?: string | null): string {
+  const hostFirstName = hostName?.trim().split(' ')[0] || '';
+  const opener = hostFirstName ? `Olha, ${hostFirstName}:` : 'Olha:';
+  return `${opener} ${joinerName || 'alguém'} quer entrar na mesa. Pode deixar?`;
+}
+
+function joinRequestChatMessage(
+  req: PendingJoinRequest,
+  hostName?: string | null,
+): ChatMessage {
+  return {
+    id: `join-request-${joinRequestKey(req)}`,
+    role: 'ai',
+    content: joinRequestBubbleText(req.joinerName, hostName),
+    joinRequest: { ...req, error: null },
+  };
+}
+
+function isJoinRequestSocketPayload(value: unknown): value is JoinRequestSocketPayload {
+  return (
+    isRecord(value) &&
+    typeof value.customerId === 'string' &&
+    value.customerId.length > 0
+  );
+}
+
+function isJoinDecisionSocketPayload(value: unknown): value is JoinDecisionSocketPayload {
+  return (
+    isRecord(value) &&
+    typeof value.customerId === 'string' &&
+    (value.status === 'approved' || value.status === 'rejected')
+  );
+}
+
 /**
  * Coerce o `payload` (que é `unknown` no contrato) pra string com fallback
  * pro label. Backend pode mandar string|null|undefined; o handler precisa
@@ -535,11 +612,23 @@ function isDuplicateStaffMessage(existing: ChatMessage, incoming: ChatMessage): 
   return !!existing.staffCreatedAt && existing.staffCreatedAt === incoming.staffCreatedAt;
 }
 
+function isDuplicateJoinRequestMessage(existing: ChatMessage, incoming: ChatMessage): boolean {
+  if (!existing.joinRequest || !incoming.joinRequest) return false;
+  if (existing.id === incoming.id) return true;
+  if (joinRequestKey(existing.joinRequest) === joinRequestKey(incoming.joinRequest)) return true;
+  return (
+    existing.joinRequest.targetCustomerId === incoming.joinRequest.targetCustomerId &&
+    !existing.joinRequest.decision &&
+    !incoming.joinRequest.decision
+  );
+}
+
 function mergeUniqueChatMessages(current: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
   const next = [...current];
   for (const msg of incoming) {
     const duplicate = next.some((existing) => {
       if (existing.id === msg.id) return true;
+      if (isDuplicateJoinRequestMessage(existing, msg)) return true;
       return isDuplicateStaffMessage(existing, msg);
     });
     if (!duplicate) next.push(msg);
@@ -625,7 +714,13 @@ function categorizeToolName(name: string): ToolCategory {
     return 'payment';
   if (name === 'lgpd_data_request' || name === 'lgpd_notice') return 'lgpd';
   if (name === 'delete_chat' || name === 'delete_all_chats') return 'destructive';
-  if (name === 'request_table_merge' || name === 'late_arrival') return 'session';
+  if (
+    name === 'request_table_merge' ||
+    name === 'accept_join_request' ||
+    name === 'reject_join_request' ||
+    name === 'late_arrival'
+  )
+    return 'session';
   return 'info';
 }
 
@@ -847,6 +942,7 @@ export default function AssistentePage() {
   const [continuationRefreshKey, setContinuationRefreshKey] = useState(0);
   const [expandedInputPlaceholder, setExpandedInputPlaceholder] = useState<string | null>(null);
   const [pendingOrderAdd, setPendingOrderAdd] = useState<PendingOrderAdd | null>(null);
+  const [isCurrentHost, setIsCurrentHost] = useState(false);
   // Round 3 Cat 4 (V20 chat): última tool dispatched neste turno — usa
   // pra renderizar a eyebrow `··· USANDO ADD_TO_ORDER ···` antes do
   // bubble do assistente.
@@ -857,6 +953,18 @@ export default function AssistentePage() {
   if (!conversationIdRef.current) {
     conversationIdRef.current = newAssistantConversationId();
   }
+  const activeJoinRequest = useMemo<PendingJoinRequest | null>(() => {
+    const active = [...messages]
+      .reverse()
+      .find((msg) => msg.joinRequest && !msg.joinRequest.decision)?.joinRequest;
+    if (!active) return null;
+    return {
+      targetCustomerId: active.targetCustomerId,
+      joinerName: active.joinerName,
+      requestedAt: active.requestedAt,
+      tableSessionId: active.tableSessionId,
+    };
+  }, [messages]);
 
   useEffect(() => {
     if (!slug || !session.sessionId) return;
@@ -864,6 +972,13 @@ export default function AssistentePage() {
       source: threadIdParam ? 'thread' : prefill ? 'prefill' : 'landing',
     });
   }, [slug, session.sessionId, threadIdParam, prefill]);
+
+  useEffect(() => {
+    const self = session.participants.find((p) => p.customerId === session.customerId);
+    if (typeof self?.isHost === 'boolean') {
+      setIsCurrentHost(self.isHost);
+    }
+  }, [session.participants, session.customerId]);
 
   useEffect(() => {
     if (!mergeApprovedParam) return;
@@ -983,6 +1098,43 @@ export default function AssistentePage() {
   ]);
 
   useEffect(() => {
+    if (!slug || !session.sessionId || !session.customerId) return;
+    const currentSessionId = session.sessionId;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiGet<TableParticipantsResponse>(`/${slug}/table/participants`);
+        if (cancelled) return;
+        const participants = res.participants ?? [];
+        const self = participants.find((p) => p.customerId === session.customerId);
+        setIsCurrentHost(!!self?.isHost);
+        if (!self?.isHost) return;
+        const pending = participants
+          .filter((p) => p.status === 'pending' && !p.isHost)
+          .map((p) =>
+            joinRequestChatMessage(
+              {
+                targetCustomerId: p.customerId,
+                joinerName: p.name,
+                requestedAt: p.requestedAt ?? `snapshot-${p.customerId}`,
+                tableSessionId: currentSessionId,
+              },
+              session.customerName,
+            ),
+          );
+        if (pending.length === 0) return;
+        setChatStarted(true);
+        setMessages((prev) => mergeUniqueChatMessages(prev, pending));
+      } catch {
+        /* realtime socket still covers new requests while the page is open */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, session.sessionId, session.customerId, session.customerName]);
+
+  useEffect(() => {
     if (!slug || !session.sessionId) return;
     let cancelled = false;
     (async () => {
@@ -1050,6 +1202,45 @@ export default function AssistentePage() {
         prev.map((msg) =>
           msg.courtesy?.id === data.id
             ? { ...msg, courtesy: data, courtesyBusy: null, courtesyError: null }
+            : msg,
+        ),
+      );
+      return;
+    }
+    if (event === 'participant:join_request' && isJoinRequestSocketPayload(data)) {
+      if (!isCurrentHost) return;
+      if (data.customerId === session.customerId) return;
+      const currentSessionId = data.tableSessionId || session.sessionId;
+      if (!currentSessionId) return;
+      setChatStarted(true);
+      setMessages((prev) =>
+        mergeUniqueChatMessages(prev, [
+          joinRequestChatMessage(
+            {
+              targetCustomerId: data.customerId,
+              joinerName: data.name || 'Cliente',
+              requestedAt: data.requestedAt || new Date().toISOString(),
+              tableSessionId: currentSessionId,
+            },
+            session.customerName,
+          ),
+        ]),
+      );
+      return;
+    }
+    if (event === 'participant:decision' && isJoinDecisionSocketPayload(data)) {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.joinRequest?.targetCustomerId === data.customerId
+            ? {
+                ...msg,
+                joinRequest: {
+                  ...msg.joinRequest,
+                  decision: data.status,
+                  busy: false,
+                  error: null,
+                },
+              }
             : msg,
         ),
       );
@@ -1357,6 +1548,53 @@ export default function AssistentePage() {
     appendToolFeedback(result.message || 'Não consegui criar o pedido de junção agora.');
   };
 
+  const markJoinRequest = (
+    targetCustomerId: string,
+    patch: Partial<JoinRequestChatState>,
+  ) => {
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.joinRequest?.targetCustomerId === targetCustomerId
+          ? { ...msg, joinRequest: { ...msg.joinRequest, ...patch } }
+          : msg,
+      ),
+    );
+  };
+
+  const decideJoinRequestFromTool = async (call: AssistantToolCall): Promise<void> => {
+    const payload = actionPayload(call);
+    if (payload.action !== 'decide_join_request') return;
+
+    const args = call.arguments ?? {};
+    const targetCustomerId =
+      stringValue(payload.targetCustomerId) ?? stringValue(args.targetCustomerId);
+    const decisionRaw = stringValue(payload.decision) ?? stringValue(args.decision);
+    const decision =
+      decisionRaw === 'approve' || decisionRaw === 'reject' ? decisionRaw : null;
+    if (!targetCustomerId || !decision) {
+      appendToolFeedback('Não encontrei o pedido de entrada pendente para decidir.');
+      return;
+    }
+
+    markJoinRequest(targetCustomerId, { busy: true, error: null });
+    try {
+      await apiPost(`/${slug}/table/participants/decide`, {
+        targetCustomerId,
+        decision,
+      });
+      markJoinRequest(targetCustomerId, {
+        decision: decision === 'approve' ? 'approved' : 'rejected',
+        busy: false,
+        error: null,
+      });
+    } catch {
+      markJoinRequest(targetCustomerId, {
+        busy: false,
+        error: 'Não consegui decidir agora. Tente pelo aviso da mesa.',
+      });
+    }
+  };
+
   const draftSummaryText = () => {
     if (draftItems.length === 0) {
       return 'Seu pedido tá vazio. Quer dar uma olhada no cardápio?';
@@ -1420,6 +1658,11 @@ export default function AssistentePage() {
     // 1) Tools the FE owns end-to-end.
     if (name === 'view_courtesy') {
       await showCourtesiesFromTool();
+      return;
+    }
+
+    if (name === 'accept_join_request' || name === 'reject_join_request') {
+      await decideJoinRequestFromTool(call);
       return;
     }
 
@@ -1799,6 +2042,7 @@ export default function AssistentePage() {
         itemId: itemId || undefined,
         conversationId: activeThreadId ? undefined : (conversationIdRef.current ?? undefined),
         continueThreadId: activeThreadId ?? undefined,
+        pendingJoinRequest: activeJoinRequest ?? undefined,
       });
 
       // V20 canon F04_Chat: ToolCallIndicator + bubble texto + chips
@@ -2088,6 +2332,65 @@ export default function AssistentePage() {
             </div>
           )}
           {messages.map((msg) => {
+            if (msg.joinRequest) {
+              const decided = msg.joinRequest.decision;
+              const busy = !!msg.joinRequest.busy;
+              return (
+                <div key={msg.id} className="flex max-w-[92%] flex-col gap-2 self-start">
+                  <TypewriterBubble
+                    text={msg.content}
+                    eyebrow="Pedido de entrada · agora"
+                    urgent={!decided}
+                    testId="assistant-join-request-bubble"
+                    skipAnimation={!!decided}
+                  >
+                    {decided ? (
+                      <div className="inline-flex rounded-full border border-border-soft bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink">
+                        {decided === 'approved' ? 'Entrada aprovada' : 'Entrada recusada'}
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => sendMessage('Pode entrar')}
+                          disabled={loading || busy}
+                          className="rounded-full bg-ink px-3.5 py-2 text-[13px] font-semibold text-white disabled:opacity-55"
+                        >
+                          {busy ? 'Enviando…' : 'Pode entrar'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sendMessage('Agora não')}
+                          disabled={loading || busy}
+                          className="rounded-full border border-ink/30 bg-bg px-3.5 py-2 text-[13px] font-semibold text-ink disabled:opacity-55"
+                        >
+                          Agora não
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            push(
+                              session.tableLabel
+                                ? `/${slug}/mesa/${encodeURIComponent(session.tableLabel)}`
+                                : `/${slug}`,
+                            )
+                          }
+                          disabled={busy}
+                          className="rounded-full border border-border-soft bg-surface px-3.5 py-2 text-[13px] font-semibold text-ink disabled:opacity-55"
+                        >
+                          Ver quem está na mesa
+                        </button>
+                      </div>
+                    )}
+                  </TypewriterBubble>
+                  {msg.joinRequest.error && (
+                    <span className="text-[12px] font-medium text-danger">
+                      {msg.joinRequest.error}
+                    </span>
+                  )}
+                </div>
+              );
+            }
             if (msg.courtesy) {
               return (
                 <div key={msg.id} className="flex flex-col gap-2">

@@ -58,6 +58,7 @@ export interface TableParticipantRow {
   color: string;
   status: 'pending' | 'approved' | 'rejected';
   isHost: boolean;
+  requestedAt: string | null;
 }
 
 @Injectable()
@@ -436,6 +437,7 @@ export class TableSessionService {
         this.eventsGateway.emitToSession(tableSessionId, 'participant:join_request', {
           customerId,
           name: customerRows[0]?.name ?? '',
+          tableSessionId,
           requestedAt: new Date().toISOString(),
         });
       }
@@ -472,6 +474,7 @@ export class TableSessionService {
       this.eventsGateway.emitToSession(tableSessionId, 'participant:join_request', {
         customerId,
         name: customerRows[0]?.name ?? '',
+        tableSessionId,
         requestedAt: new Date().toISOString(),
       });
     }
@@ -489,6 +492,7 @@ export class TableSessionService {
       color: PARTICIPANT_COLORS[colorIndex],
       status,
       isHost: finalHostId === customerId,
+      requestedAt: status === 'pending' ? new Date().toISOString() : null,
     };
   }
 
@@ -547,7 +551,7 @@ export class TableSessionService {
    */
   async getParticipants(tableSessionId: string): Promise<TableParticipantRow[]> {
     const rows = (await this.tenantConn.query(
-      `SELECT sp.customer_id, sp.color_index, sp.status, c.name, ts.host_customer_id
+      `SELECT sp.customer_id, sp.color_index, sp.status, sp.joined_at, c.name, ts.host_customer_id
        FROM table_sessions ts
        JOIN session_participants sp ON sp.table_session_id = ts.id
        JOIN customers c ON c.id = sp.customer_id
@@ -558,6 +562,7 @@ export class TableSessionService {
       customer_id: string;
       color_index: number;
       status: string;
+      joined_at: string | Date | null;
       name: string;
       host_customer_id: string | null;
     }[];
@@ -571,6 +576,7 @@ export class TableSessionService {
         PARTICIPANT_COLORS[0],
       status: r.status as 'pending' | 'approved' | 'rejected',
       isHost: r.customer_id === r.host_customer_id,
+      requestedAt: r.joined_at ? new Date(r.joined_at).toISOString() : null,
     }));
   }
 

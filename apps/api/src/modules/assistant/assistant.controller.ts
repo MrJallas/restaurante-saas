@@ -7,7 +7,9 @@ import {
   IsUUID,
   Matches,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
@@ -15,6 +17,25 @@ import { Session } from '../../common/decorators/session.decorator';
 import { Tenant } from '../../common/decorators/tenant.decorator';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { AssistantService } from './assistant.service';
+
+class PendingJoinRequestDto {
+  @IsUUID()
+  targetCustomerId!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  joinerName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  requestedAt?: string;
+
+  @IsOptional()
+  @IsUUID()
+  tableSessionId?: string;
+}
 
 class SendMessageDto {
   // Cap em 2000 chars: prompt-injection prolongado, payload de DoS no
@@ -48,6 +69,13 @@ class SendMessageDto {
   @MaxLength(220)
   @Matches(/^[A-Za-z0-9_:-]+$/)
   continueThreadId?: string;
+
+  // Contexto efêmero do browser: o service revalida contra Postgres antes
+  // de repassar ao AI service, então o LLM nunca decide com payload cru.
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PendingJoinRequestDto)
+  pendingJoinRequest?: PendingJoinRequestDto;
 }
 
 class StaffToCustomerDto {
@@ -86,6 +114,7 @@ export class AssistantController {
       dto.conversationId,
       dto.continueThreadId,
       slug,
+      dto.pendingJoinRequest,
     );
   }
 

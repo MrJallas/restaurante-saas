@@ -369,6 +369,56 @@ def test_chat_answers_pending_table_merge_status_without_tools(chat_client):
     assert provider.chat.await_count == 0
 
 
+def test_chat_routes_join_accept_before_ack_without_llm(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={
+            "message": "pode",
+            "tenantId": "restaurant_dev",
+            "customer_context": {
+                "pending_join_request": {
+                    "targetCustomerId": "12345678-1234-4234-8234-123456789012",
+                    "joinerName": "Bianca",
+                    "requestedAt": "2026-05-28T15:20:00.000Z",
+                },
+            },
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] == "rule-join-request-decision"
+    assert body["tool_calls"][0]["function"]["name"] == "accept_join_request"
+    assert body["tool_calls"][0]["function"]["arguments"]["targetCustomerId"] == (
+        "12345678-1234-4234-8234-123456789012"
+    )
+    assert body["tool_calls"][0]["result"]["actionPayload"]["decision"] == "approve"
+    assert provider.chat.await_count == 0
+
+
+def test_chat_routes_join_reject_before_ack_without_llm(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={
+            "message": "agora não",
+            "tenantId": "restaurant_dev",
+            "customer_context": {
+                "pending_join_request": {
+                    "targetCustomerId": "12345678-1234-4234-8234-123456789012",
+                    "joinerName": "Bianca",
+                },
+            },
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] == "rule-join-request-decision"
+    assert body["tool_calls"][0]["function"]["name"] == "reject_join_request"
+    assert body["tool_calls"][0]["result"]["actionPayload"]["decision"] == "reject"
+    assert provider.chat.await_count == 0
+
+
 def test_chat_manager_message_followup_uses_manager_tool_without_llm(chat_client):
     client, provider = chat_client
     res = client.post(

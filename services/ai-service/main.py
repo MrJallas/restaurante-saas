@@ -138,6 +138,14 @@ _TABLE_MERGE_STATUS_RE = re.compile(
     r"\b(aceitou|confirmou|aprovou)\b.*\b(mesa|mesas)\b",
     re.IGNORECASE,
 )
+_JOIN_ACCEPT_RE = re.compile(
+    r"\b(pode|pode\s+entrar|sim|s[ií]m|claro|libera|liberar|autoriza|autorizar|deixa|deixe|deixa\s+entrar|ok|beleza)\b",
+    re.IGNORECASE,
+)
+_JOIN_REJECT_RE = re.compile(
+    r"\b(n[aã]o|agora\s+n[aã]o|melhor\s+n[aã]o|recusa|recusar|rejeita|rejeitar|n[aã]o\s+deixa|n[aã]o\s+pode|bloqueia)\b",
+    re.IGNORECASE,
+)
 
 
 def _last_assistant_requested_manager_message(history: list["ChatMessage"]) -> bool:
@@ -203,6 +211,32 @@ def _latest_table_merge(customer_context: dict | None) -> dict | None:
     if not isinstance(merge, dict) or not merge.get("status"):
         return None
     return merge
+
+
+def _pending_join_request(customer_context: dict | None) -> dict | None:
+    if not customer_context:
+        return None
+    pending = customer_context.get("pending_join_request") or customer_context.get("pendingJoinRequest")
+    if not isinstance(pending, dict):
+        return None
+    target = pending.get("targetCustomerId") or pending.get("target_customer_id")
+    if not isinstance(target, str) or not target.strip():
+        return None
+    return {
+        "targetCustomerId": target.strip(),
+        "joinerName": str(pending.get("joinerName") or pending.get("joiner_name") or "").strip(),
+        "requestedAt": str(pending.get("requestedAt") or pending.get("requested_at") or "").strip(),
+    }
+
+
+def _join_decision_tool(text: str, pending_join: dict | None) -> str | None:
+    if not pending_join:
+        return None
+    if _JOIN_REJECT_RE.search(text):
+        return "reject_join_request"
+    if _JOIN_ACCEPT_RE.search(text):
+        return "accept_join_request"
+    return None
 
 
 def _table_label(value) -> str | None:
@@ -525,6 +559,21 @@ async def chat(req: ChatRequest):
     text = (req.message or req.text or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="empty message")
+
+    pending_join = _pending_join_request(req.customer_context)
+    join_decision_tool = _join_decision_tool(text, pending_join)
+    if join_decision_tool and pending_join:
+        return _rule_tool_response(
+            join_decision_tool,
+            {
+                "targetCustomerId": pending_join["targetCustomerId"],
+                "reason": text,
+            },
+            req,
+            text,
+            start_time,
+            layer="rule-join-request-decision",
+        )
 
     # Layer A · ACK short-circuit. No LLM call, no tool dispatch.
     ack = detect_ack(text)
@@ -923,6 +972,15 @@ Nunca invente itens fora do cardápio; se faltar informação, consulte a equipe
             name = customer_context.get("name", "")
             if name:
                 prompt += f"\n\nCLIENTE: {name}"
+            pending_join = _pending_join_request(customer_context)
+            if pending_join:
+                joiner = pending_join.get("joinerName") or "um cliente"
+                prompt += (
+                    "\nPENDENCIA_DE_ENTRADA: "
+                    f"{joiner} quer entrar na mesa. targetCustomerId={pending_join['targetCustomerId']}. "
+                    "Se o host responder pode/sim/deixa entrar, chame accept_join_request. "
+                    "Se responder não/agora não/recusar, chame reject_join_request."
+                )
             if customer_context.get("is_vip"):
                 prompt += "\nCliente VIP: tom mais atento."
             merge = customer_context.get("latest_table_merge") or {}
@@ -1002,6 +1060,12 @@ USO DE FERRAMENTAS (function calling · OBRIGATÓRIO em mutações):
     essas têm tools próprias.
   · "junta com a mesa N" → `request_table_merge(targetTable=N)`.
     "juntar mesas" sem alvo claro → `request_table_merge()` para abrir o mapa.
+  · Se houver PENDENCIA_DE_ENTRADA no contexto e o host responder
+    "pode", "sim", "deixa entrar", "libera" ou equivalente
+       → `accept_join_request(targetCustomerId=<UUID da pendência>)`.
+    Se responder "não", "agora não", "recusar", "não pode" ou equivalente
+       → `reject_join_request(targetCustomerId=<UUID da pendência>)`.
+    NUNCA invente targetCustomerId: use somente o UUID da pendência no contexto.
   · "tem glúten?" / "é sem lactose?" / "tem alérgeno X?" → `check_allergens`.
   · "quero comparar X e Y" → `compare_dishes`.
   · "manda recado pro gerente" / "mensagem pra gerência" → se o texto já
@@ -1036,6 +1100,14 @@ USO DE FERRAMENTAS (function calling · OBRIGATÓRIO em mutações):
         # VIP tone hint per vip-customer.md — affects copy via the system prompt.
         if customer_context.get("is_vip"):
             prompt += "\n\nObservação: este cliente é VIP nessa sessão. Tom mais caloroso e atento."
+        pending_join = _pending_join_request(customer_context)
+        if pending_join:
+            joiner = pending_join.get("joinerName") or "um cliente"
+            prompt += (
+                "\n\nPENDENCIA_DE_ENTRADA: "
+                f"{joiner} quer entrar na mesa. targetCustomerId={pending_join['targetCustomerId']}. "
+                "Use accept_join_request para respostas afirmativas e reject_join_request para respostas negativas."
+            )
         merge = customer_context.get("latest_table_merge") or {}
         if isinstance(merge, dict) and merge.get("status"):
             prompt += _merge_status_prompt_line(merge)

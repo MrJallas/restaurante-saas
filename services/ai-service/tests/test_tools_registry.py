@@ -26,9 +26,9 @@ EXPECTED_CANONICAL = {
     "recommend_dish", "add_to_order", "view_order", "confirm_order",
     # payment (4)
     "split_bill", "pay_individual", "pay_full", "open_payment_screen",
-    # staff/communication (4)
+    # staff/communication (6)
     "call_waiter", "send_message_to_manager", "send_complaint",
-    "request_table_merge",
+    "request_table_merge", "accept_join_request", "reject_join_request",
     # lgpd / history (5)
     "delete_chat", "delete_all_chats", "view_chat_history", "lgpd_data_request",
     "show_lgpd_notice",
@@ -54,12 +54,9 @@ def test_canonical_tool_is_registered(tool_name: str):
     assert callable(meta.call)
 
 
-def test_canonical_count_is_24():
-    """F2 spec calls for ~25 tools (incl. optional session). Currently 24
-    canonical tools without start/end_session (those are NOT in the codebase
-    yet · spec says 'if exists, keep'). When session tools are added, this
-    count bumps to 26."""
-    assert len(CANONICAL_TOOL_NAMES) == 24
+def test_canonical_count_is_26():
+    """Prompt 13 adds join-request accept/reject tools to the customer set."""
+    assert len(CANONICAL_TOOL_NAMES) == 26
 
 
 # ─────────────────────────────────────────────────────────────
@@ -261,6 +258,34 @@ def test_request_table_merge_no_target_requests_salon_picker():
     result = dispatch_tool("request_table_merge", {}, ctx)
     assert result.error is None
     assert result.action_payload["requiresTargetSelection"] is True
+
+
+def test_join_request_tools_return_frontend_action_payloads():
+    """Join decisions are browser-session actions, not AI-service HTTP calls."""
+    ctx = ToolContext(tenant_id="t1", customer_id="host-1", session_id="session-1")
+
+    accept = dispatch_tool(
+        "accept_join_request",
+        {"targetCustomerId": "12345678-1234-4234-8234-123456789012"},
+        ctx,
+    )
+    reject = dispatch_tool(
+        "reject_join_request",
+        {"targetCustomerId": "12345678-1234-4234-8234-123456789012"},
+        ctx,
+    )
+
+    assert accept.error is None
+    assert accept.action_payload["action"] == "decide_join_request"
+    assert accept.action_payload["decision"] == "approve"
+    assert accept.action_payload["targetCustomerId"] == "12345678-1234-4234-8234-123456789012"
+    assert accept.chips
+
+    assert reject.error is None
+    assert reject.action_payload["action"] == "decide_join_request"
+    assert reject.action_payload["decision"] == "reject"
+    assert reject.action_payload["targetCustomerId"] == "12345678-1234-4234-8234-123456789012"
+    assert reject.chips
 
 
 # ─────────────────────────────────────────────────────────────

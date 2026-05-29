@@ -18,6 +18,10 @@ canonical routes were validated against the corresponding NestJS controllers:
 
 `view_courtesy` is intentionally a silent navigation tool now — there is
 no `/courtesy` endpoint on apps/api. We assert it does NOT call api_client.
+
+`accept_join_request` / `reject_join_request` are also browser-session
+actions. The protected `/table/participants/decide` endpoint is called by
+web-customer, not by the AI service.
 """
 
 import pytest
@@ -50,6 +54,32 @@ def test_request_table_merge_without_target_opens_salon_picker():
     result = dispatch_tool("request_table_merge", {}, ctx)
     assert result.error is None
     assert result.action_payload.get("requiresTargetSelection") is True
+
+
+@pytest.mark.parametrize(
+    "tool_name,decision",
+    [
+        ("accept_join_request", "approve"),
+        ("reject_join_request", "reject"),
+    ],
+)
+def test_join_request_decision_tools_do_not_call_api(tool_name: str, decision: str):
+    api = RecordingApiClient(default={"status": "should-not-be-used"})
+    ctx = ToolContext(
+        tenant_id="my-rest",
+        customer_id="host-1",
+        session_id="sess-1",
+        api_client=api,
+    )
+    result = dispatch_tool(
+        tool_name,
+        {"targetCustomerId": "12345678-1234-4234-8234-123456789012"},
+        ctx,
+    )
+    assert result.error is None
+    assert api.calls == []
+    assert result.action_payload["action"] == "decide_join_request"
+    assert result.action_payload["decision"] == decision
 
 
 # ─────────────────────────────────────────────────────────────
