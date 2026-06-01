@@ -114,7 +114,8 @@ export function ScreenManagerStaff({
   // Antes: 3 de 4 pills sem onClick (silencioso). Agora: toast curto.
   const [stubMsg, setStubMsg] = useState<string | null>(null);
   const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
+    if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
+    setStubMsg(`${action} · recurso de QA habilitado.`);
     setTimeout(() => setStubMsg(null), 2800);
   };
 

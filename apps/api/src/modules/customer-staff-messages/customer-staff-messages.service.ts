@@ -402,7 +402,7 @@ export class CustomerStaffMessagesService {
       .collection<ThreadDoc>(THREADS_COLLECTION)
       .findOne({ threadId });
     if (!thread || thread.tenantId !== tenantId) {
-      throw new HttpException('Thread não encontrada.', HttpStatus.NOT_FOUND);
+      throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
 
     const staffRows = (await this.tenantConn.query(
@@ -623,7 +623,7 @@ export class CustomerStaffMessagesService {
       .collection<ThreadDoc>(THREADS_COLLECTION)
       .findOne({ threadId });
     if (!thread || thread.tenantId !== tenantId) {
-      throw new HttpException('Thread não encontrada.', HttpStatus.NOT_FOUND);
+      throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
     const msgs = await db
       .collection<MessageDoc>(MESSAGES_COLLECTION)
@@ -656,7 +656,7 @@ export class CustomerStaffMessagesService {
       .collection<ThreadDoc>(THREADS_COLLECTION)
       .findOne({ threadId });
     if (!thread || thread.tenantId !== tenantId) {
-      throw new HttpException('Thread não encontrada.', HttpStatus.NOT_FOUND);
+      throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
     const res = await db
       .collection<MessageDoc>(MESSAGES_COLLECTION)
@@ -691,7 +691,7 @@ export class CustomerStaffMessagesService {
       .findOne({ threadId });
     if (!thread || thread.customerId !== customerId) {
       throw new HttpException(
-        'Thread não encontrada.',
+        'Conversa não encontrada.',
         HttpStatus.NOT_FOUND,
       );
     }
@@ -727,7 +727,7 @@ export class CustomerStaffMessagesService {
       .findOne({ threadId });
     if (!thread || thread.customerId !== customerId) {
       throw new HttpException(
-        'Thread não encontrada.',
+        'Conversa não encontrada.',
         HttpStatus.NOT_FOUND,
       );
     }
@@ -759,7 +759,7 @@ export class CustomerStaffMessagesService {
       .findOne({ threadId });
     if (!thread || thread.customerId !== customerId) {
       throw new HttpException(
-        'Thread não encontrada.',
+        'Conversa não encontrada.',
         HttpStatus.NOT_FOUND,
       );
     }

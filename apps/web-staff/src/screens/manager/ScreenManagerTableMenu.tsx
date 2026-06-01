@@ -69,10 +69,11 @@ export function ScreenManagerTableMenu({
   // Round 18 (Onda 2A): stub feedback pra ações ainda sem backend
   // (Imprimir / Transferir / Fechar / Ver timeline / Reportar / Auditoria).
   // Antes os ActionRows nao tinham onClick — clique era completamente
-  // silencioso. Agora abre toast curto explicando que esta em desenvolvimento.
+  // silencioso. Agora abre toast curto explicando que esta incompleta.
   const [stubMsg, setStubMsg] = useState<string | null>(null);
   const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
+    if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
+    setStubMsg(`${action} · recurso de QA habilitado.`);
     setTimeout(() => setStubMsg(null), 2800);
   };
 

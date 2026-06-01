@@ -32,6 +32,7 @@ export interface ScreenWaiterProfileProps {
   /** Estabelecimento + versão exibidos no footer. */
   establishment?: string;
   appVersion?: string;
+  dark?: boolean;
   onBack?: () => void;
   onLogout?: () => void;
   onEndShift?: () => void;
@@ -49,6 +50,7 @@ export const ScreenWaiterProfile: React.FC<ScreenWaiterProfileProps> = ({
   prefs = {},
   establishment = 'Trattoria Luna',
   appVersion = '2.4.1',
+  dark = false,
   onBack,
   onLogout,
   onEndShift,
@@ -56,7 +58,6 @@ export const ScreenWaiterProfile: React.FC<ScreenWaiterProfileProps> = ({
   onNewEntry,
   onOpenMessages,
 }) => {
-  const dark = false;
   const C = useG(dark);
   const initials =
     waiterInitials ??

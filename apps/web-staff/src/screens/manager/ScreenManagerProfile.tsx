@@ -66,10 +66,11 @@ export function ScreenManagerProfile({
     managerName.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
   // Round 18 (Onda 2A): stub feedback pra ActionRows sem backend ainda.
   // Antes 9 de 13 rows não tinham onClick — clique silencioso. Agora
-  // toast curto explica que está em desenvolvimento.
+  // toast curto explica que está incompleta.
   const [stubMsg, setStubMsg] = useState<string | null>(null);
   const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
+    if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
+    setStubMsg(`${action} · recurso de QA habilitado.`);
     setTimeout(() => setStubMsg(null), 2800);
   };
 

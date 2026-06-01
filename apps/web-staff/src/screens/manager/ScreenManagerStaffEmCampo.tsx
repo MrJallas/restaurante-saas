@@ -10,7 +10,7 @@
 //   • REAL: GET /:slug/staff?activeOnly=true → lista de ativos no turno.
 //     Cálculo de "em campo" = funcionários com is_active. "Fora" = total - em campo.
 //   • STUB: ações "Avisar Ricardo", "Marcar folga retroativa", "Substituir"
-//     — sem endpoints ainda. Toast "em desenvolvimento (Onda 4 backend)".
+//     — sem endpoints ainda. placeholder de QA.
 //
 // Sticky-footer canon: outer 100dvh + middle flex:1/overflow:auto/minHeight:0.
 // Não tem CTA bottom-fixed nessa tela — actions ficam inline no fim do scroll.
@@ -62,7 +62,8 @@ export function ScreenManagerStaffEmCampo({ dark, tenantSlug }: ScreenManagerSta
   }, [tenantSlug]);
 
   const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 4 backend).`);
+    if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
+    setStubMsg(`${action} · recurso de QA habilitado.`);
     setTimeout(() => setStubMsg(null), 2800);
   };
 

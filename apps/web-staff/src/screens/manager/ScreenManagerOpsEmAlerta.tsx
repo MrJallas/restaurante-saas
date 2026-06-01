@@ -93,7 +93,8 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug: _tenantSlug }: Scre
   const [stubMsg, setStubMsg] = useState<string | null>(null);
 
   const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 4 backend).`);
+    if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
+    setStubMsg(`${action} · recurso de QA habilitado.`);
     setTimeout(() => setStubMsg(null), 2800);
   };
 

@@ -3,11 +3,13 @@
 import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ScreenManagerProfile } from '../../../screens/manager/ScreenManagerProfile';
+import { useStaffTheme } from '../../../lib/theme';
 
 function ManagerProfileInner() {
   const params = useSearchParams();
+  const { dark } = useStaffTheme();
   const name = params.get('name') ?? undefined;
-  return <ScreenManagerProfile managerName={name} />;
+  return <ScreenManagerProfile managerName={name} dark={dark} />;
 }
 
 export default function ManagerProfilePage() {

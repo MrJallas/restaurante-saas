@@ -4,11 +4,13 @@ import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenHomeGrid } from '../../screens/waiter/ScreenHomeGrid';
 import { defaultTenantSlug, readStaffSession, type StaffSession } from '../../lib/api';
+import { useStaffTheme } from '../../lib/theme';
 
 function WaiterHomePageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const [session, setSession] = React.useState<StaffSession | null | undefined>(undefined);
+  const { dark } = useStaffTheme();
   const tenantSlug = params.get('tenant') ?? defaultTenantSlug();
   const waiterIdParam = params.get('waiterId');
   const waiterId = waiterIdParam ?? session?.staffId ?? '';
@@ -23,6 +25,7 @@ function WaiterHomePageInner() {
     <ScreenHomeGrid
       tenantSlug={tenantSlug}
       waiterId={waiterId}
+      dark={dark}
       onNewEntry={() => router.push(`/waiter/new-entry?tenant=${tenantSlug}`)}
       onOpenCall={(callId) => router.push(`/waiter/call/${callId}?tenant=${tenantSlug}`)}
       onOpenTable={(t) => router.push(`/waiter/table/${t}?tenant=${tenantSlug}&tableNumber=${t}`)}

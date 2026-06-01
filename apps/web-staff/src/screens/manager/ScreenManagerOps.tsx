@@ -126,7 +126,8 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
     setAlerts((prev) => prev.filter((a) => a.id !== id));
   };
   const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
+    if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
+    setStubMsg(`${action} · recurso de QA habilitado.`);
     setTimeout(() => setStubMsg(null), 2800);
   };
   const [pauseRemaining, setPauseRemaining] = useState<number | null>(null);

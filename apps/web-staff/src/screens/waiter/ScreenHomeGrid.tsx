@@ -25,6 +25,7 @@ import type { ZonePauseDto, WsEvent } from '@restaurant/shared-types';
 interface ScreenHomeGridProps {
   tenantSlug: string;
   waiterId: string;
+  dark?: boolean;
   waiterInitials?: string;
   onNewEntry?: () => void;
   onOpenCall?: (callId: string) => void;
@@ -54,11 +55,10 @@ function fmtTimeLeft(endsAt: string): string {
 }
 
 export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
-  tenantSlug, waiterId, waiterInitials = 'EU',
+  tenantSlug, waiterId, dark = false, waiterInitials = 'EU',
   onNewEntry = () => {}, onOpenCall = () => {}, onOpenTable = () => {},
   onTabChange, fab = false,
 }) => {
-  const dark = false;
   const C = useG(dark);
   const router = useRouter();
   const [tables, setTables] = useState<ActiveTableSummary[]>([]);

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
 import { staffGet, staffPatch, staffPost } from '../../lib/api';
+import { type StaffThemeMode, useStaffTheme } from '../../lib/theme';
 
 interface OrderItem {
   id: string;
@@ -59,11 +60,9 @@ interface PriorityRequest {
   orders: Order[];
 }
 
-type ThemeMode = 'light' | 'dark' | 'auto';
 type CardColor = 'yellow' | 'orange' | 'green' | 'blue';
 
 const TENANT_SLUG = process.env.NEXT_PUBLIC_TENANT_SLUG || 'restaurant_dev';
-const THEME_KEY = 'kitchen:theme';
 const STAFF_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function resolveWsUrl(): string {
@@ -82,40 +81,6 @@ function readStaffId(): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function useKitchenTheme() {
-  const [mode, setMode] = useState<ThemeMode>('dark');
-  const [prefersDark, setPrefersDark] = useState(true);
-
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(THEME_KEY);
-      if (raw === 'light' || raw === 'dark' || raw === 'auto') setMode(raw);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const update = () => setPrefersDark(media.matches);
-    update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, []);
-
-  const chooseMode = (next: ThemeMode) => {
-    setMode(next);
-    try {
-      window.localStorage.setItem(THEME_KEY, next);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  return { mode, setMode: chooseMode, dark: mode === 'auto' ? prefersDark : mode === 'dark' };
 }
 
 function TimerBadge({ createdAt, dark }: { createdAt: string; dark: boolean }) {
@@ -148,7 +113,7 @@ function TimerBadge({ createdAt, dark }: { createdAt: string; dark: boolean }) {
 
 export default function CozinhaKDS() {
   const router = useRouter();
-  const { mode, setMode, dark } = useKitchenTheme();
+  const { mode, setTheme, dark } = useStaffTheme();
   const [orders, setOrders] = useState<Order[]>([]);
   const [priorityRequests, setPriorityRequests] = useState<PriorityRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -375,7 +340,7 @@ export default function CozinhaKDS() {
           Cozinha — KDS
         </h1>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <ThemeSwitch mode={mode} onMode={setMode} dark={dark} />
+          <ThemeSwitch mode={mode} onMode={setTheme} dark={dark} />
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
             className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
@@ -530,11 +495,11 @@ function ThemeSwitch({
   onMode,
   dark,
 }: {
-  mode: ThemeMode;
-  onMode: (mode: ThemeMode) => void;
+  mode: StaffThemeMode;
+  onMode: (mode: StaffThemeMode) => void;
   dark: boolean;
 }) {
-  const options: Array<{ id: ThemeMode; icon: ReactNode; label: string }> = [
+  const options: Array<{ id: StaffThemeMode; icon: ReactNode; label: string }> = [
     { id: 'light', icon: <Sun className="h-4 w-4" />, label: 'Claro' },
     { id: 'dark', icon: <Moon className="h-4 w-4" />, label: 'Escuro' },
     { id: 'auto', icon: <Monitor className="h-4 w-4" />, label: 'Auto' },

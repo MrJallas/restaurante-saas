@@ -132,7 +132,7 @@ export class CustomerStaffMessagesController {
     const own = threads.find((t) => t.threadId === threadId);
     if (!own) {
       throw new HttpException(
-        'Thread não encontrada.',
+        'Conversa não encontrada.',
         HttpStatus.NOT_FOUND,
       );
     }

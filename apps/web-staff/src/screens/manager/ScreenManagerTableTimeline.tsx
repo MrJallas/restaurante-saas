@@ -66,7 +66,8 @@ export function ScreenManagerTableTimeline({
   const router = useRouter();
   const [stubMsg, setStubMsg] = useState<string | null>(null);
   const showStub = (m: string) => {
-    setStubMsg(`${m} · em desenvolvimento (Onda 4 backend).`);
+    if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
+    setStubMsg(`${m} · recurso de QA habilitado.`);
     setTimeout(() => setStubMsg(null), 2800);
   };
   const slug =
