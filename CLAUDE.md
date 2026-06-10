@@ -5,6 +5,28 @@ repository. **READ FIRST** before making changes.
 
 ---
 
+## Shared Memory And RAG Discipline
+
+This repository uses project memory as an active coordination surface between
+Codex, Claude Code and future local RAG tooling.
+
+1. Read `MEMORY.md` before any non-trivial audit, implementation, review,
+   prompt run or product-behavior decision.
+2. Keep `MEMORY.md` updated in the same branch/commit when work changes product
+   behavior, source priority, prompt state, validation commands, known risks,
+   open questions, persona routes or backend/frontend contracts.
+3. When `docs/rag/` and local vector scripts are present, read
+   `docs/rag/README.md`, use the local retrieval flow before broad exploration,
+   and update/reindex the RAG corpus whenever source files changed enough to
+   make retrieval stale.
+4. Do not commit vector databases, embeddings, trace dumps, browser videos or
+   heavy screenshot packs. Commit text-first memory/RAG docs and small evidence
+   manifests; keep local indexes under `.rag/`.
+5. Keep this file aligned with `MEMORY.md` and `docs/rag/README.md`. If product
+   behavior is unclear, ask Caleb before inventing rules.
+
+---
+
 ## 🔒 V20 Customer UI · DO NOT MODIFY
 
 The customer-facing surfaces below were **hand-designed by the project owner

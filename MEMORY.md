@@ -20,6 +20,25 @@ matriz de testes. Ele nao substitui o codigo, o canvas nem os superprompts.
 5. `qa-reports/SUPER-PROMPT-V2.md` e o protocolo de bug-hunt text-only valem
    para rodadas de seguranca/contratos sem comparacao visual.
 
+## Memoria E RAG Compartilhados
+
+- Este `MEMORY.md` e a memoria viva do projeto para Codex, Claude Code e outros
+  agentes. Leia antes de auditoria, implementacao, review, prompt run ou decisao
+  de comportamento do produto.
+- `CLAUDE.md` deve permanecer alinhado com este arquivo para que Claude Code
+  siga o mesmo protocolo de memoria e RAG.
+- `docs/rag/README.md` define o contrato do RAG local com vector DB. O banco
+  vetorial, embeddings, manifests locais e caches devem ficar em `.rag/`, fora
+  do Git.
+- Sempre que uma rodada mudar comportamento de produto, prioridade das fontes,
+  rotas/personas, contratos backend/frontend, validacoes, riscos conhecidos ou
+  perguntas abertas, atualize este arquivo no mesmo branch/commit.
+- Quando o RAG local existir, consulte-o antes de buscas amplas e reindexe
+  depois de mudancas relevantes nos arquivos fonte indexados. Commite apenas
+  docs, scripts e manifests pequenos; nunca o vector DB/cache.
+- Se a funcionalidade estiver ambigua, pergunte ao Caleb com exemplos concretos
+  antes de registrar uma suposicao como verdade.
+
 ## Stack E Ambiente
 
 - API NestJS: `apps/api`, porta `3001`, prefixo `/api`.
