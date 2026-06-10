@@ -245,6 +245,19 @@ export class OrdersController {
     return { orders };
   }
 
+  /**
+   * Feed staff-only para as TVs de cozinha/bar. Separado de GET /orders para
+   * manter o contrato de sessão do cliente intacto e permitir filtro por
+   * estação sem vazar pedidos de outras áreas.
+   */
+  @Get('_kds')
+  @UseGuards(StaffOnlyGuard)
+  async getKdsOrders(@Query('station') station?: string) {
+    const resolvedStation = station === 'bar' ? 'bar' : 'kitchen';
+    const orders = await this.ordersService.getActiveOrdersForKds(resolvedStation);
+    return { station: resolvedStation, orders };
+  }
+
   @Get('bill')
   @UseGuards(SessionGuard)
   async getBill(
@@ -300,14 +313,8 @@ export class OrdersController {
    */
   @Get(':orderId')
   @UseGuards(SessionGuard)
-  async getOrder(
-    @Session() session: SessionData,
-    @Param('orderId') orderId: string,
-  ) {
-    const order = await this.ordersService.getOrderById(
-      session.sessionId,
-      orderId,
-    );
+  async getOrder(@Session() session: SessionData, @Param('orderId') orderId: string) {
+    const order = await this.ordersService.getOrderById(session.sessionId, orderId);
     if (!order) {
       throw new NotFoundException('Pedido nao encontrado.');
     }
@@ -365,16 +372,10 @@ export class OrdersController {
     @Body() dto: UpdateStatusDto,
     @Req() req: SessionRequest & { actorType?: 'staff' | 'session' },
   ) {
-    return this.ordersService.updateStatus(
-      orderId,
-      dto.status,
-      dto.changedBy || 'system',
-      slug,
-      {
-        actorType: req.actorType ?? 'staff',
-        sessionTableId: req.sessionData?.sessionId ?? null,
-      },
-    );
+    return this.ordersService.updateStatus(orderId, dto.status, dto.changedBy || 'system', slug, {
+      actorType: req.actorType ?? 'staff',
+      sessionTableId: req.sessionData?.sessionId ?? null,
+    });
   }
 
   @Post(':orderId/call-waiter')

@@ -163,9 +163,7 @@ export class OrdersService {
     // Antes (round 5 fix incompleto): GET-then-INSERT-then-SET plain.
     // Concurrent: ambos GET=null, ambos INSERT, ambos SET (último vence)
     // → 2 orders idênticos no DB, customer cobrado 2x.
-    const idemKey = idempotencyKey
-      ? `order_idem:${tableSessionId}:${idempotencyKey}`
-      : null;
+    const idemKey = idempotencyKey ? `order_idem:${tableSessionId}:${idempotencyKey}` : null;
     let idemLockOwner = false;
     if (idemKey) {
       // Tenta ganhar o lock atomicamente. Se já existe, faz fallback
@@ -190,10 +188,7 @@ export class OrdersService {
               inflight?: boolean;
             }>(existing);
             if (cached?.orderId) {
-              const existingOrder = await this.getOrderById(
-                tableSessionId,
-                cached.orderId,
-              );
+              const existingOrder = await this.getOrderById(tableSessionId, cached.orderId);
               if (existingOrder) {
                 return {
                   id: existingOrder.id,
@@ -283,16 +278,12 @@ export class OrdersService {
         // (so split-by-item can group correctly later). Table orders default to
         // shared (null) unless the caller passes a customerId per-item.
         customerId:
-          billingMode === 'individual'
-            ? effectiveDefaultCustomerId
-            : (item.customerId ?? null),
+          billingMode === 'individual' ? effectiveDefaultCustomerId : (item.customerId ?? null),
       };
     });
 
     const distinctCustomerIds = [
-      ...new Set(
-        orderItemsData.map((i) => i.customerId).filter((id): id is string => id != null),
-      ),
+      ...new Set(orderItemsData.map((i) => i.customerId).filter((id): id is string => id != null)),
     ];
     if (distinctCustomerIds.length > 0) {
       const validParticipants = (await this.tenantConn.query(
@@ -368,10 +359,9 @@ export class OrdersService {
         [ord.id],
       );
 
-      await tx.query(
-        `UPDATE menu_items SET total_orders = total_orders + 1 WHERE id = ANY($1)`,
-        [uniqueItemIds],
-      );
+      await tx.query(`UPDATE menu_items SET total_orders = total_orders + 1 WHERE id = ANY($1)`, [
+        uniqueItemIds,
+      ]);
 
       return ord;
     });
@@ -379,11 +369,7 @@ export class OrdersService {
     // Marca a chave de idempotencia DEPOIS do commit — se a transacao
     // falhar, queremos que o cliente possa retry com a mesma chave.
     if (idemKey) {
-      await this.redis.set(
-        idemKey,
-        JSON.stringify({ orderId: order.id }),
-        IDEMPOTENCY_TTL_SECONDS,
-      );
+      await this.redis.set(idemKey, JSON.stringify({ orderId: order.id }), IDEMPOTENCY_TTL_SECONDS);
     }
 
     // Notifica os outros customers na mesma mesa em tempo real. Antes
@@ -490,12 +476,7 @@ export class OrdersService {
         `INSERT INTO orders (table_session_id, visit_id, billing_mode, status, notes, total_cents, created_by, auto_confirm_at)
          VALUES ($1, NULL, 'table', 'received', $2, $3, $4, NULL)
          RETURNING id, status, created_at, updated_at`,
-        [
-          session.id,
-          input.notes || null,
-          totalCents,
-          input.staffId,
-        ],
+        [session.id, input.notes || null, totalCents, input.staffId],
       )) as Array<{
         id: string;
         status: string;
@@ -535,10 +516,9 @@ export class OrdersService {
         [ord.id, input.staffId],
       );
 
-      await tx.query(
-        `UPDATE menu_items SET total_orders = total_orders + 1 WHERE id = ANY($1)`,
-        [uniqueItemIds],
-      );
+      await tx.query(`UPDATE menu_items SET total_orders = total_orders + 1 WHERE id = ANY($1)`, [
+        uniqueItemIds,
+      ]);
 
       return ord;
     });
@@ -666,10 +646,9 @@ export class OrdersService {
 
     if (!updated.length) {
       // Outra request ja transicionou — re-le e retorna o status atual.
-      const refresh = (await this.tenantConn.query(
-        `SELECT status FROM orders WHERE id = $1`,
-        [orderId],
-      )) as { status: string }[];
+      const refresh = (await this.tenantConn.query(`SELECT status FROM orders WHERE id = $1`, [
+        orderId,
+      ])) as { status: string }[];
       return { orderId, status: refresh[0]?.status ?? 'received' };
     }
 
@@ -737,10 +716,9 @@ export class OrdersService {
     );
 
     if (!updated.length) {
-      const refresh = (await this.tenantConn.query(
-        `SELECT status FROM orders WHERE id = $1`,
-        [orderId],
-      )) as { status: string }[];
+      const refresh = (await this.tenantConn.query(`SELECT status FROM orders WHERE id = $1`, [
+        orderId,
+      ])) as { status: string }[];
       return { orderId, status: refresh[0]?.status ?? 'cancelled' };
     }
 
@@ -1094,6 +1072,76 @@ export class OrdersService {
     );
   }
 
+  /**
+   * Feed das TVs de cozinha e bar. Diferente da fila operacional principal,
+   * este endpoint separa os itens por estação usando a categoria do cardápio.
+   * Pedidos prontos continuam visíveis até alguém chamar o garçom; depois a
+   * entrega ativa remove o pedido da TV para evitar chamada duplicada.
+   */
+  async getActiveOrdersForKds(station: 'kitchen' | 'bar') {
+    await this.sweepAutoConfirm().catch(() => undefined);
+
+    const normalizedCategoryName = 'LOWER(TRIM(mc.name))';
+    const itemPredicate =
+      station === 'bar'
+        ? `${normalizedCategoryName} = 'bebidas'`
+        : `${normalizedCategoryName} <> 'bebidas'`;
+
+    return this.tenantConn.query(
+      `
+      SELECT
+        o.id,
+        o.status,
+        o.total_cents,
+        o.notes,
+        o.visit_id,
+        o.created_at,
+        o.updated_at,
+        t.label AS table_label,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', oi.id,
+              'menuItemId', oi.menu_item_id,
+              'name', mi.name,
+              'quantity', oi.quantity,
+              'notes', oi.notes,
+              'categoryName', mc.name
+            )
+            ORDER BY oi.created_at ASC
+          ) FILTER (WHERE oi.id IS NOT NULL),
+          '[]'
+        ) AS items
+      FROM orders o
+      JOIN table_sessions ts ON ts.id = o.table_session_id
+      JOIN tables t ON t.id = ts.table_id
+      JOIN order_items oi ON oi.order_id = o.id
+      JOIN menu_items mi ON mi.id = oi.menu_item_id
+      JOIN menu_categories mc ON mc.id = mi.category_id
+      LEFT JOIN LATERAL (
+        SELECT od.status
+          FROM order_deliveries od
+         WHERE od.order_id = o.id
+           AND od.status != 'cancelled'
+         ORDER BY od.created_at DESC
+         LIMIT 1
+      ) delivery ON true
+      WHERE o.status NOT IN ('delivered', 'cancelled', 'pending_confirmation', 'in_transit')
+        AND (ts.status = 'active' OR o.status IN ('in_progress', 'ready'))
+        AND o.created_at > now() - interval '8 hours'
+        AND o.created_at <= now()
+        AND ${itemPredicate}
+        AND NOT (
+          o.status = 'ready'
+          AND delivery.status IN ('called', 'claimed', 'in_transit')
+        )
+      GROUP BY o.id, t.label, delivery.status
+      ORDER BY o.created_at ASC
+      LIMIT 100
+      `,
+    );
+  }
+
   async getKitchenQueue(): Promise<KitchenQueueItem[]> {
     await this.sweepAutoConfirm().catch(() => undefined);
 
@@ -1374,10 +1422,9 @@ export class OrdersService {
           WHERE id = $1`,
         [delivery.id],
       );
-      await tx.query(
-        `UPDATE orders SET status = 'delivered', updated_at = now() WHERE id = $1`,
-        [orderId],
-      );
+      await tx.query(`UPDATE orders SET status = 'delivered', updated_at = now() WHERE id = $1`, [
+        orderId,
+      ]);
       await tx.query(
         `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
          VALUES ($1, $2, 'delivered', $3)`,
@@ -1411,9 +1458,7 @@ export class OrdersService {
           });
         }
       } catch (err) {
-        this.ordersLogger.warn(
-          `Falha ao agendar rating prompt: ${(err as Error).message}`,
-        );
+        this.ordersLogger.warn(`Falha ao agendar rating prompt: ${(err as Error).message}`);
       }
     }
 
@@ -1532,9 +1577,10 @@ export class OrdersService {
         };
       }
 
-      const protectedUnique = response === 'next'
-        ? Array.from(new Set(protectedOrderIds)).filter((id) => !request.order_ids.includes(id))
-        : [];
+      const protectedUnique =
+        response === 'next'
+          ? Array.from(new Set(protectedOrderIds)).filter((id) => !request.order_ids.includes(id))
+          : [];
       await this.applyKitchenRanksInTx(
         tx,
         request.order_ids,
@@ -1583,9 +1629,10 @@ export class OrdersService {
       });
       this.eventsGateway.emitKitchenReorder(slug, {
         orderIds: [...result.protectedOrderIds, ...result.orderIds],
-        reason: result.status === 'accepted'
-          ? 'Cozinha aceitou prioridade da gerencia.'
-          : 'Cozinha priorizou apos pedidos ja em preparo.',
+        reason:
+          result.status === 'accepted'
+            ? 'Cozinha aceitou prioridade da gerencia.'
+            : 'Cozinha priorizou apos pedidos ja em preparo.',
         requestedBy: staffId,
       });
     }
@@ -1687,9 +1734,7 @@ export class OrdersService {
           RETURNING id, priority_rank::text`,
         [rank, reason, staffId, sequence[i]],
       );
-      const returned = unwrapRows<{ id: string; priority_rank: string }>(
-        result,
-      );
+      const returned = unwrapRows<{ id: string; priority_rank: string }>(result);
       if (returned[0]) rows.push(returned[0]);
     }
     return rows;
@@ -1805,13 +1850,8 @@ export class OrdersService {
           'Customer só pode cancelar pedido. Mude de status só permitido pra staff.',
         );
       }
-      if (
-        !actor.sessionTableId ||
-        actor.sessionTableId !== tableSessionId
-      ) {
-        throw new ForbiddenException(
-          'Pedido não pertence à sua mesa.',
-        );
+      if (!actor.sessionTableId || actor.sessionTableId !== tableSessionId) {
+        throw new ForbiddenException('Pedido não pertence à sua mesa.');
       }
     }
 
@@ -1823,10 +1863,10 @@ export class OrdersService {
       );
     }
 
-    await this.tenantConn.query(
-      `UPDATE orders SET status = $1, updated_at = now() WHERE id = $2`,
-      [newStatus, orderId],
-    );
+    await this.tenantConn.query(`UPDATE orders SET status = $1, updated_at = now() WHERE id = $2`, [
+      newStatus,
+      orderId,
+    ]);
 
     await this.tenantConn.query(
       `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
@@ -1856,9 +1896,7 @@ export class OrdersService {
             });
           }
         } catch (err) {
-          this.ordersLogger.warn(
-            `Falha ao agendar rating prompt: ${(err as Error).message}`,
-          );
+          this.ordersLogger.warn(`Falha ao agendar rating prompt: ${(err as Error).message}`);
         }
       }
     }

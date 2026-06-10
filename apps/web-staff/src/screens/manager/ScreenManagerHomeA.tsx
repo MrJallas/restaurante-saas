@@ -243,8 +243,8 @@ export function ScreenManagerHomeA({
             id: `tm-${m.id}`,
             kind: 'table-merge',
             state: 'waiting',
-            requesterName: m.originHostName,
-            requestedTable: m.originTableNumber,
+            requesterName: m.originHostName ?? undefined,
+            requestedTable: m.originTableNumber ?? undefined,
             toRoute: `/manager/stat/merge/${m.id}`,
           });
         }
@@ -587,8 +587,8 @@ export function ScreenManagerHomeA({
                 p.flag === 'overload'
                   ? { tone: 'danger' as const, label: 'Sobrec.' }
                   : p.flag === 'in-call'
-                  ? { tone: 'warn' as const, label: 'Em chamado' }
-                  : null;
+                    ? { tone: 'warn' as const, label: 'Em chamado' }
+                    : null;
               return (
                 <button
                   key={p.id}
@@ -646,11 +646,7 @@ export function ScreenManagerHomeA({
           </div>
         </MSection>
 
-        <MSection
-          dark={dark}
-          title="Próximas reservas"
-          action="Agenda completa →"
-        >
+        <MSection dark={dark} title="Próximas reservas" action="Agenda completa →">
           <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {NEXT_RESERVATIONS.map((r) => (
               <div
@@ -782,7 +778,6 @@ export function ScreenManagerHomeA({
           }}
         />
       )}
-
     </div>
   );
 }

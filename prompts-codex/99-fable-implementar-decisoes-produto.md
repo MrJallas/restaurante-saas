@@ -145,6 +145,11 @@ antes de implementar. Nao invente comportamento para fechar a tarefa.
 ### 6. KDS, cozinha, bar e entrega
 
 - Acao canonica da cozinha/bar e `Chamar garcom`, nao `Servir agora`.
+- Estado atual da `main` apos integração Codex: existem `/cozinha/tv` e
+  `/bar/tv`, `GET /:slug/orders/_kds?station=kitchen|bar`, proxy TV
+  same-origin e `/cozinha/unlock`. O board ja chama
+  `POST /:slug/orders/:orderId/call-waiter` quando um pedido fica `ready`.
+  Nao reimplemente essa base do zero; valide e complemente.
 - Ao clicar `Chamar garcom`, enviar notificacao in-app/banner ao garcom
   responsavel.
 - O garcom deve ter uma tela/botao para ver entrega pendente, com local da mesa
@@ -155,9 +160,9 @@ antes de implementar. Nao invente comportamento para fechar a tarefa.
   2. VIP;
   3. normal.
 - Pedido de mesa VIP deve subir automaticamente para fila VIP.
-- Ainda nao existe tela propria de bar; implementar quando o escopo tocar esse
-  fluxo. Se implementar agora, separar visualmente bar de cozinha quando item
-  for de bar.
+- A TV de bar existe, mas ainda precisa ser validada como fluxo operacional
+  completo, inclusive notificacao do garcom, estado final `Entregue`,
+  priorizacao VIP/urgencia e separacao correta de itens por estação.
 - Lider de cozinha em `/cozinha/eu` por agora so ve o proprio perfil. Deixar
   TODO claro para possivel futuro gerenciamento de turnos dos assistentes de
   cozinha; nao tratar esse codigo como lixo.

@@ -131,6 +131,13 @@ Cozinha/KDS:
 
 - `/cozinha`, `/cozinha/eu`, `/cozinha/mensagens`,
   `/cozinha/mensagens/:threadId`.
+- TV KDS adicionada em 2026-06-09/10:
+  `/cozinha/tv`, `/bar/tv`, `/cozinha/unlock`, `/api/tv-unlock` e
+  `/api/proxy/:path*`. O board usa `GET /:slug/orders/_kds?station=kitchen|bar`
+  e, quando pedido fica `ready`, chama `POST /:slug/orders/:orderId/call-waiter`
+  em vez de marcar como `delivered`. A rota TV e o proxy sao base inicial; ainda
+  validar ponta a ponta notificação in-app/banner do garcom, mapa/localizacao
+  da mesa e botao final `Entregue`.
 
 Staff usa poucos `data-testid`; preferir roles, labels e texto visivel:
 `Notificações`, `Mensagens`, `Perfil`, `Mais ações`, `NOVOS`,
@@ -210,8 +217,9 @@ curl -fsS http://localhost:3002 >/tmp/staff.html
 curl -fsS http://localhost:3003/restaurant_dev >/tmp/customer.html
 ```
 
-No repo base atual nao existe `scripts/audit-ui.sh`; esse script foi criado em
-branch de prompt posterior e nao deve ser assumido na base.
+No estado atual da `main`, `scripts/audit-ui.sh` existe por merge do prompt 07.
+Ele gera evidencias/auditoria UI, mas nao substitui asserts automatizados TAP ou
+E2E; use como apoio, nao como unico criterio de PASS.
 
 ## Evidencia
 
@@ -293,13 +301,14 @@ Decisoes detalhadas confirmadas por Caleb em 2026-06-10:
   mergeadas, o sistema deve lembrar a estrutura anterior das mesas, pessoas e
   pedidos, inclusive pedidos novos feitos por pessoas especificas durante o
   periodo mergeado, para restaurar as comandas/mesas corretamente.
-- KDS/cozinha: a acao final canonica e "Chamar garcom", nao "Servir agora".
+- KDS/cozinha/bar: a acao final canonica e "Chamar garcom", nao "Servir agora".
   Ao clicar, deve enviar notificacao in-app/banner para o garcom responsavel.
   O garcom deve ter tela/botao para aceitar a entrega, ver onde fica a mesa
   (varanda, salao principal etc.) com mapa, e marcar "Entregue"; so entao o
-  pedido termina e o app do cliente atualiza.
-- Bar: ainda nao existe tela propria de bar. Deve ser implementada em prompt
-  futuro/atual como fila propria quando o escopo pedir.
+  pedido termina e o app do cliente atualiza. Estado atual: `/cozinha/tv` e
+  `/bar/tv` ja existem como telas TV e chamam backend real para `_kds` e
+  `call-waiter`, mas o fluxo completo de notificacao/mapa/entregue ainda
+  precisa de validacao e possivel complemento.
 - QR do cliente: se localizacao for necessaria/negada, explicar para leigos que
   a localizacao e usada por seguranca para confirmar que o cliente esta no
   restaurante e liberar o cardapio correto. Texto deve ser curto, claro e
