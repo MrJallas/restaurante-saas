@@ -3,6 +3,7 @@ import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { StaffMessagesService } from '../staff-messages/staff-messages.service';
 import { AlertsService } from '../alerts/alerts.service';
+import { MongoService } from '../../infra/mongo/mongo.service';
 
 export interface ShiftDefinitionRow {
   id: string;
@@ -32,6 +33,7 @@ export class ShiftsService {
     private readonly tenantConn: TenantConnectionProvider,
     private readonly staffMessages: StaffMessagesService,
     private readonly alerts: AlertsService,
+    private readonly mongo: MongoService,
   ) {}
 
   async listForDate(workDate: string): Promise<ShiftWithMembersRow[]> {
@@ -226,6 +228,23 @@ export class ShiftsService {
       ),
     );
     const requestId = requestRows[0].id;
+    await this.writeShiftLog({
+      eventType: 'shift_end_requested',
+      tenantSlug: data.slug,
+      requestId,
+      staffId: data.waiterId,
+      target: {
+        type: 'staff_shift_end_requests',
+        id: requestId,
+      },
+      after: {
+        status: 'pending',
+        waiterId: data.waiterId,
+        managerId: manager.id,
+        reason: data.reason ?? null,
+      },
+    });
+
     const message = await this.staffMessages.send(
       {
         senderStaffId: data.waiterId,
@@ -315,6 +334,24 @@ export class ShiftsService {
       ),
     );
     const status = (updated[0]?.status ?? data.decision) as 'approved' | 'rejected';
+    await this.writeShiftLog({
+      eventType: 'shift_end_decided',
+      tenantSlug: data.slug,
+      requestId: request.id,
+      staffId: data.managerId,
+      target: {
+        type: 'staff_shift_end_requests',
+        id: request.id,
+      },
+      before: {
+        status: request.status,
+        waiterId: request.waiter_id,
+      },
+      after: {
+        status,
+        responseMessage: data.responseMessage ?? null,
+      },
+    });
 
     if (request.thread_id) {
       const responseBody =
@@ -344,6 +381,32 @@ export class ShiftsService {
       reason ? `Motivo: ${reason}` : 'Motivo não informado.',
       `SHIFT_END_REQUEST:${requestId}`,
     ].join('\n');
+  }
+
+  private async writeShiftLog(entry: {
+    eventType: 'shift_end_requested' | 'shift_end_decided';
+    tenantSlug?: string;
+    requestId: string;
+    staffId: string;
+    target: Record<string, unknown>;
+    before?: Record<string, unknown>;
+    after: Record<string, unknown>;
+  }): Promise<void> {
+    const db = this.mongo.tryDb();
+    if (!db) return;
+    await db
+      .collection('shift_logs')
+      .insertOne({
+        tenantId: entry.tenantSlug ?? null,
+        eventType: entry.eventType,
+        requestId: entry.requestId,
+        staffId: entry.staffId,
+        target: entry.target,
+        before: entry.before ?? null,
+        after: entry.after,
+        timestamp: new Date(),
+      })
+      .catch(() => undefined);
   }
 
   private async getMember(assignmentId: string): Promise<ShiftMemberRow & { shift_id: string }> {

@@ -4,7 +4,8 @@ import * as React from 'react';
 
 export type StaffThemeMode = 'light' | 'dark' | 'auto';
 
-export const STAFF_THEME_STORAGE_KEY = 'host:appearance';
+export const STAFF_THEME_STORAGE_KEY = 'staff:theme';
+const LEGACY_HOST_THEME_STORAGE_KEY = 'host:appearance';
 
 function isThemeMode(value: string | null): value is StaffThemeMode {
   return value === 'light' || value === 'dark' || value === 'auto';
@@ -13,7 +14,9 @@ function isThemeMode(value: string | null): value is StaffThemeMode {
 function readStoredThemeMode(): StaffThemeMode {
   if (typeof window === 'undefined') return 'light';
   try {
-    const raw = window.localStorage.getItem(STAFF_THEME_STORAGE_KEY);
+    const raw =
+      window.localStorage.getItem(STAFF_THEME_STORAGE_KEY) ??
+      window.localStorage.getItem(LEGACY_HOST_THEME_STORAGE_KEY);
     return isThemeMode(raw) ? raw : 'light';
   } catch {
     return 'light';
@@ -34,6 +37,7 @@ export function resolveStaffThemeDark(mode: StaffThemeMode): boolean {
 export function writeStaffThemeMode(mode: StaffThemeMode): void {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(STAFF_THEME_STORAGE_KEY, mode);
+  window.localStorage.setItem(LEGACY_HOST_THEME_STORAGE_KEY, mode);
   window.dispatchEvent(new CustomEvent('staff-theme-change', { detail: mode }));
 }
 
@@ -48,6 +52,7 @@ export function useStaffTheme(): {
   mode: StaffThemeMode;
   dark: boolean;
   setMode: (mode: StaffThemeMode) => void;
+  setTheme: (mode: StaffThemeMode) => void;
 } {
   const [mode, setModeState] = React.useState<StaffThemeMode>('light');
   const [systemDark, setSystemDark] = React.useState(() => systemPrefersDark());
@@ -94,5 +99,14 @@ export function useStaffTheme(): {
     setModeState(next);
   }, []);
 
-  return { mode, dark, setMode };
+  return { mode, dark, setMode, setTheme: setMode };
+}
+
+export function useTheme() {
+  return useStaffTheme();
+}
+
+export function StaffThemeProvider({ children }: { children: React.ReactNode }) {
+  useStaffTheme();
+  return React.createElement(React.Fragment, null, children);
 }

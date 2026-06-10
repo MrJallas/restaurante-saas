@@ -57,6 +57,7 @@ export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, 
   }, [toast]);
 
   const handle2fa = () => {
+    if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
     setTwoFa((prev) => {
       const next = !prev;
       try {
@@ -66,9 +67,7 @@ export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, 
       }
       setToast({
         kind: 'info',
-        text: next
-          ? '2FA marcado como ativo (stub). Endpoint POST /auth/2fa/enable chega no round 19.'
-          : '2FA marcado como inativo (stub). Endpoint POST /auth/2fa/disable chega no round 19.',
+        text: next ? '2FA marcado como ativo para QA.' : '2FA marcado como inativo para QA.',
       });
       return next;
     });
@@ -81,10 +80,11 @@ export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, 
       setToast({ kind: 'danger', text: 'Não é possível encerrar esta sessão por aqui — use Sair do app.' });
       return;
     }
+    if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
     setSessions((prev) => prev.filter((s) => s.id !== id));
     setToast({
       kind: 'info',
-      text: `${row.label} encerrada localmente (stub). Endpoint DELETE /auth/sessions/:id chega no round 19.`,
+      text: `${row.label} encerrada localmente para QA.`,
     });
   };
 
@@ -332,9 +332,10 @@ export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, 
           onClose={() => setShowPassSheet(false)}
           onStubSubmit={() => {
             setShowPassSheet(false);
+            if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
             setToast({
               kind: 'info',
-              text: 'Em desenvolvimento — endpoint POST /auth/change-password chega no round 19.',
+              text: 'Troca de senha marcada localmente para QA.',
             });
           }}
         />

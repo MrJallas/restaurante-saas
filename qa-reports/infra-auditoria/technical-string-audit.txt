@@ -1,0 +1,2 @@
+apps/api/src/modules/table-session/table-session.service.ts:226:    // caller trata como cache miss em vez de propagar SyntaxError.
+apps/api/src/common/utils/safe-json.ts:11: * `JSON.parse` plain throw `SyntaxError` que crasha o handler/middleware

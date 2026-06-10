@@ -38,8 +38,15 @@ db.customer_courtesy_history.createIndex({ tenantId: 1, courtesyId: 1 });
 // Paginacao das mensagens dentro da thread.
 db.chat_messages.createIndex({ threadId: 1, createdAt: 1 });
 
+// Logs operacionais novos ficam no Mongo. `shift_logs` cobre o round 24
+// para encerramento de turno de garçom, com lookup por tenant/staff/request.
+db.shift_logs.createIndex({ tenantId: 1, timestamp: -1 });
+db.shift_logs.createIndex({ staffId: 1, timestamp: -1 });
+db.shift_logs.createIndex({ requestId: 1, timestamp: -1 });
+db.shift_logs.createIndex({ eventType: 1, timestamp: -1 });
+
 // Init log pra container output.
-print('mongo-init.js: restaurant_chat TTL + lookup indexes ensured.');
+print('mongo-init.js: restaurant_chat TTL + lookup + shift_logs indexes ensured.');
 
 db = db.getSiblingDB('restaurant_security');
 

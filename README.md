@@ -14,6 +14,12 @@ Este projeto usa agentes especializados em `.claude/agents/`. Antes de implement
 
 Todos os arquivos de referência do projeto (schema SQL, entities, DTOs, estrutura de pastas) estão documentados nos agentes. Siga-os rigorosamente.
 
+## Infra de auditoria
+
+- IDB iOS: setup e script em `docs/dev/idb-setup.md` e `scripts/audit-ui.sh`.
+- MongoDB para logs novos: política, collections e índices em `docs/dev/mongodb-logs.md`.
+- Geolocalização cross-app: raio inicial e configuração futura em `docs/features/geolocation.md`.
+
 ---
 
 ## Sprint 0 — Setup do Monorepo + Infra Base

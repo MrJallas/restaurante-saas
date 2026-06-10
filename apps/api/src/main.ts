@@ -4,6 +4,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { createRequestTimingMiddleware } from './common/performance/request-timing';
+import { UserMessageExceptionFilter } from './common/filters/user-message-exception.filter';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -31,6 +32,7 @@ async function bootstrap() {
       transform: true,
     }),
   );
+  app.useGlobalFilters(new UserMessageExceptionFilter());
 
   app.setGlobalPrefix('api');
 

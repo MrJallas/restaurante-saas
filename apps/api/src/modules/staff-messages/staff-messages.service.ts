@@ -106,7 +106,7 @@ export class StaffMessagesService {
         )) as unknown[];
         if (!memberRows.length) {
           throw new HttpException(
-            'Thread não encontrada ou acesso negado.',
+            'Conversa não encontrada ou acesso negado.',
             HttpStatus.NOT_FOUND,
           );
         }
@@ -235,7 +235,7 @@ export class StaffMessagesService {
     )) as unknown[];
     if (!memberRows.length) {
       throw new HttpException(
-        'Thread não encontrada ou acesso negado.',
+        'Conversa não encontrada ou acesso negado.',
         HttpStatus.NOT_FOUND,
       );
     }

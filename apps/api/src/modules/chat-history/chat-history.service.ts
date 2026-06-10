@@ -284,7 +284,7 @@ export class ChatHistoryService {
       .collection<ThreadDoc>(THREADS_COLLECTION)
       .findOne({ threadId });
     if (!thread || thread.customerId !== customerId) {
-      throw new HttpException('Thread nao encontrada.', HttpStatus.NOT_FOUND);
+      throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
     return this.listMessages(threadId);
   }
@@ -299,7 +299,7 @@ export class ChatHistoryService {
       .collection<ThreadDoc>(THREADS_COLLECTION)
       .findOne({ threadId });
     if (!thread || thread.customerId !== customerId) {
-      throw new HttpException('Thread nao encontrada.', HttpStatus.NOT_FOUND);
+      throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
     const messages = await db
       .collection<MessageDoc>(MESSAGES_COLLECTION)

@@ -77,7 +77,10 @@ export class ScanVerificationController {
         staffId,
       )
     ) {
-      throw new HttpException('x-staff-id inválido.', HttpStatus.UNAUTHORIZED);
+      throw new HttpException(
+        { message_user: 'Sessão expirada. Faça login novamente.', code: 'AUTH_INVALID' },
+        HttpStatus.UNAUTHORIZED,
+      );
     }
     return staffId;
   }

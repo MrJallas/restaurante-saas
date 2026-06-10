@@ -558,10 +558,6 @@ test('E2E 12: concorrencia aprovacao/rejeicao staff tem primeira decisao vencedo
 });
 
 test('E2E 15: Mongo fora do ar nao bloqueia operacao Postgres', async () => {
-  test.skip(
-    process.env.E2E_STOP_MONGO !== '1',
-    'Opt-in: defina E2E_STOP_MONGO=1 para parar/reiniciar o container Mongo durante a suite.',
-  );
   resetQrTables(['QRTEST91']);
   execDocker(['stop', 'restaurant-mongodb']);
   try {

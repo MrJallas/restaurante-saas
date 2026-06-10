@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenWaiterProfile } from '../../../screens/waiter/ScreenWaiterProfile';
 import { readStaffSession } from '../../../lib/api';
 import { requestWaiterShiftEnd } from '../../../lib/api/waiter';
+import { useStaffTheme } from '../../../lib/theme';
 
 function WaiterProfilePageInner() {
   const router = useRouter();
@@ -14,6 +15,7 @@ function WaiterProfilePageInner() {
   const waiterId = params.get('waiterId') ?? sessionWaiterId;
   const waiterName = params.get('name') ?? 'Garçom';
   const initials = params.get('initials') ?? undefined;
+  const { dark } = useStaffTheme();
   const [endingShift, setEndingShift] = React.useState(false);
 
   React.useEffect(() => {
@@ -32,6 +34,7 @@ function WaiterProfilePageInner() {
     <ScreenWaiterProfile
       waiterName={waiterName}
       waiterInitials={initials}
+      dark={dark}
       onBack={() => router.back()}
       onLogout={() => {
         try {

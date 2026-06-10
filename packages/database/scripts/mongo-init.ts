@@ -111,6 +111,25 @@ const SECURITY_EVENT_INDEXES: IndexDef[] = [
   },
 ];
 
+const SHIFT_LOG_INDEXES: IndexDef[] = [
+  {
+    name: 'tenantId_timestamp',
+    spec: { tenantId: 1, timestamp: -1 },
+  },
+  {
+    name: 'staffId_timestamp',
+    spec: { staffId: 1, timestamp: -1 },
+  },
+  {
+    name: 'requestId_timestamp',
+    spec: { requestId: 1, timestamp: -1 },
+  },
+  {
+    name: 'eventType_timestamp',
+    spec: { eventType: 1, timestamp: -1 },
+  },
+];
+
 // Indexes legacy (snake_case) que escapam pro Mongo se este script já
 // rodou em uma versão anterior. Drop em start pra cleanup.
 const LEGACY_THREAD_INDEXES = [
@@ -181,6 +200,7 @@ async function main() {
     await ensureCollection(db, 'chat_threads');
     await ensureCollection(db, 'chat_messages');
     await ensureCollection(db, 'customer_courtesy_history');
+    await ensureCollection(db, 'shift_logs');
 
     // Round 9 (B-NEW-40): cleanup snake_case legacy indexes before
     // re-creating camelCase. Idempotente — dropIndex falha gracefully
@@ -201,6 +221,9 @@ async function main() {
       'customer_courtesy_history',
       CUSTOMER_COURTESY_HISTORY_INDEXES,
     );
+
+    console.log('Ensuring indexes on shift_logs:');
+    await ensureIndexes(db, 'shift_logs', SHIFT_LOG_INDEXES);
 
     const securityDb = client.db(SECURITY_DB_NAME);
     console.log(`Initializing database "${SECURITY_DB_NAME}"`);
