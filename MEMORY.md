@@ -412,19 +412,37 @@ Pontos entendidos dos superprompts:
 - Toda tela nova precisa screenshot/Playwright antes de ser marcada pronta.
 - Todo CTA precisa API real com erro visivel ou stub explicito de desenvolvimento.
 
-Perguntas abertas para Caleb:
+Decisoes de Caleb em 2026-06-10 (rodada de perguntas abertas):
+
+- Reclamacoes customer: GET/list definitivos SAO canonicos — ja existem
+  (`GET /:slug/complaints/mine` + `GET /:slug/complaints/:id`,
+  SessionGuard) e o FE busca no mount + WS `complaint.responded/resolved`.
+  Hard reload e deep link funcionam; sessionStorage e so primeira pintura.
+- API 3001: direcao decidida = reverse proxy same-origin para nao expor a
+  API mantendo-a funcional (staff + WS ainda batem direto na 3001 —
+  implementacao pendente; o padrao do /api/proxy do web-staff e a base).
+- `migrate-tenants` FATAL: sem migrations os dados nao sao consistentes —
+  o `|| echo` foi removido do docker-compose; primeiro boot sem tenants ja
+  sai 0 no proprio script.
+- Geofence (localizacao/raio): UI vai no DASHBOARD DE OWNER futuro.
+- Tempo de espera do cliente: configurado pela COZINHA em `/cozinha/eu`
+  (card "Tempo de preparo · ETA do cliente") — migration 056
+  (`settings.kitchen_eta_min/max_minutes`), `GET/PATCH
+  /:slug/settings/kitchen-eta` (PATCH so cook|manager), e o motor de ETA
+  parte desse range, somando fila dinamica e encolhendo por estagio.
+- Roteamento garcom↔zona: NAO fazer — mostrar onde a mesa fica
+  (varanda etc.) ja atende; mantém alvo = ultimo que atendeu → turno
+  ativo → round-robin.
+
+Perguntas abertas para Caleb (aguardando retorno com evidencias/explicacao):
 
 1. `CallWaiterSheet` com title 22/600 e CTA raw e excecao aceita ou falha?
+   (print enviado em 2026-06-10 — title da sheet e 22px/600 vs canon V20
+   26px/700 dos outros titulos)
 2. `mode=expand` deve sempre preencher o assistente sem autoenviar?
-3. `assistant.staff_message_received` deve chegar pelo `useTableSocket` ou outro
-   canal?
-4. Reclamações customer precisam de GET/list definitivo para hard reload,
-   push/deep link e historico?
-5. API `3001` fica publica para staff/WS ou deve ir para reverse proxy
-   same-origin?
-6. Falha em `migrate-tenants` deve ser fatal ou o `|| echo` do Compose e
-   intencional em dev?
-7. Quer formalizar Jest/Supertest em `apps/api` ou manter specs ts-node?
-8. Em qual tela o dono deve configurar localizacao/raio do restaurante:
-   financeiro/configuracoes do gerente, dashboard owner futuro, ou painel
-   separado?
+   (comportamento atual explicado em 2026-06-10)
+3. `assistant.staff_message_received` chega hoje no room
+   `session:<tableSessionId>` (mesa toda ve); alternativa e
+   `customer:<customerId>` (so o destinatario). Qual?
+7. Formalizar Jest/Supertest em `apps/api` ou manter specs ts-node?
+   (explicacao enviada em 2026-06-10)

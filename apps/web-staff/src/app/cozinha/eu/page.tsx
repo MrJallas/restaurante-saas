@@ -14,7 +14,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
-import { staffDelete, staffGet, staffPost } from '../../../lib/api';
+import { staffDelete, staffGet, staffPatch, staffPost } from '../../../lib/api';
 
 interface KitchenOrder {
   id: string;
@@ -80,6 +80,14 @@ function CookProfileInner() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // Tempo de preparo base da ETA do cliente (decisão Caleb 2026-06-10 Q9):
+  // o líder configura aqui; o backend ajusta dinamicamente com a fila.
+  const [etaMin, setEtaMin] = useState('');
+  const [etaMax, setEtaMax] = useState('');
+  const [etaCurrent, setEtaCurrent] = useState<{ min: number | null; max: number | null }>({
+    min: null,
+    max: null,
+  });
 
   useEffect(() => {
     try {
@@ -97,10 +105,13 @@ function CookProfileInner() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [queueRes, staffRes, shiftRes] = await Promise.allSettled([
+      const [queueRes, staffRes, shiftRes, etaRes] = await Promise.allSettled([
         staffGet<{ orders: KitchenOrder[] }>(`/${tenantSlug}/kitchen/queue`),
         staffGet<{ staff: StaffMember[] }>(`/${tenantSlug}/staff?activeOnly=true`),
         staffGet<Shift[]>(`/${tenantSlug}/shifts?date=${workDate}`),
+        staffGet<{ kitchenEtaMinMinutes: number | null; kitchenEtaMaxMinutes: number | null }>(
+          `/${tenantSlug}/settings/kitchen-eta`,
+        ),
       ]);
       if (queueRes.status === 'fulfilled') setOrders(queueRes.value.orders ?? []);
       if (staffRes.status === 'fulfilled') setStaff(staffRes.value.staff ?? []);
@@ -109,6 +120,14 @@ function CookProfileInner() {
         setSelectedShiftId((prev) => prev || shiftRes.value[0]?.id || '');
       } else {
         setShifts([]);
+      }
+      if (etaRes.status === 'fulfilled') {
+        setEtaCurrent({
+          min: etaRes.value.kitchenEtaMinMinutes,
+          max: etaRes.value.kitchenEtaMaxMinutes,
+        });
+        setEtaMin((prev) => prev || String(etaRes.value.kitchenEtaMinMinutes ?? 10));
+        setEtaMax((prev) => prev || String(etaRes.value.kitchenEtaMaxMinutes ?? 16));
       }
       setMessage(null);
     } catch (err) {
@@ -204,6 +223,28 @@ function CookProfileInner() {
       showMsg('Pessoa removida do turno.');
     } catch (err) {
       showMsg(err instanceof Error ? err.message : 'Erro ao remover.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveKitchenEta = async () => {
+    const min = Number(etaMin);
+    const max = Number(etaMax);
+    if (!Number.isInteger(min) || !Number.isInteger(max) || min < 1 || max > 120 || min > max) {
+      showMsg('Tempo inválido: minutos inteiros entre 1 e 120, mínimo ≤ máximo.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await staffPatch(`/${tenantSlug}/settings/kitchen-eta`, {
+        minMinutes: min,
+        maxMinutes: max,
+      });
+      setEtaCurrent({ min, max });
+      showMsg('Tempo de preparo salvo — a ETA do cliente já usa o novo valor.');
+    } catch (err) {
+      showMsg(err instanceof Error ? err.message : 'Erro ao salvar tempo de preparo.');
     } finally {
       setBusy(false);
     }
@@ -391,6 +432,53 @@ function CookProfileInner() {
                   <div className={`text-xs ${muted}`}>{person.default_shift || 'Sem turno padrão'}</div>
                 </div>
               ))}
+            </div>
+          </section>
+
+          <section className={`rounded-xl border p-4 ${panel}`}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className={`text-xs font-black uppercase tracking-wide ${muted}`}>
+                  Tempo de preparo · ETA do cliente
+                </div>
+                <div className="mt-1 text-lg font-extrabold">
+                  {etaCurrent.min != null && etaCurrent.max != null
+                    ? `${etaCurrent.min}–${etaCurrent.max} min`
+                    : 'Padrão (10–16 min)'}
+                </div>
+              </div>
+              <Clock className="h-5 w-5 text-orange-400" />
+            </div>
+            <p className={`mb-3 text-xs leading-relaxed ${muted}`}>
+              Range base que o cliente vê. O sistema soma a fila de pedidos
+              automaticamente (urgência &gt; VIP &gt; normal) e encolhe o tempo
+              conforme o pedido avança.
+            </p>
+            <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+              <input
+                value={etaMin}
+                onChange={(e) => setEtaMin(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                placeholder="Mín"
+                inputMode="numeric"
+                aria-label="Tempo mínimo de preparo em minutos"
+                className={`w-full rounded-lg border px-3 py-2 text-sm font-semibold ${input}`}
+              />
+              <input
+                value={etaMax}
+                onChange={(e) => setEtaMax(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                placeholder="Máx"
+                inputMode="numeric"
+                aria-label="Tempo máximo de preparo em minutos"
+                className={`w-full rounded-lg border px-3 py-2 text-sm font-semibold ${input}`}
+              />
+              <button
+                type="button"
+                onClick={saveKitchenEta}
+                disabled={busy}
+                className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-black text-white hover:bg-orange-600 disabled:cursor-wait disabled:opacity-70"
+              >
+                Salvar
+              </button>
             </div>
           </section>
 

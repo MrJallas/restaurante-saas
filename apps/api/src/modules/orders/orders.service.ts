@@ -828,13 +828,44 @@ export class OrdersService {
     return rows.map((r) => r.id);
   }
 
+  /**
+   * Range base de preparo: configurado pela cozinha em /cozinha/eu
+   * (settings.kitchen_eta_*, decisão Caleb 2026-06-10 Q9) com fallback
+   * pros defaults do código quando NULL/ausente.
+   */
+  private async getKitchenEtaBase(): Promise<[number, number]> {
+    try {
+      const rows = (await this.tenantConn.query(
+        `SELECT kitchen_eta_min_minutes AS min, kitchen_eta_max_minutes AS max
+           FROM settings LIMIT 1`,
+      )) as Array<{ min: number | null; max: number | null }>;
+      const min = rows[0]?.min;
+      const max = rows[0]?.max;
+      if (min != null && max != null && min >= 1 && max >= min) {
+        return [min, max];
+      }
+    } catch {
+      // settings sem as colunas (tenant pré-056) ou falha pontual → default
+    }
+    return ETA_STAGE_RANGE.received;
+  }
+
   private computeEtaRange(
     status: string,
     aheadCount: number,
+    base: [number, number],
   ): { min: number; max: number } | null {
     const stage = ETA_STAGE_RANGE[status];
     if (!stage) return null; // delivered/cancelled — não há espera
     let [min, max] = stage;
+    // Estágios de preparo derivam do range BASE configurado pela cozinha:
+    // na fila = base cheio; no fogão = metade restante. Pronto/a caminho
+    // são handoff/deslocamento — independem do tempo de preparo.
+    if (ETA_QUEUED_STATUSES.has(status)) {
+      [min, max] = base;
+    } else if (status === 'in_progress' || status === 'preparing') {
+      [min, max] = [Math.max(1, Math.ceil(base[0] / 2)), Math.max(2, Math.ceil(base[1] / 2))];
+    }
     if (ETA_QUEUED_STATUSES.has(status) && aheadCount > 0) {
       const slots = Math.ceil(aheadCount / ETA_KITCHEN_PARALLEL_LINES);
       min += slots * ETA_PER_QUEUED_ORDER_MIN;
@@ -851,7 +882,9 @@ export class OrdersService {
   private async decorateWithEta<T extends { id: string; status: string }>(
     orders: T[],
   ): Promise<Array<T & { etaMin: number | null; etaMax: number | null; queueAhead: number }>> {
+    const needsEta = orders.some((o) => ETA_STAGE_RANGE[o.status]);
     const needsQueue = orders.some((o) => ETA_QUEUED_STATUSES.has(o.status));
+    const base = needsEta ? await this.getKitchenEtaBase() : ETA_STAGE_RANGE.received;
     let position = new Map<string, number>();
     if (needsQueue) {
       try {
@@ -863,7 +896,7 @@ export class OrdersService {
     }
     return orders.map((o) => {
       const ahead = position.get(o.id) ?? 0;
-      const eta = this.computeEtaRange(o.status, ahead);
+      const eta = this.computeEtaRange(o.status, ahead, base);
       return {
         ...o,
         etaMin: eta?.min ?? null,
