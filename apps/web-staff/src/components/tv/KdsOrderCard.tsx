@@ -11,6 +11,11 @@ import {
 
 type Variant = 'kitchen' | 'bar';
 
+const PRIORITY_BADGE: Record<'urgent' | 'vip', { bg: string; label: string }> = {
+  urgent: { bg: '#C43A3A', label: 'URGÊNCIA' },
+  vip: { bg: '#D98E2B', label: 'VIP' },
+};
+
 interface KdsOrderCardProps {
   order: KdsOrder;
   variant: Variant;
@@ -120,10 +125,10 @@ export function KdsOrderCard({
             <span>#{order.id.slice(0, 8)}</span>
             {/* Badge da fila (urgência > VIP > normal) — backend ordena,
                 o card sinaliza por que o pedido furou a fila. */}
-            {order.priority === 'urgent' && (
+            {(order.priority === 'urgent' || order.priority === 'vip') && (
               <span
                 style={{
-                  background: '#C43A3A',
+                  background: PRIORITY_BADGE[order.priority].bg,
                   color: '#fff',
                   borderRadius: 6,
                   padding: '2px 8px',
@@ -133,23 +138,7 @@ export function KdsOrderCard({
                   opacity: 1,
                 }}
               >
-                URGÊNCIA
-              </span>
-            )}
-            {order.priority === 'vip' && (
-              <span
-                style={{
-                  background: '#D98E2B',
-                  color: '#fff',
-                  borderRadius: 6,
-                  padding: '2px 8px',
-                  fontSize: 11,
-                  fontWeight: 800,
-                  letterSpacing: 1,
-                  opacity: 1,
-                }}
-              >
-                VIP
+                {PRIORITY_BADGE[order.priority].label}
               </span>
             )}
           </div>

@@ -1091,7 +1091,8 @@ export class OrdersService {
     // 1. urgência (priority_rank > 0 — reorder/urgência da cozinha),
     // 2. VIP (flag 'vip' da sessão OU customer is_vip da visita),
     // 3. normal. Dentro de cada fila, FIFO por created_at.
-    return this.tenantConn.query(
+    const PRIORITY_BY_BUCKET = ['urgent', 'vip', 'normal'] as const;
+    const rows = (await this.tenantConn.query(
       `
       SELECT
         o.id,
@@ -1102,12 +1103,16 @@ export class OrdersService {
         o.created_at,
         o.updated_at,
         t.label AS table_label,
+        -- Bucket numérico calculado UMA vez (0=urgência, 1=VIP, 2=normal);
+        -- ORDER BY referencia o alias e o label string deriva no TS abaixo
+        -- — CASE duplicado em SELECT e ORDER BY era armadilha de divergência
+        -- (badge ≠ ordem, code-review).
         CASE
-          WHEN o.priority_rank > 0 THEN 'urgent'
+          WHEN o.priority_rank > 0 THEN 0
           WHEN ('vip' = ANY(COALESCE(ts.flags, '{}'::text[])))
-            OR COALESCE(vip_customer.is_vip, false) THEN 'vip'
-          ELSE 'normal'
-        END AS priority,
+            OR COALESCE(vip_customer.is_vip, false) THEN 1
+          ELSE 2
+        END AS priority_bucket,
         COALESCE(
           json_agg(
             json_build_object(
@@ -1136,13 +1141,8 @@ export class OrdersService {
          ORDER BY od.created_at DESC
          LIMIT 1
       ) delivery ON true
-      LEFT JOIN LATERAL (
-        SELECT c.is_vip
-          FROM visits v
-          JOIN customers c ON c.id = v.customer_id
-         WHERE v.id = o.visit_id
-         LIMIT 1
-      ) vip_customer ON true
+      LEFT JOIN visits vip_visit ON vip_visit.id = o.visit_id
+      LEFT JOIN customers vip_customer ON vip_customer.id = vip_visit.customer_id
       WHERE o.status NOT IN ('delivered', 'cancelled', 'pending_confirmation', 'in_transit')
         AND (ts.status = 'active' OR o.status IN ('in_progress', 'ready'))
         AND o.created_at > now() - interval '8 hours'
@@ -1162,17 +1162,16 @@ export class OrdersService {
         )
       GROUP BY o.id, t.label, ts.flags, vip_customer.is_vip, delivery.status
       ORDER BY
-        CASE
-          WHEN o.priority_rank > 0 THEN 0
-          WHEN ('vip' = ANY(COALESCE(ts.flags, '{}'::text[])))
-            OR COALESCE(vip_customer.is_vip, false) THEN 1
-          ELSE 2
-        END ASC,
+        priority_bucket ASC,
         o.priority_rank DESC,
         o.created_at ASC
       LIMIT 100
       `,
-    );
+    )) as Array<Record<string, unknown> & { priority_bucket: number }>;
+    return rows.map(({ priority_bucket, ...row }) => ({
+      ...row,
+      priority: PRIORITY_BY_BUCKET[priority_bucket] ?? 'normal',
+    }));
   }
 
   async getKitchenQueue(): Promise<KitchenQueueItem[]> {
@@ -1286,6 +1285,19 @@ export class OrdersService {
     }>;
     const delivery = deliveryRows[0];
 
+    // Re-call: o ON CONFLICT mantém o target_waiter_id ORIGINAL (COALESCE),
+    // mas `target` veio de um resolve fresco — podia divergir e o payload
+    // saía com id de A e nome de B (cozinha cobrando o garçom errado,
+    // achado do code-review). Garante que nome e id são do MESMO garçom.
+    let targetWaiterName = target.name;
+    if (delivery.target_waiter_id && delivery.target_waiter_id !== target.id) {
+      const persisted = (await this.tenantConn.query(
+        `SELECT name FROM staff WHERE id = $1`,
+        [delivery.target_waiter_id],
+      )) as Array<{ name: string }>;
+      targetWaiterName = persisted[0]?.name ?? null;
+    }
+
     this.eventsGateway?.emitOrderHandoffCalled(slug, {
       orderId,
       deliveryId: delivery.id,
@@ -1293,7 +1305,7 @@ export class OrdersService {
       tableCode: order.table_code,
       zoneName: order.zone_name,
       targetWaiterId: delivery.target_waiter_id,
-      targetWaiterName: target.name,
+      targetWaiterName,
     });
     this.eventsGateway?.emitOrderStatusUpdate(slug, orderId, 'ready', order.table_label);
 
@@ -1304,7 +1316,7 @@ export class OrdersService {
       calledAt: delivery.called_at,
       zoneName: order.zone_name,
       targetWaiterId: delivery.target_waiter_id,
-      targetWaiterName: target.name,
+      targetWaiterName,
     };
   }
 
@@ -1343,18 +1355,11 @@ export class OrdersService {
         [orderId],
       )) as Array<{ id: string; status: string; claimed_by: string | null }>;
 
-      let delivery: { id: string; status: string; claimed_by: string | null };
-      if (!existing.length) {
-        const inserted = (await tx.query(
-          `INSERT INTO order_deliveries
-             (order_id, status, claimed_by, claimed_at, called_at, target_waiter_id)
-           VALUES ($1, 'claimed', $2, now(), now(), $2)
-           RETURNING id, status, claimed_by`,
-          [orderId, staffId],
-        )) as Array<{ id: string; status: string; claimed_by: string | null }>;
-        delivery = inserted[0];
-      } else {
-        const current = existing[0];
+      const claimExistingRow = async (current: {
+        id: string;
+        status: string;
+        claimed_by: string | null;
+      }) => {
         if (current.status === 'claimed' && current.claimed_by && current.claimed_by !== staffId) {
           throw new BadRequestException('Pedido ja esta sendo levado por outro garcom.');
         }
@@ -1373,7 +1378,45 @@ export class OrdersService {
             [current.id, staffId],
           ),
         );
-        delivery = updated[0];
+        return updated[0];
+      };
+
+      let delivery: { id: string; status: string; claimed_by: string | null };
+      if (!existing.length) {
+        // ON CONFLICT DO NOTHING: o call-waiter da TV roda fora de transação
+        // e pode commitar a row 'pending' entre o SELECT vazio acima e este
+        // INSERT — sem o arbiter, o índice parcial único (migration 038)
+        // estourava 23505 cru → HTTP 500 pro garçom (achado do code-review).
+        // DO NOTHING não aborta a transação; ao perder a corrida, re-lê a
+        // row vencedora e segue o caminho normal de claim.
+        const inserted = (await tx.query(
+          `INSERT INTO order_deliveries
+             (order_id, status, claimed_by, claimed_at, called_at, target_waiter_id)
+           VALUES ($1, 'claimed', $2, now(), now(), $2)
+           ON CONFLICT (order_id) WHERE status != 'cancelled' DO NOTHING
+           RETURNING id, status, claimed_by`,
+          [orderId, staffId],
+        )) as Array<{ id: string; status: string; claimed_by: string | null }>;
+        if (inserted.length) {
+          delivery = inserted[0];
+        } else {
+          const raced = (await tx.query(
+            `SELECT id, status, claimed_by
+               FROM order_deliveries
+              WHERE order_id = $1
+                AND status != 'cancelled'
+              ORDER BY created_at DESC
+              LIMIT 1
+              FOR UPDATE`,
+            [orderId],
+          )) as Array<{ id: string; status: string; claimed_by: string | null }>;
+          if (!raced.length) {
+            throw new BadRequestException('Nao foi possivel registrar a entrega. Tente novamente.');
+          }
+          delivery = await claimExistingRow(raced[0]);
+        }
+      } else {
+        delivery = await claimExistingRow(existing[0]);
       }
 
       if (order.status !== 'in_transit') {
@@ -1430,9 +1473,11 @@ export class OrdersService {
       if (order.status === 'delivered') {
         return {
           orderId,
+          deliveryId: null as string | null,
           tableSessionId: order.table_session_id,
           tableLabel: order.table_label,
           status: 'delivered' as const,
+          alreadyDelivered: true,
         };
       }
 
@@ -1450,15 +1495,19 @@ export class OrdersService {
       if (!delivery || delivery.status !== 'claimed') {
         throw new BadRequestException('Pedido ainda nao esta em transito.');
       }
-      if (delivery.claimed_by && delivery.claimed_by !== staffId) {
-        throw new BadRequestException('Pedido esta em transito com outro garcom.');
-      }
 
+      // Qualquer staff ativo pode confirmar a entrega — quem claimou pode
+      // ter saído de cena (celular morreu, fim de turno) e bloquear o
+      // colega criava beco sem saída: pedido preso em in_transit e cliente
+      // preso em "A caminho da mesa" pra sempre (achado do code-review; o
+      // módulo deliveries antigo já permitia conclusão cross-staff).
+      // claimed_by é atualizado pra quem CONFIRMOU quando difere — reflete
+      // quem de fato levou; a trilha completa fica em order_status_history.
       await tx.query(
         `UPDATE order_deliveries
-            SET status = 'delivered', delivered_at = now()
+            SET status = 'delivered', delivered_at = now(), claimed_by = $2
           WHERE id = $1`,
-        [delivery.id],
+        [delivery.id, staffId],
       );
       await tx.query(`UPDATE orders SET status = 'delivered', updated_at = now() WHERE id = $1`, [
         orderId,
@@ -1471,12 +1520,20 @@ export class OrdersService {
 
       return {
         orderId,
-        deliveryId: delivery.id,
+        deliveryId: delivery.id as string | null,
         tableSessionId: order.table_session_id,
         tableLabel: order.table_label,
         status: 'delivered' as const,
+        alreadyDelivered: false,
       };
     });
+
+    if (result.alreadyDelivered) {
+      // Retry/segundo device de um pedido já entregue: idempotente de
+      // verdade — sem re-emitir order:status pro cliente nem re-agendar
+      // rating prompt (achado do code-review: side effects rodavam de novo).
+      return result;
+    }
 
     await this.updateConsumptionSummary(orderId);
     if (this.orderRatings) {
@@ -1737,45 +1794,73 @@ export class OrdersService {
     // recentemente acionado (round-robin por max(called_at)) — antes era
     // ordem alfabética e a primeira garçonete recebia toda entrega
     // não-direcionada. Turnos sem assignment hoje caem pro grupo geral.
-    const fallback = (await this.tenantConn.query(
-      `WITH local_now AS (
-         SELECT now() AT TIME ZONE COALESCE(
-           (SELECT timezone FROM settings LIMIT 1),
-           'America/Sao_Paulo'
-         ) AS ts
-       )
-       SELECT s.id, s.name
-         FROM staff s
-         LEFT JOIN LATERAL (
-           SELECT max(od.called_at) AS last_called
-             FROM order_deliveries od
-            WHERE od.target_waiter_id = s.id
-              AND od.status != 'cancelled'
-         ) recent ON true
-         LEFT JOIN LATERAL (
-           SELECT 1 AS on_shift
-             FROM staff_shift_assignments sa
-             JOIN staff_shifts sh ON sh.id = sa.shift_id
-            CROSS JOIN local_now ln
-            WHERE sa.staff_id = s.id
-              AND sa.removed_at IS NULL
-              AND sa.work_date = ln.ts::date
-              AND (
-                (sh.time_start <= sh.time_end
-                  AND ln.ts::time >= sh.time_start
-                  AND ln.ts::time < sh.time_end)
-                OR (sh.time_start > sh.time_end
-                  AND (ln.ts::time >= sh.time_start OR ln.ts::time < sh.time_end))
-              )
-            LIMIT 1
-         ) shift ON true
-        WHERE s.role = 'waiter'
-          AND s.is_active = true
-        ORDER BY (shift.on_shift IS NULL) ASC,
-                 recent.last_called ASC NULLS FIRST,
-                 s.name ASC
-        LIMIT 1`,
-    )) as Array<{ id: string; name: string }>;
+    //
+    // Turno overnight (time_start > time_end, ex.: 18h–02h): o assignment
+    // tem work_date do DIA QUE O TURNO COMEÇA. Depois da meia-noite a data
+    // local já virou, então o trecho pós-meia-noite casa com o assignment
+    // de ONTEM (work_date = ln.ts::date - 1) e o trecho pré-meia-noite com
+    // o de HOJE — sem isso, quem estava trabalhando às 00h30 perdia a
+    // preferência e quem só entra hoje à noite ganhava (code-review).
+    let fallback: Array<{ id: string; name: string }>;
+    try {
+      fallback = (await this.tenantConn.query(
+        `WITH local_now AS (
+           SELECT now() AT TIME ZONE COALESCE(
+             (SELECT timezone FROM settings LIMIT 1),
+             'America/Sao_Paulo'
+           ) AS ts
+         )
+         SELECT s.id, s.name
+           FROM staff s
+           LEFT JOIN LATERAL (
+             SELECT max(od.called_at) AS last_called
+               FROM order_deliveries od
+              WHERE od.target_waiter_id = s.id
+                AND od.status != 'cancelled'
+           ) recent ON true
+           LEFT JOIN LATERAL (
+             SELECT 1 AS on_shift
+               FROM staff_shift_assignments sa
+               JOIN staff_shifts sh ON sh.id = sa.shift_id
+              CROSS JOIN local_now ln
+              WHERE sa.staff_id = s.id
+                AND sa.removed_at IS NULL
+                AND (
+                  (sh.time_start <= sh.time_end
+                    AND sa.work_date = ln.ts::date
+                    AND ln.ts::time >= sh.time_start
+                    AND ln.ts::time < sh.time_end)
+                  OR (sh.time_start > sh.time_end AND (
+                    (sa.work_date = ln.ts::date AND ln.ts::time >= sh.time_start)
+                    OR (sa.work_date = (ln.ts - interval '1 day')::date
+                      AND ln.ts::time < sh.time_end)
+                  ))
+                )
+              LIMIT 1
+           ) shift ON true
+          WHERE s.role = 'waiter'
+            AND s.is_active = true
+          ORDER BY (shift.on_shift IS NULL) ASC,
+                   recent.last_called ASC NULLS FIRST,
+                   s.name ASC
+          LIMIT 1`,
+      )) as Array<{ id: string; name: string }>;
+    } catch (err) {
+      // settings.timezone é texto livre (001) — um valor não-IANA faria
+      // TODO call-waiter do tenant falhar 500. Degrada pro fallback simples
+      // (garçom ativo por nome) em vez de derrubar o fluxo de entrega.
+      this.ordersLogger.warn(
+        `resolveTargetWaiter: fallback por turno falhou (${(err as Error).message}) — usando fallback simples.`,
+      );
+      fallback = (await this.tenantConn.query(
+        `SELECT id, name
+           FROM staff
+          WHERE role = 'waiter'
+            AND is_active = true
+          ORDER BY name ASC
+          LIMIT 1`,
+      )) as Array<{ id: string; name: string }>;
+    }
     if (fallback[0]) {
       return fallback[0];
     }

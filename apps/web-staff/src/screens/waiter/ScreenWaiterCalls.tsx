@@ -12,6 +12,9 @@ import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GIconBtn, GBottomNav } from '../../components/waiter/Primitives';
 import { readStaffSession } from '../../lib/api';
 import {
+  deliveryTimestamp,
+  isDeliveryClaimedBy,
+  isDeliveryForWaiter,
   listPendingCalls,
   listPendingDeliveries,
   type PendingDelivery,
@@ -95,23 +98,28 @@ function mapCall(row: WaiterCallSummary): CallRow {
 function mapDelivery(row: PendingDelivery, staffId: string | null): CallRow {
   const itemsCount = row.items.reduce((sum, it) => sum + it.quantity, 0);
   const inTransit = row.delivery_status === 'claimed';
+  // Predicado canônico (lib/api/waiter) — variantes locais divergiam entre
+  // banner/home/aba e o portador exibido era o ALVO original, não quem
+  // claimou (code-review).
   const mine =
-    (row.target_waiter_id != null && row.target_waiter_id === staffId) ||
-    (row.claimed_by != null && row.claimed_by === staffId);
+    isDeliveryForWaiter(row, staffId) || isDeliveryClaimedBy(row, staffId);
+  const carrierName = row.claimed_by_name ?? row.target_waiter_name;
   const parts = [
     `${itemsCount} ${itemsCount === 1 ? 'item' : 'itens'} prontos`,
     row.zone_name ?? undefined,
-    inTransit ? `em trânsito${row.target_waiter_name ? ` · ${row.target_waiter_name}` : ''}` : undefined,
+    inTransit ? `em trânsito${carrierName ? ` · ${carrierName}` : ''}` : undefined,
   ].filter(Boolean);
-  const calledAt = row.called_at ?? new Date().toISOString();
+  // Timestamp estável (called_at → claimed_at → created_at): o fallback
+  // antigo re-stampava now() a cada poll e a urgência nunca escalava.
+  const referenceAt = deliveryTimestamp(row);
   return {
     id: `delivery:${row.delivery_id}`,
     type: 'pronto-cozinha',
     tableNumber: tableNumberFromCode({ table_code: row.table_code, table_label: row.table_label } as WaiterCallSummary),
     partySize: row.party_size || undefined,
     sub: parts.join(' · '),
-    ts: relativeTime(calledAt),
-    urgency: urgencyFromCreatedAt(calledAt),
+    ts: relativeTime(referenceAt),
+    urgency: urgencyFromCreatedAt(referenceAt),
     deliveryOrderId: row.order_id,
     mine,
   };

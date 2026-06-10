@@ -21,6 +21,7 @@ import {
   getWaiterTableDetail,
   markOrderDelivered,
   markOrderInTransit,
+  updateOrderStatus,
   type WaiterTableDetail,
 } from '../../lib/api/waiter';
 
@@ -151,6 +152,24 @@ export function ScreenTableDetail({
       showMsg('Pedido entregue na mesa.');
     } catch (err) {
       showMsg(err instanceof Error ? err.message : 'Erro ao atualizar pedido.');
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
+
+  // Cancelamento voltou pra cá: a rota legada /garcom/pedidos (arquivada)
+  // era a ÚNICA superfície staff com cancelar pedido — cliente pedia pra
+  // cancelar e não existia botão em lugar nenhum (code-review).
+  const cancelOrder = async (orderId: string) => {
+    if (!tenantSlug || updatingOrderId) return;
+    if (!window.confirm('Cancelar este pedido? A cozinha para de prepará-lo.')) return;
+    setUpdatingOrderId(orderId);
+    try {
+      await updateOrderStatus(tenantSlug, orderId, 'cancelled');
+      await load();
+      showMsg('Pedido cancelado.');
+    } catch (err) {
+      showMsg(err instanceof Error ? err.message : 'Erro ao cancelar pedido.');
     } finally {
       setUpdatingOrderId(null);
     }
@@ -420,6 +439,27 @@ export function ScreenTableDetail({
                         }}
                       >
                         {updatingOrderId === item.orderId ? 'Atualizando…' : 'Estou levando'}
+                      </button>
+                    </div>
+                  )}
+                  {item.status === 'preparando' && (
+                    <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => cancelOrder(item.orderId)}
+                        disabled={updatingOrderId === item.orderId}
+                        style={{
+                          all: 'unset',
+                          cursor: updatingOrderId === item.orderId ? 'wait' : 'pointer',
+                          padding: '6px 12px',
+                          borderRadius: 8,
+                          border: `1px solid ${C.danger}`,
+                          color: C.danger,
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {updatingOrderId === item.orderId ? 'Atualizando…' : 'Cancelar pedido'}
                       </button>
                     </div>
                   )}

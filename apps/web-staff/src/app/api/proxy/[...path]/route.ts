@@ -16,7 +16,15 @@ import { NextRequest, NextResponse } from 'next/server';
  */
 const API_BASE = process.env.STAFF_API_BASE_URL || 'http://localhost:3001/api';
 const STAFF_KEY = process.env.STAFF_API_KEY || '';
-const FORWARDED_REQUEST_HEADERS = new Set(['accept', 'content-type', 'user-agent']);
+// x-staff-id: a TV não envia (estação anônima), mas um client staff
+// identificado roteado pelo proxy não pode perder a atribuição em
+// silêncio (code-review). x-staff-key continua server-side only.
+const FORWARDED_REQUEST_HEADERS = new Set([
+  'accept',
+  'content-type',
+  'user-agent',
+  'x-staff-id',
+]);
 
 const ALLOWED_ROUTES: { method: string; re: RegExp }[] = [
   { method: 'GET', re: /^[\w-]+\/orders\/_kds(\?|$)/ },

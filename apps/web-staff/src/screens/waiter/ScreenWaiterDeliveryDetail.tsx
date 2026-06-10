@@ -13,12 +13,13 @@
 // Dados 100% reais: GET /:slug/deliveries/pending (entrega + itens + zona)
 // e GET /:slug/staff/tables-overview (mapa de mesas por zona).
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useG, G_FONT, MONO_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitives';
 import {
+  isDeliveryClaimedBy,
   listPendingDeliveries,
   listTablesOverview,
   markOrderDelivered,
@@ -60,11 +61,24 @@ export function ScreenWaiterDeliveryDetail({
   const [submitting, setSubmitting] = useState(false);
   const [deliveredOk, setDeliveredOk] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (m: string) => {
     setToastMsg(m);
-    setTimeout(() => setToastMsg(null), 3200);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMsg(null), 3200);
   };
+
+  // Timers fora do ciclo de vida disparavam navegação/setState depois do
+  // unmount (code-review) — limpa ambos ao sair da tela.
+  useEffect(
+    () => () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+    },
+    [],
+  );
 
   const load = useCallback(
     async (showLoading = false) => {
@@ -106,14 +120,17 @@ export function ScreenWaiterDeliveryDetail({
     return Array.from(groups.entries());
   }, [tables]);
 
-  // Planta espacial (migration 055): só quando a mesa-alvo e a maioria
-  // das mesas têm posição persistida; senão cai na grade por zona.
+  // Planta espacial (migration 055): só quando a mesa-alvo tem posição e a
+  // MAIORIA das mesas também (>=60%) — backfill parcial renderizava uma
+  // planta enganosa omitindo as mesas sem coordenada (code-review); nesse
+  // caso a grade por zona (completa) é mais honesta.
   const floorPlan = useMemo(() => {
     const positioned = tables.filter((t) => t.map_x != null && t.map_y != null);
     const target = tables.find((t) => t.code === delivery?.table_code);
     if (
       !delivery ||
       positioned.length < 2 ||
+      positioned.length < tables.length * 0.6 ||
       !target ||
       target.map_x == null ||
       target.map_y == null
@@ -129,9 +146,12 @@ export function ScreenWaiterDeliveryDetail({
   }, [tables, delivery]);
 
   const isClaimed = delivery?.delivery_status === 'claimed';
-  const claimedByMe =
-    isClaimed && (!delivery?.claimed_by || !staffId || delivery?.claimed_by === staffId);
-  const claimedByOther = isClaimed && !claimedByMe;
+  // Qualquer staff ativo pode CONFIRMAR a entrega (o backend permite
+  // takeover — quem claimou pode ter saído de cena); o chip abaixo mostra
+  // quem está levando quando não sou eu. O predicado antigo tratava
+  // staffId null como "é meu" (code-review).
+  const claimedByMe = delivery != null && isDeliveryClaimedBy(delivery, staffId ?? null);
+  const carriedByOther = isClaimed && !claimedByMe && delivery?.claimed_by != null;
   const itemsCount = delivery?.items.reduce((s, it) => s + it.quantity, 0) ?? 0;
   const zoneLabel = delivery?.zone_name ?? SEM_ZONA;
 
@@ -162,7 +182,10 @@ export function ScreenWaiterDeliveryDetail({
       await markOrderDelivered(tenantSlug, orderId);
       setDeliveredOk(true);
       showToast('Entrega confirmada.');
-      setTimeout(() => router.push(`/waiter/chamados?tenant=${tenantSlug}`), 900);
+      redirectTimerRef.current = setTimeout(
+        () => router.push(`/waiter/chamados?tenant=${tenantSlug}`),
+        900,
+      );
     } catch (error) {
       console.error('[waiter-delivery] delivered failed', error);
       showToast(
@@ -259,7 +282,7 @@ export function ScreenWaiterDeliveryDetail({
                     fontFamily: MONO_FONT,
                   }}
                 >
-                  {claimedByMe ? 'Em trânsito · confirmar na mesa' : 'Pronto · levar na mesa'}
+                  {isClaimed ? 'Em trânsito · confirmar na mesa' : 'Pronto · levar na mesa'}
                 </div>
                 <div
                   style={{
@@ -296,7 +319,7 @@ export function ScreenWaiterDeliveryDetail({
                 {zoneLabel} · {itemsCount} {itemsCount === 1 ? 'item' : 'itens'}
                 {delivery.party_size > 0 ? ` · ${delivery.party_size} pessoas` : ''}
               </div>
-              {claimedByOther && (
+              {carriedByOther && (
                 <div
                   style={{
                     marginTop: 12,
@@ -310,7 +333,7 @@ export function ScreenWaiterDeliveryDetail({
                     fontWeight: 600,
                   }}
                 >
-                  {Icon.user(14)} Sendo levado por {delivery.target_waiter_name ?? 'outro garçom'}
+                  {Icon.user(14)} Levado por {delivery.claimed_by_name ?? 'outro garçom'} · confirme se foi você quem entregou
                 </div>
               )}
             </div>
@@ -619,7 +642,7 @@ export function ScreenWaiterDeliveryDetail({
             ))}
 
             {/* Aviso no estágio de confirmação (copy canon do canvas) */}
-            {claimedByMe && (
+            {isClaimed && (
               <div
                 style={{
                   margin: '18px 16px 0',
@@ -662,7 +685,7 @@ export function ScreenWaiterDeliveryDetail({
             Voltar
           </GButton>
           <div style={{ flex: 1 }}>
-            {claimedByMe ? (
+            {isClaimed ? (
               <div data-testid="delivery-confirm-delivered">
                 <GButton
                   kind="primary"
@@ -681,13 +704,9 @@ export function ScreenWaiterDeliveryDetail({
                   dark={dark}
                   full
                   onClick={handlePickup}
-                  disabled={submitting || claimedByOther}
+                  disabled={submitting}
                 >
-                  {claimedByOther
-                    ? 'Com outro garçom'
-                    : submitting
-                      ? 'Registrando…'
-                      : 'Estou levando'}
+                  {submitting ? 'Registrando…' : 'Estou levando'}
                 </GButton>
               </div>
             )}

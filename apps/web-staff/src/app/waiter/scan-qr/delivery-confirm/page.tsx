@@ -23,12 +23,20 @@ import {
 function matchesTable(d: PendingDelivery, tableRef: string): boolean {
   const ref = tableRef.trim().toLowerCase();
   if (!ref) return false;
+  // Picker pode mandar o UUID da mesa quando table_code está vazio.
+  if (d.table_id.toLowerCase() === ref) return true;
   if (d.table_code.toLowerCase() === ref || d.table_label.toLowerCase() === ref) return true;
-  const refDigits = ref.replace(/[^0-9]/g, '');
-  if (!refDigits) return false;
-  const codeDigits = d.table_code.replace(/[^0-9]/g, '');
-  const labelDigits = d.table_label.replace(/[^0-9]/g, '');
-  return refDigits === codeDigits || refDigits === labelDigits;
+  // Fallback numérico SÓ quando o ref é número puro — comparação de string
+  // de dígitos falhava '1' vs '01' e cross-matchava códigos com grupos de
+  // dígitos separados ('Z2-M1' → '21', code-review).
+  if (!/^\d+$/.test(ref)) return false;
+  const refNumber = Number(ref);
+  const codeNumber = Number(d.table_code.replace(/[^0-9]/g, ''));
+  const labelNumber = Number(d.table_label.replace(/[^0-9]/g, ''));
+  return (
+    (Number.isFinite(codeNumber) && codeNumber === refNumber) ||
+    (Number.isFinite(labelNumber) && labelNumber === refNumber)
+  );
 }
 
 function WaiterDeliveryConfirmPageInner() {

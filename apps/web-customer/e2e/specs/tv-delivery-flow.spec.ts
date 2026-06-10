@@ -26,8 +26,12 @@ const EVIDENCE_DIR = process.env.TV_DELIVERY_EVIDENCE_DIR || '/tmp/tv-delivery-e
 function psql(query: string): string {
   // restaurant-postgres não publica porta no host (hardening round 10) —
   // roda via docker exec, mesmo padrão dos demais specs de TV.
+  // Escapa também $, ` e \ — dentro de aspas duplas o shell expande esses
+  // caracteres e uma query com dollar-quoting ($$) mudaria de significado
+  // em silêncio (code-review).
+  const escaped = query.replace(/[\\"`$]/g, (ch) => `\\${ch}`);
   const out = execSync(
-    `docker exec restaurant-postgres psql -U postgres -p 5434 -d restaurant_saas -tA -c "SET search_path = restaurant_dev; ${query.replace(/"/g, '\\"')}"`,
+    `docker exec restaurant-postgres psql -U postgres -p 5434 -d restaurant_saas -tA -c "SET search_path = restaurant_dev; ${escaped}"`,
     { encoding: 'utf8' },
   );
   const lines = out.split('\n').filter((l) => l.trim() !== '' && l.trim() !== 'SET');

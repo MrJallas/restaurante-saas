@@ -186,13 +186,17 @@ export interface PendingDelivery {
   delivery_id: string;
   order_id: string;
   delivery_status: 'pending' | 'claimed';
+  created_at: string;
   called_at: string | null;
   claimed_at: string | null;
   claimed_by: string | null;
+  /** Nome de quem está LEVANDO (claimed_by) — null enquanto pending. */
+  claimed_by_name: string | null;
   target_waiter_id: string | null;
   target_waiter_name: string | null;
   order_status: string;
   total_cents: number;
+  table_id: string;
   table_label: string;
   table_code: string;
   zone_name: string | null;
@@ -203,6 +207,31 @@ export interface PendingDelivery {
 
 export function listPendingDeliveries(tenantSlug: string): Promise<PendingDelivery[]> {
   return staffGet<PendingDelivery[]>(`/${tenantSlug}/deliveries/pending`);
+}
+
+/**
+ * Predicados canônicos de audiência da entrega — o code-review achou 4
+ * variantes divergentes espalhadas (banner alertava B pela entrega de A,
+ * aba "Minhas mesas" discordava do banner). Regras:
+ *  - pending direcionada a mim OU broadcast (target null) → é pra mim agir;
+ *    SEM identidade (staffId null) só broadcast conta — nunca a dos outros.
+ *  - claimed por mim → estou levando (estágio Confirmar entrega).
+ */
+export function isDeliveryForWaiter(d: PendingDelivery, staffId: string | null): boolean {
+  if (d.delivery_status !== 'pending') return false;
+  if (!d.target_waiter_id) return true;
+  return staffId != null && d.target_waiter_id === staffId;
+}
+
+export function isDeliveryClaimedBy(d: PendingDelivery, staffId: string | null): boolean {
+  return (
+    d.delivery_status === 'claimed' && staffId != null && d.claimed_by === staffId
+  );
+}
+
+/** Timestamp de referência da entrega (chamada → claim → criação da row). */
+export function deliveryTimestamp(d: PendingDelivery): string {
+  return d.called_at ?? d.claimed_at ?? d.created_at;
 }
 
 export interface TableOverviewEntry {

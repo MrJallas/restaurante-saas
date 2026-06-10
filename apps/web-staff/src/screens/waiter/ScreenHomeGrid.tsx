@@ -17,6 +17,7 @@ import {
 } from '../../components/waiter/Primitives';
 import { useWaiterEvents } from '../../hooks/useWaiterEvents';
 import {
+  isDeliveryClaimedBy, isDeliveryForWaiter,
   listMyTables, listMyZonePauses, listPendingCalls, listPendingDeliveries,
   type ActiveTableSummary, type PendingDelivery, type WaiterCallSummary,
 } from '../../lib/api/waiter';
@@ -108,13 +109,13 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
         setCalls(c);
         setPauses(p);
         // Entregas relevantes pra mim: pendentes broadcast/direcionadas
-        // ou já claimed por mim (em trânsito).
+        // ou já claimed por mim (em trânsito) — predicados canônicos de
+        // lib/api/waiter (code-review: variantes locais divergiam).
         setDeliveries(
           d.filter(
             (row) =>
-              (row.delivery_status === 'pending' &&
-                (!row.target_waiter_id || row.target_waiter_id === waiterId)) ||
-              (row.delivery_status === 'claimed' && row.claimed_by === waiterId),
+              isDeliveryForWaiter(row, waiterId || null) ||
+              isDeliveryClaimedBy(row, waiterId || null),
           ),
         );
       } catch {

@@ -148,9 +148,11 @@ export class StaffService {
         t.id,
         t.code,
         t.label,
+        -- BIGINT: código com muitos dígitos (ex.: 'MESA-20260610-001')
+        -- estourava int4 e derrubava o endpoint inteiro (code-review).
         COALESCE(
-          CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT),
-          CAST(NULLIF(regexp_replace(t.label, '[^0-9]', '', 'g'), '') AS INT),
+          CAST(NULLIF(LEFT(regexp_replace(t.code, '[^0-9]', '', 'g'), 15), '') AS BIGINT),
+          CAST(NULLIF(LEFT(regexp_replace(t.label, '[^0-9]', '', 'g'), 15), '') AS BIGINT),
           0
         )                                            AS number,
         t.capacity,

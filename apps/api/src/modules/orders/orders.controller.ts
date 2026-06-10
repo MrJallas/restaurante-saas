@@ -395,12 +395,16 @@ export class OrdersController {
     @Param('slug') slug: string,
     @Req() req: Request,
   ) {
-    let staffId: string | null = null;
-    try {
-      staffId = await this.callerResolver.requireActiveStaffId(req);
-    } catch {
-      staffId = null;
-    }
+    // Só o header AUSENTE vira chamada de estação (called_by NULL). Header
+    // PRESENTE passa pela validação completa — id forjado/demitido continua
+    // 401 como no round 11, e erro de DB propaga em vez de degradar a
+    // atribuição silenciosamente (achado do code-review: o catch-all
+    // anterior engolia tudo).
+    const rawStaffId = req.headers['x-staff-id'];
+    const hasStaffIdHeader = typeof rawStaffId === 'string' && rawStaffId.trim().length > 0;
+    const staffId = hasStaffIdHeader
+      ? await this.callerResolver.requireActiveStaffId(req)
+      : null;
     return this.ordersService.callWaiterForOrder(orderId, slug, staffId);
   }
 

@@ -10,13 +10,15 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-
-const TENANT_SLUG = process.env.NEXT_PUBLIC_TENANT_SLUG || 'restaurant_dev';
+import { defaultTenantSlug } from '../../../lib/api';
 
 export default function GarcomPedidosLegacyRedirect() {
   const router = useRouter();
   useEffect(() => {
-    router.replace(`/waiter?tenant=${TENANT_SLUG}`);
+    // defaultTenantSlug() também honra NEXT_PUBLIC_DEFAULT_TENANT — o env
+    // literal fixava restaurant_dev em deploys configurados só por essa
+    // var (code-review).
+    router.replace(`/waiter?tenant=${defaultTenantSlug()}`);
   }, [router]);
   return null;
 }
