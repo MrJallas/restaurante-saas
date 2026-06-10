@@ -12,6 +12,7 @@ import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitive
 import {
   approveLateArrival, getLateArrival, rejectLateArrival,
 } from '../../lib/api/host';
+import { useStaffTheme } from '../../lib/theme';
 import type { LateArrivalRequestDto } from '@restaurant/shared-types';
 
 interface ScreenHostLateArrivalProps {
@@ -34,7 +35,7 @@ function fmtDeadline(iso: string | undefined): string {
 export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
   tenantSlug, requestId, onBack, onResolved,
 }) => {
-  const dark = false;
+  const { dark } = useStaffTheme();
   const C = useG(dark);
   const [request, setRequest] = useState<LateArrivalRequestDto | null>(null);
   const [submitting, setSubmitting] = useState(false);

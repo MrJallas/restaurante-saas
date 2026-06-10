@@ -418,7 +418,28 @@ export interface KitchenQueueOrder {
   priority_reason: string | null;
   priority_requested_by: string | null;
   priority_updated_at: string | null;
+  delivery_id?: string | null;
+  delivery_status?: string | null;
+  delivery_called_at?: string | null;
+  delivery_claimed_at?: string | null;
+  delivery_target_waiter_id?: string | null;
+  delivery_target_waiter_name?: string | null;
   items: KitchenQueueOrderItem[];
+}
+
+export interface KitchenReorderRequest {
+  id: string;
+  order_ids: string[];
+  reason: string | null;
+  requested_by_staff_id: string | null;
+  requested_by_name: string | null;
+  status: 'pending' | 'accepted' | 'next' | 'cancelled';
+  response: 'accept' | 'next' | null;
+  protected_order_ids: string[];
+  response_note: string | null;
+  created_at: string;
+  responded_at: string | null;
+  orders: KitchenQueueOrder[];
 }
 
 export const kitchenApi = (slug: string) => ({
@@ -433,6 +454,20 @@ export const kitchenApi = (slug: string) => ({
       reason: string | null;
       updatedAt: string;
     }>(`/${slug}/kitchen/reorder`, body),
+  requestReorder: (body: { orderIds: string[]; reason?: string }) =>
+    staffPost<KitchenReorderRequest>(`/${slug}/kitchen/reorder-requests`, body),
+  pendingReorderRequests: () =>
+    staffGet<KitchenReorderRequest[]>(`/${slug}/kitchen/reorder-requests/pending`),
+  getReorderRequest: (requestId: string) =>
+    staffGet<KitchenReorderRequest>(`/${slug}/kitchen/reorder-requests/${requestId}`),
+  respondReorderRequest: (
+    requestId: string,
+    body: { response: 'accept' | 'next'; protectedOrderIds?: string[] },
+  ) =>
+    staffPost<KitchenReorderRequest>(
+      `/${slug}/kitchen/reorder-requests/${requestId}/respond`,
+      body,
+    ),
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -606,6 +641,15 @@ export const shiftsApi = (slug: string) => ({
       fromDate,
       toDate,
     }),
+  decideShiftEnd: (
+    requestId: string,
+    body: { decision: 'approved' | 'rejected'; responseMessage?: string },
+  ) =>
+    staffPost<{
+      requestId: string;
+      status: 'approved' | 'rejected';
+      threadId: string | null;
+    }>(`/${slug}/manager/shift-end-requests/${requestId}/decision`, body),
 });
 
 export const courtesiesApi = (slug: string) => ({

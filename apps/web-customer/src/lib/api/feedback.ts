@@ -65,7 +65,8 @@ export interface ComplaintRecord {
   rating: number | null;
   text: string;
   attachedImageUrl: string | null;
-  status: 'pending_review' | 'in_progress' | 'responded' | 'closed';
+  status: 'created' | 'responded' | 'resolved' | 'pending_review' | 'in_progress' | 'closed';
+  rawStatus?: string;
   assignedManagerId: string | null;
   responseText: string | null;
   responseAt: string | null;
@@ -155,11 +156,9 @@ export function getComplaint(slug: string, id: string): Promise<ComplaintRecord>
  */
 export function listMyComplaints(
   slug: string,
-  customerId: string,
+  _customerId: string,
 ): Promise<ComplaintRecord[]> {
-  return apiGet<ComplaintRecord[]>(
-    `/${slug}/complaints?customerId=${encodeURIComponent(customerId)}`,
-  );
+  return apiGet<ComplaintRecord[]>(`/${slug}/complaints/mine`);
 }
 
 // === SessionStorage cache for in-flight complaints ===

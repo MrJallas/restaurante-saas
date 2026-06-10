@@ -12,6 +12,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
+import { useStaffTheme } from '../../lib/theme';
 
 interface ScreenHostProfileProps {
   hostName: string;
@@ -62,7 +63,7 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
   onTabChange,
   onOpenMessages,
 }) => {
-  const dark = false;
+  const { dark } = useStaffTheme();
   const C = useG(dark);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -110,7 +111,7 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
             dark={dark}
             icon={Icon.bell(20)}
             badge={bellBadge > 0 ? String(bellBadge) : undefined}
-            onClick={() => router.push('/host/notifications')}
+            onClick={() => navTo('/host/notifications')}
             ariaLabel="Notificações"
           />
         </div>

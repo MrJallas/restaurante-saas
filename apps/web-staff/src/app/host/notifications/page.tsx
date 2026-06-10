@@ -1,29 +1,35 @@
-// Host · Notificações — destino do sino do header em todo host UI.
-// Round 18 placebo-fix (audit-report Onda 18). Tenant slug: `?slug=` query
-// param OR `NEXT_PUBLIC_TENANT_SLUG`.
 'use client';
 
-import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
-import { ScreenManagerNotifications } from '../../../screens/manager/ScreenManagerNotifications';
+import * as React from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ScreenHostNotifications } from '../../../screens/host/ScreenHostNotifications';
+import { defaultTenantSlug } from '../../../lib/api';
 
 function NotificationsInner() {
+  const router = useRouter();
   const params = useSearchParams();
-  const slug =
-    params.get('slug') || process.env.NEXT_PUBLIC_TENANT_SLUG || 'demo';
-  return <ScreenManagerNotifications tenantSlug={slug} persona="host" />;
+  const tenantSlug = params.get('tenant') || params.get('slug') || defaultTenantSlug();
+  const hostId = params.get('hostId') ?? '';
+
+  return (
+    <ScreenHostNotifications
+      tenantSlug={tenantSlug}
+      onBack={() => router.push(`/host?tenant=${tenantSlug}&hostId=${hostId}`)}
+      onTabChange={(tab) => {
+        if (tab === 'tables') router.push(`/host?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'waitlist') router.push(`/host/waitlist?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'reserva') router.push(`/host/reservations?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'inbox') router.push(`/host/notifications?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'me') router.push(`/host/profile?tenant=${tenantSlug}&hostId=${hostId}`);
+      }}
+    />
+  );
 }
 
 export default function HostNotificationsPage() {
   return (
-    <Suspense
-      fallback={
-        <div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>
-          Carregando…
-        </div>
-      }
-    >
+    <React.Suspense fallback={null}>
       <NotificationsInner />
-    </Suspense>
+    </React.Suspense>
   );
 }

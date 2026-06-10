@@ -2,17 +2,21 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   Param,
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
-import { IsInt, IsOptional, IsString, IsUUID, Matches, Max, Min } from 'class-validator';
+import type { Request } from 'express';
+import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { ShiftsService } from './shifts.service';
 
 class DateQuery {
@@ -44,6 +48,23 @@ class OvertimeDto {
 class DuplicateWeekDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/) fromDate!: string;
   @Matches(/^\d{4}-\d{2}-\d{2}$/) toDate!: string;
+}
+
+class ShiftEndRequestDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+class ShiftEndDecisionDto {
+  @IsIn(['approved', 'rejected'])
+  decision!: 'approved' | 'rejected';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  responseMessage?: string;
 }
 
 /**
@@ -103,5 +124,75 @@ export class ShiftsController {
   @HttpCode(201)
   async duplicateWeek(@Body() dto: DuplicateWeekDto) {
     return this.service.duplicateWeek(dto.fromDate, dto.toDate);
+  }
+}
+
+@Controller(':slug/waiter')
+@UseGuards(StaffOnlyGuard)
+export class WaiterShiftRequestsController {
+  constructor(
+    private readonly service: ShiftsService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
+
+  @Post(':id/request-shift-end')
+  @HttpCode(201)
+  async requestShiftEndForId(
+    @Param('slug') slug: string,
+    @Param('id') waiterId: string,
+    @Body() dto: ShiftEndRequestDto,
+    @Req() req: Request,
+  ) {
+    const callerStaffId = await this.callerResolver.requireActiveStaffId(req);
+    if (callerStaffId !== waiterId) {
+      throw new ForbiddenException('Você só pode solicitar encerramento do seu próprio turno.');
+    }
+    return this.service.requestShiftEnd({
+      waiterId,
+      reason: dto.reason,
+      slug,
+    });
+  }
+
+  @Post('shift-end-requests')
+  @HttpCode(201)
+  async requestShiftEnd(
+    @Param('slug') slug: string,
+    @Body() dto: ShiftEndRequestDto,
+    @Req() req: Request,
+  ) {
+    const waiterId = await this.callerResolver.requireActiveStaffId(req);
+    return this.service.requestShiftEnd({
+      waiterId,
+      reason: dto.reason,
+      slug,
+    });
+  }
+}
+
+@Controller(':slug/manager/shift-end-requests')
+@UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
+export class ManagerShiftEndRequestsController {
+  constructor(
+    private readonly service: ShiftsService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
+
+  @Post(':id/decision')
+  @HttpCode(200)
+  async decide(
+    @Param('slug') slug: string,
+    @Param('id') requestId: string,
+    @Body() dto: ShiftEndDecisionDto,
+    @Req() req: Request,
+  ) {
+    const managerId = await this.callerResolver.requireActiveStaffId(req);
+    return this.service.decideShiftEndRequest({
+      requestId,
+      managerId,
+      decision: dto.decision,
+      responseMessage: dto.responseMessage,
+      slug,
+    });
   }
 }

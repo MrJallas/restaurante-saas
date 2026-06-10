@@ -21,6 +21,8 @@ export default defineConfig({
   reporter: process.env.CI ? 'github' : [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: process.env.E2E_BASE_URL || 'http://localhost:3003',
+    geolocation: { latitude: -23.561, longitude: -46.655 },
+    permissions: ['geolocation'],
     trace: 'retain-on-failure',
     video: 'retain-on-failure',
     screenshot: 'only-on-failure',

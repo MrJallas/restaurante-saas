@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenHostProfile } from '../../../screens/host/ScreenHostProfile';
+import { clearStaffSession } from '../../../lib/api';
 
 function HostProfilePageInner() {
   const router = useRouter();
@@ -17,11 +18,15 @@ function HostProfilePageInner() {
       hostName={hostName}
       hostInitials={hostInitials}
       onBack={() => router.back()}
-      onLogout={() => router.push('/')}
+      onLogout={() => {
+        clearStaffSession();
+        router.push('/');
+      }}
       onTabChange={(tab) => {
         if (tab === 'tables') router.push(`/host?tenant=${tenantSlug}&hostId=${hostId}`);
-        if (tab === 'waitlist') router.push(`/host/waitlist?tenant=${tenantSlug}`);
-        if (tab === 'reserva') router.push(`/host/reservations?tenant=${tenantSlug}`);
+        if (tab === 'waitlist') router.push(`/host/waitlist?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'reserva') router.push(`/host/reservations?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'inbox') router.push(`/host/notifications?tenant=${tenantSlug}&hostId=${hostId}`);
       }}
       onOpenMessages={() => router.push(`/host/mensagens?tenant=${tenantSlug}&hostId=${hostId}`)}
     />

@@ -5,10 +5,10 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
-import * as crypto from 'crypto';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
+import { hashPin, timingSafeEqualHex } from './staff-pin.util';
 
 // Round 18 (Onda 1 wiring): inclui host/bartender/cashier — canvas
 // StaffForm permite todos os 6 roles. host ja existia em registros
@@ -21,19 +21,6 @@ const VALID_SHIFTS = ['Manhã', 'Tarde', 'Noite'];
 // (10^4 combinacoes) era brute-forcavel em segundos. P1 do bug-hunt.
 const MAX_PIN_ATTEMPTS = 5;
 const LOCKOUT_SECONDS = 5 * 60; // 5 minutos
-
-function hashPin(pin: string): string {
-  // SHA-256 sem salt e fraco contra rainbow tables, mas migrar pra
-  // bcrypt requer rehash de PINs existentes. Foi spawnado em task
-  // separada — aqui mantemos SHA-256 + throttling agressivo no
-  // verifyPin como mitigacao imediata.
-  return crypto.createHash('sha256').update(pin).digest('hex');
-}
-
-function timingSafeEqualHex(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
-}
 
 @Injectable()
 export class StaffService {

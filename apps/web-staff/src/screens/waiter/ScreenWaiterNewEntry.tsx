@@ -1,7 +1,7 @@
 'use client';
 
 // ScreenWaiterNewEntry — chooser modal aberto pela aba "Novo".
-// V4: 3 caminhos · Cliente Nova Visita / Pedido Direto / Reservar.
+// V4: 2 caminhos · Cliente Nova Visita / Pedido Direto.
 // Match com docs/design-canvas/handoff/garcom/garcom-screens-b.jsx ::
 // ScreenWaiterNewEntry (extendido pra 3 cards).
 
@@ -13,7 +13,6 @@ interface ScreenWaiterNewEntryProps {
   onClose?: () => void;
   onScanQr?: () => void;
   onPedidoDireto?: () => void;
-  onReservar?: () => void;
   onContactManager?: () => void;
   dark?: boolean;
 }
@@ -69,7 +68,7 @@ const Card: React.FC<CardProps> = ({ title, sub, icon, primary, onClick, C }) =>
 );
 
 export const ScreenWaiterNewEntry: React.FC<ScreenWaiterNewEntryProps> = ({
-  onClose, onScanQr, onPedidoDireto, onReservar, onContactManager, dark = false,
+  onClose, onScanQr, onPedidoDireto, onContactManager, dark = false,
 }) => {
   const C = useG(dark);
 
@@ -117,7 +116,7 @@ export const ScreenWaiterNewEntry: React.FC<ScreenWaiterNewEntryProps> = ({
           Como vai começar?
         </div>
         <div style={{ fontSize: 13, color: C.mute, marginTop: 8, lineHeight: 1.5, fontWeight: 500 }}>
-          Escolha o caminho · cliente nova visita, pedido direto ou reservar.
+          Escolha o caminho · cliente nova visita ou pedido direto.
         </div>
       </div>
 
@@ -136,13 +135,6 @@ export const ScreenWaiterNewEntry: React.FC<ScreenWaiterNewEntryProps> = ({
           title="Pedido direto"
           sub="Lançar comanda em mesa que você já atende"
           onClick={() => onPedidoDireto?.()}
-        />
-        <Card
-          C={C}
-          icon={Icon.clock(28)}
-          title="Reservar"
-          sub="Marcar mesa pra cliente que vai chegar mais tarde"
-          onClick={() => onReservar?.()}
         />
       </div>
 

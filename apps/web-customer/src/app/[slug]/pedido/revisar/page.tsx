@@ -10,8 +10,6 @@ import { AppShell } from '../../../../components/layout/AppShell';
 import { PillButton } from '../../../../components/ui/PillButton';
 import { Row } from '../../../../components/ui/Row';
 
-const SERVICE_RATE = 0.1;
-
 export default function PedidoRevisarPage() {
   const params = useParams();
   const { push } = useNav();
@@ -22,8 +20,6 @@ export default function PedidoRevisarPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [editingNoteFor, setEditingNoteFor] = useState<string | null>(null);
 
-  const service = Math.round(totalCents * SERVICE_RATE);
-  const total = totalCents + service;
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 
   const handleSubmit = async () => {
@@ -220,12 +216,11 @@ export default function PedidoRevisarPage() {
 
           <div className="mt-5 border-t-[1.3px] border-ink pt-4">
             <Row label="Subtotal" value={fmt(totalCents)} />
-            <Row label="Taxa de serviço (10%)" value={fmt(service)} />
             <div className="h-2.5" />
             <Row
               label={<b className="text-[16px] text-ink">Total estimado</b>}
               value={
-                <b className="text-[20px] text-ink tabular-nums">{fmt(total)}</b>
+                <b className="text-[20px] text-ink tabular-nums">{fmt(totalCents)}</b>
               }
             />
           </div>

@@ -86,6 +86,7 @@ export function ScreenCustomerStaffThread({
   const [messages, setMessages] = useState<StaffMessageHistoryMessageDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [missingThread, setMissingThread] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [composerText, setComposerText] = useState('');
@@ -97,7 +98,8 @@ export function ScreenCustomerStaffThread({
       setMessages(list);
     } catch (err) {
       if (err instanceof ApiRequestError && err.statusCode === 404) {
-        router.replace(`/${slug}/staff-messages`);
+        setMissingThread(true);
+        setMessages([]);
         return;
       }
       const message =
@@ -108,7 +110,7 @@ export function ScreenCustomerStaffThread({
     } finally {
       setLoading(false);
     }
-  }, [slug, threadId, router]);
+  }, [slug, threadId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -201,14 +203,16 @@ export function ScreenCustomerStaffThread({
           <h1 className="text-[18px] font-semibold tracking-[-0.02em] text-ink">
             Mensagens com a equipe
           </h1>
-          <button
-            type="button"
-            aria-label="Apagar essa conversa"
-            onClick={() => setConfirmingDelete(true)}
-            className="rounded-full border border-border-soft bg-bg px-3 py-1.5 text-[12px] font-medium text-mute active:bg-surface"
-          >
-            Apagar
-          </button>
+          {!missingThread && (
+            <button
+              type="button"
+              aria-label="Apagar essa conversa"
+              onClick={() => setConfirmingDelete(true)}
+              className="rounded-full border border-border-soft bg-bg px-3 py-1.5 text-[12px] font-medium text-mute active:bg-surface"
+            >
+              Apagar
+            </button>
+          )}
         </div>
 
         {error && (
@@ -221,14 +225,34 @@ export function ScreenCustomerStaffThread({
           <div className="text-center text-[13px] text-mute">Carregando…</div>
         )}
 
+        {!loading && missingThread && (
+          <div className="rounded-[14px] border border-border-soft bg-surface px-4 py-10 text-center">
+            <div className="mb-2 text-[15px] font-medium text-ink">
+              Essa conversa não está mais disponível
+            </div>
+            <div className="mb-5 text-[13px] leading-[1.5] text-mute">
+              Ela pode ter sido apagada ou removida automaticamente depois de
+              30 dias.
+            </div>
+            <PillButton
+              variant="filled"
+              fullWidth
+              onClick={() => router.push(`/${slug}/staff-messages`)}
+            >
+              Voltar pras mensagens
+            </PillButton>
+          </div>
+        )}
+
         <div className="flex flex-col gap-3.5">
-          {messages.map((m) => (
+          {!missingThread && messages.map((m) => (
             <StaffThreadMessage key={m.messageId} msg={m} />
           ))}
         </div>
 
         {/* Composer pra resposta do customer pra equipe. Persiste no Mongo
             e emite WS pra inbox futura do staff. */}
+        {!missingThread && (
         <form onSubmit={handleSubmit} className="mt-6 flex items-center gap-2">
           <input
             type="text"
@@ -247,6 +271,7 @@ export function ScreenCustomerStaffThread({
             {sending ? 'Enviando…' : 'Enviar'}
           </button>
         </form>
+        )}
       </div>
 
       <BottomSheet

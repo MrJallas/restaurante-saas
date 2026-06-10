@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
+import { StaffMessagesService } from '../staff-messages/staff-messages.service';
+import { AlertsService } from '../alerts/alerts.service';
 
 export interface ShiftDefinitionRow {
   id: string;
@@ -26,7 +28,11 @@ export interface ShiftWithMembersRow extends ShiftDefinitionRow {
 
 @Injectable()
 export class ShiftsService {
-  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+  constructor(
+    private readonly tenantConn: TenantConnectionProvider,
+    private readonly staffMessages: StaffMessagesService,
+    private readonly alerts: AlertsService,
+  ) {}
 
   async listForDate(workDate: string): Promise<ShiftWithMembersRow[]> {
     const shifts = (await this.tenantConn.query(
@@ -159,6 +165,185 @@ export class ShiftsService {
       [fromDate, toDate],
     )) as Array<{ id: string }>;
     return { duplicated: rows.length };
+  }
+
+  async requestShiftEnd(data: {
+    waiterId: string;
+    reason?: string;
+    slug?: string;
+  }): Promise<{
+    requestId: string;
+    status: 'pending';
+    threadId: string | null;
+    managerId: string;
+  }> {
+    const waiterRows = (await this.tenantConn.query(
+      `SELECT id, name, role FROM staff WHERE id = $1 AND is_active = true`,
+      [data.waiterId],
+    )) as Array<{ id: string; name: string; role: string }>;
+    const waiter = waiterRows[0];
+    if (!waiter) {
+      throw new NotFoundException('Garçom não encontrado.');
+    }
+    if (waiter.role !== 'waiter') {
+      throw new BadRequestException('Apenas garçom pode solicitar encerramento de turno.');
+    }
+
+    const existing = (await this.tenantConn.query(
+      `SELECT id, thread_id FROM staff_shift_end_requests
+        WHERE waiter_id = $1 AND status = 'pending'
+        ORDER BY requested_at DESC
+        LIMIT 1`,
+      [data.waiterId],
+    )) as Array<{ id: string; thread_id: string | null }>;
+    if (existing[0]) {
+      return {
+        requestId: existing[0].id,
+        status: 'pending',
+        threadId: existing[0].thread_id,
+        managerId: '',
+      };
+    }
+
+    const managers = (await this.tenantConn.query(
+      `SELECT id, name FROM staff
+        WHERE role = 'manager' AND is_active = true
+        ORDER BY name ASC
+        LIMIT 1`,
+      [],
+    )) as Array<{ id: string; name: string }>;
+    const manager = managers[0];
+    if (!manager) {
+      throw new BadRequestException('Nenhum gerente ativo disponível para aprovar.');
+    }
+
+    const requestRows = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `INSERT INTO staff_shift_end_requests (waiter_id, manager_id, reason)
+         VALUES ($1, $2, $3)
+         RETURNING id`,
+        [data.waiterId, manager.id, data.reason ?? null],
+      ),
+    );
+    const requestId = requestRows[0].id;
+    const message = await this.staffMessages.send(
+      {
+        senderStaffId: data.waiterId,
+        recipientStaffId: manager.id,
+        subject: 'Encerramento de turno',
+        body: this.shiftEndRequestBody(requestId, waiter.name, data.reason),
+      },
+      data.slug,
+    );
+
+    await this.tenantConn.query(
+      `UPDATE staff_shift_end_requests
+          SET thread_id = $1, updated_at = now()
+        WHERE id = $2`,
+      [message.threadId, requestId],
+    );
+
+    await this.alerts.create({
+      sev: 'atenção',
+      kind: 'shift_end_request_waiter',
+      title: 'Garçom pediu encerramento de turno',
+      sub: `${waiter.name}${data.reason ? ` · ${data.reason}` : ''}`,
+      actions: [
+        {
+          label: 'Abrir conversa',
+          route: `/manager/mensagens/${message.threadId}?slug=${data.slug ?? ''}`,
+          kind: 'primary',
+        },
+      ],
+    });
+
+    return {
+      requestId,
+      status: 'pending',
+      threadId: message.threadId,
+      managerId: manager.id,
+    };
+  }
+
+  async decideShiftEndRequest(data: {
+    requestId: string;
+    managerId: string;
+    decision: 'approved' | 'rejected';
+    responseMessage?: string;
+    slug?: string;
+  }): Promise<{
+    requestId: string;
+    status: 'approved' | 'rejected';
+    threadId: string | null;
+  }> {
+    const rows = (await this.tenantConn.query(
+      `SELECT r.id, r.status, r.thread_id, r.waiter_id, w.name AS waiter_name
+         FROM staff_shift_end_requests r
+         JOIN staff w ON w.id = r.waiter_id
+        WHERE r.id = $1`,
+      [data.requestId],
+    )) as Array<{
+      id: string;
+      status: string;
+      thread_id: string | null;
+      waiter_id: string;
+      waiter_name: string;
+    }>;
+    const request = rows[0];
+    if (!request) {
+      throw new NotFoundException('Pedido de encerramento não encontrado.');
+    }
+    if (request.status !== 'pending') {
+      return {
+        requestId: request.id,
+        status: request.status as 'approved' | 'rejected',
+        threadId: request.thread_id,
+      };
+    }
+
+    const updated = unwrapRows<{ id: string; status: string }>(
+      await this.tenantConn.query(
+        `UPDATE staff_shift_end_requests
+            SET status = $1,
+                manager_id = $2,
+                response_message = $3,
+                decided_at = now(),
+                updated_at = now()
+          WHERE id = $4 AND status = 'pending'
+          RETURNING id, status`,
+        [data.decision, data.managerId, data.responseMessage ?? null, data.requestId],
+      ),
+    );
+    const status = (updated[0]?.status ?? data.decision) as 'approved' | 'rejected';
+
+    if (request.thread_id) {
+      const responseBody =
+        status === 'approved'
+          ? `Encerramento aprovado. ${request.waiter_name} pode sair do turno.`
+          : `Encerramento recusado.${data.responseMessage ? ` Motivo: ${data.responseMessage}` : ''}`;
+      await this.staffMessages.send(
+        {
+          senderStaffId: data.managerId,
+          threadId: request.thread_id,
+          body: `${responseBody}\nSHIFT_END_REQUEST:${request.id}`,
+        },
+        data.slug,
+      );
+    }
+
+    return {
+      requestId: request.id,
+      status,
+      threadId: request.thread_id,
+    };
+  }
+
+  private shiftEndRequestBody(requestId: string, waiterName: string, reason?: string): string {
+    return [
+      `Pedido de encerramento de turno de ${waiterName}.`,
+      reason ? `Motivo: ${reason}` : 'Motivo não informado.',
+      `SHIFT_END_REQUEST:${requestId}`,
+    ].join('\n');
   }
 
   private async getMember(assignmentId: string): Promise<ShiftMemberRow & { shift_id: string }> {

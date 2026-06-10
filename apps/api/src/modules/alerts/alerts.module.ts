@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AlertsController } from './alerts.controller';
 import { AlertsService } from './alerts.service';
 import { TenantModule } from '../tenant/tenant.module';
+import { CallerResolverModule } from '../../common/services/caller-resolver.module';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 
 /**
@@ -14,7 +15,7 @@ import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
  * (WebsocketModule @Global), entao nao precisa importar aqui.
  */
 @Module({
-  imports: [TenantModule],
+  imports: [TenantModule, CallerResolverModule],
   controllers: [AlertsController],
   providers: [AlertsService, ManagerOnlyGuard],
   exports: [AlertsService],

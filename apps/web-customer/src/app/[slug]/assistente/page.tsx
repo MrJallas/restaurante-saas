@@ -203,6 +203,56 @@ interface PendingOrderAdd {
   openReviewAfterAdd?: boolean;
 }
 
+interface LastVisitRepeatResponse {
+  items: Array<{
+    menuItemId: string;
+    name: string;
+    quantity: number;
+    note: string | null;
+    priceCents: number;
+    kind: 'food' | 'drink';
+    categoryName: string | null;
+  }>;
+  unavailableItems: Array<{
+    name: string;
+    categoryName: string | null;
+    substitute: { menuItemId: string; name: string; priceCents: number } | null;
+  }>;
+}
+
+function stripDiacritics(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function wantsLastVisitItems(text: string): boolean {
+  const normalized = stripDiacritics(text);
+  return /ultima vez|ultima visita|vez passada|pedido passado|mesma coisa|repetir/.test(
+    normalized,
+  );
+}
+
+function filterLastVisitItems(
+  text: string,
+  items: LastVisitRepeatResponse['items'],
+): LastVisitRepeatResponse['items'] {
+  const normalized = stripDiacritics(text);
+  const wantsDrinks = /bebida|bebidas|drink|vinho|cerveja|suco|agua|refrigerante/.test(
+    normalized,
+  );
+  const wantsStarters = /entrada|entradas|petisco|aperitivo/.test(normalized);
+  if (!wantsDrinks && !wantsStarters) return items;
+  return items.filter((item) => {
+    const category = stripDiacritics(item.categoryName ?? '');
+    return (
+      (wantsDrinks && item.kind === 'drink') ||
+      (wantsStarters && /entrada|petisco|aperitivo/.test(category))
+    );
+  });
+}
+
 // Fallback chips — só aparecem em idle (antes do primeiro turno) ou
 // quando a tool dispatched não retornou chips canônicos. Backend devolve
 // `chips` quando vier de uma tool com chips populated; aí esses defaults
@@ -797,6 +847,38 @@ export default function AssistentePage() {
     options?: { sourceMessageId?: string; openReviewAfterAdd?: boolean },
   ) => {
     if (itemsToAdd.length === 0 || pendingOrderAdd) return;
+    const rememberedMode = session.commandMode;
+    if (rememberedMode) {
+      itemsToAdd.forEach((item) => {
+        addItem({
+          menuItemId: item.id,
+          name: item.name,
+          priceCents: item.priceCents,
+          quantity: item.quantity,
+          note: item.note,
+          commandMode: rememberedMode,
+        });
+      });
+      if (options?.sourceMessageId) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === options.sourceMessageId ? { ...m, orderPlaced: true } : m,
+          ),
+        );
+      }
+      const label =
+        itemsToAdd.length === 1 ? itemsToAdd[0].name : `${itemsToAdd.length} itens`;
+      appendToolFeedback(
+        `${label} ${itemsToAdd.length === 1 ? 'foi adicionado' : 'foram adicionados'} à ${
+          rememberedMode === 'individual' ? 'sua comanda' : 'comanda da mesa'
+        }.`,
+      );
+      setPlacingOrder(false);
+      if (options?.openReviewAfterAdd) {
+        push(`/${slug}/pedido/revisar`);
+      }
+      return;
+    }
     setPendingOrderAdd({
       items: itemsToAdd,
       sourceMessageId: options?.sourceMessageId,
@@ -1220,6 +1302,65 @@ export default function AssistentePage() {
       setMessages((prev) => [...prev, userMsg]);
     }
     setInput('');
+
+    if (wantsLastVisitItems(trimmed)) {
+      setLoading(true);
+      try {
+        const repeat = await apiGet<LastVisitRepeatResponse>(
+          `/${slug}/customer/last-visit`,
+        );
+        const selected = filterLastVisitItems(trimmed, repeat.items);
+        if (selected.length === 0) {
+          const substitute = repeat.unavailableItems.find((item) => item.substitute);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `ai-${Date.now()}`,
+              role: 'ai',
+              content: substitute
+                ? `${substitute.name} não está mais no cardápio. Posso sugerir ${substitute.substitute?.name} no lugar.`
+                : 'Não encontrei itens disponíveis da sua última visita para repetir agora.',
+            },
+          ]);
+          setLoading(false);
+          return;
+        }
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `ai-${Date.now()}`,
+            role: 'ai',
+            content:
+              selected.length === 1
+                ? `Achei ${selected[0].name} da sua última visita. Vou colocar na revisão.`
+                : `Achei ${selected.length} itens da sua última visita. Vou colocar na revisão.`,
+          },
+        ]);
+        queueOrderAdd(
+          selected.map((item) => ({
+            id: item.menuItemId,
+            name: item.name,
+            priceCents: item.priceCents,
+            quantity: item.quantity,
+            note: item.note ?? undefined,
+          })),
+          { openReviewAfterAdd: true },
+        );
+        setLoading(false);
+        return;
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `ai-${Date.now()}`,
+            role: 'ai',
+            content: 'Não consegui recuperar sua última visita agora.',
+          },
+        ]);
+        setLoading(false);
+        return;
+      }
+    }
 
     // Se a IA acabou de sugerir pratos e o usuario respondeu com intencao de
     // pedido ("quero os dois", "pode mandar"), pulamos o round-trip pela IA

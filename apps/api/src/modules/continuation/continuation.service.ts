@@ -109,8 +109,8 @@ export class ContinuationService {
    *   1. complaint < 10 min  → pos_reclamacao
    *   2. payment paid_at < 10 min → pagou
    *   3. active order < 30 min → abriu_pedido
-   *   4. explicit/recent menu event < 10 min → viu_cardapio
-   *   5. waiter_call < 5 min → chamou_garcom
+   *   4. waiter_call < 5 min → chamou_garcom
+   *   5. explicit/recent menu event < 10 min → viu_cardapio
    *   6. any prior event for this session → voltou_sem_acao
    *   7. nothing → first_time
    *
@@ -288,6 +288,30 @@ export class ContinuationService {
       };
     }
 
+    // ── Priority 4: waiter call within 5 min ─────────────────────────
+    const waiterRows = (await this.tenantConn.query(
+      `SELECT EXTRACT(EPOCH FROM (now() - created_at))::int AS age_sec
+         FROM waiter_calls
+        WHERE table_session_id = $1
+          AND created_at >= now() - INTERVAL '5 minutes'
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [tableSessionId],
+    )) as { age_sec: number }[];
+    if (waiterRows.length > 0) {
+      const waitMinutes = Math.max(
+        0,
+        Math.floor((waiterRows[0].age_sec ?? 0) / 60),
+      );
+      return {
+        kind: 'chamou_garcom',
+        slots: { ...baseSlots, wait_minutes: waitMinutes },
+      };
+    }
+    if (clientHint === 'chamou_garcom') {
+      return { kind: 'chamou_garcom', slots: baseSlots };
+    }
+
     if (clientHint === 'viu_menu') {
       return { kind: 'viu_cardapio', slots: baseSlots };
     }
@@ -315,30 +339,6 @@ export class ContinuationService {
           last_item_seen: menuEventRows[0].item_name,
         },
       };
-    }
-
-    // ── Priority 4: waiter call within 5 min ─────────────────────────
-    const waiterRows = (await this.tenantConn.query(
-      `SELECT EXTRACT(EPOCH FROM (now() - created_at))::int AS age_sec
-         FROM waiter_calls
-        WHERE table_session_id = $1
-          AND created_at >= now() - INTERVAL '5 minutes'
-        ORDER BY created_at DESC
-        LIMIT 1`,
-      [tableSessionId],
-    )) as { age_sec: number }[];
-    if (waiterRows.length > 0) {
-      const waitMinutes = Math.max(
-        0,
-        Math.floor((waiterRows[0].age_sec ?? 0) / 60),
-      );
-      return {
-        kind: 'chamou_garcom',
-        slots: { ...baseSlots, wait_minutes: waitMinutes },
-      };
-    }
-    if (clientHint === 'chamou_garcom') {
-      return { kind: 'chamou_garcom', slots: baseSlots };
     }
 
     // ── Priority 5 vs 6: any prior event → voltou_sem_acao, else first_time

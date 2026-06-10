@@ -95,6 +95,7 @@ export function ScreenCustomerChatThread({
   const [messages, setMessages] = useState<ChatMessageDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [missingThread, setMissingThread] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -106,9 +107,12 @@ export function ScreenCustomerChatThread({
         if (!cancelled) setMessages(list);
       } catch (err) {
         if (cancelled) return;
-        if (err instanceof ApiRequestError && err.statusCode === 410) {
-          // Per spec: auto-deletion mid-view returns 410, FE redirects.
-          router.replace(`/${slug}/chat-history`);
+        if (
+          err instanceof ApiRequestError &&
+          (err.statusCode === 404 || err.statusCode === 410)
+        ) {
+          setMissingThread(true);
+          setMessages([]);
           return;
         }
         const message =
@@ -159,14 +163,16 @@ export function ScreenCustomerChatThread({
           <h1 className="text-[18px] font-semibold tracking-[-0.02em] text-ink">
             Conversa antiga
           </h1>
-          <button
-            type="button"
-            aria-label="Apagar este chat"
-            onClick={() => setConfirmingDelete(true)}
-            className="rounded-full border border-border-soft bg-bg px-3 py-1.5 text-[12px] font-medium text-mute active:bg-surface"
-          >
-            Apagar
-          </button>
+          {!missingThread && (
+            <button
+              type="button"
+              aria-label="Apagar este chat"
+              onClick={() => setConfirmingDelete(true)}
+              className="rounded-full border border-border-soft bg-bg px-3 py-1.5 text-[12px] font-medium text-mute active:bg-surface"
+            >
+              Apagar
+            </button>
+          )}
         </div>
 
         {error && (
@@ -177,6 +183,25 @@ export function ScreenCustomerChatThread({
 
         {loading && (
           <div className="text-center text-[13px] text-mute">Carregando…</div>
+        )}
+
+        {!loading && missingThread && (
+          <div className="rounded-[14px] border border-border-soft bg-surface px-4 py-10 text-center">
+            <div className="mb-2 text-[15px] font-medium text-ink">
+              Essa conversa não está mais disponível
+            </div>
+            <div className="mb-5 text-[13px] leading-[1.5] text-mute">
+              Ela pode ter sido apagada por você ou removida automaticamente
+              depois de 30 dias.
+            </div>
+            <PillButton
+              variant="filled"
+              fullWidth
+              onClick={() => router.push(`/${slug}/chat-history`)}
+            >
+              Voltar pras conversas
+            </PillButton>
+          </div>
         )}
 
         {/* Round 22 §C — grouping canônico V20: cada dia ganha um eyebrow
@@ -198,7 +223,7 @@ export function ScreenCustomerChatThread({
           ))}
         </div>
 
-        {!loading && messages.length > 0 && (
+        {!loading && !missingThread && messages.length > 0 && (
           <div className="mt-8 flex flex-col gap-1.5">
             <PillButton
               variant="filled"

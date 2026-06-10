@@ -11,7 +11,12 @@ import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
 import { SecurityAuditService } from '../security-audit/security-audit.service';
+import {
+  evaluateCustomerGeofence,
+  type GeofenceConfig,
+} from '../../common/utils/geofence';
 import type {
+  CustomerLocationCheck,
   CustomerLocationSignal,
   CustomerLocationStatus,
   ScanVerificationRequestDto,
@@ -34,6 +39,9 @@ interface ScanVerificationRow {
   latitude: string | number | null;
   longitude: string | number | null;
   accuracy_meters: string | number | null;
+  distance_meters: string | number | null;
+  inside_radius: boolean | null;
+  radius_meters: string | number | null;
   escalation_level: number;
   escalation_chain_id: string | null;
   ttl_expires_at: string;
@@ -70,6 +78,7 @@ export class ScanVerificationService {
       Date.now() + DEFAULT_TTL_SECONDS * 1000,
     ).toISOString();
     const location = this.normalizeLocation(input.location);
+    const locationCheck = await this.evaluateLocation(location);
 
     let requestId: string;
     try {
@@ -79,8 +88,8 @@ export class ScanVerificationService {
             `INSERT INTO scan_verification_requests
                (table_session_id, table_id, customer_id, visit_id,
                 ttl_expires_at, location_status, latitude, longitude,
-                accuracy_meters)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                accuracy_meters, distance_meters, inside_radius, radius_meters)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
              RETURNING id`,
             [
               input.tableSessionId,
@@ -92,6 +101,9 @@ export class ScanVerificationService {
               location.latitude ?? null,
               location.longitude ?? null,
               location.accuracyMeters ?? null,
+              locationCheck.distanceMeters,
+              locationCheck.insideRadius,
+              locationCheck.radiusMeters,
             ],
           ),
         );
@@ -381,6 +393,9 @@ export class ScanVerificationService {
                   svr.latitude,
                   svr.longitude,
                   svr.accuracy_meters,
+                  svr.distance_meters,
+                  svr.inside_radius,
+                  svr.radius_meters,
                   svr.escalation_level,
                   svr.escalation_chain_id,
                   svr.ttl_expires_at,
@@ -393,6 +408,16 @@ export class ScanVerificationService {
   }
 
   private mapRow(row: ScanVerificationRow): ScanVerificationRequestDto {
+    const location: CustomerLocationSignal = {
+      status: row.location_status,
+      latitude: this.toNumber(row.latitude),
+      longitude: this.toNumber(row.longitude),
+      accuracyMeters: this.toNumber(row.accuracy_meters),
+      capturedAt: row.created_at,
+    };
+    const distanceMeters = this.toNumber(row.distance_meters);
+    const insideRadius = row.inside_radius;
+    const radiusMeters = this.toNumber(row.radius_meters);
     return {
       id: row.id,
       tableSessionId: row.table_session_id,
@@ -404,13 +429,10 @@ export class ScanVerificationService {
       cpfMasked: this.maskCpf(row.cpf),
       status: row.status,
       locationStatus: row.location_status,
-      location: {
-        status: row.location_status,
-        latitude: this.toNumber(row.latitude),
-        longitude: this.toNumber(row.longitude),
-        accuracyMeters: this.toNumber(row.accuracy_meters),
-        capturedAt: row.created_at,
-      },
+      location,
+      distanceMeters,
+      insideRadius,
+      radiusMeters,
       escalationLevel: row.escalation_level,
       escalationChainId: row.escalation_chain_id,
       expiresAt: row.ttl_expires_at,
@@ -418,7 +440,64 @@ export class ScanVerificationService {
       decidedAt: row.decided_at,
       rejectionReason: row.rejection_reason,
       createdAt: row.created_at,
+      locationDistanceMeters: distanceMeters,
+      locationRadiusMeters: radiusMeters ?? 3,
+      locationWithinRestaurant: insideRadius,
     };
+  }
+
+  private async evaluateLocation(
+    location: CustomerLocationSignal,
+  ): Promise<CustomerLocationCheck> {
+    try {
+      return evaluateCustomerGeofence(location, await this.readGeofenceConfig());
+    } catch {
+      return {
+        status: location.status,
+        distanceMeters: null,
+        insideRadius: false,
+        radiusMeters: null,
+      };
+    }
+  }
+
+  private async readGeofenceConfig(): Promise<GeofenceConfig> {
+    const envLat = this.finiteEnvNumber('CUSTOMER_GEOFENCE_LATITUDE');
+    const envLon =
+      this.finiteEnvNumber('CUSTOMER_GEOFENCE_LONGITUDE') ??
+      this.finiteEnvNumber('CUSTOMER_GEOFENCE_LON');
+    const envRadius = this.finiteEnvNumber('CUSTOMER_GEOFENCE_RADIUS_METERS');
+
+    try {
+      const rows = (await this.tenantConn.query(
+        `SELECT geofence_latitude, geofence_longitude, geofence_radius_meters
+           FROM settings
+          LIMIT 1`,
+      )) as Array<{
+        geofence_latitude: number | string | null;
+        geofence_longitude: number | string | null;
+        geofence_radius_meters: number | string | null;
+      }>;
+      const row = rows[0];
+      return {
+        latitude: envLat ?? this.finiteNumber(row?.geofence_latitude),
+        longitude: envLon ?? this.finiteNumber(row?.geofence_longitude),
+        radiusMeters:
+          envRadius ?? this.finiteNumber(row?.geofence_radius_meters) ?? 3,
+      };
+    } catch (err: unknown) {
+      const pgErr = err as { code?: string };
+      if (pgErr.code !== '42703') throw err;
+      return {
+        latitude: envLat,
+        longitude: envLon,
+        radiusMeters: envRadius ?? 3,
+      };
+    }
+  }
+
+  private finiteEnvNumber(name: string): number | null {
+    return this.finiteNumber(process.env[name]);
   }
 
   private normalizeLocation(
@@ -445,6 +524,15 @@ export class ScanVerificationService {
 
   private finiteOrNull(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  }
+
+  private finiteNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const n = Number(value);
+      if (Number.isFinite(n)) return n;
+    }
+    return null;
   }
 
   private toNumber(value: string | number | null): number | null {

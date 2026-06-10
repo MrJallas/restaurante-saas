@@ -111,7 +111,7 @@ export interface SessionContextValue {
     customerId: string;
     visitId: string;
     name: string;
-    recognitionToken: string;
+    recognitionToken?: string;
     isReturning: boolean;
   }) => void;
   setParticipants: (list: TableParticipant[]) => void;
@@ -205,13 +205,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       customerId: string;
       visitId: string;
       name: string;
-      recognitionToken: string;
+      recognitionToken?: string;
       isReturning: boolean;
     }) => {
       setCustomerId(data.customerId);
       setVisitId(data.visitId);
       setCustomerName(data.name);
-      setRecognitionToken(data.recognitionToken);
+      if (data.recognitionToken) {
+        setRecognitionToken(data.recognitionToken);
+      }
       setIsReturning(data.isReturning);
       // Persistir tambem no bundle: depois de welcome/recognize, hard
       // reload nao pode mais perder os campos do cliente (P1: hero
@@ -260,9 +262,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const setCommandMode = useCallback(
     (mode: CommandMode, remember?: boolean) => {
       setCommandModeState(mode);
-      if (remember && sessionId) {
+      if (sessionId) {
         try {
-          window.localStorage.setItem(`commandMode:${sessionId}`, mode ?? '');
+          const key = `commandMode:${sessionId}`;
+          if (remember && mode) {
+            window.localStorage.setItem(key, mode);
+          } else {
+            window.localStorage.removeItem(key);
+          }
         } catch {
           /* ignore */
         }

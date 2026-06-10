@@ -47,7 +47,7 @@ export function CommandPicker({ open, priceCents, onClose, onConfirm }: CommandP
       : `Adicionar à comanda da mesa · ${priceLabel}`;
 
   const handleConfirm = () => {
-    if (remember) setCommandMode(selected, true);
+    setCommandMode(remember ? selected : null, true);
     onConfirm(selected);
   };
 

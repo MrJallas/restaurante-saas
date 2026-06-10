@@ -42,6 +42,7 @@ const DEFAULT_WAITER_EVENTS: WsEventName[] = [
   'waiter:call',
   'waiter:acknowledged',
   'order:ready',
+  'order:handoff_called',
   'zone_pause.started',
   'zone_pause.ended',
   'staff_message.received',

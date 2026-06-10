@@ -39,7 +39,10 @@ export function UIStateProvider({ children }: { children: ReactNode }) {
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const toggleDrawer = useCallback(() => setDrawerOpen((s) => !s), []);
-  const openCallWaiterSheet = useCallback(() => setCallWaiterSheetOpen(true), []);
+  const openCallWaiterSheet = useCallback(() => {
+    recordContinuationHint('chamou_garcom');
+    setCallWaiterSheetOpen(true);
+  }, []);
   const closeCallWaiterSheet = useCallback(() => {
     setCallWaiterSheetOpen(false);
     if (typeof window !== 'undefined') {

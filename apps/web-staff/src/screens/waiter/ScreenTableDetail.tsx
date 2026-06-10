@@ -19,11 +19,12 @@ import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitives';
 import {
   getWaiterTableDetail,
-  updateOrderStatus,
+  markOrderDelivered,
+  markOrderInTransit,
   type WaiterTableDetail,
 } from '../../lib/api/waiter';
 
-type ItemStatus = 'preparando' | 'pronto' | 'servido';
+type ItemStatus = 'preparando' | 'pronto' | 'em_transito' | 'servido';
 
 interface Item {
   id: string;
@@ -92,6 +93,7 @@ export function ScreenTableDetail({
   const items = useMemo<Item[]>(() => {
     const statusFromOrder = (status: string): ItemStatus => {
       if (status === 'ready') return 'pronto';
+      if (status === 'in_transit') return 'em_transito';
       if (status === 'delivered') return 'servido';
       return 'preparando';
     };
@@ -121,17 +123,32 @@ export function ScreenTableDetail({
 
   const statusTint: Record<ItemStatus, { bg: string; fg: string; label: string }> = {
     pronto: { bg: '#E8F3EC', fg: '#1E8C5A', label: 'Pronto · servir' },
+    em_transito: { bg: '#E7EEF8', fg: '#1A4F8A', label: 'Em trânsito' },
     preparando: { bg: '#FDF3D8', fg: '#7A4D10', label: 'Preparando' },
     servido: { bg: '#F4F0E8', fg: '#666', label: 'Servido' },
   };
 
-  const markDelivered = async (orderId: string) => {
+  const markInTransit = async (orderId: string) => {
     if (!tenantSlug || updatingOrderId) return;
     setUpdatingOrderId(orderId);
     try {
-      await updateOrderStatus(tenantSlug, orderId, 'delivered');
+      await markOrderInTransit(tenantSlug, orderId);
       await load();
-      showMsg('Pedido marcado como entregue.');
+      showMsg('Pedido em trânsito.');
+    } catch (err) {
+      showMsg(err instanceof Error ? err.message : 'Erro ao atualizar pedido.');
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
+
+  const confirmDelivered = async (orderId: string) => {
+    if (!tenantSlug || updatingOrderId) return;
+    setUpdatingOrderId(orderId);
+    try {
+      await markOrderDelivered(tenantSlug, orderId);
+      await load();
+      showMsg('Pedido entregue na mesa.');
     } catch (err) {
       showMsg(err instanceof Error ? err.message : 'Erro ao atualizar pedido.');
     } finally {
@@ -389,7 +406,7 @@ export function ScreenTableDetail({
                     <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
                       <button
                         type="button"
-                        onClick={() => markDelivered(item.orderId)}
+                        onClick={() => markInTransit(item.orderId)}
                         disabled={updatingOrderId === item.orderId}
                         style={{
                           all: 'unset',
@@ -402,7 +419,28 @@ export function ScreenTableDetail({
                           fontWeight: 700,
                         }}
                       >
-                        {updatingOrderId === item.orderId ? 'Atualizando…' : 'Marcar entregue'}
+                        {updatingOrderId === item.orderId ? 'Atualizando…' : 'Estou levando'}
+                      </button>
+                    </div>
+                  )}
+                  {item.status === 'em_transito' && (
+                    <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => confirmDelivered(item.orderId)}
+                        disabled={updatingOrderId === item.orderId}
+                        style={{
+                          all: 'unset',
+                          cursor: updatingOrderId === item.orderId ? 'wait' : 'pointer',
+                          padding: '6px 12px',
+                          borderRadius: 8,
+                          background: C.ink,
+                          color: C.bg,
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {updatingOrderId === item.orderId ? 'Atualizando…' : 'Entregue'}
                       </button>
                     </div>
                   )}

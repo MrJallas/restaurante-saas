@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Bell, Check } from 'lucide-react';
+import { Bell, Check, Truck } from 'lucide-react';
 import { staffGet, staffPost } from '../lib/api';
 
 interface WaiterCall {
@@ -10,6 +10,18 @@ interface WaiterCall {
   created_at: string;
   table_label: string;
   table_code: string;
+}
+
+interface HandoffOrder {
+  id: string;
+  status: string;
+  table_label?: string | null;
+  table_number?: number | null;
+  delivery_status?: string | null;
+  delivery_target_waiter_id?: string | null;
+  delivery_target_waiter_name?: string | null;
+  delivery_called_at?: string | null;
+  items: Array<{ id: string; name: string; quantity: number }>;
 }
 
 interface WaiterAlertsProps {
@@ -40,19 +52,29 @@ function playAlertSound() {
 
 export function WaiterAlerts({ tenantSlug }: WaiterAlertsProps) {
   const [calls, setCalls] = useState<WaiterCall[]>([]);
+  const [handoffs, setHandoffs] = useState<HandoffOrder[]>([]);
   const [prevCount, setPrevCount] = useState(0);
 
   const loadCalls = useCallback(async () => {
     try {
-      const data = await staffGet<WaiterCall[]>(`/${tenantSlug}/waiter-calls/pending`);
+      const [data, ordersRes] = await Promise.all([
+        staffGet<WaiterCall[]>(`/${tenantSlug}/waiter-calls/pending`),
+        staffGet<{ orders: HandoffOrder[] }>(`/${tenantSlug}/orders`),
+      ]);
       const callList = Array.isArray(data) ? data : [];
+      const staffId = readStaffId();
+      const handoffList = (ordersRes.orders ?? []).filter((order) => {
+        if (order.status !== 'ready' || order.delivery_status !== 'pending') return false;
+        return !order.delivery_target_waiter_id || order.delivery_target_waiter_id === staffId;
+      });
 
-      // Play alert if new calls arrived
-      if (callList.length > prevCount && prevCount >= 0) {
+      const total = callList.length + handoffList.length;
+      if (total > prevCount && prevCount >= 0) {
         playAlertSound();
       }
-      setPrevCount(callList.length);
+      setPrevCount(total);
       setCalls(callList);
+      setHandoffs(handoffList);
     } catch {
       // silently fail
     }
@@ -73,16 +95,55 @@ export function WaiterAlerts({ tenantSlug }: WaiterAlertsProps) {
     }
   };
 
-  if (calls.length === 0) return null;
+  const handlePickup = async (orderId: string) => {
+    try {
+      await staffPost(`/${tenantSlug}/orders/${orderId}/in-transit`, {});
+      setHandoffs((prev) => prev.filter((o) => o.id !== orderId));
+    } catch {
+      // silently fail
+    }
+  };
+
+  if (calls.length === 0 && handoffs.length === 0) return null;
 
   return (
     <div className="mb-4 space-y-2">
       <div className="flex items-center gap-2">
         <Bell className="h-4 w-4 animate-bounce text-staff-warning" />
         <span className="text-sm font-semibold text-staff-warning">
-          Chamados ({calls.length})
+          Chamados ({calls.length + handoffs.length})
         </span>
       </div>
+      {handoffs.map((order) => {
+        const calledAt = order.delivery_called_at ?? new Date().toISOString();
+        const elapsed = Math.floor((Date.now() - new Date(calledAt).getTime()) / 1000);
+        const mins = Math.floor(elapsed / 60);
+        return (
+          <div
+            key={order.id}
+            className="flex items-center justify-between gap-3 rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 animate-pulse"
+          >
+            <div className="min-w-0">
+              <span className="text-lg font-bold text-white">
+                {order.table_label || `Mesa ${order.table_number || '—'}`}
+              </span>
+              <span className="ml-2 text-xs text-slate-400">
+                {mins > 0 ? `ha ${mins} min` : 'agora'}
+              </span>
+              <div className="truncate text-xs text-slate-300">
+                {order.items.map((item) => `${item.quantity}x ${item.name}`).join(' + ')}
+              </div>
+            </div>
+            <button
+              onClick={() => handlePickup(order.id)}
+              className="flex shrink-0 items-center gap-1 rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-sky-600"
+            >
+              <Truck className="h-4 w-4" />
+              Estou levando
+            </button>
+          </div>
+        );
+      })}
       {calls.map((call) => {
         const elapsed = Math.floor(
           (Date.now() - new Date(call.created_at).getTime()) / 1000,
@@ -112,4 +173,12 @@ export function WaiterAlerts({ tenantSlug }: WaiterAlertsProps) {
       })}
     </div>
   );
+}
+
+function readStaffId(): string | null {
+  try {
+    return window.localStorage.getItem('staffId');
+  } catch {
+    return null;
+  }
 }

@@ -38,7 +38,6 @@ interface Participant {
 
 type TabMode = 'all' | 'mine' | 'shared';
 
-const SERVICE_RATE = 0.1;
 const NEW_BADGE_MINUTES = 2;
 
 function formatTime(iso: string): string {
@@ -108,10 +107,8 @@ export default function PedidoMesaPage() {
   });
 
   const subtotalCents = flatItems.reduce((s, it) => s + it.subtotalCents, 0);
-  const serviceCents = Math.round(subtotalCents * SERVICE_RATE);
-  const totalCents = subtotalCents + serviceCents;
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
-  const perPerson = participants.length > 0 ? totalCents / participants.length : totalCents;
+  const perPerson = participants.length > 0 ? subtotalCents / participants.length : subtotalCents;
 
   if (loading) {
     return (
@@ -229,11 +226,10 @@ export default function PedidoMesaPage() {
 
           <div className="mt-[18px] border-t-[1.3px] border-ink pt-4">
             <Row label="Subtotal" value={fmt(subtotalCents)} />
-            <Row label="Taxa de serviço (10%)" value={fmt(serviceCents)} />
             <div className="h-1.5" />
             <Row
               label={<b className="text-[15px] text-ink">Total da mesa</b>}
-              value={<b className="text-[19px] text-ink tabular-nums">{fmt(totalCents)}</b>}
+              value={<b className="text-[19px] text-ink tabular-nums">{fmt(subtotalCents)}</b>}
             />
             {participants.length > 0 && (
               <div className="mt-0.5 text-right text-[11px] text-mute">

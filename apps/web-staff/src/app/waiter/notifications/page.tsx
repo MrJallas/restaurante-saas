@@ -1,8 +1,6 @@
 // Waiter · Notificações — destino do sino do header em todo waiter UI.
-// Round 18 placebo-fix (audit-report Onda 18). O waiter consome o mesmo
-// feed operacional de alertas, então reusa o screen do manager com
-// `persona='manager'` (bottom-nav manager-style por ora — quando o waiter
-// ganhar nav própria pra alerts, trocar pra persona dedicada).
+// O feed `/alerts` é role-aware pelo `x-staff-id`; a persona aqui só
+// controla navegação e evita bottom nav de gerente dentro do app do garçom.
 'use client';
 
 import { useSearchParams } from 'next/navigation';
@@ -12,8 +10,11 @@ import { ScreenManagerNotifications } from '../../../screens/manager/ScreenManag
 function NotificationsInner() {
   const params = useSearchParams();
   const slug =
-    params.get('slug') || process.env.NEXT_PUBLIC_TENANT_SLUG || 'demo';
-  return <ScreenManagerNotifications tenantSlug={slug} persona="manager" />;
+    params.get('tenant') ||
+    params.get('slug') ||
+    process.env.NEXT_PUBLIC_TENANT_SLUG ||
+    'demo';
+  return <ScreenManagerNotifications tenantSlug={slug} persona="waiter" />;
 }
 
 export default function WaiterNotificationsPage() {

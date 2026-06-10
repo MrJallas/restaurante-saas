@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { buildMesaUrl, liberateQrTestTable } from '../helpers/qr';
+import { resetWelcomeRateLimitAndSessions } from '../helpers/test-state';
+
+const WELCOME_HEADING = /(Pra começar, quem é você|Bem-vindo ao)/i;
 
 /**
  * Suite que cobre os bugs encontrados pelos bug-hunters de iOS:
@@ -12,13 +15,14 @@ import { buildMesaUrl, liberateQrTestTable } from '../helpers/qr';
 
 test.describe('Welcome — personalizacao obrigatoria', () => {
   test.beforeEach(async ({ context }) => {
+    resetWelcomeRateLimitAndSessions();
     await context.clearCookies();
   });
 
   test('modal nao oferece "Continuar sem personalizacao"', async ({ page }) => {
     await page.goto(buildMesaUrl(), { waitUntil: 'networkidle' });
     await expect(
-      page.getByRole('heading', { name: /Bem-vindo ao/i }),
+      page.getByRole('heading', { name: WELCOME_HEADING }),
     ).toBeVisible({ timeout: 30_000 });
 
     // O bypass anonimo nao deve mais existir — UX obriga nome+CPF.
@@ -34,7 +38,7 @@ test.describe('Welcome — personalizacao obrigatoria', () => {
   test('Continuar fica disabled ate nome+CPF validos', async ({ page }) => {
     await page.goto(buildMesaUrl(), { waitUntil: 'networkidle' });
     await expect(
-      page.getByRole('heading', { name: /Bem-vindo ao/i }),
+      page.getByRole('heading', { name: WELCOME_HEADING }),
     ).toBeVisible({ timeout: 30_000 });
 
     const continueBtn = page.getByRole('button', { name: /^Continuar$/ });
@@ -84,6 +88,7 @@ test.describe('Mesa — erros amigaveis', () => {
 
 test.describe('Mesa — troca silenciosa de mesa', () => {
   test.beforeEach(async ({ context }) => {
+    resetWelcomeRateLimitAndSessions(['QRTEST91', 'QRTEST92']);
     await context.clearCookies();
   });
 
@@ -95,14 +100,14 @@ test.describe('Mesa — troca silenciosa de mesa', () => {
     });
     // Welcome ou home — aceita os dois (DB pode ter customer recognition).
     const welcomeOrHome = page
-      .getByRole('heading', { name: /Bem-vindo ao/i })
+      .getByRole('heading', { name: WELCOME_HEADING })
       .or(page.getByRole('button', { name: /Chamar gar.om/ }));
     await expect(welcomeOrHome.first()).toBeVisible({ timeout: 30_000 });
 
     // Tira a "tableLabel" da URL/DOM como referencia. Cada QR de teste tem
     // label diferente ("QR Teste 91" vs "QR Teste 92"). Vai aparecer no topbar quando
     // chegar na home.
-    if (await page.getByRole('heading', { name: /Bem-vindo ao/i }).isVisible()) {
+    if (await page.getByRole('heading', { name: WELCOME_HEADING }).isVisible()) {
       await page.getByPlaceholder('Seu nome').fill('QA Caleb');
       await page.getByPlaceholder('000.000.000-00').fill('12345678909');
       await page.getByRole('button', { name: /^Continuar$/ }).click();
@@ -131,6 +136,7 @@ test.describe('Mesa — troca silenciosa de mesa', () => {
 
 test.describe('Assistente — falsos positivos de pedido', () => {
   test.beforeEach(async ({ context }) => {
+    resetWelcomeRateLimitAndSessions();
     await context.clearCookies();
   });
 
@@ -139,7 +145,7 @@ test.describe('Assistente — falsos positivos de pedido', () => {
   }) => {
     await liberateQrTestTable();
     await page.goto(buildMesaUrl(), { waitUntil: 'networkidle' });
-    const welcome = page.getByRole('heading', { name: /Bem-vindo ao/i });
+    const welcome = page.getByRole('heading', { name: WELCOME_HEADING });
     if (await welcome.isVisible({ timeout: 5000 }).catch(() => false)) {
       await page.getByPlaceholder('Seu nome').fill('Caleb QA');
       await page.getByPlaceholder('000.000.000-00').fill('12345678909');
@@ -153,7 +159,7 @@ test.describe('Assistente — falsos positivos de pedido', () => {
     await page.goto('/restaurant_dev/assistente', {
       waitUntil: 'networkidle',
     });
-    const input = page.getByPlaceholder('Digite aqui');
+    const input = page.getByPlaceholder(/Digite aqui|Pergunte alguma coisa\.\.\./);
     await expect(input).toBeVisible({ timeout: 10_000 });
 
     // Pergunta que provavelmente retorna linkedItems do menu.
@@ -189,7 +195,7 @@ test.describe('Welcome — capitalizeName nao deforma input', () => {
   }) => {
     await page.goto(buildMesaUrl(), { waitUntil: 'networkidle' });
     await expect(
-      page.getByRole('heading', { name: /Bem-vindo ao/i }),
+      page.getByRole('heading', { name: WELCOME_HEADING }),
     ).toBeVisible({ timeout: 30_000 });
 
     const nome = page.getByPlaceholder('Seu nome');

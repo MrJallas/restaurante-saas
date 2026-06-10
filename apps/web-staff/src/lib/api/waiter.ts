@@ -87,6 +87,42 @@ export interface WaiterTableDetail {
   orders: WaiterTableDetailOrder[];
 }
 
+export interface WaiterMenuItem {
+  id: string;
+  name: string;
+  short_description?: string | null;
+  price_cents: number;
+  image_url?: string | null;
+  tags?: string[] | null;
+  category_id?: string | null;
+}
+
+export interface WaiterDirectOrderItem {
+  menuItemId: string;
+  quantity: number;
+  notes?: string;
+}
+
+export interface WaiterDirectOrderResponse {
+  id: string;
+  orderId: string;
+  status: string;
+  billingMode: 'table';
+  totalCents: number;
+  itemCount: number;
+  tableSessionId: string;
+  tableCode: string;
+  tableLabel: string;
+  createdAt: string;
+}
+
+export interface WaiterShiftEndRequestResponse {
+  requestId: string;
+  status: 'pending';
+  threadId: string | null;
+  managerId: string;
+}
+
 // ─── Waiter calls ───
 export function listPendingCalls(tenantSlug: string): Promise<WaiterCallSummary[]> {
   return staffGet<WaiterCallSummary[]>(`/${tenantSlug}/waiter-calls/pending`);
@@ -122,6 +158,53 @@ export function updateOrderStatus(
     status,
     changedBy: 'waiter',
   });
+}
+
+export function markOrderInTransit(
+  tenantSlug: string,
+  orderId: string,
+): Promise<{ orderId: string; deliveryId: string; status: 'in_transit' }> {
+  return staffPost(`/${tenantSlug}/orders/${orderId}/in-transit`, {});
+}
+
+export function markOrderDelivered(
+  tenantSlug: string,
+  orderId: string,
+): Promise<{ orderId: string; deliveryId: string; status: 'delivered' }> {
+  return staffPost(`/${tenantSlug}/orders/${orderId}/delivered`, {});
+}
+
+// ─── Direct order ───
+export function listWaiterMenuItems(tenantSlug: string): Promise<WaiterMenuItem[]> {
+  return staffGet<{ items: WaiterMenuItem[] }>(`/${tenantSlug}/menu/items`).then(
+    (r) => r.items ?? [],
+  );
+}
+
+export function createDirectTableOrder(
+  tenantSlug: string,
+  body: {
+    tableRef: string;
+    items: WaiterDirectOrderItem[];
+    notes?: string;
+  },
+): Promise<WaiterDirectOrderResponse> {
+  return staffPost<WaiterDirectOrderResponse>(`/${tenantSlug}/orders/staff-direct`, {
+    tableRef: body.tableRef,
+    billingMode: 'table',
+    items: body.items,
+    notes: body.notes,
+  });
+}
+
+export function requestWaiterShiftEnd(
+  tenantSlug: string,
+  body: { reason?: string },
+): Promise<WaiterShiftEndRequestResponse> {
+  return staffPost<WaiterShiftEndRequestResponse>(
+    `/${tenantSlug}/waiter/shift-end-requests`,
+    body,
+  );
 }
 
 // ─── QR issue ───

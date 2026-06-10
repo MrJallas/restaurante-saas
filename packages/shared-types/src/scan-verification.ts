@@ -20,6 +20,13 @@ export interface CustomerLocationSignal {
   capturedAt?: string | null;
 }
 
+export interface CustomerLocationCheck {
+  status: CustomerLocationStatus;
+  distanceMeters: number | null;
+  insideRadius: boolean | null;
+  radiusMeters: number | null;
+}
+
 export interface ScanVerificationRequestDto {
   id: string;
   tableSessionId: string;
@@ -32,6 +39,9 @@ export interface ScanVerificationRequestDto {
   status: ScanVerificationStatus;
   locationStatus: CustomerLocationStatus;
   location: CustomerLocationSignal;
+  distanceMeters: number | null;
+  insideRadius: boolean | null;
+  radiusMeters: number | null;
   escalationLevel: number;
   escalationChainId?: string | null;
   expiresAt: string;
@@ -39,4 +49,10 @@ export interface ScanVerificationRequestDto {
   decidedAt: string | null;
   rejectionReason?: string | null;
   createdAt: string;
+  /** Distância do cliente até o centro configurado do salão, em metros. */
+  locationDistanceMeters: number | null;
+  /** Raio operacional aceito para entrada via QR físico, em metros. */
+  locationRadiusMeters: number;
+  /** `true` quando a distância calculada fica dentro do raio configurado. */
+  locationWithinRestaurant: boolean | null;
 }

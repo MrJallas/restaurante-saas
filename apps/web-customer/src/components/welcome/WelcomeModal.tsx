@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import { CpfInput } from './CpfInput';
 import { validateCpf, cleanCpf } from '../../lib/cpf';
-import { apiPost } from '../../lib/api';
+import { ApiRequestError, apiPost } from '../../lib/api';
 import { captureCustomerLocationSignal } from '../../lib/location';
 import { setRecognitionToken } from '../../lib/storage';
 import { useSession } from '../../hooks/useSession';
@@ -49,7 +49,7 @@ export function WelcomeModal({
   const [cpfFocused, setCpfFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { setCustomer } = useSession();
+  const { setCustomer, clearSession } = useSession();
 
   const isNameValid = name.trim().length >= 2;
   const isCpfValid = cleanCpf(cpf).length === 11 && validateCpf(cleanCpf(cpf));
@@ -66,6 +66,12 @@ export function WelcomeModal({
         prompt: true,
         timeoutMs: 4000,
       });
+      if (location.status !== 'granted') {
+        clearSession();
+        setError('Permita a localização para entrar no app do restaurante.');
+        setIsLoading(false);
+        return;
+      }
       const result = await apiPost<CustomerWelcomeResponseDto>(
         `/${slug}/customer/welcome`,
         {
@@ -75,7 +81,7 @@ export function WelcomeModal({
         },
       );
 
-      setRecognitionToken(result.recognitionToken);
+      if (result.recognitionToken) setRecognitionToken(result.recognitionToken);
       setCustomer({
         customerId: result.customerId,
         visitId: result.visitId,
@@ -85,11 +91,14 @@ export function WelcomeModal({
       });
       onComplete(result);
     } catch (err) {
+      if (err instanceof ApiRequestError && err.statusCode === 403) {
+        clearSession();
+      }
       setError(err instanceof Error ? err.message : 'Erro ao processar. Tente novamente.');
     } finally {
       setIsLoading(false);
     }
-  }, [canSubmit, slug, name, cpf, setCustomer, onComplete]);
+  }, [canSubmit, slug, name, cpf, setCustomer, clearSession, onComplete]);
 
   /**
    * Title-case so no blur. Rodar a cada keystroke (regex /\b\w/g sobre o

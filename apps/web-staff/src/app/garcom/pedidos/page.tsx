@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Clock, CheckCircle, ChefHat, Bell, XCircle, Users, User, RefreshCw } from 'lucide-react';
-import { staffGet, staffPatch } from '../../../lib/api';
+import { staffGet, staffPatch, staffPost } from '../../../lib/api';
 import { WaiterAlerts } from '../../../components/WaiterAlerts';
 
 interface OrderItem {
@@ -20,23 +20,32 @@ interface Order {
   total_cents: number;
   notes?: string;
   created_at: string;
+  table_label?: string | null;
+  delivery_status?: string | null;
+  delivery_target_waiter_name?: string | null;
   items: OrderItem[];
 }
 
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof Clock; color: string; bgColor: string }> = {
   open: { label: 'Novo', icon: Clock, color: 'text-yellow-400', bgColor: 'bg-yellow-400/10' },
+  received: { label: 'Novo', icon: Clock, color: 'text-yellow-400', bgColor: 'bg-yellow-400/10' },
   confirmed: { label: 'Confirmado', icon: CheckCircle, color: 'text-blue-400', bgColor: 'bg-blue-400/10' },
   preparing: { label: 'Preparando', icon: ChefHat, color: 'text-orange-400', bgColor: 'bg-orange-400/10' },
+  in_progress: { label: 'Preparando', icon: ChefHat, color: 'text-orange-400', bgColor: 'bg-orange-400/10' },
   ready: { label: 'Pronto', icon: Bell, color: 'text-green-400', bgColor: 'bg-green-400/10' },
+  in_transit: { label: 'Em trânsito', icon: Bell, color: 'text-sky-400', bgColor: 'bg-sky-400/10' },
   delivered: { label: 'Entregue', icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-600/10' },
   cancelled: { label: 'Cancelado', icon: XCircle, color: 'text-red-400', bgColor: 'bg-red-400/10' },
 };
 
 const NEXT_STATUS: Record<string, string> = {
   open: 'confirmed',
+  received: 'in_progress',
   confirmed: 'preparing',
+  in_progress: 'ready',
   preparing: 'ready',
-  ready: 'delivered',
+  ready: 'in_transit',
+  in_transit: 'delivered',
 };
 
 const TENANT_SLUG = process.env.NEXT_PUBLIC_TENANT_SLUG || 'restaurant_dev';
@@ -71,10 +80,16 @@ export default function GarcomPedidosPage() {
 
   const handleAdvanceStatus = async (orderId: string, nextStatus: string) => {
     try {
-      await staffPatch(`/${TENANT_SLUG}/orders/${orderId}/status`, {
-        status: nextStatus,
-        changedBy: 'garcom',
-      });
+      if (nextStatus === 'in_transit') {
+        await staffPost(`/${TENANT_SLUG}/orders/${orderId}/in-transit`, {});
+      } else if (nextStatus === 'delivered') {
+        await staffPost(`/${TENANT_SLUG}/orders/${orderId}/delivered`, {});
+      } else {
+        await staffPatch(`/${TENANT_SLUG}/orders/${orderId}/status`, {
+          status: nextStatus,
+          changedBy: 'garcom',
+        });
+      }
       await loadOrders();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erro ao atualizar status');
@@ -196,7 +211,11 @@ export default function GarcomPedidosPage() {
                         onClick={() => handleAdvanceStatus(order.id, nextStatus)}
                         className="rounded-lg bg-staff-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-staff-accent/80"
                       >
-                        {STATUS_CONFIG[nextStatus]?.label || nextStatus}
+                        {nextStatus === 'in_transit'
+                          ? 'Estou levando'
+                          : nextStatus === 'delivered'
+                            ? 'Entregue'
+                            : STATUS_CONFIG[nextStatus]?.label || nextStatus}
                       </button>
                     )}
                     {order.status !== 'delivered' && order.status !== 'cancelled' && (

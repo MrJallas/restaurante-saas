@@ -1,8 +1,15 @@
 import { Module } from '@nestjs/common';
-import { ShiftsController } from './shifts.controller';
+import {
+  ManagerShiftEndRequestsController,
+  ShiftsController,
+  WaiterShiftRequestsController,
+} from './shifts.controller';
 import { ShiftsService } from './shifts.service';
 import { TenantModule } from '../tenant/tenant.module';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
+import { StaffMessagesModule } from '../staff-messages/staff-messages.module';
+import { AlertsModule } from '../alerts/alerts.module';
+import { CallerResolverModule } from '../../common/services/caller-resolver.module';
 
 /**
  * Round 18 (Onda 2 backend): persistencia de turnos pra
@@ -16,8 +23,12 @@ import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
  *   POST /shifts/duplicate-week  copia escala fromDate->toDate
  */
 @Module({
-  imports: [TenantModule],
-  controllers: [ShiftsController],
+  imports: [TenantModule, StaffMessagesModule, AlertsModule, CallerResolverModule],
+  controllers: [
+    ShiftsController,
+    WaiterShiftRequestsController,
+    ManagerShiftEndRequestsController,
+  ],
   providers: [ShiftsService, ManagerOnlyGuard],
   exports: [ShiftsService],
 })

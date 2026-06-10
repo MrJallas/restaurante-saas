@@ -7,6 +7,7 @@
 
 import * as React from 'react';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import {
@@ -77,6 +78,7 @@ export const ScreenWaiterTablePicker: React.FC<ScreenWaiterTablePickerProps> = (
 }) => {
   const dark = false;
   const C = useG(dark);
+  const router = useRouter();
   const [tables, setTables] = useState<ActiveTableSummary[]>([]);
 
   useEffect(() => {
@@ -107,7 +109,6 @@ export const ScreenWaiterTablePicker: React.FC<ScreenWaiterTablePickerProps> = (
         dark={dark}
         left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={onBack} ariaLabel="Voltar" />}
         title="Escolher mesa"
-        right={<GIconBtn dark={dark} icon={Icon.search(20)} ariaLabel="Buscar" />}
       />
 
       <div style={{ flex: 1, overflow: 'auto', padding: '6px 0 80px' }}>
@@ -148,7 +149,17 @@ export const ScreenWaiterTablePicker: React.FC<ScreenWaiterTablePickerProps> = (
         ))}
       </div>
 
-      <GBottomNav active="home" dark={dark} />
+      <GBottomNav
+        active="home"
+        dark={dark}
+        onNewEntry={() => router.push(`/waiter/new-entry?tenant=${tenantSlug}`)}
+        onTabChange={(id) => {
+          if (id === 'home') router.push(`/waiter?tenant=${tenantSlug}`);
+          else if (id === 'calls') router.push(`/waiter/chamados?tenant=${tenantSlug}`);
+          else if (id === 'shift') router.push(`/waiter/eu?tenant=${tenantSlug}&focus=shift`);
+          else if (id === 'me') router.push(`/waiter/eu?tenant=${tenantSlug}`);
+        }}
+      />
     </div>
   );
 };

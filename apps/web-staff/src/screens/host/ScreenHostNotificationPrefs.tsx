@@ -9,6 +9,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
+import { useStaffTheme } from '../../lib/theme';
 
 const STORAGE_PREFIX = 'host:notifPrefs:';
 
@@ -56,7 +57,7 @@ interface ScreenHostNotificationPrefsProps {
 }
 
 export const ScreenHostNotificationPrefs: React.FC<ScreenHostNotificationPrefsProps> = ({ onBack, onTabChange }) => {
-  const dark = false;
+  const { dark } = useStaffTheme();
   const C = useG(dark);
   const [prefs, setPrefs] = useState<Record<string, boolean>>({});
 
