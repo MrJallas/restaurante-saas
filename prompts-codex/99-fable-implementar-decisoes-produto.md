@@ -163,6 +163,13 @@ antes de implementar. Nao invente comportamento para fechar a tarefa.
 - A TV de bar existe, mas ainda precisa ser validada como fluxo operacional
   completo, inclusive notificacao do garcom, estado final `Entregue`,
   priorizacao VIP/urgencia e separacao correta de itens por estação.
+- Evidencia/risco atual: a integracao Codex confirmou build e contrato de
+  backend real para `_kds` e `call-waiter`, mas nao rodou E2E com app + DB
+  reais para provar banner in-app do garcom, mapa/localizacao da mesa e
+  finalizacao `Entregue`. Antes de marcar esse bloco como pronto, subir o stack
+  real, criar pedido pronto na TV, clicar `Chamar garcom`, evidenciar
+  notificacao do garcom, tela de entrega com local/mapa e mudanca final no app
+  do cliente apos `Entregue`.
 - Lider de cozinha em `/cozinha/eu` por agora so ve o proprio perfil. Deixar
   TODO claro para possivel futuro gerenciamento de turnos dos assistentes de
   cozinha; nao tratar esse codigo como lixo.
