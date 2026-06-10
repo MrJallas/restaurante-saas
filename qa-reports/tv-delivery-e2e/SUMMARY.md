@@ -60,4 +60,26 @@ npx playwright test tv-delivery-flow --reporter=line
   e traduz `last_event` técnico; 11 sessões zumbis (>12h) fechadas no DB
   dev.
 
-Screenshots reduzidos (sips 800px) — trace/vídeo ficam fora do Git.
+## Rodada 3 — fixes do code-review + ETA real + validação em iOS (sim)
+
+- **15 findings do code-review aplicados** (commit `eb1fa82`): race 23505
+  TV×garçom, takeover no Entregue (fim do beco sem saída), turnos
+  overnight, banner (som 0→1, AudioContext singleton, audiência canônica,
+  abaixo do header, +N, chamados de cliente DE VOLTA com som), socket WS
+  compartilhado com retry, nome real do portador, matchesTable numérico,
+  Cancelar pedido na mesa do garçom, e mais.
+- **ETA real do pedido** (commit `9edbf5a`): fim do "22–28 minutos"
+  hardcoded — tempo vem do backend com fila à frente (ordenação canônica
+  urgência>VIP>normal ÷ linhas paralelas), encolhe por estágio
+  (10–16+fila → 5–9 → 2–5 → ~3 → fim) e atualiza via WS. Asserts de
+  monotonia no spec.
+- **Playwright**: tv-delivery-flow + tv-kds + tv-coverage = **49 passed**.
+- **Simulador iOS (xcodebuildmcp + idb)** — fluxo completo no Safari
+  iPhone 16/iOS 18.2, evidências em `sim-ios/`: QR → geofence/permissões →
+  WelcomeModal V20 digitado via idb → home reconhecida → pedido →
+  tracker 5 passos com **"NA FILA DA COZINHA · 14–23 minutos · 1 pedido
+  na sua frente"** (`05`) encolhendo pra **"EM PREPARO · 5–9"** (`06`),
+  "A caminho da mesa" (`03`) e **"Entregue"** com conta (`04`) — tudo
+  atualizando por WebSocket, sem reload.
+
+Screenshots reduzidos (sips) — trace/vídeo ficam fora do Git.

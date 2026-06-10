@@ -136,6 +136,30 @@ Cozinha/KDS:
   `/api/proxy/:path*`. O board usa `GET /:slug/orders/_kds?station=kitchen|bar`
   e, quando pedido fica `ready`, chama `POST /:slug/orders/:orderId/call-waiter`
   em vez de marcar como `delivered`.
+- Regras do fluxo de entrega consolidadas pós code-review (2026-06-10):
+  qualquer staff ativo pode CONFIRMAR `Entregue` (takeover — `claimed_by`
+  registra quem confirmou; bloquear o colega criava pedido preso em
+  in_transit); `call-waiter` sem `x-staff-id` = chamada de estação
+  (`called_by` NULL), com header presente valida 401; predicados de
+  audiência de entrega vivem em `lib/api/waiter` (`isDeliveryForWaiter`/
+  `isDeliveryClaimedBy`) — não reimplementar; `useWaiterEvents` usa socket
+  COMPARTILHADO por (tenant|staffId) com retry pós-rejeição (gateway
+  rate-limita handshakes por IP do restaurante); turnos overnight casam
+  assignment de ontem no trecho pós-meia-noite.
+- ETA do cliente é DINÂMICA (2026-06-10): `GET /:slug/orders[/:id]`
+  devolve eta_minutes_min/max + queue_ahead — fila à frente na ordenação
+  canônica (urgência>VIP>normal ÷ ETA_KITCHEN_PARALLEL_LINES) + range por
+  estágio que encolhe (10–16 → 5–9 → 2–5 → 1–3). Nunca hardcodar tempo no
+  front. Constantes em orders.service (TODO: settings por restaurante).
+- Fluxo validado também em iOS real (simulador iPhone 16, xcodebuildmcp +
+  idb): Safari → QR → geofence (2 prompts de localização + retry) →
+  welcome digitado → pedido → tracker atualizando via WS sem reload.
+  Evidências: `qa-reports/tv-delivery-e2e/sim-ios/`.
+- Backlog de cleanup aceito (code-review, sem bug): consolidar
+  relativeTime/playBeep/psql()/labels de status duplicados; extrair
+  TableMap compartilhado (planta); unificar cânon de prioridade com
+  priority.util (alergia vs vip); sweep de entregas órfãs no
+  TtlTickService; e2e não mutar pedidos alheios do DB dev.
 - Fluxo de entrega TV→garçom→cliente validado ponta a ponta em 2026-06-10
   (spec `tv-delivery-flow.spec.ts`, evidencia `qa-reports/tv-delivery-e2e/`):
   banner in-app via WS `order:handoff_called` + poll em todas as rotas
