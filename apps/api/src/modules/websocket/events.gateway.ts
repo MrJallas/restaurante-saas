@@ -507,6 +507,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       deliveryId: string;
       tableLabel: string;
       tableCode: string;
+      zoneName?: string | null;
       targetWaiterId: string | null;
       targetWaiterName?: string | null;
     },

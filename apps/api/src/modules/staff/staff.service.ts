@@ -136,6 +136,46 @@ export class StaffService {
     );
   }
 
+  /**
+   * Todas as mesas ativas do tenant com zona + ocupação, pro mini-mapa
+   * de orientação do garçom (tela de entrega) e futuros mapas staff.
+   * Mesas sem zona caem em zone_name NULL — o FE agrupa como "Sem zona".
+   */
+  async listTablesOverview(): Promise<unknown[]> {
+    return this.tenantConn.query(
+      `
+      SELECT
+        t.id,
+        t.code,
+        t.label,
+        COALESCE(
+          CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT),
+          CAST(NULLIF(regexp_replace(t.label, '[^0-9]', '', 'g'), '') AS INT),
+          0
+        )                                            AS number,
+        t.capacity,
+        t.sort_order,
+        z.id                                         AS zone_id,
+        z.name                                       AS zone_name,
+        COALESCE(z.sort_order, 2147483647)           AS zone_sort_order,
+        (active_ts.id IS NOT NULL)                   AS occupied
+      FROM tables t
+      LEFT JOIN zones z ON z.id = t.zone_id
+      LEFT JOIN LATERAL (
+        SELECT ts.id
+          FROM table_sessions ts
+         WHERE ts.table_id = t.id
+           AND ts.status = 'active'
+           AND ts.closed_at IS NULL
+         ORDER BY ts.created_at DESC
+         LIMIT 1
+      ) active_ts ON TRUE
+      WHERE t.is_active = TRUE
+      ORDER BY COALESCE(z.sort_order, 2147483647) ASC, t.sort_order ASC, number ASC
+      `,
+    );
+  }
+
   async getTableDetail(tableRef: string) {
     const ref = tableRef.trim();
     if (!ref) {

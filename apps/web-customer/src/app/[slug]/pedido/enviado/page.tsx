@@ -29,6 +29,7 @@ const DEFAULT_STEPS: { key: string; label: string }[] = [
   { key: 'received', label: 'Recebido pela cozinha' },
   { key: 'in_progress', label: 'Em preparo' },
   { key: 'ready', label: 'Pronto para servir' },
+  { key: 'in_transit', label: 'A caminho da mesa' },
   { key: 'delivered', label: 'Na sua mesa' },
 ];
 
@@ -36,7 +37,8 @@ const STATUS_INDEX: Record<string, number> = {
   received: 0,
   in_progress: 1,
   ready: 2,
-  delivered: 3,
+  in_transit: 3,
+  delivered: 4,
 };
 
 export default function PedidoEnviadoPage() {

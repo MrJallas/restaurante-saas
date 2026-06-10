@@ -53,13 +53,20 @@ DELETE FROM tables;
 DELETE FROM staff;
 DELETE FROM promotions;
 
+-- === Zones ===
+-- Local da mesa pro fluxo de entrega do garçom (prompt 99 §6): a tela
+-- /waiter/entrega mostra a zona (Varanda, Salão Principal…) + mapa.
+INSERT INTO zones (name, description, sort_order) VALUES
+  ('Salão Principal', 'Área interna principal', 1),
+  ('Varanda', 'Área externa coberta', 2);
+
 -- === Tables ===
-INSERT INTO tables (code, label, capacity, sort_order) VALUES
-  ('M01', 'Mesa 01', 2, 1),
-  ('M02', 'Mesa 02', 4, 2),
-  ('M03', 'Mesa 03', 4, 3),
-  ('M04', 'Mesa 04', 6, 4),
-  ('M05', 'Mesa 05 (Varanda)', 4, 5);
+INSERT INTO tables (code, label, capacity, sort_order, zone_id) VALUES
+  ('M01', 'Mesa 01', 2, 1, (SELECT id FROM zones WHERE name = 'Salão Principal')),
+  ('M02', 'Mesa 02', 4, 2, (SELECT id FROM zones WHERE name = 'Salão Principal')),
+  ('M03', 'Mesa 03', 4, 3, (SELECT id FROM zones WHERE name = 'Salão Principal')),
+  ('M04', 'Mesa 04', 6, 4, (SELECT id FROM zones WHERE name = 'Salão Principal')),
+  ('M05', 'Mesa 05 (Varanda)', 4, 5, (SELECT id FROM zones WHERE name = 'Varanda'));
 
 -- Fixed physical QR tables used by automated and manual QR-entry tests.
 -- They intentionally use high table numbers so host endpoints that receive
@@ -70,7 +77,8 @@ INSERT INTO tables (
   qr_hmac_secret,
   qr_public_token,
   capacity,
-  sort_order
+  sort_order,
+  zone_id
 ) VALUES
   (
     'QRTEST91',
@@ -78,7 +86,8 @@ INSERT INTO tables (
     'qrtest91-secret-fixed',
     'qrtest91-public-token-fixed',
     2,
-    91
+    91,
+    (SELECT id FROM zones WHERE name = 'Varanda')
   ),
   (
     'QRTEST92',
@@ -86,7 +95,8 @@ INSERT INTO tables (
     'qrtest92-secret-fixed',
     'qrtest92-public-token-fixed',
     2,
-    92
+    92,
+    (SELECT id FROM zones WHERE name = 'Salão Principal')
   );
 
 -- === Staff (PIN 1234 everywhere = sha256) ===

@@ -1208,10 +1208,12 @@ export class OrdersService {
 
   async callWaiterForOrder(orderId: string, slug: string, staffId: string) {
     const orderRows = (await this.tenantConn.query(
-      `SELECT o.id, o.status, o.table_session_id, t.label AS table_label, t.code AS table_code
+      `SELECT o.id, o.status, o.table_session_id, t.label AS table_label, t.code AS table_code,
+              z.name AS zone_name
          FROM orders o
          JOIN table_sessions ts ON ts.id = o.table_session_id
          JOIN tables t ON t.id = ts.table_id
+         LEFT JOIN zones z ON z.id = t.zone_id
         WHERE o.id = $1`,
       [orderId],
     )) as Array<{
@@ -1220,6 +1222,7 @@ export class OrdersService {
       table_session_id: string;
       table_label: string;
       table_code: string;
+      zone_name: string | null;
     }>;
 
     if (!orderRows.length) {
@@ -1255,6 +1258,7 @@ export class OrdersService {
       deliveryId: delivery.id,
       tableLabel: order.table_label,
       tableCode: order.table_code,
+      zoneName: order.zone_name,
       targetWaiterId: delivery.target_waiter_id,
       targetWaiterName: target.name,
     });
@@ -1265,6 +1269,7 @@ export class OrdersService {
       deliveryId: delivery.id,
       deliveryStatus: delivery.status,
       calledAt: delivery.called_at,
+      zoneName: order.zone_name,
       targetWaiterId: delivery.target_waiter_id,
       targetWaiterName: target.name,
     };

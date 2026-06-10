@@ -17,8 +17,8 @@ import {
 } from '../../components/waiter/Primitives';
 import { useWaiterEvents } from '../../hooks/useWaiterEvents';
 import {
-  listMyTables, listMyZonePauses, listPendingCalls,
-  type ActiveTableSummary, type WaiterCallSummary,
+  listMyTables, listMyZonePauses, listPendingCalls, listPendingDeliveries,
+  type ActiveTableSummary, type PendingDelivery, type WaiterCallSummary,
 } from '../../lib/api/waiter';
 import type { ZonePauseDto, WsEvent } from '@restaurant/shared-types';
 
@@ -64,6 +64,7 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
   const [tables, setTables] = useState<ActiveTableSummary[]>([]);
   const [calls, setCalls] = useState<WaiterCallSummary[]>([]);
   const [pauses, setPauses] = useState<ZonePauseDto[]>([]);
+  const [deliveries, setDeliveries] = useState<PendingDelivery[]>([]);
 
   const { on } = useWaiterEvents({ tenantSlug, waiterId });
 
@@ -72,15 +73,26 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
     let alive = true;
     async function load() {
       try {
-        const [t, c, p] = await Promise.all([
+        const [t, c, p, d] = await Promise.all([
           listMyTables(tenantSlug).catch(() => []),
           listPendingCalls(tenantSlug).catch(() => []),
           listMyZonePauses(tenantSlug, waiterId).catch(() => []),
+          listPendingDeliveries(tenantSlug).catch(() => [] as PendingDelivery[]),
         ]);
         if (!alive) return;
         setTables(t);
         setCalls(c);
         setPauses(p);
+        // Entregas relevantes pra mim: pendentes broadcast/direcionadas
+        // ou já claimed por mim (em trânsito).
+        setDeliveries(
+          d.filter(
+            (row) =>
+              (row.delivery_status === 'pending' &&
+                (!row.target_waiter_id || row.target_waiter_id === waiterId)) ||
+              (row.delivery_status === 'claimed' && row.claimed_by === waiterId),
+          ),
+        );
       } catch {
         /* noop · screen renders empty */
       }
@@ -131,7 +143,8 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
     [pauses],
   );
   const firstUrgentCall = calls[0];
-  const callsCount = calls.length;
+  const firstDelivery = deliveries[0];
+  const callsCount = calls.length + deliveries.length;
 
   return (
     <div
@@ -191,6 +204,34 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
       )}
 
       <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px 16px' }}>
+        {/* faixa de entrega pendente — handoff TV cozinha/bar */}
+        {firstDelivery && (
+          <button
+            type="button"
+            data-testid="home-delivery-strip"
+            onClick={() =>
+              router.push(`/waiter/entrega/${firstDelivery.order_id}?tenant=${tenantSlug}`)
+            }
+            style={{
+              all: 'unset', cursor: 'pointer', boxSizing: 'border-box', width: '100%',
+              background: C.successBg, border: `1px solid ${C.success}`,
+              borderRadius: 14, padding: '12px 14px',
+              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
+              color: C.success,
+            }}
+          >
+            {Icon.bell(20)}
+            <div style={{ flex: 1, fontSize: 13.5, fontWeight: 600, minWidth: 0 }}>
+              {firstDelivery.table_label}
+              {firstDelivery.zone_name ? ` · ${firstDelivery.zone_name}` : ''} · pronto na cozinha
+              {deliveries.length > 1 ? ` · +${deliveries.length - 1}` : ''}
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', flexShrink: 0 }}>
+              {firstDelivery.delivery_status === 'claimed' ? 'Confirmar →' : 'Entregar →'}
+            </span>
+          </button>
+        )}
+
         {/* faixa de chamados ativos */}
         {firstUrgentCall && (
           <button

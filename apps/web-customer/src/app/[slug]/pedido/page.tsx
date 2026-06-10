@@ -38,6 +38,7 @@ const STATUS_LABELS: Record<string, string> = {
   received: 'Recebido pela cozinha',
   in_progress: 'Em preparo',
   ready: 'Pronto para servir',
+  in_transit: 'A caminho da mesa',
   delivered: 'Entregue',
 };
 
@@ -46,6 +47,7 @@ const STATUS_COLORS: Record<string, string> = {
   received: 'bg-success',
   in_progress: 'bg-success',
   ready: 'bg-success',
+  in_transit: 'bg-success',
   delivered: 'bg-mute',
 };
 
@@ -53,6 +55,7 @@ const PROGRESS_STEPS: { key: string; label: string }[] = [
   { key: 'received', label: 'Recebido pela cozinha' },
   { key: 'in_progress', label: 'Em preparo' },
   { key: 'ready', label: 'Pronto para servir' },
+  { key: 'in_transit', label: 'A caminho da mesa' },
   { key: 'delivered', label: 'Na sua mesa' },
 ];
 
@@ -60,7 +63,8 @@ const STATUS_INDEX: Record<string, number> = {
   received: 0,
   in_progress: 1,
   ready: 2,
-  delivered: 3,
+  in_transit: 3,
+  delivered: 4,
 };
 
 function timeAgo(iso: string): string {

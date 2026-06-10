@@ -125,6 +125,20 @@ export class StaffController {
   }
 
   /**
+   * Mapa operacional de mesas pro app do garçom (tela de entrega usa pra
+   * orientar onde fica a mesa: zona + grade de mesas). Diferente de
+   * `my-tables` (só mesas com sessão ativa), retorna TODAS as mesas
+   * ativas do tenant agrupáveis por zona. Declarado ANTES do wildcard
+   * `@Get(':id')` pra Nest matcher não cair em getById('tables-overview').
+   */
+  @Get('tables-overview')
+  @UseGuards(StaffOnlyGuard)
+  async tablesOverview() {
+    const tables = await this.staffService.listTablesOverview();
+    return { tables };
+  }
+
+  /**
    * Round 18 (Onda 4 batch 2): KPIs agregados pra
    * `ScreenManagerStaffDetail` (canvas /manager/equipe/[id]).
    * Period: today | 7d | 30d. Auth: staff-only (manager dashboard).

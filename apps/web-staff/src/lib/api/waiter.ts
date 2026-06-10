@@ -174,6 +174,56 @@ export function markOrderDelivered(
   return staffPost(`/${tenantSlug}/orders/${orderId}/delivered`, {});
 }
 
+// ─── Entregas (handoff cozinha/bar → garçom) ───
+
+export interface PendingDeliveryItem {
+  name: string;
+  quantity: number;
+  notes?: string | null;
+}
+
+export interface PendingDelivery {
+  delivery_id: string;
+  order_id: string;
+  delivery_status: 'pending' | 'claimed';
+  called_at: string | null;
+  claimed_at: string | null;
+  claimed_by: string | null;
+  target_waiter_id: string | null;
+  target_waiter_name: string | null;
+  order_status: string;
+  total_cents: number;
+  table_label: string;
+  table_code: string;
+  zone_name: string | null;
+  table_session_id: string;
+  party_size: number;
+  items: PendingDeliveryItem[];
+}
+
+export function listPendingDeliveries(tenantSlug: string): Promise<PendingDelivery[]> {
+  return staffGet<PendingDelivery[]>(`/${tenantSlug}/deliveries/pending`);
+}
+
+export interface TableOverviewEntry {
+  id: string;
+  code: string;
+  label: string;
+  number: number;
+  capacity: number;
+  sort_order: number;
+  zone_id: string | null;
+  zone_name: string | null;
+  zone_sort_order: number;
+  occupied: boolean;
+}
+
+export function listTablesOverview(tenantSlug: string): Promise<TableOverviewEntry[]> {
+  return staffGet<{ tables: TableOverviewEntry[] }>(`/${tenantSlug}/staff/tables-overview`).then(
+    (r) => r.tables ?? [],
+  );
+}
+
 // ─── Direct order ───
 export function listWaiterMenuItems(tenantSlug: string): Promise<WaiterMenuItem[]> {
   return staffGet<{ items: WaiterMenuItem[] }>(`/${tenantSlug}/menu/items`).then(
