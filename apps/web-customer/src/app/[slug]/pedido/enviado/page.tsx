@@ -20,8 +20,9 @@ interface OrderResponse {
   status: string;
   totalCents: number;
   items: OrderItem[];
-  etaMinutesMin?: number;
-  etaMinutesMax?: number;
+  etaMinutesMin?: number | null;
+  etaMinutesMax?: number | null;
+  queueAhead?: number;
   createdAt?: string;
 }
 
@@ -72,9 +73,17 @@ export default function PedidoEnviadoPage() {
 
   const currentIndex = order ? STATUS_INDEX[order.status] ?? 0 : 0;
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
-  const eta = order?.etaMinutesMin && order?.etaMinutesMax
-    ? `${order.etaMinutesMin}–${order.etaMinutesMax} minutos`
-    : '22–28 minutos';
+  // ETA real do backend (fila + prioridade + estágio) — o fallback
+  // hardcoded "22–28 minutos" saiu; antes do primeiro fetch mostra
+  // "calculando…" e pedido entregue mostra "—".
+  const eta =
+    order?.etaMinutesMin != null && order?.etaMinutesMax != null
+      ? order.etaMinutesMax <= 3
+        ? `~${order.etaMinutesMax} min`
+        : `${order.etaMinutesMin}–${order.etaMinutesMax} minutos`
+      : order
+        ? '—'
+        : 'calculando…';
   const items = order?.items ?? [];
   const totalCents = order?.totalCents ?? 0;
 

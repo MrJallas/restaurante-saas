@@ -38,6 +38,36 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 
 const PENDING_CONFIRMATION_WINDOW_SECONDS = 15;
 
+// ── Motor de ETA do cliente ─────────────────────────────────────────────
+// O "22–28 minutos" do app do cliente era HARDCODED no front. Aqui vira
+// estimativa real e explicável, com três entradas:
+//  1. estágio do pedido — o range encolhe conforme o processo resolve
+//     (recebido → preparo → pronto → a caminho);
+//  2. fila à frente — pedidos ativos do tenant na MESMA ordenação canônica
+//     da cozinha (urgência > VIP > normal, FIFO dentro da fila), então
+//     prioridade muda a posição e portanto o tempo;
+//  3. paralelismo da cozinha — pedidos à frente são divididos pelas linhas
+//     que preparam em paralelo.
+// Valores são heurística de dev (TODO: configuráveis por restaurante nas
+// settings junto com meta_minutes do KDS).
+const ETA_KITCHEN_PARALLEL_LINES = 2;
+const ETA_PER_QUEUED_ORDER_MIN = 4;
+const ETA_PER_QUEUED_ORDER_MAX = 7;
+const ETA_STAGE_RANGE: Record<string, [number, number]> = {
+  pending_confirmation: [10, 16],
+  received: [10, 16],
+  in_progress: [5, 9],
+  ready: [2, 5],
+  in_transit: [1, 3],
+  // aliases legados
+  open: [10, 16],
+  confirmed: [10, 16],
+  preparing: [5, 9],
+};
+// Estágios em que o pedido ainda disputa a fila da cozinha (a partir de
+// in_progress ele já está no fogão — fila à frente deixa de somar).
+const ETA_QUEUED_STATUSES = new Set(['pending_confirmation', 'received', 'open', 'confirmed']);
+
 export interface CreateOrderItemDto {
   menuItemId: string;
   quantity: number;
@@ -770,6 +800,79 @@ export class OrdersService {
     return ids;
   }
 
+  /**
+   * Snapshot leve da fila ativa da cozinha na ordenação canônica
+   * (urgência > VIP > normal, FIFO dentro da fila) — mesma regra do _kds.
+   * O índice do pedido no array = quantos pedidos existem à frente dele.
+   */
+  private async getKitchenQueueSnapshot(): Promise<string[]> {
+    const rows = (await this.tenantConn.query(
+      `SELECT o.id
+         FROM orders o
+         JOIN table_sessions ts ON ts.id = o.table_session_id
+         LEFT JOIN visits vip_visit ON vip_visit.id = o.visit_id
+         LEFT JOIN customers vip_customer ON vip_customer.id = vip_visit.customer_id
+        WHERE o.status IN ('pending_confirmation', 'received', 'open', 'confirmed')
+          AND o.created_at > now() - interval '8 hours'
+        ORDER BY
+          CASE
+            WHEN o.priority_rank > 0 THEN 0
+            WHEN ('vip' = ANY(COALESCE(ts.flags, '{}'::text[])))
+              OR COALESCE(vip_customer.is_vip, false) THEN 1
+            ELSE 2
+          END ASC,
+          o.priority_rank DESC,
+          o.created_at ASC
+        LIMIT 200`,
+    )) as Array<{ id: string }>;
+    return rows.map((r) => r.id);
+  }
+
+  private computeEtaRange(
+    status: string,
+    aheadCount: number,
+  ): { min: number; max: number } | null {
+    const stage = ETA_STAGE_RANGE[status];
+    if (!stage) return null; // delivered/cancelled — não há espera
+    let [min, max] = stage;
+    if (ETA_QUEUED_STATUSES.has(status) && aheadCount > 0) {
+      const slots = Math.ceil(aheadCount / ETA_KITCHEN_PARALLEL_LINES);
+      min += slots * ETA_PER_QUEUED_ORDER_MIN;
+      max += slots * ETA_PER_QUEUED_ORDER_MAX;
+    }
+    return { min, max };
+  }
+
+  /**
+   * Anota pedidos do cliente com ETA dinâmica (min/max) + posição na fila.
+   * Uma consulta de snapshot por chamada; falha de snapshot degrada pra
+   * ETA sem componente de fila (nunca derruba a listagem do cliente).
+   */
+  private async decorateWithEta<T extends { id: string; status: string }>(
+    orders: T[],
+  ): Promise<Array<T & { etaMin: number | null; etaMax: number | null; queueAhead: number }>> {
+    const needsQueue = orders.some((o) => ETA_QUEUED_STATUSES.has(o.status));
+    let position = new Map<string, number>();
+    if (needsQueue) {
+      try {
+        const snapshot = await this.getKitchenQueueSnapshot();
+        position = new Map(snapshot.map((id, index) => [id, index]));
+      } catch {
+        position = new Map();
+      }
+    }
+    return orders.map((o) => {
+      const ahead = position.get(o.id) ?? 0;
+      const eta = this.computeEtaRange(o.status, ahead);
+      return {
+        ...o,
+        etaMin: eta?.min ?? null,
+        etaMax: eta?.max ?? null,
+        queueAhead: ETA_QUEUED_STATUSES.has(o.status) ? ahead : 0,
+      };
+    });
+  }
+
   async getOrderById(tableSessionId: string, orderId: string) {
     const rows = (await this.tenantConn.query(
       `SELECT o.id, o.status, o.billing_mode, o.total_cents, o.notes,
@@ -817,7 +920,8 @@ export class OrdersService {
     }>;
 
     if (!rows.length) throw new NotFoundException('Pedido nao encontrado.');
-    const o = rows[0];
+    const [withEta] = await this.decorateWithEta(rows);
+    const o = withEta;
     return {
       id: o.id,
       status: o.status,
@@ -828,6 +932,9 @@ export class OrdersService {
       createdAt: o.created_at,
       updatedAt: o.updated_at,
       autoConfirmAt: o.auto_confirm_at,
+      etaMinutesMin: o.etaMin,
+      etaMinutesMax: o.etaMax,
+      queueAhead: o.queueAhead,
       items: o.items,
     };
   }
@@ -1005,7 +1112,19 @@ export class OrdersService {
 
     sql += ` GROUP BY o.id ORDER BY o.created_at DESC`;
 
-    return this.tenantConn.query(sql, params);
+    const rows = (await this.tenantConn.query(sql, params)) as Array<{
+      id: string;
+      status: string;
+    }>;
+    // ETA dinâmica pro tracker do cliente (/pedido): muda com a fila, com a
+    // prioridade (ordenação canônica) e encolhe a cada estágio resolvido.
+    const withEta = await this.decorateWithEta(rows);
+    return withEta.map(({ etaMin, etaMax, queueAhead, ...row }) => ({
+      ...row,
+      eta_minutes_min: etaMin,
+      eta_minutes_max: etaMax,
+      queue_ahead: queueAhead,
+    }));
   }
 
   /**

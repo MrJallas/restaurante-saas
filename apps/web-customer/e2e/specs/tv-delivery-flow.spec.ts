@@ -54,6 +54,22 @@ test.describe('TV → garçom → entregue → cliente', () => {
   test.setTimeout(240_000);
 
   test('fluxo de entrega ponta a ponta com zona e mapa', async ({ page, browser }) => {
+    // ETA do pedido pela API do cliente (mesma sessão/cookies da page).
+    const fetchEta = async (id: string) => {
+      const res = await page.request.get(`/api/${SLUG}/orders`);
+      expect(res.ok()).toBeTruthy();
+      const body = (await res.json()) as {
+        orders: Array<{
+          id: string;
+          eta_minutes_min: number | null;
+          eta_minutes_max: number | null;
+          queue_ahead: number;
+        }>;
+      };
+      const row = body.orders.find((o) => o.id === id);
+      expect(row, 'pedido presente na listagem do cliente').toBeTruthy();
+      return row!;
+    };
     // ── 1. Cliente abre sessão na QRTEST91 (zona Varanda) ──
     await newSession(page, { tableCode: 'QRTEST91' });
 
@@ -75,6 +91,12 @@ test.describe('TV → garçom → entregue → cliente', () => {
       method: 'PATCH',
     });
     expect(confirmRes.ok(), 'PATCH /confirm do cliente').toBeTruthy();
+
+    // ETA dinâmica no estágio inicial: recebido = preparo cheio (>=10 min),
+    // mais fila se houver pedidos à frente na ordenação canônica.
+    const etaReceived = await fetchEta(orderId);
+    expect(etaReceived.eta_minutes_min, 'ETA min em received').toBeGreaterThanOrEqual(10);
+    expect(etaReceived.queue_ahead).toBeGreaterThanOrEqual(0);
 
     // Higiene: o pedido do teste vira o ÚNICO ativo (TV determinística) e
     // entregas pendentes antigas saem do feed do garçom.
@@ -99,6 +121,12 @@ test.describe('TV → garçom → entregue → cliente', () => {
     await page.goto(`/${SLUG}/pedido`);
     await expect(page.getByText(/Pronto para servir ·/)).toBeVisible({ timeout: 15_000 });
     expect(psql(`SELECT status FROM orders WHERE id='${orderId}'`)).toBe('ready');
+
+    // ETA dinâmica: pronto = só o handoff do garçom (range curto, sem
+    // componente de fila). O hardcoded "22–28 minutos" morreu.
+    const etaReady = await fetchEta(orderId);
+    expect(etaReady.eta_minutes_min, 'ETA min em ready').toBeGreaterThanOrEqual(1);
+    expect(etaReady.eta_minutes_max, 'ETA max em ready').toBeLessThanOrEqual(5);
 
     // ── 4. TV da cozinha chama o garçom (botão real) ──
     const tvContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -183,6 +211,15 @@ test.describe('TV → garçom → entregue → cliente', () => {
     await page.reload();
     await expect(page.getByText(/A caminho da mesa ·/)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/Entregue ·/)).toHaveCount(0);
+
+    // ETA encolhe conforme o processo resolve: received > ready > in_transit.
+    const etaTransit = await fetchEta(orderId);
+    expect(etaTransit.eta_minutes_max, 'ETA max em in_transit').toBeLessThanOrEqual(3);
+    expect(
+      etaReceived.eta_minutes_max! > etaReady.eta_minutes_max! &&
+        etaReady.eta_minutes_max! > etaTransit.eta_minutes_max!,
+      `ETA monotônica: ${etaReceived.eta_minutes_max} > ${etaReady.eta_minutes_max} > ${etaTransit.eta_minutes_max}`,
+    ).toBe(true);
 
     // ── 7. Garçom confirma "Entregue" — só agora o pedido termina ──
     await waiter.getByTestId('delivery-confirm-delivered').getByRole('button').click();

@@ -30,6 +30,10 @@ interface OrderApi {
   notes?: string;
   visit_id: string | null;
   created_at: string;
+  /** ETA dinâmica do backend: fila + prioridade + estágio (null = sem espera). */
+  eta_minutes_min?: number | null;
+  eta_minutes_max?: number | null;
+  queue_ahead?: number;
   items: OrderItemApi[];
 }
 
@@ -66,6 +70,24 @@ const STATUS_INDEX: Record<string, number> = {
   in_transit: 3,
   delivered: 4,
 };
+
+// Eyebrow do card hero acompanha o estágio real — antes era sempre
+// "Em preparo agora" com "22–28 minutos" hardcoded.
+const HERO_EYEBROW: Record<string, string> = {
+  pending_confirmation: 'Aguardando confirmação',
+  received: 'Na fila da cozinha',
+  in_progress: 'Em preparo agora',
+  ready: 'Pronto · aguardando garçom',
+  in_transit: 'A caminho da sua mesa',
+};
+
+function fmtEta(order: OrderApi): string {
+  const min = order.eta_minutes_min;
+  const max = order.eta_minutes_max;
+  if (min == null || max == null) return '—';
+  if (max <= 3) return `~${max} min`;
+  return `${min}–${max} minutos`;
+}
 
 function timeAgo(iso: string): string {
   const then = new Date(iso).getTime();
@@ -264,11 +286,19 @@ export default function PedidoPage() {
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-[11px] font-semibold uppercase tracking-[1.2px] text-mute">
-                    Em preparo agora
+                    {HERO_EYEBROW[latestKitchenOrder.status] ?? 'Em preparo agora'}
                   </div>
                   <div className="mt-0.5 text-[22px] font-semibold tracking-[-0.02em] tabular-nums">
-                    22–28 minutos
+                    {fmtEta(latestKitchenOrder)}
                   </div>
+                  {(latestKitchenOrder.queue_ahead ?? 0) > 0 && (
+                    <div className="mt-0.5 text-[12px] text-mute">
+                      {latestKitchenOrder.queue_ahead}{' '}
+                      {latestKitchenOrder.queue_ahead === 1
+                        ? 'pedido na sua frente'
+                        : 'pedidos na sua frente'}
+                    </div>
+                  )}
                 </div>
                 <div className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-full border-[1.5px] border-ink text-[20px]">
                   ◷
