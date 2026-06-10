@@ -1214,7 +1214,7 @@ export class OrdersService {
     ) as Promise<KitchenQueueItem[]>;
   }
 
-  async callWaiterForOrder(orderId: string, slug: string, staffId: string) {
+  async callWaiterForOrder(orderId: string, slug: string, staffId: string | null) {
     const orderRows = (await this.tenantConn.query(
       `SELECT o.id, o.status, o.table_session_id, t.label AS table_label, t.code AS table_code,
               z.name AS zone_name

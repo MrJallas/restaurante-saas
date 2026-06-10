@@ -378,6 +378,16 @@ export class OrdersController {
     });
   }
 
+  /**
+   * Chamado pela TV da cozinha/bar (via proxy server-side do web-staff) e
+   * por apps staff. A TV é um dispositivo de estação SEM identidade de
+   * pessoa — autentica pelo `x-staff-key` (StaffOnlyGuard), mas não tem
+   * `x-staff-id`. Atribuição (`order_deliveries.called_by`, nullable na
+   * migration 053) é best-effort: com header válido grava o staff; sem
+   * header fica NULL = "chamado pela estação". Antes o requireActiveStaffId
+   * dava 401 pra TV e o botão Chamar garçom nunca funcionava ponta a ponta
+   * (achado do E2E tv-delivery-flow).
+   */
   @Post(':orderId/call-waiter')
   @UseGuards(StaffOnlyGuard)
   async callWaiter(
@@ -385,7 +395,12 @@ export class OrdersController {
     @Param('slug') slug: string,
     @Req() req: Request,
   ) {
-    const staffId = await this.callerResolver.requireActiveStaffId(req);
+    let staffId: string | null = null;
+    try {
+      staffId = await this.callerResolver.requireActiveStaffId(req);
+    } catch {
+      staffId = null;
+    }
     return this.ordersService.callWaiterForOrder(orderId, slug, staffId);
   }
 
