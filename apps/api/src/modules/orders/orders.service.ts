@@ -1131,9 +1131,17 @@ export class OrdersService {
         AND o.created_at > now() - interval '8 hours'
         AND o.created_at <= now()
         AND ${itemPredicate}
-        AND NOT (
-          o.status = 'ready'
-          AND delivery.status IN ('called', 'claimed', 'in_transit')
+        AND (
+          o.status != 'ready'
+          -- Pronto continua na TV até chamarem o garçom; entrega ativa
+          -- (pending/claimed) tira do feed pra evitar chamada duplicada.
+          -- COALESCE: sem row de entrega o predicado antigo virava NULL e
+          -- o WHERE descartava TODO pedido ready sem delivery — a coluna
+          -- "Prontos" da TV ficava sempre vazia com dados reais (achado
+          -- do E2E tv-delivery-flow). Os statuses reais de order_deliveries
+          -- são pending/claimed/delivered/cancelled — 'called'/'in_transit'
+          -- do filtro antigo nunca existiram.
+          OR COALESCE(delivery.status, '') NOT IN ('pending', 'claimed')
         )
       GROUP BY o.id, t.label, delivery.status
       ORDER BY o.created_at ASC
