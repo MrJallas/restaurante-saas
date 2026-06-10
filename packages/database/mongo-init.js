@@ -23,10 +23,17 @@ db = db.getSiblingDB('restaurant_chat');
 // sweep a cada 60s (config interna). Per LGPD Art. 6 III (minimizacao).
 db.chat_threads.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 db.chat_messages.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+db.customer_courtesy_history.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 // Listing rapido pra historico do cliente: tenantId + customerId
 // + ordenacao por lastMessageAt desc (campo usado pelo service).
 db.chat_threads.createIndex({ tenantId: 1, customerId: 1, lastMessageAt: -1 });
+db.customer_courtesy_history.createIndex({ tenantId: 1, customerId: 1, createdAt: -1 });
+db.customer_courtesy_history.createIndex(
+  { tenantId: 1, customerId: 1, courtesyId: 1 },
+  { unique: true },
+);
+db.customer_courtesy_history.createIndex({ tenantId: 1, courtesyId: 1 });
 
 // Paginacao das mensagens dentro da thread.
 db.chat_messages.createIndex({ threadId: 1, createdAt: 1 });

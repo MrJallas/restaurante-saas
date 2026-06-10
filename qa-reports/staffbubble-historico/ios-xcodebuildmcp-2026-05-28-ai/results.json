@@ -1,0 +1,51 @@
+{
+  "status": "partial-ui-pass",
+  "tooling": {
+    "requestedMcp": "xcodebuildtools",
+    "availablePackage": "xcodebuildmcp@2.5.2",
+    "usedVia": "npx xcodebuildmcp CLI"
+  },
+  "simulator": {
+    "name": "iPhone 16 Pro",
+    "udid": "0075BF14-2FEE-4DF5-8056-1248A6D8CD75"
+  },
+  "lmStudio": {
+    "baseUrl": "http://192.168.0.14:1234/v1",
+    "model": "qwen/qwen3-coder-30b",
+    "aiServiceHealth": "ok"
+  },
+  "iosLocation": {
+    "status": "passed",
+    "steps": [
+      "Reset and granted MobileSafari location permission with simctl privacy.",
+      "Set simulator coordinates with xcodebuildmcp simulator-management set-location.",
+      "Opened QRTEST92 in MobileSafari.",
+      "Filled name and valid CPF in Safari and entered the table home screen."
+    ]
+  },
+  "aiSmoke": {
+    "status": "passed-via-api-and-ios-trigger",
+    "sessionId": "ac995bec-65f8-47fe-9638-7a83d0137828",
+    "customerId": "a999bec2-9dc2-4019-bb83-fa7703790a61",
+    "message": "Me indica uma sobremesa leve",
+    "providerUsed": "openai",
+    "modelUsed": "qwen/qwen3-coder-30b",
+    "responseExcerpt": "Eu iria nessas opcoes hoje: Pudim da Casa, Brownie com Sorvete, Petit Gateau",
+    "historyArtifact": "assistant-history-after-lmstudio.json"
+  },
+  "notes": [
+    "Coordinate tapping on the home SoftInput submit button did not trigger navigation, so the assistant prefill URL was opened directly in the same Safari session.",
+    "The LM Studio call completed and persisted assistant_messages with provider/model metadata.",
+    "The final Safari screenshot after direct prefill showed the QR-required fallback, so visual chat-bubble rendering on iOS Safari was not claimed in this run."
+  ],
+  "screenshots": [
+    "01-open-qr.jpg",
+    "02-after-welcome.jpg",
+    "03-filled-form.jpg",
+    "04-after-submit.jpg",
+    "05-ai-message-typed.jpg",
+    "06-ai-response.jpg",
+    "07-after-return.jpg",
+    "08-assistente-ai-response.jpg"
+  ]
+}

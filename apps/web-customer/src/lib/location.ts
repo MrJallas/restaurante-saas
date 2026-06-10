@@ -4,6 +4,16 @@ export async function captureCustomerLocationSignal(options: {
   prompt: boolean;
   timeoutMs?: number;
 }): Promise<CustomerLocationSignal> {
+  if (shouldUseInsecureLanFallback()) {
+    return {
+      status: 'granted',
+      latitude: finiteEnvNumber(process.env.NEXT_PUBLIC_DEV_GEOLOCATION_LATITUDE) ?? 0,
+      longitude: finiteEnvNumber(process.env.NEXT_PUBLIC_DEV_GEOLOCATION_LONGITUDE) ?? 0,
+      accuracyMeters: finiteEnvNumber(process.env.NEXT_PUBLIC_DEV_GEOLOCATION_ACCURACY_METERS) ?? 9999,
+      capturedAt: new Date().toISOString(),
+    };
+  }
+
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     return { status: 'unsupported', capturedAt: new Date().toISOString() };
   }
@@ -62,4 +72,30 @@ async function readPermissionState(): Promise<
   } catch {
     return null;
   }
+}
+
+function shouldUseInsecureLanFallback(): boolean {
+  if (process.env.NEXT_PUBLIC_ALLOW_INSECURE_LAN_GEOLOCATION !== 'true') {
+    return false;
+  }
+  if (typeof window === 'undefined') return false;
+  if (window.isSecureContext) return false;
+  return isPrivateLanHost(window.location.hostname);
+}
+
+function isPrivateLanHost(hostname: string): boolean {
+  if (hostname === 'localhost' || hostname.endsWith('.local')) return true;
+  const match = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!match) return false;
+  const first = Number(match[1]);
+  const second = Number(match[2]);
+  if (first === 10 || first === 127) return true;
+  if (first === 192 && second === 168) return true;
+  return first === 172 && second >= 16 && second <= 31;
+}
+
+function finiteEnvNumber(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }

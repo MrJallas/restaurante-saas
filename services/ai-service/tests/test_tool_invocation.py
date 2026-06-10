@@ -314,6 +314,137 @@ def test_chat_routes_gluten_free_options_to_recommendation_without_llm(chat_clie
     assert provider.chat.await_count == 0
 
 
+def test_chat_answers_approved_table_merge_status_without_tools(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={
+            "message": "a outra mesa aceitou? as mesas ja estao juntas?",
+            "tenantId": "t1",
+            "customer_context": {
+                "latest_table_merge": {
+                    "status": "approved",
+                    "origin_table_number": 14,
+                    "target_table_number": 15,
+                    "approved_by_a_at": "2026-05-28T20:41:42.513Z",
+                    "approved_by_b_at": "2026-05-28T20:41:43.833Z",
+                },
+            },
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] == "rule-table-merge-status"
+    assert body["response"] == (
+        "Sim, as mesas 14 e 15 já estão juntas. "
+        "Vocês podem escolher se juntam as comandas ou continuam separadas."
+    )
+    assert body["tool_calls"] == []
+    assert provider.chat.await_count == 0
+
+
+def test_chat_answers_pending_table_merge_status_without_tools(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={
+            "message": "a outra mesa aceitou?",
+            "tenantId": "t1",
+            "customer_context": {
+                "latest_table_merge": {
+                    "status": "pending",
+                    "origin_table_number": 14,
+                    "target_table_number": 15,
+                    "approved_by_a_at": "2026-05-28T20:41:42.513Z",
+                    "approved_by_b_at": None,
+                },
+            },
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] == "rule-table-merge-status"
+    assert "falta a outra mesa aceitar" in body["response"]
+    assert body["tool_calls"] == []
+    assert provider.chat.await_count == 0
+
+
+def test_chat_blocks_table_merge_retry_during_cooldown(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={
+            "message": "quero tentar juntar com essa mesa de novo",
+            "tenantId": "t1",
+            "customer_context": {
+                "latest_table_merge": {
+                    "status": "rejected",
+                    "origin_table_number": 14,
+                    "target_table_number": 15,
+                    "cooldown_expires_at": "2026-05-28T20:51:42.513Z",
+                    "retry_after_seconds": 420,
+                },
+            },
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] == "rule-table-merge-status"
+    assert "tentar de novo em 7 min" in body["response"]
+    assert body["tool_calls"] == []
+    assert provider.chat.await_count == 0
+
+
+def test_chat_routes_join_accept_before_ack_without_llm(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={
+            "message": "pode",
+            "tenantId": "restaurant_dev",
+            "customer_context": {
+                "pending_join_request": {
+                    "targetCustomerId": "12345678-1234-4234-8234-123456789012",
+                    "joinerName": "Bianca",
+                    "requestedAt": "2026-05-28T15:20:00.000Z",
+                },
+            },
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] == "rule-join-request-decision"
+    assert body["tool_calls"][0]["function"]["name"] == "accept_join_request"
+    assert body["tool_calls"][0]["function"]["arguments"]["targetCustomerId"] == (
+        "12345678-1234-4234-8234-123456789012"
+    )
+    assert body["tool_calls"][0]["result"]["actionPayload"]["decision"] == "approve"
+    assert provider.chat.await_count == 0
+
+
+def test_chat_routes_join_reject_before_ack_without_llm(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={
+            "message": "agora não",
+            "tenantId": "restaurant_dev",
+            "customer_context": {
+                "pending_join_request": {
+                    "targetCustomerId": "12345678-1234-4234-8234-123456789012",
+                    "joinerName": "Bianca",
+                },
+            },
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] == "rule-join-request-decision"
+    assert body["tool_calls"][0]["function"]["name"] == "reject_join_request"
+    assert body["tool_calls"][0]["result"]["actionPayload"]["decision"] == "reject"
+    assert provider.chat.await_count == 0
+
+
 def test_chat_manager_message_followup_uses_manager_tool_without_llm(chat_client):
     client, provider = chat_client
     res = client.post(

@@ -45,6 +45,7 @@ import { AlertsModule } from './modules/alerts/alerts.module';
 import { ContinuationModule } from './modules/continuation/continuation.module';
 import { StaffAuthModule } from './modules/staff-auth/staff-auth.module';
 import { ManagerAccountModule } from './modules/manager-account/manager-account.module';
+import { SalonModule } from './modules/salon/salon.module';
 
 @Module({
   imports: [
@@ -94,6 +95,7 @@ import { ManagerAccountModule } from './modules/manager-account/manager-account.
     AlertsModule,
     ContinuationModule,
     ManagerAccountModule,
+    SalonModule,
   ],
   controllers: [AppController],
 })

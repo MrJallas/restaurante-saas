@@ -5,8 +5,8 @@ Each test injects a `RecordingApiClient` into the ToolContext and asserts
 the (method, path, body) tuple matches the canonical `apps/api` route. The
 canonical routes were validated against the corresponding NestJS controllers:
 
-  - request_table_merge → POST /:slug/table-merge-requests
-    (apps/api/src/modules/table-merge/table-merge.controller.ts L66)
+  - request_table_merge → browser-session action payload
+    (apps/api/src/modules/table-merge/table-merge.controller.ts is protected by SessionGuard)
   - delete_chat         → DELETE /:slug/chat-history/threads/:threadId
     (apps/api/src/modules/chat-history/chat-history.controller.ts L49)
   - delete_all_chats    → DELETE /:slug/chat-history?customerId=…
@@ -18,6 +18,10 @@ canonical routes were validated against the corresponding NestJS controllers:
 
 `view_courtesy` is intentionally a silent navigation tool now — there is
 no `/courtesy` endpoint on apps/api. We assert it does NOT call api_client.
+
+`accept_join_request` / `reject_join_request` are also browser-session
+actions. The protected `/table/participants/decide` endpoint is called by
+web-customer, not by the AI service.
 """
 
 import pytest
@@ -27,11 +31,11 @@ from services.api_client import ApiClientError, RecordingApiClient
 
 
 # ─────────────────────────────────────────────────────────────
-# request_table_merge → POST /:slug/table-merge-requests
+# request_table_merge → FE creates with browser session
 # ─────────────────────────────────────────────────────────────
 
 
-def test_request_table_merge_hits_canonical_route():
+def test_request_table_merge_returns_frontend_payload_without_http():
     api = RecordingApiClient(default={"id": "merge-1"})
     ctx = ToolContext(
         tenant_id="my-rest",
@@ -41,26 +45,46 @@ def test_request_table_merge_hits_canonical_route():
     )
     result = dispatch_tool("request_table_merge", {"targetTable": "5"}, ctx)
     assert result.error is None
-    assert len(api.calls) == 1
-    method, path, body = api.calls[0]
-    assert method == "POST"
-    assert path == "/my-rest/table-merge-requests"
-    assert body["targetTableLabel"] == "5"
-    assert body["originTableSessionId"] == "sess-1"
-    assert body["requestingCustomerId"] == "cust-1"
+    assert len(api.calls) == 0
+    assert result.action_payload["targetTableLabel"] == "5"
 
 
-def test_request_table_merge_handles_429_cooldown():
-    """Cooldown response should produce a friendly message, not an error bubble."""
-    from services.api_client import ApiClientError
-    api = RecordingApiClient(
-        raise_on_call=ApiClientError("cooldown", status_code=429),
-    )
-    ctx = ToolContext(tenant_id="my-rest", customer_id="cust-1", api_client=api)
-    result = dispatch_tool("request_table_merge", {"targetTable": "5"}, ctx)
+def test_request_table_merge_without_target_opens_salon_picker():
+    ctx = ToolContext(tenant_id="my-rest", customer_id="cust-1")
+    result = dispatch_tool("request_table_merge", {}, ctx)
     assert result.error is None
-    assert "tentada há pouco" in (result.message or "")
-    assert result.action_payload.get("cooldown") is True
+    assert result.action_payload.get("requiresTargetSelection") is True
+    assert [chip["label"] for chip in result.chips] == [
+        "Escolher mesa",
+        "Chamar recepcionista",
+        "Ver cardápio",
+    ]
+
+
+@pytest.mark.parametrize(
+    "tool_name,decision",
+    [
+        ("accept_join_request", "approve"),
+        ("reject_join_request", "reject"),
+    ],
+)
+def test_join_request_decision_tools_do_not_call_api(tool_name: str, decision: str):
+    api = RecordingApiClient(default={"status": "should-not-be-used"})
+    ctx = ToolContext(
+        tenant_id="my-rest",
+        customer_id="host-1",
+        session_id="sess-1",
+        api_client=api,
+    )
+    result = dispatch_tool(
+        tool_name,
+        {"targetCustomerId": "12345678-1234-4234-8234-123456789012"},
+        ctx,
+    )
+    assert result.error is None
+    assert api.calls == []
+    assert result.action_payload["action"] == "decide_join_request"
+    assert result.action_payload["decision"] == decision
 
 
 # ─────────────────────────────────────────────────────────────
@@ -181,18 +205,19 @@ def test_send_message_to_manager_works_without_api_client():
 
 
 # ─────────────────────────────────────────────────────────────
-# view_courtesy — silent navigation, NO HTTP call
+# view_courtesy — browser-session action, NO HTTP call
 # ─────────────────────────────────────────────────────────────
 
 
 def test_view_courtesy_does_not_call_api():
-    """No `/courtesy` endpoint exists on apps/api — tool is FE-only fallback."""
+    """Customer courtesy endpoint is session-protected; FE fetches it."""
     api = RecordingApiClient()
     ctx = ToolContext(tenant_id="my-rest", customer_id="cust-1", api_client=api)
     result = dispatch_tool("view_courtesy", {}, ctx)
     assert result.error is None
-    assert len(api.calls) == 0, "view_courtesy must NOT issue an HTTP call (route 404)"
-    assert result.action_payload.get("status") == "not_implemented"
+    assert len(api.calls) == 0, "view_courtesy must NOT issue an HTTP call without browser session"
+    assert result.action_payload.get("action") == "show_courtesies"
+    assert "endpoint" not in (result.message or "").lower()
 
 
 # ─────────────────────────────────────────────────────────────

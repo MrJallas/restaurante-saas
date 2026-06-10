@@ -60,6 +60,80 @@ type AssistantHistoryMessage = {
   content: string;
 };
 
+type PendingJoinRequestInput = {
+  targetCustomerId: string;
+  joinerName?: string;
+  requestedAt?: string;
+  tableSessionId?: string;
+};
+
+type PendingJoinRequestContext = {
+  targetCustomerId: string;
+  joinerName: string;
+  requestedAt: string | null;
+};
+
+type AssistantPublicHistoryMessage =
+  | {
+      id: string;
+      role: 'user';
+      content: string;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      role: 'assistant';
+      content: string;
+      toolCalls?: AiToolCall[] | null;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      role: 'staff';
+      content: string;
+      staffId: string | null;
+      staffName: string | null;
+      staffRole: string | null;
+      createdAt: string;
+    };
+
+const UUID_TEXT_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuidText(value: string | null | undefined): value is string {
+  return typeof value === 'string' && UUID_TEXT_PATTERN.test(value);
+}
+
+function cleanText(value: string | null | undefined): string | null {
+  const text = value?.trim() ?? '';
+  return text.length > 0 ? text : null;
+}
+
+function toIso(value: string | Date): string {
+  if (value instanceof Date) return value.toISOString();
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? value : new Date(parsed).toISOString();
+}
+
+function staffRoleLabel(role: string | null | undefined): string | null {
+  switch (role) {
+    case 'manager':
+      return 'Gerente';
+    case 'waiter':
+      return 'Garçom';
+    case 'cook':
+      return 'Cozinha';
+    case 'host':
+      return 'Recepção';
+    case 'bartender':
+      return 'Bar';
+    case 'cashier':
+      return 'Caixa';
+    default:
+      return cleanText(role) ?? null;
+  }
+}
+
 /**
  * Normalise the AI service's tool_calls into the flat shape FE consumers
  * expect (`{ name, arguments, result, silent, router, routerTarget,
@@ -751,6 +825,45 @@ export class AssistantService {
     return this.getHistory(tableSessionId, customerId);
   }
 
+  private async resolvePendingJoinRequest(
+    tableSessionId: string,
+    hostCustomerId: string | null,
+    input?: PendingJoinRequestInput | null,
+  ): Promise<PendingJoinRequestContext | null> {
+    if (!hostCustomerId || !input?.targetCustomerId) return null;
+    if (input.tableSessionId && input.tableSessionId !== tableSessionId) return null;
+
+    const rows = (await this.tenantConn.query(
+      `SELECT sp.customer_id,
+              sp.joined_at,
+              c.name,
+              ts.host_customer_id
+         FROM session_participants sp
+         JOIN table_sessions ts ON ts.id = sp.table_session_id
+         JOIN customers c ON c.id = sp.customer_id
+        WHERE sp.table_session_id = $1
+          AND sp.customer_id = $2
+          AND sp.status = 'pending'
+          AND sp.left_at IS NULL
+        LIMIT 1`,
+      [tableSessionId, input.targetCustomerId],
+    )) as {
+      customer_id: string;
+      joined_at: string | Date | null;
+      name: string | null;
+      host_customer_id: string | null;
+    }[];
+
+    const row = rows[0];
+    if (!row || row.host_customer_id !== hostCustomerId) return null;
+
+    return {
+      targetCustomerId: row.customer_id,
+      joinerName: cleanText(row.name) ?? cleanText(input.joinerName) ?? 'Cliente',
+      requestedAt: row.joined_at ? toIso(row.joined_at) : cleanText(input.requestedAt),
+    };
+  }
+
   async sendMessage(
     tableSessionId: string,
     customerId: string | null,
@@ -763,6 +876,7 @@ export class AssistantService {
     conversationId?: string | null,
     continueThreadId?: string | null,
     tenantSlug?: string | null,
+    pendingJoinRequest?: PendingJoinRequestInput | null,
   ) {
     // IDOR guard: cliente nao pode passar `customerId` de outro cliente
     // pra extrair contexto de consumo / historico alheio. Validamos que
@@ -871,8 +985,16 @@ export class AssistantService {
     // Step 2: Build context
     const { context: tenantContext, menuItems } = await this.buildTenantContext();
     const customerContext = safeCustomerId
-      ? await this.buildCustomerContext(safeCustomerId)
+      ? await this.buildCustomerContext(safeCustomerId, tableSessionId)
       : undefined;
+    const pendingJoinContext = await this.resolvePendingJoinRequest(
+      tableSessionId,
+      safeCustomerId,
+      pendingJoinRequest,
+    );
+    if (customerContext && pendingJoinContext) {
+      customerContext.pending_join_request = pendingJoinContext;
+    }
     const history = recentHistory;
 
     // Step 3: Call AI
@@ -1130,6 +1252,7 @@ export class AssistantService {
        FROM assistant_messages
        WHERE table_session_id = $1
          AND was_blocked = false
+         AND COALESCE(from_role, 'customer') <> 'staff'
          AND (
            ($2::uuid IS NOT NULL AND customer_id = $2)
            OR ($2::uuid IS NULL AND customer_id IS NULL)
@@ -1164,36 +1287,111 @@ export class AssistantService {
   async getHistoryWithToolCalls(
     tableSessionId: string,
     customerId: string | null = null,
-  ) {
+  ): Promise<AssistantPublicHistoryMessage[]> {
     const rows = (await this.tenantConn.query(
-      `SELECT user_message, assistant_response, tool_calls
-       FROM assistant_messages
-       WHERE table_session_id = $1
-         AND was_blocked = false
-         AND (
-           ($2::uuid IS NOT NULL AND customer_id = $2)
-           OR ($2::uuid IS NULL AND customer_id IS NULL)
-         )
-       ORDER BY created_at DESC
-       LIMIT 10`,
+      `WITH recent AS (
+         SELECT
+           am.id,
+           am.user_message,
+           am.assistant_response,
+           am.tool_calls,
+           am.from_role,
+           am.customer_id,
+           am.model_used,
+           am.created_at,
+           s.name AS staff_name,
+           s.role AS staff_role
+         FROM assistant_messages am
+         LEFT JOIN staff s
+           ON s.id = CASE
+             WHEN am.from_role = 'staff'
+              AND am.model_used ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+             THEN am.model_used::uuid
+             ELSE NULL
+           END
+          AND s.is_active = true
+         WHERE am.table_session_id = $1
+           AND am.was_blocked = false
+           AND (
+             (
+               COALESCE(am.from_role, 'customer') <> 'staff'
+               AND (
+                 ($2::uuid IS NOT NULL AND am.customer_id = $2)
+                 OR ($2::uuid IS NULL AND am.customer_id IS NULL)
+               )
+             )
+             OR (
+               am.from_role = 'staff'
+               AND am.customer_id IS NULL
+               AND (
+                 $2::uuid IS NULL
+                 OR EXISTS (
+                   SELECT 1
+                   FROM session_participants sp
+                   WHERE sp.table_session_id = am.table_session_id
+                     AND sp.customer_id = $2
+                     AND sp.status = 'approved'
+                     AND sp.left_at IS NULL
+                 )
+               )
+             )
+           )
+         ORDER BY am.created_at DESC
+         LIMIT 10
+       )
+       SELECT *
+       FROM recent
+       ORDER BY created_at ASC`,
       [tableSessionId, customerId],
     )) as {
+      id: string;
       user_message: string;
       assistant_response: string | null;
       tool_calls: AiToolCall[] | null;
+      from_role: string | null;
+      customer_id: string | null;
+      model_used: string | null;
+      created_at: string | Date;
+      staff_name: string | null;
+      staff_role: string | null;
     }[];
 
-    return rows.reverse().flatMap((row) => {
-      const msgs: {
-        role: 'user' | 'assistant';
-        content: string;
-        toolCalls?: AiToolCall[] | null;
-      }[] = [{ role: 'user', content: row.user_message }];
-      if (row.assistant_response) {
+    return rows.flatMap((row) => {
+      const createdAt = toIso(row.created_at);
+      const assistantResponse = cleanText(row.assistant_response);
+
+      if (row.from_role === 'staff') {
+        if (!assistantResponse) return [];
+        return [
+          {
+            id: row.id,
+            role: 'staff' as const,
+            content: assistantResponse,
+            staffId: isUuidText(row.model_used) ? row.model_used : null,
+            staffName: cleanText(row.staff_name),
+            staffRole: staffRoleLabel(row.staff_role),
+            createdAt,
+          },
+        ];
+      }
+
+      const msgs: AssistantPublicHistoryMessage[] = [];
+      const userMessage = cleanText(row.user_message);
+      if (userMessage) {
         msgs.push({
+          id: `${row.id}:user`,
+          role: 'user',
+          content: userMessage,
+          createdAt,
+        });
+      }
+      if (assistantResponse) {
+        msgs.push({
+          id: `${row.id}:assistant`,
           role: 'assistant',
-          content: row.assistant_response,
+          content: assistantResponse,
           toolCalls: row.tool_calls ?? null,
+          createdAt,
         });
       }
       return msgs;
@@ -1393,6 +1591,7 @@ export class AssistantService {
 
   private async buildCustomerContext(
     customerId: string,
+    tableSessionId: string,
   ): Promise<Record<string, unknown>> {
     const customers = (await this.tenantConn.query(
       `SELECT name FROM customers WHERE id = $1`,
@@ -1404,10 +1603,44 @@ export class AssistantService {
       [customerId],
     )) as { last_items: unknown[]; favorite_items: unknown[] }[];
 
+    const mergeRows = (await this.tenantConn.query(
+      `SELECT mr.status,
+              mr.approved_by_a_at,
+              mr.approved_by_b_at,
+              mr.created_at,
+              CAST(NULLIF(regexp_replace(src_t.code, '[^0-9]', '', 'g'), '') AS INT) AS origin_table_number,
+              CAST(NULLIF(regexp_replace(tgt_t.code, '[^0-9]', '', 'g'), '') AS INT) AS target_table_number,
+              src_c.name AS origin_host_name,
+              tgt_c.name AS target_host_name,
+              cm.cooldown_expires_at,
+              cm.reason AS cooldown_reason,
+              CASE
+                WHEN cm.cooldown_expires_at IS NULL THEN NULL
+                ELSE GREATEST(0, CEIL(EXTRACT(EPOCH FROM (cm.cooldown_expires_at - now()))))::int
+              END AS retry_after_seconds
+         FROM table_merge_requests mr
+    LEFT JOIN table_sessions src_ts ON src_ts.id = mr.source_table_session_id
+    LEFT JOIN table_sessions tgt_ts ON tgt_ts.id = mr.target_table_session_id
+    LEFT JOIN tables src_t ON src_t.id = src_ts.table_id
+    LEFT JOIN tables tgt_t ON tgt_t.id = tgt_ts.table_id
+    LEFT JOIN customers src_c ON src_c.id = src_ts.host_customer_id
+    LEFT JOIN customers tgt_c ON tgt_c.id = tgt_ts.host_customer_id
+    LEFT JOIN table_merge_cooldowns cm
+           ON cm.source_table_session_id = mr.source_table_session_id
+          AND cm.target_table_session_id = mr.target_table_session_id
+          AND cm.cooldown_expires_at > now()
+        WHERE (mr.source_table_session_id = $1 OR mr.target_table_session_id = $1)
+          AND (mr.requesting_customer_id = $2 OR mr.target_customer_id = $2)
+        ORDER BY mr.created_at DESC
+        LIMIT 1`,
+      [tableSessionId, customerId],
+    )) as Array<Record<string, unknown>>;
+
     return {
       name: customers[0]?.name || '',
       last_items: summaryRows[0]?.last_items || [],
       favorite_items: summaryRows[0]?.favorite_items || [],
+      latest_table_merge: mergeRows[0] ?? null,
     };
   }
 

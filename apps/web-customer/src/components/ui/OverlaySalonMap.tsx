@@ -16,6 +16,10 @@ export type SalonTableStatus = 'occupied' | 'free' | 'distant' | 'you';
 export interface SalonTable {
   /** Número visível da mesa (ex.: 12, 14). Pode coincidir com label do tenant. */
   num: number;
+  /** Código técnico/QR da mesa, ex.: "M14" ou "14". */
+  tableCode?: string;
+  /** Label exibível da mesa, ex.: "Mesa 14". */
+  tableLabel?: string;
   /** Status — controla cor, badge e tap-ability. */
   status: SalonTableStatus;
   /** Identificador da sessão atual da mesa, se ocupada. Volta no callback. */
@@ -53,8 +57,8 @@ interface OverlaySalonMapProps {
    * sugeriu junção e abrimos o overlay já com uma seleção sticky.
    */
   highlightTableSessionId?: string;
-  /** Tap em mesa selecionável → callback com a mesa escolhida. */
-  onSelectTable?: (table: SalonTable) => void;
+  /** Confirma mesa selecionável no CTA → callback com a mesa escolhida. */
+  onSelectTable?: (table: SalonTable) => void | Promise<void>;
   /** Tap no X / overlay backdrop / Esc → fecha. */
   onClose: () => void;
   /**
@@ -67,6 +71,12 @@ interface OverlaySalonMapProps {
    * Quando undefined, esconde a barra de CTA (modo só-visualização).
    */
   ctaLabel?: string;
+  /** Estado de carregamento do mapa real vindo do backend. */
+  loading?: boolean;
+  /** Mensagem amigável quando o mapa não pôde carregar. */
+  error?: string | null;
+  /** Mensagem quando não há mesas a exibir. */
+  emptyMessage?: string;
 }
 
 /**
@@ -99,6 +109,9 @@ export function OverlaySalonMap({
   onClose,
   title = 'Selecione uma mesa',
   ctaLabel = 'Continuar',
+  loading = false,
+  error = null,
+  emptyMessage = 'Nenhuma mesa encontrada agora.',
 }: OverlaySalonMapProps) {
   const reducedMotion = useReducedMotion();
   const [selected, setSelected] = useState<SalonTable | null>(null);
@@ -189,29 +202,42 @@ export function OverlaySalonMap({
         </div>
 
         {/* Grids (1 ou N, dependendo de zones) */}
-        {groups.map((g, gi) => (
-          <div key={g.zone?.id ?? `g-${gi}`} className="px-6 pb-2">
-            {g.zone && (
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[1.5px] text-mute">
-                {g.zone.label}
-              </div>
-            )}
-            <div className="grid grid-cols-3 gap-2">
-              {g.tables.map((t) => (
-                <SalonTableCell
-                  key={`${t.num}-${t.sessionId ?? 'nosession'}`}
-                  table={t}
-                  isSelected={selected?.sessionId === t.sessionId && t.sessionId !== undefined}
-                  onTap={() => {
-                    if (t.status !== 'occupied') return;
-                    setSelected(t);
-                    onSelectTable?.(t);
-                  }}
-                />
-              ))}
-            </div>
+        {loading ? (
+          <div className="mx-6 rounded-[12px] border border-border-soft bg-surface px-4 py-5 text-center text-[13px] font-medium text-mute">
+            Carregando mesas próximas...
           </div>
-        ))}
+        ) : error ? (
+          <div className="mx-6 rounded-[12px] border border-border-soft bg-surface px-4 py-5 text-center text-[13px] font-medium text-mute">
+            {error}
+          </div>
+        ) : tables.length === 0 ? (
+          <div className="mx-6 rounded-[12px] border border-border-soft bg-surface px-4 py-5 text-center text-[13px] font-medium text-mute">
+            {emptyMessage}
+          </div>
+        ) : (
+          groups.map((g, gi) => (
+            <div key={g.zone?.id ?? `g-${gi}`} className="px-6 pb-2">
+              {g.zone && (
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[1.5px] text-mute">
+                  {g.zone.label}
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-2">
+                {g.tables.map((t) => (
+                  <SalonTableCell
+                    key={`${t.num}-${t.sessionId ?? t.tableCode ?? 'nosession'}`}
+                    table={t}
+                    isSelected={selected?.sessionId === t.sessionId && t.sessionId !== undefined}
+                    onTap={() => {
+                      if (t.status !== 'occupied') return;
+                      setSelected(t);
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          ))
+        )}
 
         {/* Hint — explica visualmente porque mesas atenuadas não dão tap */}
         <div className="px-6 pt-3 font-mono text-[9.5px] font-bold uppercase tracking-[1px] text-faint">
@@ -221,7 +247,13 @@ export function OverlaySalonMap({
         {/* Bottom CTA — só com seleção feita */}
         {selected && ctaLabel && (
           <div className="px-6 pb-2 pt-3.5">
-            <PillButton variant="filled" fullWidth onClick={onClose}>
+            <PillButton
+              variant="filled"
+              fullWidth
+              onClick={() => {
+                void onSelectTable?.(selected);
+              }}
+            >
               {ctaLabel} {selected.host ? `(mesa ${selected.num})` : ''}
             </PillButton>
             {selected.host && (
@@ -304,9 +336,9 @@ function SalonTableCell({ table, isSelected, onTap }: SalonTableCellProps) {
           </div>
         )}
       </div>
-      {isFree ? (
+      {isFree || isDistant ? (
         <div className="font-mono text-[8.5px] font-bold uppercase tracking-[1px] text-faint">
-          Livre
+          {isFree ? 'Livre' : 'Longe'}
         </div>
       ) : (
         <div>

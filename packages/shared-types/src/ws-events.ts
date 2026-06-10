@@ -10,6 +10,7 @@ import type { SessionFlag } from './vip';
 import type { StaffMessageDto } from './staff-message';
 import type { LgpdRequestKind } from './lgpd';
 import type { ScanVerificationStatus } from './scan-verification';
+import type { CustomerCourtesyDto } from './courtesy';
 
 // ─── Escalation generic events (for qr-issue cascade and others) ───
 
@@ -22,12 +23,7 @@ export interface WsEscalationCreated {
      * manager forwards (P1 #29) where the complaint climbs the chain because
      * the original assignee couldn't or wouldn't resolve it.
      */
-    type:
-      | 'late_arrival'
-      | 'table_merge'
-      | 'qr_issue'
-      | 'complaint'
-      | 'scan_verification';
+    type: 'late_arrival' | 'table_merge' | 'qr_issue' | 'complaint' | 'scan_verification';
     tenantId: string;
     /** Free-form context payload (kind-specific). */
     context: Record<string, unknown>;
@@ -158,12 +154,24 @@ export interface WsTableMergeCreated {
     targetSessionId: string;
     originTableNumber: number;
     targetTableNumber: number;
-    originHostName: string;
+    originHostName: string | null;
     targetHostName: string | null;
     originPartySize: number;
     targetPartySize: number;
     expiresAt: string;
   };
+}
+
+export interface WsTableMergeLifecycleDetails {
+  originSessionId?: string;
+  targetSessionId?: string;
+  originTableNumber?: number;
+  targetTableNumber?: number;
+  originHostName?: string | null;
+  targetHostName?: string | null;
+  originPartySize?: number;
+  targetPartySize?: number;
+  expiresAt?: string;
 }
 
 export interface WsTableMergeApproved {
@@ -174,7 +182,7 @@ export interface WsTableMergeApproved {
     side: 'a' | 'b' | 'both';
     status: TableMergeStatus;
     mergeId?: string;
-  };
+  } & WsTableMergeLifecycleDetails;
 }
 
 export interface WsTableMergeRejected {
@@ -183,7 +191,7 @@ export interface WsTableMergeRejected {
     requestId: string;
     /** Which side rejected ('timeout' on auto-expiration). */
     rejectedBy: 'a' | 'b' | 'timeout';
-  };
+  } & WsTableMergeLifecycleDetails;
 }
 
 export interface WsMergeCooldownStarted {
@@ -195,7 +203,9 @@ export interface WsMergeCooldownStarted {
     targetTable: number;
     reason: MergeCooldownReason;
     expiresAt: string;
-  };
+    cooldownEndsAt?: string;
+    retryAfterSeconds?: number;
+  } & WsTableMergeLifecycleDetails;
 }
 
 export interface WsMergeCooldownExpired {
@@ -320,6 +330,18 @@ export interface WsStaffMessagesCustomerReplied {
     content: string;
     createdAt: string;
   };
+}
+
+// ─── Courtesy arrival ───
+
+export interface WsCourtesyCreated {
+  event: 'courtesy.created';
+  payload: CustomerCourtesyDto;
+}
+
+export interface WsCourtesyUpdated {
+  event: 'courtesy.updated';
+  payload: CustomerCourtesyDto;
 }
 
 // ─── Waiter calls / order handoff ───
@@ -554,6 +576,8 @@ export type WsEvent =
   | WsStaffMessageReceived
   | WsStaffMessageRead
   | WsStaffMessagesCustomerReplied
+  | WsCourtesyCreated
+  | WsCourtesyUpdated
   | WsOrderReady
   | WsOrderHandoffCalled
   | WsKitchenPriorityRequest

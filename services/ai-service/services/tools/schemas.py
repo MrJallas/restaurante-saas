@@ -178,11 +178,40 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     ),
     _function(
         "request_table_merge",
-        "Pede para juntar a mesa do cliente com outra mesa. Requer o número/label da mesa-alvo.",
+        "Pede para juntar a mesa do cliente com outra mesa. Se o cliente não disser qual mesa, deixe targetTable ausente para abrir o mapa do salão.",
         {
             "targetTable": {"type": "string", "description": "Número ou label da mesa-alvo."},
         },
-        required=["targetTable"],
+    ),
+    _function(
+        "accept_join_request",
+        "Aprova um pedido pendente de entrada de participante na mesa. Use quando o host responder 'pode', 'sim', 'deixa entrar' ou equivalente a uma solicitação pendente.",
+        {
+            "targetCustomerId": {
+                "type": "string",
+                "description": "UUID do cliente pendente que pediu para entrar.",
+            },
+            "reason": {
+                "type": "string",
+                "description": "Texto opcional com a confirmação do host.",
+            },
+        },
+        required=["targetCustomerId"],
+    ),
+    _function(
+        "reject_join_request",
+        "Recusa um pedido pendente de entrada de participante na mesa. Use quando o host responder 'não', 'agora não', 'recusa' ou equivalente a uma solicitação pendente.",
+        {
+            "targetCustomerId": {
+                "type": "string",
+                "description": "UUID do cliente pendente que pediu para entrar.",
+            },
+            "reason": {
+                "type": "string",
+                "description": "Texto opcional com a recusa do host.",
+            },
+        },
+        required=["targetCustomerId"],
     ),
 
     # ── lgpd / history ───────────────────────────────────────

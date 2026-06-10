@@ -11,6 +11,8 @@ interface TypewriterBubbleProps {
   msPerChar?: number;
   /** Render-time decorations after the text completes (chips, etc.). */
   children?: React.ReactNode;
+  /** Stable hook for E2E checks. */
+  testId?: string;
   /**
    * If true, render the full text immediately (no animation). Used when the
    * customer arrived via push tap — they made a conscious gesture, so
@@ -42,6 +44,7 @@ export function TypewriterBubble({
   eyebrow,
   msPerChar = 25,
   children,
+  testId,
   skipAnimation = false,
   urgent,
 }: TypewriterBubbleProps) {
@@ -70,6 +73,7 @@ export function TypewriterBubble({
 
   return (
     <div
+      data-testid={testId}
       className="rounded-[12px] border border-border-soft bg-white p-3.5"
       style={{
         borderLeft: isUrgent ? '4px solid #d4a017' : undefined,

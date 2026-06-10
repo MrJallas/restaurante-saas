@@ -1,0 +1,51 @@
+{
+  "status": "passed",
+  "simulator": {
+    "name": "iPhone 16 Pro",
+    "udid": "0075BF14-2FEE-4DF5-8056-1248A6D8CD75",
+    "onlyBootedSimulatorUsed": true
+  },
+  "services": {
+    "api": "http://localhost:3101/api",
+    "webCustomer": "http://localhost:3103",
+    "lmStudio": "http://192.168.0.14:1234/v1",
+    "model": "qwen/qwen3-coder-30b"
+  },
+  "flow": {
+    "qrOpened": true,
+    "assistantOpenedFromMenuSameTab": true,
+    "staffBubbleLiveVisible": true,
+    "staffBubbleAfterReloadVisible": true,
+    "aiResponseVisible": true,
+    "assistantHistoryRoles": [
+      "staff",
+      "user",
+      "assistant"
+    ]
+  },
+  "staffMessage": {
+    "sessionId": "ef6ac7c6-23b1-408f-ab46-078f4f925598",
+    "customerId": "a999bec2-9dc2-4019-bb83-fa7703790a61",
+    "customerName": "Cliente_IA_P10",
+    "managerId": "8bd06156-1fe5-4c18-a82d-43d38287ed4a",
+    "message": "Mensagem iOS live reload 150957"
+  },
+  "historyChecks": {
+    "staffInHistory": true,
+    "assistantInHistory": true,
+    "emptyUserBubbleFound": false
+  },
+  "screenshots": [
+    "01-qr-open.jpg",
+    "02-menu-open.jpg",
+    "03-assistente-open.jpg",
+    "04-staff-live.jpg",
+    "05-after-reload.jpg",
+    "06-ai-typed.jpg",
+    "07-ai-response.jpg"
+  ],
+  "artifacts": [
+    "08-assistant-history.json",
+    "09-db-assistant-messages.txt"
+  ]
+}

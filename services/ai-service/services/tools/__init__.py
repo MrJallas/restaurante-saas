@@ -65,6 +65,8 @@ from .call_waiter import call as _call_waiter
 from .send_message_to_manager import call as _send_message_to_manager
 from .send_complaint import call as _send_complaint
 from .request_table_merge import call as _request_table_merge
+from .accept_join_request import call as _accept_join_request
+from .reject_join_request import call as _reject_join_request
 
 # ─────────────────────────────────────────────────────────────
 # Canonical tools — LGPD/history
@@ -190,6 +192,14 @@ TOOLS: dict[str, ToolMeta] = {
     ),
     "request_table_merge": ToolMeta(
         name="request_table_merge", call=_request_table_merge,
+        silent=False, requires_text=False, router=False, audience="customer",
+    ),
+    "accept_join_request": ToolMeta(
+        name="accept_join_request", call=_accept_join_request,
+        silent=False, requires_text=False, router=False, audience="customer",
+    ),
+    "reject_join_request": ToolMeta(
+        name="reject_join_request", call=_reject_join_request,
         silent=False, requires_text=False, router=False, audience="customer",
     ),
 
@@ -326,7 +336,7 @@ CANONICAL_TOOL_NAMES: set[str] = {
     "split_bill", "pay_individual", "pay_full", "open_payment_screen",
     # staff/communication
     "call_waiter", "send_message_to_manager", "send_complaint",
-    "request_table_merge",
+    "request_table_merge", "accept_join_request", "reject_join_request",
     # lgpd / history
     "delete_chat", "delete_all_chats", "view_chat_history", "lgpd_data_request",
     "show_lgpd_notice",

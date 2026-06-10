@@ -66,6 +66,27 @@ const MESSAGE_INDEXES: IndexDef[] = [
   },
 ];
 
+const CUSTOMER_COURTESY_HISTORY_INDEXES: IndexDef[] = [
+  {
+    name: 'tenantId_customerId_createdAt',
+    spec: { tenantId: 1, customerId: 1, createdAt: -1 },
+  },
+  {
+    name: 'tenantId_customerId_courtesyId_unique',
+    spec: { tenantId: 1, customerId: 1, courtesyId: 1 },
+    options: { unique: true },
+  },
+  {
+    name: 'tenantId_courtesyId',
+    spec: { tenantId: 1, courtesyId: 1 },
+  },
+  {
+    name: 'expiresAt_ttl',
+    spec: { expiresAt: 1 },
+    options: { expireAfterSeconds: 0 },
+  },
+];
+
 const SECURITY_EVENT_INDEXES: IndexDef[] = [
   {
     name: 'tenantId_createdAt',
@@ -159,6 +180,7 @@ async function main() {
 
     await ensureCollection(db, 'chat_threads');
     await ensureCollection(db, 'chat_messages');
+    await ensureCollection(db, 'customer_courtesy_history');
 
     // Round 9 (B-NEW-40): cleanup snake_case legacy indexes before
     // re-creating camelCase. Idempotente — dropIndex falha gracefully
@@ -172,6 +194,13 @@ async function main() {
 
     console.log('Ensuring indexes on chat_messages:');
     await ensureIndexes(db, 'chat_messages', MESSAGE_INDEXES);
+
+    console.log('Ensuring indexes on customer_courtesy_history:');
+    await ensureIndexes(
+      db,
+      'customer_courtesy_history',
+      CUSTOMER_COURTESY_HISTORY_INDEXES,
+    );
 
     const securityDb = client.db(SECURITY_DB_NAME);
     console.log(`Initializing database "${SECURITY_DB_NAME}"`);

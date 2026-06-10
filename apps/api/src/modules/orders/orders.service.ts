@@ -304,9 +304,12 @@ export class OrdersService {
       const validIds = new Set(validParticipants.map((p) => p.customer_id));
       const invalid = distinctCustomerIds.filter((id) => !validIds.has(id));
       if (invalid.length > 0) {
-        throw new BadRequestException(
-          `Cliente(s) nao fazem parte desta mesa: ${invalid.join(', ')}`,
-        );
+        throw new BadRequestException({
+          message: `Cliente(s) nao fazem parte desta mesa: ${invalid.join(', ')}`,
+          message_user:
+            'Sua entrada nesta mesa ainda nao esta aprovada. Volte para a tela da mesa ou peca ajuda ao garcom.',
+          error_code: 'CUSTOMER_NOT_APPROVED_FOR_TABLE',
+        });
       }
     }
 

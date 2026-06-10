@@ -10,12 +10,14 @@ interface ApiError {
   error_code?: string;
   code?: string;
   statusCode: number;
+  [key: string]: unknown;
 }
 
 export class ApiRequestError extends Error {
   constructor(
     public statusCode: number,
     message: string,
+    public body?: ApiError,
   ) {
     super(message);
     this.name = 'ApiRequestError';
@@ -42,6 +44,7 @@ export async function api<T>(
   try {
     res = await fetch(url, {
       ...options,
+      cache: options.cache ?? 'no-store',
       signal,
       credentials: 'include',
       headers: {
@@ -72,10 +75,11 @@ export async function api<T>(
       throw new ApiRequestError(
         401,
         message || 'Sessao expirada. Escaneie o QR Code novamente.',
+        body,
       );
     }
 
-    throw new ApiRequestError(res.status, message || 'Erro inesperado.');
+    throw new ApiRequestError(res.status, message || 'Erro inesperado.', body);
   }
 
   return res.json() as Promise<T>;

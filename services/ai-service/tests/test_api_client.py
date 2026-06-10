@@ -118,12 +118,9 @@ def test_tools_dispatch_endpoint_injects_api_client(monkeypatch):
     """
     P0 #7 acceptance: the `/tools/dispatch` endpoint wires api_client into
     ToolContext. We use a recording client + patch the singleton, then
-    dispatch `request_table_merge` (a tool that DOES use api_client) and
-    assert the HTTP call shape.
-
-    Round 22: switched from send_message_to_manager (which no longer uses
-    api_client — persist é server-side no apps/api AssistantService) pra
-    request_table_merge, que continua sendo HTTP-dispatched no AI side.
+    dispatch `request_table_merge` and assert it no longer calls apps/api
+    directly. The table-merge create endpoint is protected by the browser
+    SessionGuard, so the customer frontend performs the POST.
     """
     from fastapi.testclient import TestClient
 
@@ -142,9 +139,6 @@ def test_tools_dispatch_endpoint_injects_api_client(monkeypatch):
         },
     )
     assert res.status_code == 200, res.text
-    assert len(api.calls) == 1
-    method, path, body = api.calls[0]
-    assert method == "POST"
-    assert path == "/tenant-x/table-merge-requests"
-    assert body["targetTableLabel"] == "5"
-    assert body["originTableSessionId"] == "sess-1"
+    assert len(api.calls) == 0
+    body = res.json()
+    assert body["result"]["actionPayload"]["targetTableLabel"] == "5"

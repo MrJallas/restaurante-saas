@@ -6,9 +6,10 @@ import { PillButton } from '../../components/ui/PillButton';
 import { useSession } from '../../hooks/useSession';
 import { useUIState } from '../../providers/UIStateProvider';
 import { useCustomerHostEvents } from '../../hooks/useCustomerHostEvents';
+import { ScreenCustomerMergeCooldown } from './ScreenCustomerMergeCooldown';
 
 export type WaitingMode = 'late-arrival' | 'merge-target' | 'merge-origin';
-export type WaitingState = 'waiting' | 'approved' | 'rejected' | 'expired';
+export type WaitingState = 'waiting' | 'approved' | 'rejected' | 'expired' | 'cooldown';
 
 interface ScreenCustomerWaitingApprovalProps {
   slug: string;
@@ -66,6 +67,11 @@ export function ScreenCustomerWaitingApproval({
   const [state, setState] = useState<WaitingState>('waiting');
   const [escalated, setEscalated] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [cooldown, setCooldown] = useState<{
+    cooldownEndsAt: string;
+    targetTableNumber?: number | null;
+    message?: string | null;
+  } | null>(null);
 
   // ─── Countdown ─────────────────────────────────────────────────────────
   // Keep recomputing seconds left until the deadline; fall back to "60 s"
@@ -133,6 +139,24 @@ export function ScreenCustomerWaitingApproval({
           );
           break;
         }
+        case 'merge.cooldown_started': {
+          if (mode === 'late-arrival') return;
+          if (
+            event.payload.originSessionId &&
+            sessionId &&
+            event.payload.originSessionId !== sessionId
+          ) {
+            return;
+          }
+          setCooldown({
+            cooldownEndsAt: event.payload.cooldownEndsAt ?? event.payload.expiresAt,
+            targetTableNumber:
+              event.payload.targetTableNumber ?? event.payload.targetTable ?? null,
+            message: null,
+          });
+          setState('cooldown');
+          break;
+        }
         case 'escalation.advanced': {
           // Informational — only the eyebrow text changes. Keeps customers
           // from being "stuck" on the same message when the chain progresses.
@@ -196,7 +220,7 @@ export function ScreenCustomerWaitingApproval({
     if (state === 'approved') {
       return mode === 'late-arrival'
         ? 'Te conectando ao chat da mesa em 1 s…'
-        : 'Comanda virou uma só. Te levando pro chat…';
+        : 'Te levando para escolher como ficam as comandas…';
     }
     if (state === 'expired') {
       return mode === 'late-arrival'
@@ -219,6 +243,23 @@ export function ScreenCustomerWaitingApproval({
       : state === 'rejected' || state === 'expired'
         ? 'text-mute'
         : 'text-mute';
+
+  if (state === 'cooldown' && cooldown) {
+    return (
+      <main className="grid min-h-dvh place-items-center bg-bg px-6 py-8">
+        <ScreenCustomerMergeCooldown
+          targetTableNumber={cooldown.targetTableNumber}
+          cooldownEndsAt={cooldown.cooldownEndsAt}
+          message={cooldown.message}
+          onCallHost={openCallWaiterSheet}
+          onTryAnother={() =>
+            router.push(`/${slug}/assistente?prefill=quero%20tentar%20outra%20mesa`)
+          }
+          onContinueHere={() => router.push(`/${slug}/assistente`)}
+        />
+      </main>
+    );
+  }
 
   return (
     // Round 4 §C-NEW-11 — centralizado vertical+horizontal (V20 canon dos

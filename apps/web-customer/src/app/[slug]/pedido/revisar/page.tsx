@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
-import { apiPost } from '../../../../lib/api';
+import { ApiRequestError, apiGet, apiPost } from '../../../../lib/api';
 import { useDraftOrder } from '../../../../providers/DraftOrderProvider';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
@@ -22,11 +22,40 @@ export default function PedidoRevisarPage() {
 
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 
+  const checkCanOrder = async (): Promise<boolean> => {
+    if (!customerId) {
+      setSubmitError('Identifique-se novamente pela tela da mesa antes de pedir.');
+      return false;
+    }
+    try {
+      const res = await apiGet<{
+        participants: { customerId: string; status: 'pending' | 'approved' | 'rejected' }[];
+      }>(`/${slug}/table/participants`);
+      const me = res.participants.find((p) => p.customerId === customerId);
+      if (me?.status === 'approved') return true;
+      if (me?.status === 'pending') {
+        setSubmitError('Sua entrada ainda esta aguardando aprovacao do host da mesa.');
+        return false;
+      }
+      setSubmitError(
+        'Sua entrada nesta mesa ainda nao esta aprovada. Volte para a tela da mesa ou peca ajuda ao garcom.',
+      );
+      return false;
+    } catch {
+      return true;
+    }
+  };
+
   const handleSubmit = async () => {
     if (items.length === 0) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
+      const canOrder = await checkCanOrder();
+      if (!canOrder) {
+        setSubmitting(false);
+        return;
+      }
       const groupedByMode = items.reduce<Record<string, typeof items>>((acc, it) => {
         acc[it.commandMode] ??= [];
         acc[it.commandMode].push(it);
@@ -49,6 +78,17 @@ export default function PedidoRevisarPage() {
       );
       push(`/${slug}/pedido/confirmando?orderId=${res.id}`);
     } catch (err) {
+      if (
+        err instanceof ApiRequestError &&
+        (err.body?.error_code === 'CUSTOMER_NOT_APPROVED_FOR_TABLE' ||
+          /nao fazem parte desta mesa|não fazem parte desta mesa/i.test(err.message))
+      ) {
+        setSubmitError(
+          'Sua entrada nesta mesa ainda nao esta aprovada. Volte para a tela da mesa ou peca ajuda ao garcom.',
+        );
+        setSubmitting(false);
+        return;
+      }
       setSubmitError(
         err instanceof Error ? err.message : 'Erro ao criar pedido. Tente novamente.',
       );
