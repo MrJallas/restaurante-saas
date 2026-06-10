@@ -7,7 +7,12 @@ import { ScreenManagerProfile } from '../../../screens/manager/ScreenManagerProf
 function ManagerProfileInner() {
   const params = useSearchParams();
   const name = params.get('name') ?? undefined;
-  return <ScreenManagerProfile managerName={name} />;
+  const slug =
+    params.get('slug') ||
+    process.env.NEXT_PUBLIC_DEFAULT_TENANT ||
+    process.env.NEXT_PUBLIC_TENANT_SLUG ||
+    'restaurant_dev';
+  return <ScreenManagerProfile managerName={name} tenantSlug={slug} />;
 }
 
 export default function ManagerProfilePage() {

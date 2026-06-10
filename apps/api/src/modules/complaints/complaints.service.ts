@@ -205,7 +205,7 @@ export class ComplaintsService {
                assigned_manager_id = COALESCE($1, assigned_manager_id),
                updated_at = now()
          WHERE id = $2
-           AND status NOT IN ('closed', 'resolved')
+           AND status != 'closed'
          RETURNING *`,
         [by.staffId ?? null, id],
       ),

@@ -65,6 +65,7 @@ export function ScreenManagerOrdersPause({
   const [pauses, setPauses] = useState<ZonePauseDto[]>([]);
   const [waiters, setWaiters] = useState<WaiterOpt[]>(WAITERS_FALLBACK);
   const [busy, setBusy] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [, setTick] = useState(0);
 
   const refresh = useCallback(async () => {
@@ -131,6 +132,7 @@ export function ScreenManagerOrdersPause({
   const onCreate = async () => {
     if (!waiterId || busy) return;
     setBusy(true);
+    setErrorMsg(null);
     try {
       await api.zonePauses.create({
         waiterId,
@@ -139,6 +141,8 @@ export function ScreenManagerOrdersPause({
       });
       setReason('');
       refresh();
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Não foi possível iniciar a pausa.');
     } finally {
       setBusy(false);
     }
@@ -215,7 +219,16 @@ export function ScreenManagerOrdersPause({
                       {mm}:{ss}
                     </div>
                     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                      <GButton dark={dark} kind="primary" onClick={() => api.zonePauses.end(p.id).then(refresh)}>
+                      <GButton
+                        dark={dark}
+                        kind="primary"
+                        onClick={() =>
+                          api.zonePauses
+                            .end(p.id)
+                            .then(refresh)
+                            .catch((err: Error) => setErrorMsg(err.message || 'Não foi possível encerrar a pausa.'))
+                        }
+                      >
                         Encerrar agora
                       </GButton>
                     </div>
@@ -363,6 +376,24 @@ export function ScreenManagerOrdersPause({
         <GButton dark={dark} full kind="primary" onClick={onCreate} disabled={!waiterId || busy}>
           {busy ? 'Iniciando…' : `Pausar por ${duration} min`}
         </GButton>
+        {errorMsg && (
+          <div
+            role="alert"
+            style={{
+              marginTop: 12,
+              padding: '10px 12px',
+              borderRadius: 12,
+              background: '#FFF1F1',
+              border: '1px solid #F4C7C7',
+              color: '#A12626',
+              fontSize: 12.5,
+              fontWeight: 700,
+              lineHeight: 1.4,
+            }}
+          >
+            {errorMsg}
+          </div>
+        )}
       </div>
     </div>
   );

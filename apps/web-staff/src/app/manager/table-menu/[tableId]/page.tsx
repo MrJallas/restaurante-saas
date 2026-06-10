@@ -18,6 +18,9 @@ function ManagerTableMenuInner() {
   const tenantId = search.get('tenantId') || process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
   const tableSessionId = route?.tableId ?? '';
   const tableNumber = parseInt(search.get('tableNumber') ?? '0', 10) || 0;
+  const partyParam = parseInt(search.get('party') ?? '', 10);
+  const seatsParam = parseInt(search.get('seats') ?? '', 10);
+  const observation = search.get('observation') ?? undefined;
   const customerId = search.get('customerId') ?? undefined;
   const customerName = search.get('customerName') ?? undefined;
 
@@ -27,6 +30,9 @@ function ManagerTableMenuInner() {
       tenantId={tenantId}
       tableSessionId={tableSessionId}
       tableNumber={tableNumber}
+      party={Number.isFinite(partyParam) ? partyParam : undefined}
+      seats={Number.isFinite(seatsParam) ? seatsParam : undefined}
+      observation={observation}
       customerId={customerId}
       customerName={customerName}
       onClose={() => router.back()}

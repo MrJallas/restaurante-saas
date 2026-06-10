@@ -72,7 +72,6 @@ export function ScreenManagerNotifications({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
 
   // Fetch driver — usado tanto pelo initial load quanto pelo WS refresh.
   const refresh = React.useCallback(async () => {
@@ -105,13 +104,6 @@ export function ScreenManagerNotifications({
   useManagerEvents(tenantSlug, () => {
     refresh();
   });
-
-  // Auto-dismiss do stub toast.
-  useEffect(() => {
-    if (!stubMsg) return;
-    const t = setTimeout(() => setStubMsg(null), 2400);
-    return () => clearTimeout(t);
-  }, [stubMsg]);
 
   const grouped = useMemo(() => {
     const map: Record<AlertSeverity, AlertRow[]> = {
@@ -235,31 +227,6 @@ export function ScreenManagerNotifications({
           })
         )}
       </div>
-
-      {/* Stub toast (mesmo padrão de ScreenManagerStaff). */}
-      {stubMsg && (
-        <div
-          role="status"
-          style={{
-            position: 'fixed',
-            left: '50%',
-            bottom: 84,
-            transform: 'translateX(-50%)',
-            background: C.ink,
-            color: C.bg,
-            padding: '10px 14px',
-            borderRadius: 10,
-            fontSize: 12.5,
-            fontWeight: 600,
-            zIndex: 50,
-            boxShadow: '0 6px 18px rgba(0,0,0,0.18)',
-            maxWidth: 340,
-            textAlign: 'center',
-          }}
-        >
-          {stubMsg}
-        </div>
-      )}
 
       {persona === 'host' ? (
         <HBottomNav

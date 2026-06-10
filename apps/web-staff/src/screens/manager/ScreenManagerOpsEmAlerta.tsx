@@ -12,8 +12,7 @@
 //     mesmo endpoint TODO `/tables/open` com filtro `state in (warn,
 //     crit)`. Por enquanto mock derivado.
 //     TODO(round19): wire GET /:slug/tables/alerts.
-//   • STUB: "Realocar mesas críticas" (toast). "Mensagem direta" navega
-//     pro /manager/mensagens (real route).
+//   • REAL: ações navegam para redistribuição de equipe e mensagens.
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -82,7 +81,7 @@ const FALLBACK_ALERT_TABLES: AlertTable[] = [
   },
 ];
 
-export function ScreenManagerOpsEmAlerta({ dark, tenantSlug: _tenantSlug }: ScreenManagerOpsEmAlertaProps) {
+export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsEmAlertaProps) {
   const C = useG(!!dark);
   const router = useRouter();
   const params = useSearchParams();
@@ -90,13 +89,6 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug: _tenantSlug }: Scre
   const backHref = slugQs ? `/manager/operacoes?slug=${slugQs}` : '/manager/operacoes';
 
   const items = FALLBACK_ALERT_TABLES;
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
-
-  const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 4 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
-  };
-
   const crit = items.filter((i) => i.state === 'CRÍTICA').length;
   const lent = items.filter((i) => i.state === 'LENTA').length;
 
@@ -295,7 +287,7 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug: _tenantSlug }: Scre
                 filled
                 accent="#A12626"
                 icon={Icon.table(13)}
-                onClick={() => showStub('Realocar mesas críticas')}
+                onClick={() => router.push(`/manager/equipe/sobrecarga?slug=${tenantSlug}`)}
               >
                 Realocar mesas críticas
               </ActionPill>
@@ -317,8 +309,6 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug: _tenantSlug }: Scre
       </div>
 
       <MBottomNav active="ops" dark={dark} onTo={(r) => router.push(r)} alerts={items.length} />
-
-      {stubMsg && <StubToast C={C}>{stubMsg}</StubToast>}
     </div>
   );
 }
@@ -427,33 +417,6 @@ function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.
         Como esse número é calculado
       </div>
       <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>{children}</div>
-    </div>
-  );
-}
-
-function StubToast({ C, children }: { C: ReturnType<typeof useG>; children: React.ReactNode }) {
-  return (
-    <div
-      role="status"
-      style={{
-        position: 'fixed',
-        left: '50%',
-        bottom: 132,
-        transform: 'translateX(-50%)',
-        zIndex: 80,
-        padding: '12px 18px',
-        borderRadius: 999,
-        background: C.ink,
-        color: C.bg,
-        fontSize: 13,
-        fontWeight: 600,
-        letterSpacing: -0.1,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-        maxWidth: 'calc(100vw - 32px)',
-        textAlign: 'center',
-      }}
-    >
-      {children}
     </div>
   );
 }

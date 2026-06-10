@@ -35,6 +35,14 @@ interface TopItem {
   category_name: string;
 }
 
+type PeriodKey = 'today' | '7d' | '30d';
+
+const PERIODS: Array<{ key: PeriodKey; label: string; days: number }> = [
+  { key: 'today', label: 'Hoje', days: 1 },
+  { key: '7d', label: '7 dias', days: 7 },
+  { key: '30d', label: '30 dias', days: 30 },
+];
+
 function formatCurrency(cents: number): string {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
@@ -55,15 +63,17 @@ function FinanceiroInner() {
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [revenue, setRevenue] = useState<RevenuePoint[]>([]);
   const [topItems, setTopItems] = useState<TopItem[]>([]);
+  const [period, setPeriod] = useState<PeriodKey>((params.get('period') as PeriodKey) || '7d');
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const periodCfg = PERIODS.find((p) => p.key === period) ?? PERIODS[1];
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     Promise.all([
       staffGet<OverviewData>(`/${slug}/dashboard/overview`),
-      staffGet<RevenuePoint[]>(`/${slug}/dashboard/revenue?days=7`),
+      staffGet<RevenuePoint[]>(`/${slug}/dashboard/revenue?days=${periodCfg.days}`),
       staffGet<{ items: TopItem[] }>(`/${slug}/dashboard/top-items?limit=5`),
     ])
       .then(([overviewRes, revenueRes, topRes]) => {
@@ -82,7 +92,7 @@ function FinanceiroInner() {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, periodCfg.days]);
 
   const totals = useMemo(() => {
     const revenueCents = revenue.reduce((sum, row) => sum + row.revenueCents, 0);
@@ -126,22 +136,88 @@ function FinanceiroInner() {
           </div>
         )}
 
-        <MSection title="Resumo de hoje">
+        <div style={{ padding: '12px 16px 0' }}>
+          <div
+            role="tablist"
+            aria-label="Período financeiro"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: 6,
+              border: `1px solid ${C.borderSoft}`,
+              borderRadius: 12,
+              padding: 4,
+              background: C.bg,
+            }}
+          >
+            {PERIODS.map((p) => {
+              const active = period === p.key;
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setPeriod(p.key)}
+                  style={{
+                    all: 'unset',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    padding: '9px 8px',
+                    borderRadius: 9,
+                    background: active ? C.ink : 'transparent',
+                    color: active ? C.bg : C.ink,
+                    fontSize: 12,
+                    fontWeight: 800,
+                  }}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <MSection title={`Resumo · ${periodCfg.label.toLowerCase()}`}>
           <div style={{ padding: '0 16px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <MetricBox label="Faturamento" value={loading ? '...' : formatCurrency(overview?.today.revenueCents ?? 0)} />
-              <MetricBox label="Pedidos" value={loading ? '...' : String(overview?.today.orders ?? 0)} />
-              <MetricBox label="Clientes" value={loading ? '...' : String(overview?.today.customers ?? 0)} />
-              <MetricBox label="Pendentes" value={loading ? '...' : String(overview?.today.pendingOrders ?? 0)} />
+              <MetricBox
+                label="Faturamento"
+                value={loading ? '...' : formatCurrency(period === 'today' ? overview?.today.revenueCents ?? 0 : totals.revenueCents)}
+                onClick={() => router.push(`/manager/financeiro/detalhe/faturamento?slug=${slug}&period=${period}`)}
+              />
+              <MetricBox
+                label="Pedidos"
+                value={loading ? '...' : String(period === 'today' ? overview?.today.orders ?? 0 : totals.orders)}
+                onClick={() => router.push(`/manager/financeiro/detalhe/pedidos?slug=${slug}&period=${period}`)}
+              />
+              <MetricBox
+                label="Ticket médio"
+                value={loading ? '...' : formatCurrency(period === 'today' ? Math.round((overview?.today.revenueCents ?? 0) / Math.max(1, overview?.today.orders ?? 0)) : totals.avgTicketCents)}
+                onClick={() => router.push(`/manager/financeiro/detalhe/ticket-medio?slug=${slug}&period=${period}`)}
+              />
+              <MetricBox
+                label="Pendentes hoje"
+                value={loading ? '...' : String(overview?.today.pendingOrders ?? 0)}
+                onClick={() => router.push(`/manager/financeiro/detalhe/pendentes?slug=${slug}&period=${period}`)}
+              />
             </div>
           </div>
         </MSection>
 
-        <MSection title="Últimos 7 dias">
+        <MSection title={`Receita · ${periodCfg.label.toLowerCase()}`}>
           <div style={{ padding: '0 16px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-              <MetricBox label="Receita" value={formatCurrency(totals.revenueCents)} />
-              <MetricBox label="Ticket médio" value={formatCurrency(totals.avgTicketCents)} />
+              <MetricBox
+                label="Receita"
+                value={formatCurrency(totals.revenueCents)}
+                onClick={() => router.push(`/manager/financeiro/detalhe/faturamento?slug=${slug}&period=${period}`)}
+              />
+              <MetricBox
+                label="Ticket médio"
+                value={formatCurrency(totals.avgTicketCents)}
+                onClick={() => router.push(`/manager/financeiro/detalhe/ticket-medio?slug=${slug}&period=${period}`)}
+              />
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 7, height: 120 }}>
               {revenue.map((row) => (
@@ -228,12 +304,16 @@ function FinanceiroInner() {
   );
 }
 
-function MetricBox({ label, value }: { label: string; value: string }) {
+function MetricBox({ label, value, onClick }: { label: string; value: string; onClick: () => void }) {
   const C = useG(false);
   return (
-    <div
-      aria-hidden="true"
+    <button
+      type="button"
+      onClick={onClick}
       style={{
+        all: 'unset',
+        cursor: 'pointer',
+        boxSizing: 'border-box',
         padding: 14,
         borderRadius: 12,
         border: `1px solid ${C.borderSoft}`,
@@ -254,7 +334,7 @@ function MetricBox({ label, value }: { label: string; value: string }) {
       <div style={{ fontSize: 24, fontWeight: 800, marginTop: 6, color: C.ink, letterSpacing: -0.5 }}>
         {value}
       </div>
-    </div>
+    </button>
   );
 }
 

@@ -8,9 +8,8 @@
 //
 // Backend wiring (Round 18 Onda 4):
 //   • REAL: GET /:slug/staff?activeOnly=true → lista de ativos no turno.
-//     Cálculo de "em campo" = funcionários com is_active. "Fora" = total - em campo.
-//   • STUB: ações "Avisar Ricardo", "Marcar folga retroativa", "Substituir"
-//     — sem endpoints ainda. Toast "em desenvolvimento (Onda 4 backend)".
+//     Cálculo de "em campo" = funcionários com is_active. Ações levam para
+//     mensagens e editor de turnos.
 //
 // Sticky-footer canon: outer 100dvh + middle flex:1/overflow:auto/minHeight:0.
 // Não tem CTA bottom-fixed nessa tela — actions ficam inline no fim do scroll.
@@ -44,7 +43,6 @@ export function ScreenManagerStaffEmCampo({ dark, tenantSlug }: ScreenManagerSta
   const backHref = slugQs ? `/manager/equipe?slug=${slugQs}` : '/manager/equipe';
 
   const [staff, setStaff] = useState<StaffRosterEntry[]>([]);
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,11 +58,6 @@ export function ScreenManagerStaffEmCampo({ dark, tenantSlug }: ScreenManagerSta
       cancelled = true;
     };
   }, [tenantSlug]);
-
-  const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 4 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
-  };
 
   const inField = staff.filter((s) => s.is_active);
   const offShift = staff.filter((s) => !s.is_active);
@@ -180,14 +173,14 @@ export function ScreenManagerStaffEmCampo({ dark, tenantSlug }: ScreenManagerSta
             C={C}
             filled
             icon={Icon.bell(13)}
-            onClick={() => showStub('Avisar funcionários fora')}
+            onClick={() => router.push(slugQs ? `/manager/mensagens/nova?slug=${slugQs}` : '/manager/mensagens/nova')}
           >
             Avisar quem ainda não logou
           </ActionPill>
           <ActionPill
             C={C}
             icon={Icon.clock(13)}
-            onClick={() => showStub('Marcar folga retroativa')}
+            onClick={() => router.push(slugQs ? `/manager/equipe/turnos?slug=${slugQs}` : '/manager/equipe/turnos')}
           >
             Marcar folga retroativa
           </ActionPill>
@@ -208,8 +201,6 @@ export function ScreenManagerStaffEmCampo({ dark, tenantSlug }: ScreenManagerSta
       </div>
 
       <MBottomNav active="staff" dark={dark} onTo={(r) => router.push(r)} />
-
-      {stubMsg && <StubToast C={C}>{stubMsg}</StubToast>}
     </div>
   );
 }
@@ -385,39 +376,6 @@ function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.
       <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>
         {children}
       </div>
-    </div>
-  );
-}
-
-function StubToast({
-  C,
-  children,
-}: {
-  C: ReturnType<typeof useG>;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      role="status"
-      style={{
-        position: 'fixed',
-        left: '50%',
-        bottom: 90,
-        transform: 'translateX(-50%)',
-        zIndex: 80,
-        padding: '12px 18px',
-        borderRadius: 999,
-        background: C.ink,
-        color: C.bg,
-        fontSize: 13,
-        fontWeight: 600,
-        letterSpacing: -0.1,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-        maxWidth: 'calc(100vw - 32px)',
-        textAlign: 'center',
-      }}
-    >
-      {children}
     </div>
   );
 }

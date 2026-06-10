@@ -44,6 +44,7 @@ import { ShiftsModule } from './modules/shifts/shifts.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { ContinuationModule } from './modules/continuation/continuation.module';
 import { StaffAuthModule } from './modules/staff-auth/staff-auth.module';
+import { ManagerAccountModule } from './modules/manager-account/manager-account.module';
 
 @Module({
   imports: [
@@ -92,6 +93,7 @@ import { StaffAuthModule } from './modules/staff-auth/staff-auth.module';
     ShiftsModule,
     AlertsModule,
     ContinuationModule,
+    ManagerAccountModule,
   ],
   controllers: [AppController],
 })

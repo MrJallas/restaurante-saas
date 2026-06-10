@@ -7,7 +7,7 @@
 // Transferir, Fechar). VIP toggle lives in the MoreSheet of this screen
 // (per docs/features/vip-customer.md).
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -19,6 +19,12 @@ import {
   MContactClientSheet,
 } from '../../components/manager';
 import { manager } from '../../lib/api/manager';
+import {
+  liberateTable,
+  listHostTables,
+  swapTable,
+  updateHostTableSession,
+} from '../../lib/api/host';
 import type { SessionFlag, SessionFlagToggleResponseDto } from '@restaurant/shared-types';
 
 export interface ScreenManagerTableMenuProps {
@@ -61,19 +67,21 @@ export function ScreenManagerTableMenu({
 }: ScreenManagerTableMenuProps) {
   const C = useG(!!dark);
   const router = useRouter();
-  const api = manager(tenantSlug);
+  const api = useMemo(() => manager(tenantSlug), [tenantSlug]);
   const [flags, setFlags] = useState<SessionFlag[]>(initialFlags);
   const [moreOpen, setMoreOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  // Round 18 (Onda 2A): stub feedback pra ações ainda sem backend
-  // (Imprimir / Transferir / Fechar / Ver timeline / Reportar / Auditoria).
-  // Antes os ActionRows nao tinham onClick — clique era completamente
-  // silencioso. Agora abre toast curto explicando que esta em desenvolvimento.
-  const [stubMsg, setStubMsg] = useState<string | null>(null);
-  const showStub = (action: string) => {
-    setStubMsg(`${action} · em desenvolvimento (Onda 3 backend).`);
-    setTimeout(() => setStubMsg(null), 2800);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [partyCount, setPartyCount] = useState(party);
+  const [note, setNote] = useState(observation ?? '');
+
+  const flash = (message: string) => {
+    setFeedback(message);
+    setTimeout(() => setFeedback(null), 2800);
   };
 
   // Round 18 (Onda 2A): "Mandar cortesia" agora navega pra
@@ -102,6 +110,45 @@ export function ScreenManagerTableMenu({
     };
   }, [tableSessionId, api]);
 
+  useEffect(() => {
+    let cancelled = false;
+    listHostTables(tenantSlug)
+      .then((tables) => {
+        if (cancelled) return;
+        const table = tables.find(
+          (row) => row.active_session_id === tableSessionId || row.number === tableNumber,
+        );
+        if (!table) return;
+        const nextParty = table.party ?? table.seats;
+        if (nextParty != null) setPartyCount(nextParty);
+        setNote(table.observation ?? '');
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantSlug, tableSessionId, tableNumber]);
+
+  const saveTableEdit = async (nextParty: number, nextNote: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const table = await updateHostTableSession(tenantSlug, tableNumber, {
+        sessionId: tableSessionId,
+        party: nextParty,
+        note: nextNote,
+      });
+      setPartyCount(table.party ?? table.seats ?? nextParty);
+      setNote(table.observation ?? nextNote);
+      setEditOpen(false);
+      flash('Dados da mesa salvos.');
+    } catch (err) {
+      flash(err instanceof Error ? err.message : 'Não foi possível atualizar a mesa.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const isVip = flags.includes('vip');
 
   const toggleVip = async () => {
@@ -115,6 +162,44 @@ export function ScreenManagerTableMenu({
       const r = res as SessionFlagToggleResponseDto;
       setFlags(r.flags ?? []);
       setMoreOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addPerson = () => {
+    void saveTableEdit(Math.min(99, partyCount + 1), note);
+  };
+
+  const closeTable = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await liberateTable(tenantSlug, tableNumber);
+      flash('Mesa fechada e sessão liberada.');
+      setCloseConfirmOpen(false);
+      setTimeout(() => {
+        router.push(`/manager/operacoes/mesas-ativas?slug=${tenantSlug}`);
+      }, 650);
+    } catch (err) {
+      flash(err instanceof Error ? err.message : 'Não foi possível fechar a mesa.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const transferTable = async (targetTable: number) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await swapTable(tenantSlug, { fromTable: tableNumber, toTable: targetTable, sessionId: tableSessionId });
+      flash(`Mesa transferida para ${targetTable}.`);
+      setTransferOpen(false);
+      setTimeout(() => {
+        router.push(`/manager/mesa/${targetTable}?slug=${tenantSlug}`);
+      }, 650);
+    } catch (err) {
+      flash(err instanceof Error ? err.message : 'Não foi possível transferir a mesa.');
     } finally {
       setBusy(false);
     }
@@ -190,7 +275,7 @@ export function ScreenManagerTableMenu({
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {party} pessoas · aberta há {minutesOpen}m
+                  {partyCount} pessoas · aberta há {minutesOpen}m
                   {ticketTxt ? ` · total ${ticketTxt}` : ''}
                 </div>
               </div>
@@ -230,9 +315,9 @@ export function ScreenManagerTableMenu({
               overflow: 'hidden',
             }}
           >
-            <AttrRow label="Pessoas na mesa" value={`${party}`} sub={`Mesa comporta ${seats}`} dark={dark} />
+            <AttrRow label="Pessoas na mesa" value={`${partyCount}`} sub={`Mesa comporta ${seats}`} dark={dark} />
             <Divider dark={dark} />
-            <AttrRow label="Observação" value={observation ?? '—'} dark={dark} />
+            <AttrRow label="Observação" value={note.trim() || '—'} dark={dark} />
             <Divider dark={dark} />
             <AttrRow label="Cliente" value={customerName ?? '—'} dark={dark} />
           </div>
@@ -262,6 +347,20 @@ export function ScreenManagerTableMenu({
           >
             <ActionRow
               dark={dark}
+              icon={Icon.plus(18)}
+              label="Adicionar pessoa"
+              sub="Atualiza a contagem desta mesa"
+              onClick={addPerson}
+            />
+            <ActionRow
+              dark={dark}
+              icon={Icon.table(18)}
+              label="Editar mesa"
+              sub="Pessoas e observação operacional"
+              onClick={() => setEditOpen(true)}
+            />
+            <ActionRow
+              dark={dark}
               icon={Icon.gift(18)}
               label="Mandar cortesia"
               sub="Sobremesa, drink, desconto ou só uma mensagem"
@@ -271,30 +370,16 @@ export function ScreenManagerTableMenu({
               dark={dark}
               icon={Icon.chat(18)}
               label="Contactar cliente"
-              sub="Mandar mensagem rápida — sugestões inteligentes"
+              sub="Mandar mensagem rápida · sugestões inteligentes"
               onClick={() => setContactOpen(true)}
               disabled={!customerId}
-            />
-            <ActionRow
-              dark={dark}
-              icon={Icon.history(18)}
-              label="Ver timeline da mesa"
-              sub="Diagnóstico · ações sugeridas · histórico"
-              onClick={() => showStub('Ver timeline da mesa')}
-            />
-            <ActionRow
-              dark={dark}
-              icon={Icon.receipt(18)}
-              label="Imprimir conta"
-              sub="Conta detalhada · vai pra impressora do salão"
-              onClick={() => showStub('Imprimir conta')}
             />
             <ActionRow
               dark={dark}
               icon={Icon.arrow(18)}
               label="Transferir mesa"
               sub="Mover pra outra mesa · pedidos vão junto"
-              onClick={() => showStub('Transferir mesa')}
+              onClick={() => setTransferOpen(true)}
             />
             <ActionRow
               dark={dark}
@@ -303,7 +388,7 @@ export function ScreenManagerTableMenu({
               sub="Encerra a sessão · só com conta paga"
               danger
               last
-              onClick={() => showStub('Fechar mesa')}
+              onClick={() => setCloseConfirmOpen(true)}
             />
           </div>
         </div>
@@ -315,15 +400,6 @@ export function ScreenManagerTableMenu({
           title={`Mesa ${tableNumber} · mais ações`}
           actions={[
             {
-              icon: Icon.flame(18),
-              label: 'Reportar problema com a mesa',
-              sub: 'Cadeira quebrada, lâmpada queimada — marca pra manutenção',
-              onClick: () => {
-                setMoreOpen(false);
-                showStub('Reportar problema');
-              },
-            },
-            {
               icon: Icon.sparkle(18),
               label: isVip ? 'Remover VIP dessa sessão' : 'Marcar como VIP nessa sessão',
               sub: isVip
@@ -332,17 +408,45 @@ export function ScreenManagerTableMenu({
               onClick: toggleVip,
               tone: isVip ? 'danger' : 'default',
             },
-            {
-              icon: Icon.history(18),
-              label: 'Ver auditoria',
-              sub: 'Quem abriu, fechou ou transferiu a mesa',
-              onClick: () => {
-                setMoreOpen(false);
-                showStub('Ver auditoria');
-              },
-            },
           ]}
           onClose={() => setMoreOpen(false)}
+        />
+      )}
+
+      {editOpen && (
+        <EditTableSheet
+          C={C}
+          initialParty={partyCount}
+          initialNote={note}
+          seats={seats}
+          busy={busy}
+          onClose={() => setEditOpen(false)}
+          onSave={(nextParty, nextNote) => {
+            void saveTableEdit(nextParty, nextNote);
+          }}
+        />
+      )}
+
+      {transferOpen && (
+        <TransferSheet
+          C={C}
+          currentTable={tableNumber}
+          busy={busy}
+          onClose={() => setTransferOpen(false)}
+          onTransfer={transferTable}
+        />
+      )}
+
+      {closeConfirmOpen && (
+        <ConfirmSheet
+          C={C}
+          title={`Fechar mesa ${tableNumber}?`}
+          body="Confirme apenas se a conta já foi paga. A sessão ativa será encerrada e a mesa volta para o mapa como livre."
+          confirmLabel={busy ? 'Fechando...' : 'Fechar mesa'}
+          danger
+          busy={busy}
+          onCancel={() => setCloseConfirmOpen(false)}
+          onConfirm={closeTable}
         />
       )}
 
@@ -361,7 +465,7 @@ export function ScreenManagerTableMenu({
         />
       )}
 
-      {stubMsg && (
+      {feedback && (
         <div
           role="status"
           style={{
@@ -382,7 +486,7 @@ export function ScreenManagerTableMenu({
             textAlign: 'center',
           }}
         >
-          {stubMsg}
+          {feedback}
         </div>
       )}
     </div>
@@ -533,6 +637,315 @@ function ActionRow({
       <span style={{ color: C.faint, opacity: 0.5, flexShrink: 0 }}>{Icon.arrow(16)}</span>
     </button>
   );
+}
+
+function EditTableSheet({
+  C,
+  initialParty,
+  initialNote,
+  seats,
+  busy,
+  onClose,
+  onSave,
+}: {
+  C: ReturnType<typeof useG>;
+  initialParty: number;
+  initialNote: string;
+  seats: number;
+  busy: boolean;
+  onClose: () => void;
+  onSave: (party: number, note: string) => void;
+}) {
+  const [party, setParty] = useState(initialParty);
+  const [note, setNote] = useState(initialNote);
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 70,
+        background: 'rgba(0,0,0,0.42)',
+        display: 'flex',
+        alignItems: 'flex-end',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          borderRadius: '18px 18px 0 0',
+          background: C.bg,
+          color: C.ink,
+          padding: '18px 16px 20px',
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>Editar mesa</div>
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}>Pessoas</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+            <button type="button" onClick={() => setParty(Math.max(1, party - 1))} style={stepBtnStyle(C)}>
+              -
+            </button>
+            <div
+              style={{
+                flex: 1,
+                height: 42,
+                borderRadius: 10,
+                border: `1px solid ${C.borderSoft}`,
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: 18,
+                fontWeight: 900,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {party}
+            </div>
+            <button type="button" onClick={() => setParty(Math.min(99, party + 1))} style={stepBtnStyle(C)}>
+              +
+            </button>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 11, color: C.faint, fontWeight: 600 }}>Capacidade cadastrada: {seats}</div>
+        </div>
+        <label style={{ display: 'block', marginTop: 16 }}>
+          <span style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}>Observação</span>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={180}
+            rows={3}
+            style={{
+              marginTop: 8,
+              width: '100%',
+              boxSizing: 'border-box',
+              borderRadius: 12,
+              border: `1px solid ${C.borderSoft}`,
+              background: C.surface,
+              color: C.ink,
+              padding: 12,
+              fontSize: 14,
+              fontWeight: 600,
+              resize: 'none',
+              outline: 'none',
+            }}
+          />
+        </label>
+        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <button type="button" onClick={onClose} disabled={busy} style={sheetSecondaryStyle(C)}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onSave(party, note)}
+            style={{ ...sheetPrimaryStyle(C), cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.62 : 1 }}
+          >
+            {busy ? 'Salvando...' : 'Salvar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TransferSheet({
+  C,
+  currentTable,
+  busy,
+  onClose,
+  onTransfer,
+}: {
+  C: ReturnType<typeof useG>;
+  currentTable: number;
+  busy: boolean;
+  onClose: () => void;
+  onTransfer: (targetTable: number) => void;
+}) {
+  const [value, setValue] = useState('');
+  const target = parseInt(value, 10);
+  const valid = Number.isFinite(target) && target > 0 && target !== currentTable;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 70,
+        background: 'rgba(0,0,0,0.42)',
+        display: 'flex',
+        alignItems: 'flex-end',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          borderRadius: '18px 18px 0 0',
+          background: C.bg,
+          color: C.ink,
+          padding: '18px 16px 20px',
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>Transferir mesa</div>
+        <label style={{ display: 'block', marginTop: 14 }}>
+          <span style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}>
+            Mesa de destino
+          </span>
+          <input
+            value={value}
+            onChange={(e) => setValue(e.target.value.replace(/\D/g, '').slice(0, 3))}
+            inputMode="numeric"
+            placeholder="Ex: 12"
+            style={{
+              marginTop: 8,
+              width: '100%',
+              boxSizing: 'border-box',
+              borderRadius: 12,
+              border: `1px solid ${C.borderSoft}`,
+              background: C.surface,
+              color: C.ink,
+              padding: '13px 12px',
+              fontSize: 18,
+              fontWeight: 900,
+              outline: 'none',
+            }}
+          />
+        </label>
+        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <button type="button" onClick={onClose} disabled={busy} style={sheetSecondaryStyle(C)}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => valid && onTransfer(target)}
+            disabled={!valid || busy}
+            style={{ ...sheetPrimaryStyle(C), opacity: valid && !busy ? 1 : 0.52, cursor: valid && !busy ? 'pointer' : 'not-allowed' }}
+          >
+            {busy ? 'Transferindo...' : 'Transferir'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmSheet({
+  C,
+  title,
+  body,
+  confirmLabel,
+  danger,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  C: ReturnType<typeof useG>;
+  title: string;
+  body: string;
+  confirmLabel: string;
+  danger?: boolean;
+  busy?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onCancel}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 70,
+        background: 'rgba(0,0,0,0.42)',
+        display: 'flex',
+        alignItems: 'flex-end',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          borderRadius: '18px 18px 0 0',
+          background: C.bg,
+          color: C.ink,
+          padding: '18px 16px 20px',
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>{title}</div>
+        <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.45, color: C.mute, fontWeight: 500 }}>{body}</div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <button type="button" onClick={onCancel} disabled={busy} style={sheetSecondaryStyle(C)}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            style={{
+              ...sheetPrimaryStyle(C),
+              background: danger ? '#A12626' : C.ink,
+              cursor: busy ? 'wait' : 'pointer',
+            }}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function stepBtnStyle(C: ReturnType<typeof useG>): React.CSSProperties {
+  return {
+    all: 'unset',
+    cursor: 'pointer',
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    border: `1px solid ${C.borderSoft}`,
+    display: 'grid',
+    placeItems: 'center',
+    fontSize: 22,
+    fontWeight: 900,
+    background: C.surface,
+    color: C.ink,
+  };
+}
+
+function sheetSecondaryStyle(C: ReturnType<typeof useG>): React.CSSProperties {
+  return {
+    all: 'unset',
+    cursor: 'pointer',
+    flex: 1,
+    textAlign: 'center',
+    padding: '13px 10px',
+    borderRadius: 12,
+    border: `1px solid ${C.borderSoft}`,
+    color: C.ink,
+    fontSize: 14,
+    fontWeight: 800,
+  };
+}
+
+function sheetPrimaryStyle(C: ReturnType<typeof useG>): React.CSSProperties {
+  return {
+    all: 'unset',
+    cursor: 'pointer',
+    flex: 1,
+    textAlign: 'center',
+    padding: '13px 10px',
+    borderRadius: 12,
+    background: C.ink,
+    color: C.bg,
+    fontSize: 14,
+    fontWeight: 800,
+  };
 }
 
 function MoreSheet({

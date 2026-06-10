@@ -25,6 +25,13 @@ export interface HostTableDto {
   /** Iniciais do garcom (deriv. de staff.name) — placeholder ate roteamento real. */
   waiter_initial?: string | null;
   /**
+   * Effective staff-visible party count. Defaults to approved participants
+   * unless the manager saved an operational override for this active session.
+   */
+  party?: number;
+  /** Staff-side operational note for the active table session. */
+  observation?: string | null;
+  /**
    * UUID do `table_sessions` ativo. Necessário pra deep-links staff-side
    * (ex: `/manager/mesa/[n]` resolve numero -> sessionId pra abrir a
    * `ScreenManagerTableMenu` que requer `tableSessionId`). `null` quando

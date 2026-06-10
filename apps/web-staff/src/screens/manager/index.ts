@@ -15,6 +15,7 @@ export * from './ScreenManagerStaffDetail';
 export * from './ScreenManagerAlertsAll';
 export * from './ScreenManagerTableTimeline';
 export * from './ScreenManagerKitchenReorder';
+export * from './ScreenManagerAccountSettings';
 // Round 18 Onda 4 — V9 KPI drill-down screens.
 export * from './ScreenManagerStaffEmCampo';
 export * from './ScreenManagerStaffSobrecarga';

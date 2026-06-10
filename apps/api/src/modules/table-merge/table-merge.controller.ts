@@ -57,7 +57,7 @@ class DecisionDto {
 
 class ListQueryDto {
   @IsOptional()
-  @IsIn(['pending', 'approved', 'rejected', 'expired', 'cooldown_blocked'])
+  @IsIn(['pending', 'approved', 'rejected', 'timeout', 'expired', 'cooldown_blocked'])
   status?: string;
 
   @IsOptional()

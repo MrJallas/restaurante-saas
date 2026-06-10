@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -44,6 +45,41 @@ export class ZonePauseService {
   ) {
     const minutes = input.durationMinutes ?? 5;
     const endsAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+
+    const waiterRows = unwrapRows<{ id: string; name: string; role: string; is_active: boolean }>(
+      await this.tenantConn.query(
+        `SELECT id, name, role, is_active
+           FROM staff
+          WHERE id = $1
+          LIMIT 1`,
+        [input.waiterId],
+      ),
+    );
+    const waiter = waiterRows[0];
+    if (!waiter || waiter.role !== 'waiter' || waiter.is_active !== true) {
+      throw new BadRequestException({
+        message_user: 'Selecione um garçom em turno para pausar a zona.',
+        code: 'ZONE_PAUSE_INVALID_WAITER',
+      });
+    }
+
+    const activeRows = unwrapRows<{ id: string; ends_at: string }>(
+      await this.tenantConn.query(
+        `SELECT id, ends_at
+           FROM zone_pauses
+          WHERE waiter_id = $1
+            AND ended_at IS NULL
+            AND ends_at > now()
+          LIMIT 1`,
+        [input.waiterId],
+      ),
+    );
+    if (activeRows.length) {
+      throw new BadRequestException({
+        message_user: 'Esse garçom já tem uma pausa ativa. Encerre a pausa atual antes de iniciar outra.',
+        code: 'ZONE_PAUSE_ALREADY_ACTIVE',
+      });
+    }
 
     // started_by is NOT NULL in the schema; default to the waiter id when
     // the caller forgot to pass `startedBy` (legacy client). The DTO marks
@@ -156,7 +192,12 @@ export class ZonePauseService {
         where.push(`(ended_at IS NOT NULL OR ends_at <= now())`);
       }
     }
-    const sql = `SELECT * FROM zone_pauses
+    const sql = `SELECT zone_pauses.*,
+                        waiter.name AS waiter_name,
+                        starter.name AS started_by_name
+                   FROM zone_pauses
+            LEFT JOIN staff waiter ON waiter.id = zone_pauses.waiter_id
+            LEFT JOIN staff starter ON starter.id = zone_pauses.started_by
                  ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
                  ORDER BY started_at DESC LIMIT 100`;
     const rows = (await this.tenantConn.query(sql, params)) as Array<
@@ -173,9 +214,12 @@ export class ZonePauseService {
     return {
       id: row.id as string,
       waiterId: row.waiter_id as string,
+      waiterName: (row.waiter_name as string | null) ?? '',
+      kind: 'orders',
       startedAt: row.started_at as string,
       endsAt,
       startedBy: row.started_by as string,
+      startedByName: (row.started_by_name as string | null) ?? '',
       endedAt,
       endedBy: (row.ended_by as string | null) ?? null,
       reason: (row.reason as string | null) ?? null,
