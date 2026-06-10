@@ -112,9 +112,46 @@ export function KdsOrderCard({
               fontWeight: 500,
               letterSpacing: 1,
               textTransform: 'uppercase',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
             }}
           >
-            #{order.id.slice(0, 8)}
+            <span>#{order.id.slice(0, 8)}</span>
+            {/* Badge da fila (urgência > VIP > normal) — backend ordena,
+                o card sinaliza por que o pedido furou a fila. */}
+            {order.priority === 'urgent' && (
+              <span
+                style={{
+                  background: '#C43A3A',
+                  color: '#fff',
+                  borderRadius: 6,
+                  padding: '2px 8px',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  letterSpacing: 1,
+                  opacity: 1,
+                }}
+              >
+                URGÊNCIA
+              </span>
+            )}
+            {order.priority === 'vip' && (
+              <span
+                style={{
+                  background: '#D98E2B',
+                  color: '#fff',
+                  borderRadius: 6,
+                  padding: '2px 8px',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  letterSpacing: 1,
+                  opacity: 1,
+                }}
+              >
+                VIP
+              </span>
+            )}
           </div>
           <div
             style={{

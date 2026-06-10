@@ -45,6 +45,30 @@ function fmtBRL(cents: number): string {
   return (cents / 100).toFixed(2).replace('.', ',');
 }
 
+// "1414 min"/"16136 min" era vazamento de fixture pro operador (prompt 99,
+// dados demo ruins) — acima de 1h humaniza pra h/d.
+function fmtOpenedDuration(min: number): string {
+  if (min < 60) return `${min} min`;
+  if (min < 24 * 60) return `${Math.floor(min / 60)} h`;
+  return `${Math.floor(min / (24 * 60))} d`;
+}
+
+// last_event vem do order_status_history.to_status — traduz o status
+// técnico (ex.: `ready`) pra label de operador.
+const LAST_EVENT_LABEL: Record<string, string> = {
+  pending_confirmation: 'Pedido aguardando confirmação',
+  received: 'Pedido recebido',
+  in_progress: 'Pedido em preparo',
+  ready: 'Pedido pronto p/ servir',
+  in_transit: 'Pedido a caminho da mesa',
+  delivered: 'Pedido entregue',
+  cancelled: 'Pedido cancelado',
+  // aliases legados
+  open: 'Pedido aberto',
+  confirmed: 'Pedido confirmado',
+  preparing: 'Pedido em preparo',
+};
+
 function fmtTimeLeft(endsAt: string): string {
   const ms = new Date(endsAt).getTime() - Date.now();
   if (ms <= 0) return '00:00';
@@ -294,7 +318,7 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
                   {t.is_vip && <GBadge tone="warn" dark={dark}>VIP</GBadge>}
                 </div>
                 <div style={{ fontSize: 11.5, color: C.mute, marginTop: 8, lineHeight: 1.4 }}>
-                  {t.last_event ?? '—'}
+                  {t.last_event ? LAST_EVENT_LABEL[t.last_event] ?? '—' : '—'}
                 </div>
                 {!isLivre && (
                   <div
@@ -303,7 +327,7 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
                       marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.borderFaint}`,
                     }}
                   >
-                    <span style={{ fontSize: 11, color: C.faint }}>{t.opened_min} min</span>
+                    <span style={{ fontSize: 11, color: C.faint }}>{fmtOpenedDuration(t.opened_min)}</span>
                     <span style={{ fontSize: 14, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
                       R$ {fmtBRL(t.ticket_total_cents)}
                     </span>

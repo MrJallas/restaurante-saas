@@ -212,6 +212,9 @@ export interface TableOverviewEntry {
   number: number;
   capacity: number;
   sort_order: number;
+  /** Posição lógica na planta do salão (migration 055). NULL = sem posição → FE cai na grade por zona. */
+  map_x: number | null;
+  map_y: number | null;
   zone_id: string | null;
   zone_name: string | null;
   zone_sort_order: number;

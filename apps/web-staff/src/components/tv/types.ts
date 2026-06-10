@@ -20,6 +20,13 @@ export interface KdsOrderItem {
   categoryName: string | null;
 }
 
+/**
+ * Fila do pedido na TV (decisão 2026-06-10): urgência (reorder da
+ * cozinha) > VIP (mesa/cliente VIP) > normal. O backend já devolve a
+ * lista ordenada por fila; o campo existe pro card exibir o badge.
+ */
+export type KdsPriority = 'urgent' | 'vip' | 'normal';
+
 export interface KdsOrder {
   id: string;
   status: KdsOrderStatus;
@@ -29,6 +36,7 @@ export interface KdsOrder {
   created_at: string;
   updated_at: string;
   table_label: string;
+  priority?: KdsPriority;
   items: KdsOrderItem[];
 }
 

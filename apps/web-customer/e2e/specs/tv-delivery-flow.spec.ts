@@ -130,14 +130,16 @@ test.describe('TV → garçom → entregue → cliente', () => {
     await tv.screenshot({ path: `${EVIDENCE_DIR}/00-tv-pos-chamar-garcom.png` });
 
     // ── 5. Garçom (alvo do handoff) recebe banner in-app nas telas V20 ──
+    // O alvo vem do resolveTargetWaiter (turno ativo + round-robin); o
+    // spec entra no app como ESSE garçom — é ele que deve ser notificado.
     const waiterId = psql(
-      `SELECT id FROM staff WHERE role='waiter' AND is_active=true ORDER BY name ASC LIMIT 1`,
-    );
-    expect(waiterId).toMatch(/[0-9a-f-]{36}/);
-    const targetInDb = psql(
       `SELECT target_waiter_id FROM order_deliveries WHERE order_id='${orderId}' AND status != 'cancelled'`,
     );
-    expect(targetInDb, 'resolveTargetWaiter persistiu o garçom-alvo').toBe(waiterId);
+    expect(waiterId, 'resolveTargetWaiter persistiu um garçom-alvo').toMatch(/[0-9a-f-]{36}/);
+    const waiterIsActiveWaiter = psql(
+      `SELECT count(*) FROM staff WHERE id='${waiterId}' AND role='waiter' AND is_active=true`,
+    );
+    expect(waiterIsActiveWaiter, 'alvo é garçom ativo').toBe('1');
 
     const waiterContext = await browser.newContext();
     await waiterContext.addInitScript(

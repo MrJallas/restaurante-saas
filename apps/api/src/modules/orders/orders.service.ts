@@ -1087,6 +1087,10 @@ export class OrdersService {
         ? `${normalizedCategoryName} = 'bebidas'`
         : `${normalizedCategoryName} <> 'bebidas'`;
 
+    // Três filas/prioridades canônicas (decisão 2026-06-10, prompt 99 §6):
+    // 1. urgência (priority_rank > 0 — reorder/urgência da cozinha),
+    // 2. VIP (flag 'vip' da sessão OU customer is_vip da visita),
+    // 3. normal. Dentro de cada fila, FIFO por created_at.
     return this.tenantConn.query(
       `
       SELECT
@@ -1098,6 +1102,12 @@ export class OrdersService {
         o.created_at,
         o.updated_at,
         t.label AS table_label,
+        CASE
+          WHEN o.priority_rank > 0 THEN 'urgent'
+          WHEN ('vip' = ANY(COALESCE(ts.flags, '{}'::text[])))
+            OR COALESCE(vip_customer.is_vip, false) THEN 'vip'
+          ELSE 'normal'
+        END AS priority,
         COALESCE(
           json_agg(
             json_build_object(
@@ -1126,6 +1136,13 @@ export class OrdersService {
          ORDER BY od.created_at DESC
          LIMIT 1
       ) delivery ON true
+      LEFT JOIN LATERAL (
+        SELECT c.is_vip
+          FROM visits v
+          JOIN customers c ON c.id = v.customer_id
+         WHERE v.id = o.visit_id
+         LIMIT 1
+      ) vip_customer ON true
       WHERE o.status NOT IN ('delivered', 'cancelled', 'pending_confirmation', 'in_transit')
         AND (ts.status = 'active' OR o.status IN ('in_progress', 'ready'))
         AND o.created_at > now() - interval '8 hours'
@@ -1143,8 +1160,16 @@ export class OrdersService {
           -- do filtro antigo nunca existiram.
           OR COALESCE(delivery.status, '') NOT IN ('pending', 'claimed')
         )
-      GROUP BY o.id, t.label, delivery.status
-      ORDER BY o.created_at ASC
+      GROUP BY o.id, t.label, ts.flags, vip_customer.is_vip, delivery.status
+      ORDER BY
+        CASE
+          WHEN o.priority_rank > 0 THEN 0
+          WHEN ('vip' = ANY(COALESCE(ts.flags, '{}'::text[])))
+            OR COALESCE(vip_customer.is_vip, false) THEN 1
+          ELSE 2
+        END ASC,
+        o.priority_rank DESC,
+        o.created_at ASC
       LIMIT 100
       `,
     );
@@ -1706,12 +1731,49 @@ export class OrdersService {
       return recentWaiter[0];
     }
 
+    // Fallback sem chamado prévio na sessão: prefere garçom EM TURNO
+    // AGORA (staff_shift_assignments + janela do staff_shifts, no fuso do
+    // restaurante em settings.timezone) e, dentro do grupo, o MENOS
+    // recentemente acionado (round-robin por max(called_at)) — antes era
+    // ordem alfabética e a primeira garçonete recebia toda entrega
+    // não-direcionada. Turnos sem assignment hoje caem pro grupo geral.
     const fallback = (await this.tenantConn.query(
-      `SELECT id, name
-         FROM staff
-        WHERE role = 'waiter'
-          AND is_active = true
-        ORDER BY name ASC
+      `WITH local_now AS (
+         SELECT now() AT TIME ZONE COALESCE(
+           (SELECT timezone FROM settings LIMIT 1),
+           'America/Sao_Paulo'
+         ) AS ts
+       )
+       SELECT s.id, s.name
+         FROM staff s
+         LEFT JOIN LATERAL (
+           SELECT max(od.called_at) AS last_called
+             FROM order_deliveries od
+            WHERE od.target_waiter_id = s.id
+              AND od.status != 'cancelled'
+         ) recent ON true
+         LEFT JOIN LATERAL (
+           SELECT 1 AS on_shift
+             FROM staff_shift_assignments sa
+             JOIN staff_shifts sh ON sh.id = sa.shift_id
+            CROSS JOIN local_now ln
+            WHERE sa.staff_id = s.id
+              AND sa.removed_at IS NULL
+              AND sa.work_date = ln.ts::date
+              AND (
+                (sh.time_start <= sh.time_end
+                  AND ln.ts::time >= sh.time_start
+                  AND ln.ts::time < sh.time_end)
+                OR (sh.time_start > sh.time_end
+                  AND (ln.ts::time >= sh.time_start OR ln.ts::time < sh.time_end))
+              )
+            LIMIT 1
+         ) shift ON true
+        WHERE s.role = 'waiter'
+          AND s.is_active = true
+        ORDER BY (shift.on_shift IS NULL) ASC,
+                 recent.last_called ASC NULLS FIRST,
+                 s.name ASC
         LIMIT 1`,
     )) as Array<{ id: string; name: string }>;
     if (fallback[0]) {

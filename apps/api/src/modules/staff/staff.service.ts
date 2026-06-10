@@ -155,6 +155,8 @@ export class StaffService {
         )                                            AS number,
         t.capacity,
         t.sort_order,
+        t.map_x,
+        t.map_y,
         z.id                                         AS zone_id,
         z.name                                       AS zone_name,
         COALESCE(z.sort_order, 2147483647)           AS zone_sort_order,

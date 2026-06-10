@@ -106,6 +106,28 @@ export function ScreenWaiterDeliveryDetail({
     return Array.from(groups.entries());
   }, [tables]);
 
+  // Planta espacial (migration 055): só quando a mesa-alvo e a maioria
+  // das mesas têm posição persistida; senão cai na grade por zona.
+  const floorPlan = useMemo(() => {
+    const positioned = tables.filter((t) => t.map_x != null && t.map_y != null);
+    const target = tables.find((t) => t.code === delivery?.table_code);
+    if (
+      !delivery ||
+      positioned.length < 2 ||
+      !target ||
+      target.map_x == null ||
+      target.map_y == null
+    ) {
+      return null;
+    }
+    const cols = Math.max(...positioned.map((t) => t.map_x as number)) + 1;
+    const rows = Math.max(...positioned.map((t) => t.map_y as number)) + 1;
+    const zoneNames = Array.from(
+      new Set(positioned.map((t) => t.zone_name ?? SEM_ZONA)),
+    );
+    return { positioned, cols, rows, zoneNames };
+  }, [tables, delivery]);
+
   const isClaimed = delivery?.delivery_status === 'claimed';
   const claimedByMe =
     isClaimed && (!delivery?.claimed_by || !staffId || delivery?.claimed_by === staffId);
@@ -345,8 +367,111 @@ export function ScreenWaiterDeliveryDetail({
                 </div>
               </div>
 
-              {/* Mapa de orientação — mesas agrupadas por zona, alvo destacado */}
-              {zoneGroups.length > 0 && (
+              {/* Planta espacial — posições reais (tables.map_x/map_y),
+                  zonas com tinta própria e mesa-alvo destacada. */}
+              {floorPlan && (
+                <div
+                  data-testid="delivery-map"
+                  style={{
+                    border: `1.5px solid ${C.borderSoft}`,
+                    borderRadius: 14,
+                    padding: '14px 14px 10px',
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'relative',
+                      width: '100%',
+                      height: floorPlan.rows * 54,
+                    }}
+                  >
+                    {floorPlan.positioned.map((t) => {
+                      const isTarget = t.code === delivery.table_code;
+                      const zoneIdx = floorPlan.zoneNames.indexOf(t.zone_name ?? SEM_ZONA);
+                      const zoneBg = zoneIdx % 2 === 1 ? C.surface : 'transparent';
+                      return (
+                        <div
+                          key={t.id}
+                          data-testid={isTarget ? 'delivery-map-target' : undefined}
+                          style={{
+                            position: 'absolute',
+                            left: `${((t.map_x as number) / floorPlan.cols) * 100}%`,
+                            top: (t.map_y as number) * 54,
+                            width: `calc(${100 / floorPlan.cols}% - 6px)`,
+                            height: 46,
+                            borderRadius: 10,
+                            border: `1.5px solid ${isTarget ? heroTint : C.borderSoft}`,
+                            background: isTarget ? heroTint : zoneBg,
+                            color: isTarget ? '#fff' : t.occupied ? C.ink : C.faint,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 15,
+                            fontWeight: 700,
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {t.number > 0 ? String(t.number).padStart(2, '0') : t.code}
+                          {t.occupied && !isTarget && (
+                            <span
+                              style={{
+                                position: 'absolute',
+                                top: 5,
+                                right: 5,
+                                width: 6,
+                                height: 6,
+                                borderRadius: 3,
+                                background: C.warn,
+                              }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 10,
+                      marginTop: 10,
+                      fontSize: 10.5,
+                      color: C.faint,
+                    }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: 3,
+                          background: heroTint,
+                        }}
+                      />
+                      mesa da entrega
+                    </span>
+                    {floorPlan.zoneNames.map((zn, i) => (
+                      <span key={zn} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <span
+                          style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: 3,
+                            border: `1px solid ${C.borderSoft}`,
+                            background: i % 2 === 1 ? C.surface : 'transparent',
+                          }}
+                        />
+                        {zn}
+                        {zn === zoneLabel ? ' · entregar aqui' : ''}
+                      </span>
+                    ))}
+                    <span>· ● mesa ocupada</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Fallback sem posições: mesas agrupadas por zona, alvo destacado */}
+              {!floorPlan && zoneGroups.length > 0 && (
                 <div
                   data-testid="delivery-map"
                   style={{

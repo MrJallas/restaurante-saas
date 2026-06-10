@@ -61,12 +61,14 @@ INSERT INTO zones (name, description, sort_order) VALUES
   ('Varanda', 'Área externa coberta', 2);
 
 -- === Tables ===
-INSERT INTO tables (code, label, capacity, sort_order, zone_id) VALUES
-  ('M01', 'Mesa 01', 2, 1, (SELECT id FROM zones WHERE name = 'Salão Principal')),
-  ('M02', 'Mesa 02', 4, 2, (SELECT id FROM zones WHERE name = 'Salão Principal')),
-  ('M03', 'Mesa 03', 4, 3, (SELECT id FROM zones WHERE name = 'Salão Principal')),
-  ('M04', 'Mesa 04', 6, 4, (SELECT id FROM zones WHERE name = 'Salão Principal')),
-  ('M05', 'Mesa 05 (Varanda)', 4, 5, (SELECT id FROM zones WHERE name = 'Varanda'));
+-- map_x/map_y (migration 055): planta lógica do salão — Salão Principal à
+-- esquerda (colunas 0-4), Varanda à direita (colunas 6-7).
+INSERT INTO tables (code, label, capacity, sort_order, zone_id, map_x, map_y) VALUES
+  ('M01', 'Mesa 01', 2, 1, (SELECT id FROM zones WHERE name = 'Salão Principal'), 0, 0),
+  ('M02', 'Mesa 02', 4, 2, (SELECT id FROM zones WHERE name = 'Salão Principal'), 2, 0),
+  ('M03', 'Mesa 03', 4, 3, (SELECT id FROM zones WHERE name = 'Salão Principal'), 4, 0),
+  ('M04', 'Mesa 04', 6, 4, (SELECT id FROM zones WHERE name = 'Salão Principal'), 0, 2),
+  ('M05', 'Mesa 05 (Varanda)', 4, 5, (SELECT id FROM zones WHERE name = 'Varanda'), 6, 0);
 
 -- Fixed physical QR tables used by automated and manual QR-entry tests.
 -- They intentionally use high table numbers so host endpoints that receive
@@ -78,7 +80,9 @@ INSERT INTO tables (
   qr_public_token,
   capacity,
   sort_order,
-  zone_id
+  zone_id,
+  map_x,
+  map_y
 ) VALUES
   (
     'QRTEST91',
@@ -87,7 +91,9 @@ INSERT INTO tables (
     'qrtest91-public-token-fixed',
     2,
     91,
-    (SELECT id FROM zones WHERE name = 'Varanda')
+    (SELECT id FROM zones WHERE name = 'Varanda'),
+    7,
+    2
   ),
   (
     'QRTEST92',
@@ -96,7 +102,9 @@ INSERT INTO tables (
     'qrtest92-public-token-fixed',
     2,
     92,
-    (SELECT id FROM zones WHERE name = 'Salão Principal')
+    (SELECT id FROM zones WHERE name = 'Salão Principal'),
+    2,
+    2
   );
 
 -- === Staff (PIN 1234 everywhere = sha256) ===
