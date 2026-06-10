@@ -40,4 +40,24 @@ npx playwright test tv-delivery-flow --reporter=line
 | `GET /deliveries/pending` só retornava `claimed` | Entregas criadas pela TV invisíveis pro garçom | feed retorna `pending`+`claimed` com zona/itens/alvo |
 | Specs TV usavam `psql -h localhost:5434` | Suíte TV inteira quebrada desde o hardening round 10 (porta não publicada) | helpers via `docker exec restaurant-postgres` |
 
+## Riscos resolvidos na rodada seguinte (mesma branch)
+
+- **Três filas na TV (urgência > VIP > normal)**: `_kds` ordena por tier
+  (priority_rank>0 → urgente; flag `vip` da sessão OU customer `is_vip` →
+  VIP) com FIFO dentro da fila, e o card mostra badge URGÊNCIA/VIP.
+  Verificado com fixtures reais: pedido urgente de 1 min na frente do VIP
+  de 5 min na frente do normal de 10 min
+  (`04-tv-filas-vip-urgencia.png`); regressão TV: 48 passed.
+- **Roteamento do garçom**: fallback do `resolveTargetWaiter` prefere
+  garçom em turno ativo agora (staff_shift_assignments no fuso de
+  `settings.timezone`) e o menos recentemente acionado (round-robin) —
+  fim do "sempre a primeira por ordem alfabética".
+- **Planta espacial**: migration 055 (`tables.map_x/map_y`), posições no
+  seed, e a tela de entrega renderiza a planta com posições reais
+  (`02-waiter-entrega-mapa.png` atualizado); fallback pra grade por zona
+  quando não há posição. Editor visual pelo dono fica pro bloco §1/§7.
+- **Dados demo**: home do garçom humaniza tempo de mesa aberta (min/h/d)
+  e traduz `last_event` técnico; 11 sessões zumbis (>12h) fechadas no DB
+  dev.
+
 Screenshots reduzidos (sips 800px) — trace/vídeo ficam fora do Git.
