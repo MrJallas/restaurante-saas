@@ -1,0 +1,387 @@
+# restauranteSaaS Project Memory
+
+Atualizado em 2026-06-09 por auditoria multiagente Codex.
+
+Use este arquivo como mapa rapido do produto, das fontes de verdade e da
+matriz de testes. Ele nao substitui o codigo, o canvas nem os superprompts.
+
+## Ordem Das Fontes
+
+1. `qa-reports/SUPER-PROMPT-CONTINUACAO.md` e `qa-reports/SUPER-PROMPT-V5.md`
+   explicam como o app deve funcionar e como retomar trabalho. Leia antes de
+   comparar tela atual contra canvas.
+2. Canvas final em `docs/design-canvas-final/` e handoff JSX sao a fonte visual
+   e de comportamento esperado por persona.
+3. Codigo atual em `apps/api`, `apps/web-customer`, `apps/web-staff` e
+   `services/ai-service` vence relatorios antigos quando houver divergencia.
+4. `qa-reports/audit-r23/**` e superscans sao evidencias historicas. Use para
+   pistas, mas revalide no codigo atual porque varios reports ja ficaram
+   defasados.
+5. `qa-reports/SUPER-PROMPT-V2.md` e o protocolo de bug-hunt text-only valem
+   para rodadas de seguranca/contratos sem comparacao visual.
+
+## Stack E Ambiente
+
+- API NestJS: `apps/api`, porta `3001`, prefixo `/api`.
+- Customer Next.js: `apps/web-customer`, porta `3003`.
+- Staff/KDS Next.js: `apps/web-staff`, porta `3002`.
+- AI service FastAPI: `services/ai-service`, porta interna `8000`.
+- Postgres multi-schema: DB `restaurant_saas`, tenant default
+  `restaurant_dev`, porta interna `5434`.
+- Redis: sessoes, rate-limit e filas auxiliares.
+- Mongo: historico de chat e auditoria/security logs.
+- Staff key dev: `dev-staff-api-key-change-in-prod`.
+
+Sempre confirme os bind mounts dos containers antes de validar visualmente:
+
+```bash
+docker inspect restaurant-web-customer --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+docker inspect restaurant-web-staff --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+docker inspect restaurant-api --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+```
+
+Nesta auditoria, os containers estavam montando outro worktree. Foram recriados
+pelo repo base com:
+
+```bash
+docker compose up -d --force-recreate api web-customer web-staff
+```
+
+## Superprompts
+
+- `SUPER-PROMPT-CONTINUACAO.md`: source-of-truth inicial para canvas-vs-impl,
+  stack, seed IDs, schema cheat-sheet, features e todas as telas a estudar.
+- `SUPER-PROMPT-V2.md`: modo bug-hunt text-only, anti-patterns e protocolo de
+  severidade P0/P1/P2/P3.
+- `SUPER-PROMPT-V3.md`: estado pos Round 18, ondas de staff/manager/waiter,
+  sticky footer fix e backlog backend.
+- `SUPER-PROMPT-V4.md`: pos Round 19, continuation rewrite, customer events como
+  P0 e canvas gaps.
+- `SUPER-PROMPT-V5.md`: Round 20+ retake. Prioridades: customer events,
+  performance/chamados/Financeiro, CallWaiterSheet iOS, join-table typewriter,
+  StaffBubble history, CourtesyArrival, home chips dinamicos e merge typewriter.
+
+## Personas E Superficies
+
+### Cliente
+
+Fluxo esperado:
+
+- QR fisico com HMAC/ts/accessToken, geolocalizacao, `session/init`, token de
+  mesa, reconhecimento ou welcome.
+- Home da mesa com continuation/chips vindos do backend.
+- Assistente IA com chips contextuais, ferramentas locais e indicadores de tool.
+- Cardapio, detalhe de item, draft, revisao, confirmacao em ate 15s e status.
+- Pagamento individual/mesa, divisao, Pix, erro e feedback.
+- Chamar garcom, mensagens staff, historico de chat, LGPD, rating, reclamacao,
+  cortesia e fluxo de mesa compartilhada/late-arrival.
+
+Rotas principais:
+
+- `/`, `/:slug`, `/:slug/mesa/:tableCode`
+- `/:slug/assistente`, `/:slug/cardapio`, `/:slug/cardapio/:itemId`
+- `/:slug/pedido`, `/:slug/pedido/revisar`, `/:slug/pedido/confirmando`,
+  `/:slug/pedido/enviado`, `/:slug/pedido/mesa`
+- `/:slug/pagamento`, `/:slug/pagamento/dividir`, `/:slug/pagamento/pix`,
+  `/:slug/pagamento/erro`, `/:slug/pagamento/feedback`
+- `/:slug/identify`, `/:slug/waiting-approval`,
+  `/:slug/host/approve/{participant,join,merge}`
+- `/:slug/complaints`, `/:slug/complaints/new`, `/:slug/complaints/:id`,
+  `/:slug/chat-history`, `/:slug/staff-messages`, `/:slug/eu`, `/:slug/conta`
+
+Anchors/testids existentes:
+
+- `welcome-modal`, `welcome-submit`, `identify-before-join`,
+  `waiting-approval`, `host-join-request-banner`,
+  `host-approve-participant`, `reclaim-banner`, `assistente-history-loading`,
+  `assistente-landing`, `call-waiter-sheet`, `call-waiter-confirm`,
+  `menu-overlay`, `tool-indicator-${toolName}`.
+
+### Staff, Host, Manager E Cozinha
+
+Host/recepcao:
+
+- `/host`, `/host/tables/:status`, `/host/waitlist`, `/host/waitlist/:id`,
+  `/host/reservations`, `/host/reservations/:id`, `/host/liberate/:tableId`,
+  `/host/swap`, `/host/late-arrival/:id`, `/host/scan-verification/:id`,
+  `/host/notifications`, `/host/mensagens`, `/host/profile`,
+  `/host/turnos-historico`, `/host/notificacoes-prefs`, `/host/seguranca`,
+  `/host/aparencia`.
+
+Garcom:
+
+- `/waiter`, `/waiter/chamados`, `/waiter/call/:id`, `/waiter/new-entry`,
+  `/waiter/scan-qr`, `/waiter/scan-qr/picker`,
+  `/waiter/scan-qr/delivery-confirm`, `/waiter/table/:id`,
+  `/waiter/order-direct`, `/waiter/qr-issue`, `/waiter/mensagens`,
+  `/waiter/mensagens/:threadId`, `/waiter/eu`, `/waiter/notifications`.
+
+Manager:
+
+- `/manager`, `/manager/operacoes`,
+  `/manager/operacoes/{criticos,atencao,mesas-ativas,em-alerta}`,
+  `/manager/mesa/:n`, `/manager/table-menu/:tableId`,
+  `/manager/timeline/:orderId`, `/manager/stat/:kind/:id`,
+  `/manager/alertas`, `/manager/notifications`, `/manager/equipe/*`,
+  `/manager/pausa-zona`, `/manager/kitchen-reorder`, `/manager/cortesias`,
+  `/manager/compensate`, `/manager/mensagens/*`, `/manager/financeiro`,
+  `/manager/configuracoes`, `/manager/chamado/:id`.
+
+Cozinha/KDS:
+
+- `/cozinha`, `/cozinha/eu`, `/cozinha/mensagens`,
+  `/cozinha/mensagens/:threadId`.
+
+Staff usa poucos `data-testid`; preferir roles, labels e texto visivel:
+`Notificações`, `Mensagens`, `Perfil`, `Mais ações`, `NOVOS`,
+`PREPARANDO`, `PRONTOS`, `Som ON/OFF`, `Preparar`, `Pronto!`,
+`Chamar garçom`, `Marcar como VIP nessa sessão`, `Enviar resposta`,
+`Criar conversa`, `Pausas ativas`, `Encerrar agora`, `Aprovar entrada`,
+`Rejeitar`, `Nova interação`, `Enviar mensagem`.
+
+## Contratos Criticos
+
+- Multi-tenancy e por schema Postgres. `:slug` resolve
+  `public.restaurants.schema_name` e o backend aplica `search_path`.
+- Customer auth usa cookie/header `session_token` no Redis.
+- Staff auth usa `x-staff-key`; manager/host validam `x-staff-id` no DB.
+- WS tem rooms de tenant, session, customer, staff e manager.
+- Eventos importantes: `order:*`, `waiter:*`, `scan_verification.*`,
+  `late_arrival.*`, `table_merge.*`, `complaint.*`, `staff_message.*`,
+  `zone_pause.*`, `session.flag_changed`, `host.*`, `alert.created`.
+- Lacunas observadas: `shared-types` tem statuses/roles que podem divergir do
+  DB/API atuais (`timeout/cancelled` vs `expired/cooldown_blocked`; roles
+  `owner|kitchen` vs `host|cook|bartender|cashier`).
+
+## Matriz De Testes RQS
+
+Use uma metrica agregada de 100 pontos:
+
+- 15: build, typecheck, lint, migrations e `git diff --check`.
+- 25: E2E critico de QR, welcome, host approval, pedido, KDS, garcom,
+  pagamento, LGPD/chat e noite realista.
+- 20: API/data/security: auth, roles, tenant isolation, DTOs, idempotencia,
+  Mongo/Redis/Postgres e WS.
+- 15: UI/canvas por persona: customer, waiter, manager, host e cozinha.
+- 10: wire/mock/placebo: botao clicavel faz acao real ou stub explicito; nunca
+  `catch { setSuccess() }` silencioso.
+- 10: evidencia/reprodutibilidade: manifest, ambiente, comandos, DB before/after
+  e artefatos pequenos.
+- 5: performance/flakiness: sem timeouts recorrentes, sem mount errado, sem
+  rate-limit dev bloqueando QA.
+
+Classificacao:
+
+- `PASS`: score >= 90, nenhum P0, nenhum P1 confirmado em fluxo critico,
+  nenhum HIGH de seguranca/compliance e comandos obrigatorios verdes.
+- `PARTIAL`: 75-89, ou P1 disputado/isolado, ou cobertura manual sem automacao.
+- `FAIL`: score < 75, qualquer P0, qualquer HIGH security/compliance, build ou
+  E2E obrigatorio falhando, ou evidencia ausente para claim critico.
+
+## Comandos De Validacao
+
+Basicos:
+
+```bash
+npm run build
+npm run lint
+npm run format:check
+git diff --check
+```
+
+Por workspace:
+
+```bash
+npm run build --workspace @restaurant/api
+npm run build --workspace @restaurant/web-customer
+npm run build --workspace @restaurant/web-staff
+npm exec --workspace @restaurant/api -- tsc --noEmit -p tsconfig.json
+npm exec --workspace @restaurant/web-customer -- tsc --noEmit -p tsconfig.json
+npm exec --workspace @restaurant/web-staff -- tsc --noEmit -p tsconfig.json
+npm run e2e --workspace @restaurant/web-customer
+python -m pytest services/ai-service/tests -q
+```
+
+Health:
+
+```bash
+curl -fsS http://localhost:3001/api/health
+curl -fsS http://localhost:3002 >/tmp/staff.html
+curl -fsS http://localhost:3003/restaurant_dev >/tmp/customer.html
+```
+
+No repo base atual nao existe `scripts/audit-ui.sh`; esse script foi criado em
+branch de prompt posterior e nao deve ser assumido na base.
+
+## Evidencia
+
+- Evite commitar PNGs em massa. `qa-reports` ja contem muitos artefatos pesados.
+- Para rodada nova, preferir `SUMMARY.md`, `matrix.json`, `commands.log`,
+  `coverage.csv`, `bug-ledger.md`, `docker-health.txt`,
+  `db-before-after.sql.txt`.
+- Screenshots: no maximo 1-2 por fluxo critico ou falha. Trace/video/HAR devem
+  ficar fora do Git, exceto quando forem indispensaveis para uma falha.
+- Para comparacao canvas-vs-impl, use viewport-only e deviceScaleFactor 1; nao
+  use fullPage em massa.
+
+## Decisoes E Pendencias De Produto
+
+Decisoes confirmadas por Caleb em 2026-06-09:
+
+- Late-arrival = pessoa chega atrasada e precisa se juntar a uma mesa/sessao
+  ja existente.
+- Table merge = juncao de mesas. Late-arrival e merge nao devem ir para staff
+  como aprovacao ativa; staff recebe apenas mudancas de UI/notificacao passiva.
+- Ao aprovar merge, o mapa de mesas do staff deve mostrar visualmente as mesas
+  mergeadas como um conjunto/par de mesas. Validacao atual: codigo ainda nao
+  tem persistencia/campo de grupo mergeado suficiente para isso.
+- Cooldown de merge = 10 minutos.
+- Host/recepcionista nao deve ver que um cliente/mesa e VIP. VIP deve aparecer
+  para cozinha/bar como prioridade de pedido e para staff no mapa de mesas com
+  badge e cor/icone diferente da mesa.
+- No mapa de mesas, gerente, garcom e recepcionista podem ver estado VIP quando
+  estiverem na funcao de staff operacional de mesas; fora disso, host nao deve
+  receber alerta indireto apenas por VIP.
+- Timeline e por sessao/mesa/comanda atual, nao por `orderId`. `orderId` fica
+  para metricas futuras do dono.
+- `/garcom/pedidos` aparenta ser rota legada KDS/manual e precisa de decisao de
+  produto antes de virar superficie canonica.
+- Evidencia pesada = screenshots/traces/videos/logs em massa versionados no Git.
+  Preferir artefatos pequenos e poucos prints por fluxo.
+- Politica RQS recomendada: P1 confirmado em fluxo critico bloqueia `PASS`;
+  `PARTIAL` so quando o P1 for isolado/disputado ou tiver workaround explicito.
+
+Decisoes detalhadas confirmadas por Caleb em 2026-06-10:
+
+- Mapa do gerente: a estrutura atual de `/manager/operacoes > Mapa` pode ser a
+  base, mas ainda precisa implementar visual de mesas mergeadas e VIP. O canvas
+  nao tem esse detalhe implementado; nao usar o canvas como fonte final aqui.
+- Table-menu do gerente/staff: o contador de pessoas no hero deve refletir a
+  quantidade real de usuarios atualmente na mesa/sessao. A secao Cliente deve
+  listar os nomes dos clientes atuais na mesa. Observacao vazia e aceitavel
+  quando a mesa nao veio de reserva; se a recepcionista abrir mesa por reserva
+  com observacao, essa observacao deve popular a mesa.
+- Menu de tres pontos do table-menu deve abrir overlay com acoes reais:
+  editar observacao, fechar mesa/comanda, adicionar pessoas na mesa, lidar com
+  capacidade conforme os modais do canvas, e outras acoes de mesa. Fechar mesa
+  pelo garcom deve colocar a comanda/mesa em estado pronto/liberavel para novos
+  clientes escanearem e cairem na logica de aprovacao correta.
+- Ao late-arrival aprovado ou merge consumado, a quantidade de pessoas
+  comportada/ocupada deve atualizar automaticamente para gerente, garcom e
+  recepcionista. A recepcionista deve receber notificacao/passive awareness
+  depois da aprovacao pelo customer-host.
+- Contatar cliente no table-menu deve funcionar de verdade, nao ficar
+  desabilitado/stub.
+- Timeline da mesa deve existir por sessao/comanda atual e ser persistida no
+  Mongo. Tambem deve haver acesso a sessoes antigas separadas por botoes,
+  mostrando quantidade de pessoas e nome da mesa como "mesa de [host daquela
+  sessao]"; ao clicar, abre timeline antiga com total, quanto foi pago e demais
+  eventos daquela sessao.
+- Timeline da sessao atual deve conter todos os eventos relevantes da comanda:
+  pedidos, chamados, reclamacoes, cortesias, pagamentos, late-arrival, merge e
+  unmerge. `orderId` serve para metricas futuras do dono, nao para a timeline
+  operacional de mesa.
+- Timeline de mesa mergeada: se comandas continuarem separadas, mostrar as duas
+  comandas na mesma tela de forma legivel. Se as comandas forem mergeadas, a
+  timeline deve se comportar como uma arvore com duas ramificacoes que se unem
+  no ponto do merge; apos isso, novos pedidos entram em uma timeline unica.
+- Table merge: ao mergear, abrir overlay perguntando se o cliente quer manter
+  comandas separadas ou juntar comandas. Depois da escolha e sucesso, a IA deve
+  confirmar que a juncao das mesas deu certo.
+- Desfazer merge: gerente pode desfazer. Customer-host pode pedir ao outro
+  customer-host antes de mergear. Se desmergear depois de comanda/pessoas
+  mergeadas, o sistema deve lembrar a estrutura anterior das mesas, pessoas e
+  pedidos, inclusive pedidos novos feitos por pessoas especificas durante o
+  periodo mergeado, para restaurar as comandas/mesas corretamente.
+- KDS/cozinha: a acao final canonica e "Chamar garcom", nao "Servir agora".
+  Ao clicar, deve enviar notificacao in-app/banner para o garcom responsavel.
+  O garcom deve ter tela/botao para aceitar a entrega, ver onde fica a mesa
+  (varanda, salao principal etc.) com mapa, e marcar "Entregue"; so entao o
+  pedido termina e o app do cliente atualiza.
+- Bar: ainda nao existe tela propria de bar. Deve ser implementada em prompt
+  futuro/atual como fila propria quando o escopo pedir.
+- QR do cliente: se localizacao for necessaria/negada, explicar para leigos que
+  a localizacao e usada por seguranca para confirmar que o cliente esta no
+  restaurante e liberar o cardapio correto. Texto deve ser curto, claro e
+  amigavel para idosos/leigos.
+- Geofence: o raio deve ser do restaurante. O dono deve conseguir selecionar a
+  localizacao no mapa, definir raio, salvar, persistir no banco e alterar
+  depois. A configuracao precisa sobreviver a reinicio da maquina.
+- Cliente escaneia QR de mesa ocupada: se nao reconhecido, passa por
+  identificacao e pede entrada ao customer-host. Se reconhecido por cookies,
+  pula identificacao e pede entrada ao customer-host com dados ja reconhecidos.
+- Mesa excede capacidade por late-arrival aprovado: permite a mudanca se o
+  customer-host aprovou, atualiza capacidade/pessoas nas UIs de gerente,
+  garcom e recepcionista e notifica a recepcionista.
+- VIP: apenas gerente e recepcionista podem marcar/desmarcar VIP. Garcom pode
+  ver VIP no mapa operacional, mas nao marca. Host nao deve receber alerta
+  indireto por VIP. Se houver VIP e alergia, mostrar os dois badges.
+- Prioridade de cozinha/bar: devem existir tres filas/prioridades, nesta ordem:
+  urgencia, VIP, normal. Pedido VIP sobe automaticamente para a fila VIP.
+- Lider de cozinha em `/cozinha/eu`: por agora so pode ver o proprio perfil.
+  Manter anotacao/TODO de possibilidade futura do lider gerenciar turnos dos
+  assistentes de cozinha; nao tratar essa intencao como lixo de codigo.
+- Garcom escaneia QR apenas para lancar pedidos novos em mesa que ele esta
+  atendendo, para evitar selecionar manualmente a mesa. Nao usar QR do garcom
+  para abrir mesa, validar presenca ou outros cenarios.
+- `/garcom/pedidos` deve ser removida/arquivada como rota legada.
+- Reclamacao: vira timeline, mensagem/chat, metrica e notificacao para o
+  gerente. O gerente responde no chat.
+- LGPD/dados: se o cliente pedir exclusao, limpar na hora. Caso contrario,
+  apagar historico automaticamente a cada 30 dias.
+- Pagamento dividido/customizado: permitir pagar somente itens que o cliente
+  pediu + 10%, selecionar itens especificos + 10%, ou informar valor livre com
+  10% em cima. A UI deve explicar o acrescimo no calculo total. Frontend pode
+  calcular preview, mas backend deve conhecer/validar o valor esperado para
+  fechar a conta.
+- Fonte canonica geral: decidir tela a tela. Canvas e fonte de pesquisa e
+  referencia visual, nao fonte de verdade absoluta; em algumas telas o codigo
+  atual ja esta mais novo que o canvas.
+- "Staff canon" significa a versao canonica/base das telas de staff. Caleb
+  esclareceu que a tela da esquerda no comparativo era garcom e a direita era
+  equipe do gerente; nao comparar como se fossem alternativas da mesma tela.
+  Usar a versao mais recente por persona/tela.
+- P1 confirmado deve ser corrigido e bloqueia merge/release.
+- Evidencias pesadas devem ficar fora do Git, em storage externo ou artefato
+  temporario; no Git, manter resumo e poucos prints indispensaveis.
+- "Botoes sem backend real" significa qualquer CTA que pareca final para o
+  usuario mas nao chama API real ou apenas mostra sucesso local. Exemplos
+  observados em auditoria: Ver timeline da mesa, Contatar cliente, Avisar
+  cozinha, Realocar mesa e Pausa quando estiverem stubados. Esses botoes devem
+  ser conectados, removidos/desabilitados, ou marcados explicitamente como em
+  desenvolvimento enquanto nao houver backend.
+- "Dados demo ruins" significa vazamento de fixture/QA para tela real, por
+  exemplo tempos de 14k/44k minutos, mesas QRTEST91/92 e labels tecnicos como
+  `ready`. Isso deve ser tratado como problema de seed/QA/UI antes de release,
+  nao como comportamento de produto.
+
+Pontos entendidos dos superprompts:
+
+- Prioridade alta: `customer_events` para trocar heuristica de `viu_cardapio`
+  por event tracking real.
+- Onda 4 finish: wire FE para performance de staff e chamados; construir modulo
+  Financeiro real.
+- Corrigir CallWaiterSheet drag-to-dismiss em iOS real sem violar V20 locked.
+- Adicionar JoinTable/Merge typewriter no chat e StaffBubble history no reload.
+- Adicionar CourtesyArrival customer e chips dinamicos de home via continuation.
+- Staff V11/V17 deve ser composto por canvas base + deltas recentes, nao por um
+  unico arquivo isolado sem contexto.
+- Toda tela nova precisa screenshot/Playwright antes de ser marcada pronta.
+- Todo CTA precisa API real com erro visivel ou stub explicito de desenvolvimento.
+
+Perguntas abertas para Caleb:
+
+1. `CallWaiterSheet` com title 22/600 e CTA raw e excecao aceita ou falha?
+2. `mode=expand` deve sempre preencher o assistente sem autoenviar?
+3. `assistant.staff_message_received` deve chegar pelo `useTableSocket` ou outro
+   canal?
+4. Reclamações customer precisam de GET/list definitivo para hard reload,
+   push/deep link e historico?
+5. API `3001` fica publica para staff/WS ou deve ir para reverse proxy
+   same-origin?
+6. Falha em `migrate-tenants` deve ser fatal ou o `|| echo` do Compose e
+   intencional em dev?
+7. Quer formalizar Jest/Supertest em `apps/api` ou manter specs ts-node?
+8. Em qual tela o dono deve configurar localizacao/raio do restaurante:
+   financeiro/configuracoes do gerente, dashboard owner futuro, ou painel
+   separado?
