@@ -583,6 +583,8 @@ export default function AssistentePage() {
   const router = useRouter();
   const slug = params.slug as string;
   const prefill = searchParams.get('prefill') ?? '';
+  const isExpandPrefill = searchParams.get('mode') === 'expand';
+  const shouldAutoSendPrefill = prefill.length > 0 && !isExpandPrefill;
   const itemId = searchParams.get('itemId') ?? '';
   // Continuação explícita: só o menu de conversas arquivadas passa
   // `threadId`. Entrada normal em `/assistente` fica sempre nova.
@@ -627,19 +629,21 @@ export default function AssistentePage() {
   // bubble do usuario ja visivel + loading — sem exibir o greeting "Olá" —
   // porque do ponto de vista do cliente ele apenas enviou a pergunta.
   const initialMessages = useMemo<ChatMessage[]>(() => {
-    if (prefill) {
+    if (shouldAutoSendPrefill) {
       return [{ id: 'prefill-user', role: 'user', content: prefill }];
     }
     return [];
-  }, [prefill]);
+  }, [prefill, shouldAutoSendPrefill]);
 
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(!!prefill);
+  const [input, setInput] = useState(isExpandPrefill ? prefill : '');
+  const [loading, setLoading] = useState(shouldAutoSendPrefill);
   // `/assistente` sem `threadId` sempre abre uma conversa ativa nova por
   // visita. Histórico salvo no Mongo só volta ao chat ativo pelo menu de
   // conversas, quando o usuário escolhe continuar aquele thread.
-  const [chatStarted, setChatStarted] = useState<boolean>(!!prefill || !!threadIdParam);
+  const [chatStarted, setChatStarted] = useState<boolean>(
+    shouldAutoSendPrefill || !!threadIdParam,
+  );
   const [historyLoading, setHistoryLoading] = useState<boolean>(!!threadIdParam);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [landingGreeting, setLandingGreeting] = useState<string | null>(null);
@@ -674,6 +678,11 @@ export default function AssistentePage() {
     window.addEventListener('customer:continuation-refresh', refresh);
     return () => window.removeEventListener('customer:continuation-refresh', refresh);
   }, []);
+
+  useEffect(() => {
+    if (!isExpandPrefill || !prefill) return;
+    setInput(prefill);
+  }, [isExpandPrefill, prefill]);
 
   // A tela ativa não hidrata chat antigo por padrão. O histórico completo
   // fica em `/chat-history`; aqui carregamos só o greeting de continuation
@@ -1547,13 +1556,13 @@ export default function AssistentePage() {
   sendMessageRef.current = sendMessage;
 
   useEffect(() => {
-    if (!prefill || autoSentRef.current) return;
+    if (!shouldAutoSendPrefill || autoSentRef.current) return;
     autoSentRef.current = true;
     // Bubble do usuario ja foi renderizada via initialMessages; aqui so
     // disparamos a chamada da IA. Sem timeout: queremos o typing indicator
     // aparecer no mesmo frame que o usuario chega na tela.
     sendMessageRef.current(prefill, { skipUserBubble: true });
-  }, [prefill]);
+  }, [prefill, shouldAutoSendPrefill]);
 
   const toggleLinkedSelection = (messageId: string, itemId: string) => {
     setMessages((prev) =>

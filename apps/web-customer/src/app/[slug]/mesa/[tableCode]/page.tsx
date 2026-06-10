@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { ApiRequestError, apiPost, apiGet } from '../../../../lib/api';
 import { clearDeliveredContinuationHint } from '../../../../lib/continuationHints';
@@ -16,7 +16,10 @@ import { useZonePause } from '../../../../hooks/useZonePause';
 import { WelcomeModal } from '../../../../components/welcome/WelcomeModal';
 import { AppShell } from '../../../../components/layout/AppShell';
 import { HomeHero } from '../../../../components/home/HomeHero';
+import { ContinuationHome } from '../../../../components/ui/ContinuationHome';
 import { PillButton } from '../../../../components/ui/PillButton';
+import { SuggestionChip } from '../../../../components/ui/SuggestionChip';
+import { SuggestionChipRow } from '../../../../components/ui/AssistantBlock';
 import { SoftInput } from '../../../../components/ui/SoftInput';
 import { HostApprovalModal } from '../../../../components/host/HostApprovalModal';
 import { HostJoinRequestBanner } from '../../../../components/host/HostJoinRequestBanner';
@@ -33,6 +36,34 @@ const SPLASH_MAX_MS = 3000;
 
 type PageState = 'loading' | 'welcome' | 'home' | 'error' | 'pending_approval';
 
+type ContinuationChipAction = 'send' | 'navigate' | 'expand';
+
+interface ContinuationChip {
+  id: string;
+  label: string;
+  action: ContinuationChipAction;
+  payload: unknown;
+  primary?: boolean;
+}
+
+interface ContinuationPrimaryCta {
+  id?: string;
+  label?: string;
+  action?: string;
+  payload?: unknown;
+  primary?: boolean;
+}
+
+interface ContinuationMessageData {
+  id?: string;
+  kind?: string;
+  template?: string;
+  rendered?: string;
+  subtitle?: string | null;
+  chips?: ContinuationChip[];
+  primary_cta?: ContinuationPrimaryCta | null;
+}
+
 interface ParticipantsResponse {
   participants: {
     customerId: string;
@@ -46,13 +77,7 @@ interface ParticipantsResponse {
 
 interface HomeData {
   heroMessage: string;
-  continuationMessage?: {
-    id?: string;
-    kind?: string;
-    template?: string;
-    rendered?: string;
-    subtitle?: string | null;
-  } | null;
+  continuationMessage?: ContinuationMessageData | null;
   restaurantName: string;
   tableLabel: string;
   highlights: {
@@ -92,6 +117,70 @@ interface LastVisitRepeatResponse {
     categoryName: string | null;
     substitute: { menuItemId: string; name: string; priceCents: number } | null;
   }>;
+}
+
+function isContinuationChipAction(action: unknown): action is ContinuationChipAction {
+  return action === 'send' || action === 'navigate' || action === 'expand';
+}
+
+function continuationChipPayloadText(chip: ContinuationChip): string {
+  if (typeof chip.payload === 'string' && chip.payload.trim().length > 0) {
+    return chip.payload.trim();
+  }
+  return chip.label.trim();
+}
+
+function normalizeContinuationChip(
+  chip: ContinuationChip | ContinuationPrimaryCta,
+  fallbackId: string,
+): ContinuationChip | null {
+  if (!chip || typeof chip.label !== 'string') return null;
+  if (!isContinuationChipAction(chip.action)) return null;
+  const label = chip.label.trim();
+  if (!label) return null;
+
+  return {
+    id: typeof chip.id === 'string' && chip.id.trim() ? chip.id.trim() : fallbackId,
+    label,
+    action: chip.action,
+    payload: chip.payload ?? label,
+    primary: chip.primary === true,
+  };
+}
+
+function continuationChipDedupeKey(chip: ContinuationChip): string {
+  return `${chip.action}:${continuationChipPayloadText(chip).toLocaleLowerCase('pt-BR')}`;
+}
+
+function buildContinuationChips(
+  continuationMessage: ContinuationMessageData | null | undefined,
+): ContinuationChip[] {
+  const rawChips = continuationMessage?.chips ?? [];
+  const primaryCta = continuationMessage?.primary_cta
+    ? normalizeContinuationChip(
+        { ...continuationMessage.primary_cta, primary: true },
+        'primary-cta',
+      )
+    : null;
+  const chips = [
+    ...rawChips.map((chip, index) => normalizeContinuationChip(chip, `chip-${index}`)),
+    primaryCta,
+  ].filter((chip): chip is ContinuationChip => chip !== null);
+
+  const seenIds = new Set<string>();
+  const seenActions = new Set<string>();
+  return chips.filter((chip) => {
+    const idKey = chip.id.trim();
+    const actionKey = continuationChipDedupeKey(chip);
+    if (seenIds.has(idKey) || seenActions.has(actionKey)) return false;
+    seenIds.add(idKey);
+    seenActions.add(actionKey);
+    return true;
+  });
+}
+
+function continuationChipNavigationDestination(slug: string, payload: string): string {
+  return payload.startsWith('/') ? payload : `/${slug}/${payload}`;
 }
 
 function getInitials(name: string | null | undefined, fallback = 'TL'): string {
@@ -577,6 +666,27 @@ export default function MesaPage() {
     [slug, push],
   );
 
+  const continuationMessage = homeData?.continuationMessage;
+  const continuationChips = useMemo(
+    () => buildContinuationChips(continuationMessage),
+    [continuationMessage],
+  );
+  const hasContinuationChips = continuationChips.length > 0;
+  const handleContinuationChip = useCallback(
+    (chip: ContinuationChip) => {
+      const payload = continuationChipPayloadText(chip);
+      if (!payload) return;
+      if (chip.action === 'navigate') {
+        push(continuationChipNavigationDestination(slug, payload));
+        return;
+      }
+      const params = new URLSearchParams({ prefill: payload });
+      if (chip.action === 'expand') params.set('mode', 'expand');
+      push(`/${slug}/assistente?${params.toString()}`);
+    },
+    [push, slug],
+  );
+
   if (pageState === 'loading') {
     return <SplashS1 restaurantName={settings?.restaurantName ?? null} tableLabel={null} />;
   }
@@ -660,7 +770,6 @@ export default function MesaPage() {
     isReturning && lastItems.length > 0
       ? buildReturningMessage(firstName, lastItems)
       : null;
-  const continuationMessage = homeData?.continuationMessage;
   const continuationText =
     typeof continuationMessage?.rendered === 'string' && continuationMessage.rendered.trim()
       ? continuationMessage.rendered
@@ -730,41 +839,61 @@ export default function MesaPage() {
         </div>
       )}
       <div className="flex flex-1 flex-col justify-center gap-3.5 px-6 pb-8">
-        <div className="flex flex-col items-center gap-3">
-          <PillButton onClick={openCallWaiterSheet}>
-            Chamar garçom
-          </PillButton>
-          <PillButton onClick={() => push(`/${slug}/cardapio`)}>
-            Ver cardápio
-          </PillButton>
-          {isReturning && lastItems.length > 0 && (
-            <PillButton
-              variant="filled"
-              onClick={handleRepeatLastVisit}
-              disabled={repeatBusy}
-            >
-              {repeatBusy ? 'Carregando…' : '↻ Repetir última visita'}
+        {!hasContinuationChips && (
+          <div className="flex flex-col items-center gap-3">
+            <PillButton onClick={openCallWaiterSheet}>
+              Chamar garçom
             </PillButton>
-          )}
-          {repeatError && (
-            <div className="max-w-[320px] rounded-[12px] border border-danger/30 bg-danger/5 px-3.5 py-2.5 text-center text-[12px] leading-[1.4] text-danger">
-              {repeatError}
-            </div>
-          )}
-          {locationCheck?.insideRadius === true && (
-            <div className="rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-center text-[10px] font-bold uppercase tracking-[1px] text-success">
-              Dentro da área do restaurante
-              {typeof locationCheck.distanceMeters === 'number'
-                ? ` · ${Math.round(locationCheck.distanceMeters)}m`
-                : ''}
-            </div>
-          )}
-        </div>
+            <PillButton onClick={() => push(`/${slug}/cardapio`)}>
+              Ver cardápio
+            </PillButton>
+            {isReturning && lastItems.length > 0 && (
+              <PillButton
+                variant="filled"
+                onClick={handleRepeatLastVisit}
+                disabled={repeatBusy}
+              >
+                {repeatBusy ? 'Carregando…' : '↻ Repetir última visita'}
+              </PillButton>
+            )}
+            {repeatError && (
+              <div className="max-w-[320px] rounded-[12px] border border-danger/30 bg-danger/5 px-3.5 py-2.5 text-center text-[12px] leading-[1.4] text-danger">
+                {repeatError}
+              </div>
+            )}
+          </div>
+        )}
 
-        <HomeHero
-          message={homeHeroMessage}
-          kicker={homeHeroKicker}
-        />
+        {hasContinuationChips ? (
+          <ContinuationHome
+            resolvedText={homeHeroMessage}
+            kicker={homeHeroKicker}
+          >
+            <SuggestionChipRow>
+              {continuationChips.map((chip) => (
+                <SuggestionChip
+                  key={chip.id}
+                  chip={chip}
+                  onTap={handleContinuationChip}
+                />
+              ))}
+            </SuggestionChipRow>
+          </ContinuationHome>
+        ) : (
+          <HomeHero
+            message={homeHeroMessage}
+            kicker={homeHeroKicker}
+          />
+        )}
+
+        {locationCheck?.insideRadius === true && (
+          <div className="self-center rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-center text-[10px] font-bold uppercase tracking-[1px] text-success">
+            Dentro da área do restaurante
+            {typeof locationCheck.distanceMeters === 'number'
+              ? ` · ${Math.round(locationCheck.distanceMeters)}m`
+              : ''}
+          </div>
+        )}
       </div>
 
       <div className="px-6 pb-safe pb-8">

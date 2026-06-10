@@ -2,7 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { RedisService } from '../../infra/redis/redis.service';
 import { renderTemplate, TOTAL_TEMPLATES } from './welcome-messages';
-import type { ContinuationMessage } from '@restaurant/shared-types';
+import type { ContextualChip, ContinuationMessage } from '@restaurant/shared-types';
+
+interface HomeContinuationMessage extends Omit<ContinuationMessage, 'chips'> {
+  rendered?: string;
+  subtitle?: string | null;
+  chips?: ContextualChip[];
+  primary_cta?: Record<string, unknown> | null;
+}
 
 export interface HomeData {
   heroMessage: string;
@@ -17,7 +24,7 @@ export interface HomeData {
    * Shape mirrors `packages/shared-types/src/ai.ts::ContinuationMessage`.
    * Populated via `GET <AI_SERVICE_URL>/continuation` when available.
    */
-  continuationMessage?: ContinuationMessage & { rendered?: string };
+  continuationMessage?: HomeContinuationMessage;
 }
 
 export interface HighlightItem {
@@ -376,11 +383,20 @@ export class HomeService {
     let value: HomeData['continuationMessage'];
     if (res.ok) {
       const body = (await res.json()) as {
-        message: ContinuationMessage | null;
+        message: (ContinuationMessage & { subtitle?: string | null }) | null;
         rendered: string | null;
+        chips?: ContextualChip[];
+        subtitle?: string | null;
+        primary_cta?: Record<string, unknown> | null;
       };
       if (body.message) {
-        value = { ...body.message, rendered: body.rendered || undefined };
+        value = {
+          ...body.message,
+          rendered: body.rendered || undefined,
+          chips: Array.isArray(body.chips) ? body.chips : body.message.chips,
+          subtitle: body.subtitle ?? body.message.subtitle ?? null,
+          primary_cta: body.primary_cta ?? null,
+        };
       }
     }
 
