@@ -18,7 +18,7 @@ import {
   GIconBtn,
   MContactClientSheet,
 } from '../../components/manager';
-import { manager } from '../../lib/api/manager';
+import { manager, type KitchenQueueOrder } from '../../lib/api/manager';
 import {
   liberateTable,
   listHostTables,
@@ -78,6 +78,8 @@ export function ScreenManagerTableMenu({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [partyCount, setPartyCount] = useState(party);
   const [note, setNote] = useState(observation ?? '');
+  const [timelineOrderId, setTimelineOrderId] = useState<string | null>(null);
+  const [timelineLoading, setTimelineLoading] = useState(true);
 
   const flash = (message: string) => {
     setFeedback(message);
@@ -94,6 +96,15 @@ export function ScreenManagerTableMenu({
       tableSessionId,
     }).toString();
     router.push(`/manager/compensate?${qs}`);
+  };
+
+  const goToTimeline = () => {
+    if (!timelineOrderId) return;
+    const qs = new URLSearchParams({
+      slug: tenantSlug,
+      tableNumber: String(tableNumber),
+    }).toString();
+    router.push(`/manager/timeline/${timelineOrderId}?${qs}`);
   };
 
   // Re-sync flags from API on mount (in case caller passed stale prop)
@@ -128,6 +139,37 @@ export function ScreenManagerTableMenu({
       cancelled = true;
     };
   }, [tenantSlug, tableSessionId, tableNumber]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTimelineLoading(true);
+    setTimelineOrderId(null);
+    api.kitchen
+      .queue()
+      .then((orders) => {
+        if (cancelled) return;
+        const latest = orders
+          .filter(
+            (order: KitchenQueueOrder) =>
+              order.table_session_id === tableSessionId ||
+              (tableNumber > 0 && order.table_number === tableNumber),
+          )
+          .sort(
+            (a: KitchenQueueOrder, b: KitchenQueueOrder) =>
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+          )[0];
+        setTimelineOrderId(latest?.id ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setTimelineOrderId(null);
+      })
+      .finally(() => {
+        if (!cancelled) setTimelineLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, tableNumber, tableSessionId]);
 
   const saveTableEdit = async (nextParty: number, nextNote: string) => {
     if (busy) return;
@@ -374,6 +416,16 @@ export function ScreenManagerTableMenu({
               onClick={() => setContactOpen(true)}
               disabled={!customerId}
             />
+            {(timelineLoading || timelineOrderId) && (
+              <ActionRow
+                dark={dark}
+                icon={Icon.history(18)}
+                label="Ver timeline"
+                sub={timelineLoading ? 'Buscando pedido ativo desta mesa' : 'Histórico real do pedido ativo'}
+                onClick={goToTimeline}
+                disabled={timelineLoading || !timelineOrderId}
+              />
+            )}
             <ActionRow
               dark={dark}
               icon={Icon.arrow(18)}

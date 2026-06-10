@@ -1,0 +1,6 @@
+SET
+ from_status |  to_status  |          created_at           |              changed_by              |  staff_name
+-------------+-------------+-------------------------------+--------------------------------------+---------------
+             | received    | 2026-05-26 04:05:14.101789+00 | 8bd06156-1fe5-4c18-a82d-43d38287ed4a | Erica Gerente
+ received    | in_progress | 2026-05-27 03:15:50.190426+00 | b629f117-1337-42a0-a08d-591f584ecca5 | Gerente Demo
+(2 rows)
