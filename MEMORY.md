@@ -135,9 +135,19 @@ Cozinha/KDS:
   `/cozinha/tv`, `/bar/tv`, `/cozinha/unlock`, `/api/tv-unlock` e
   `/api/proxy/:path*`. O board usa `GET /:slug/orders/_kds?station=kitchen|bar`
   e, quando pedido fica `ready`, chama `POST /:slug/orders/:orderId/call-waiter`
-  em vez de marcar como `delivered`. A rota TV e o proxy sao base inicial; ainda
-  validar ponta a ponta notificação in-app/banner do garcom, mapa/localizacao
-  da mesa e botao final `Entregue`.
+  em vez de marcar como `delivered`.
+- Fluxo de entrega TV→garçom→cliente validado ponta a ponta em 2026-06-10
+  (spec `tv-delivery-flow.spec.ts`, evidencia `qa-reports/tv-delivery-e2e/`):
+  banner in-app via WS `order:handoff_called` + poll em todas as rotas
+  `/waiter/*` (layout monta `WaiterDeliveryAlerts`), tela
+  `/waiter/entrega/[orderId]` com zona (`zones`) + mapa por zona e mesa-alvo
+  destacada, `Estou levando` (in_transit) → `Confirmar entrega` (delivered);
+  cliente so muda pra `Entregue` depois disso (WS pra sala da sessao, sem
+  reload). Feed canonico do garcom: `GET /:slug/deliveries/pending`
+  (pending+claimed, com zone_name/itens/target). `call-waiter` da TV nao
+  exige `x-staff-id` (estacao; `called_by` NULL = chamado pela estacao).
+  `/garcom/pedidos` arquivada como redirect pra `/waiter`. Specs TV usam
+  psql via `docker exec restaurant-postgres` (porta 5434 nao publicada).
 
 Staff usa poucos `data-testid`; preferir roles, labels e texto visivel:
 `Notificações`, `Mensagens`, `Perfil`, `Mais ações`, `NOVOS`,

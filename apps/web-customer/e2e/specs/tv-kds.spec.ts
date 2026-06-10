@@ -69,7 +69,7 @@ function psql(query: string): string {
   // -tA: tuples-only + unaligned. Mas SET ainda emite "SET" no stdout
   // antes do resultado da query. Pegamos so a ultima linha nao-vazia.
   const out = execSync(
-    `PGPASSWORD=postgres psql -h localhost -p 5434 -U postgres -d restaurant_saas -tA -c "SET search_path = restaurant_dev; ${query}"`,
+    `docker exec restaurant-postgres psql -U postgres -p 5434 -d restaurant_saas -tA -c "SET search_path = restaurant_dev; ${query}"`,
     { encoding: 'utf8' },
   );
   const lines = out.split('\n').filter((l) => l.trim() !== '' && l.trim() !== 'SET');
