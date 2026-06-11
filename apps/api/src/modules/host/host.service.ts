@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -9,6 +10,7 @@ import {
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
+import { AlertsService } from '../alerts/alerts.service';
 import type {
   HostInboxItemDto,
   HostInboxKind,
@@ -107,7 +109,52 @@ export class HostService {
   constructor(
     private readonly tenantConn: TenantConnectionProvider,
     @Optional() private readonly events?: EventsGateway,
+    @Optional() private readonly alerts?: AlertsService,
   ) {}
+
+  // ─── Pedido de assistência da recepção (customer-side) ───
+
+  /**
+   * Cliente pediu a RECEPÇÃO na mesa — disparado pelo card de junção de
+   * mesas no assistente ("Chamar recepcionista", que antes abria o sheet
+   * do GARÇOM — bug dos vídeos 2026-06-10). Persiste um alert visível pro
+   * papel host (kind contém 'host' → ROLE_ALERT_PATTERNS) e emite WS
+   * `host.assist_requested` no room tenant:slug:host.
+   */
+  async requestAssist(
+    tableSessionId: string,
+    reason?: string | null,
+  ): Promise<{ ok: true; tableLabel: string | null }> {
+    const rows = (await this.tenantConn.query(
+      `SELECT t.label, t.code
+         FROM table_sessions ts
+         JOIN tables t ON t.id = ts.table_id
+        WHERE ts.id = $1`,
+      [tableSessionId],
+    )) as Array<{ label: string | null; code: string | null }>;
+    if (!rows.length) {
+      throw new BadRequestException('Sessão de mesa não encontrada.');
+    }
+    const { label, code } = rows[0];
+
+    if (this.alerts) {
+      await this.alerts.create({
+        sev: 'atenção',
+        kind: 'host_assist_table',
+        title: `${label ?? code ?? 'Mesa'} pediu a recepção`,
+        sub: reason ?? 'Cliente pediu ajuda da recepção pelo assistente.',
+        // Pedido presencial perde validade rápido — expira sozinho em 30min.
+        ttlAt: new Date(Date.now() + 30 * 60 * 1000),
+      });
+    }
+    this.events?.emitHostAssistRequested(this.tenantConn.getTenantSlug() ?? '', {
+      tableLabel: label,
+      tableCode: code,
+      tableSessionId,
+      reason: reason ?? null,
+    });
+    return { ok: true, tableLabel: label };
+  }
 
   // ─── Mapa de mesas ───
 

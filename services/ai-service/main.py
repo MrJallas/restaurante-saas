@@ -138,6 +138,16 @@ _TABLE_MERGE_STATUS_RE = re.compile(
     r"\b(aceitou|confirmou|aprovou)\b.*\b(mesa|mesas)\b",
     re.IGNORECASE,
 )
+# Intenção de INICIAR/TENTAR uma junção ("quero tentar juntar com outra
+# mesa") não é pergunta de status — antes caía no rule layer acima e o
+# cliente recebia o eco cru do merge antigo ("…é expired") em loop, sem o
+# mapa nunca abrir (bug dos vídeos 2026-06-10). Com intenção detectada, o
+# turno segue pro caminho de tools (request_table_merge → OverlaySalonMap).
+_TABLE_MERGE_REQUEST_INTENT_RE = re.compile(
+    r"\b(quero|queria|gostaria|posso|pode(mos)?|vamos|bora|tentar|tenta)\b[^.!?]*\bjuntar\b|"
+    r"\bjuntar\b[^.!?]*\b(com|na|à|a)\s+(a\s+|outra\s+|essa\s+|aquela\s+)?mesa\b",
+    re.IGNORECASE,
+)
 _JOIN_ACCEPT_RE = re.compile(
     r"\b(pode|pode\s+entrar|sim|s[ií]m|claro|libera|liberar|autoriza|autorizar|deixa|deixe|deixa\s+entrar|ok|beleza)\b",
     re.IGNORECASE,
@@ -275,7 +285,22 @@ def _table_merge_status_response(merge: dict) -> str:
             return f"A junção ainda está pendente: a outra mesa já aceitou, falta o host da mesa de origem confirmar."
         return f"A junção ainda está pendente: falta confirmação dos hosts das duas mesas."
     if status == "rejected":
-        return f"A junção entre {pair} não foi aprovada."
+        return (
+            f"A junção entre {pair} não foi aprovada. "
+            "Se quiser, posso tentar com outra mesa — é só pedir ou abrir "
+            "Juntar mesas no menu."
+        )
+    if status == "expired":
+        return (
+            f"O convite pra juntar {pair} expirou sem resposta. "
+            "Quer tentar de novo? Diga 'quero juntar com outra mesa' ou abra "
+            "Juntar mesas no menu."
+        )
+    if status == "cancelled":
+        return (
+            "Aquele convite de junção foi cancelado. Posso tentar de novo "
+            "quando você quiser — é só pedir."
+        )
     return f"O status atual da junção entre {pair} é {status}."
 
 
@@ -613,7 +638,23 @@ async def chat(req: ChatRequest):
         )
 
     latest_merge = _latest_table_merge(req.customer_context)
-    if latest_merge and _TABLE_MERGE_STATUS_RE.search(text):
+    # Em COOLDOWN o bloqueio amigável ("pausa de X min") continua valendo
+    # mesmo pra intenção de retry — é a regra de produto (10 min). Fora do
+    # cooldown, intenção de juntar segue pro caminho de tools (mapa).
+    _merge_in_cooldown = bool(
+        latest_merge
+        and (
+            latest_merge.get("retry_after_seconds")
+            or latest_merge.get("retryAfterSeconds")
+            or latest_merge.get("cooldown_expires_at")
+            or latest_merge.get("cooldownEndsAt")
+        )
+    )
+    if (
+        latest_merge
+        and _TABLE_MERGE_STATUS_RE.search(text)
+        and (_merge_in_cooldown or not _TABLE_MERGE_REQUEST_INTENT_RE.search(text))
+    ):
         return ChatResponse(
             response=_table_merge_status_response(latest_merge),
             tokens_in=0,

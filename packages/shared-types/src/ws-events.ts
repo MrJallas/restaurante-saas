@@ -490,6 +490,18 @@ export interface WsSessionFlagChanged {
  *  - `manual_force` : recepcionista forcou close mesmo sem pagar (motivo
  *                     livre — comp, no-show, mesa abandonada, etc).
  */
+/** Cliente pediu a RECEPÇÃO na mesa (assistente · junção de mesas etc.). */
+export interface WsHostAssistRequested {
+  event: 'host.assist_requested';
+  payload: {
+    tableLabel: string | null;
+    tableCode: string | null;
+    tableSessionId: string;
+    reason?: string | null;
+    timestamp: string;
+  };
+}
+
 export interface WsHostTableLiberated {
   event: 'host.table_liberated';
   payload: {
@@ -612,6 +624,7 @@ export type WsEvent =
   | WsZonePauseStarted
   | WsZonePauseEnded
   | WsSessionFlagChanged
+  | WsHostAssistRequested
   | WsHostTableLiberated
   | WsHostSwapRequested
   | WsHostSwapStateChanged

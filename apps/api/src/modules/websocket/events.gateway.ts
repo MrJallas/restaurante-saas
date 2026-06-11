@@ -571,6 +571,27 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(`tenant:${slug}:manager`).emit('kitchen:priority_response', payload);
   }
 
+  /**
+   * Cliente pediu a RECEPÇÃO na mesa (ex.: ajuda com junção de mesas pelo
+   * assistente). Room do papel host — garçom não é o destinatário aqui
+   * (code-review dos vídeos 2026-06-10: o botão "Chamar recepcionista"
+   * abria o sheet de garçom).
+   */
+  emitHostAssistRequested(
+    slug: string,
+    data: {
+      tableLabel: string | null;
+      tableCode: string | null;
+      tableSessionId: string;
+      reason?: string | null;
+    },
+  ) {
+    this.server.to(`tenant:${slug}:host`).emit('host.assist_requested', {
+      ...data,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   emitWaiterCall(
     slug: string,
     callData: {

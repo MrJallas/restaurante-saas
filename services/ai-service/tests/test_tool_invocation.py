@@ -369,6 +369,35 @@ def test_chat_answers_pending_table_merge_status_without_tools(chat_client):
     assert provider.chat.await_count == 0
 
 
+def test_chat_merge_retry_intent_bypasses_status_rule(chat_client):
+    """Intencao de NOVA juncao fora de cooldown nao cai no rule layer.
+
+    Bug dos videos 2026-06-10: com um merge antigo `expired` no contexto,
+    "quero tentar juntar com outra mesa" ecoava "O status atual da juncao…
+    e expired" em loop — o mapa nunca abria. Sem cooldown ativo, o turno
+    segue pro caminho de tools (request_table_merge → overlay do salao).
+    """
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={
+            "message": "quero tentar juntar com outra mesa",
+            "tenantId": "t1",
+            "customer_context": {
+                "latest_table_merge": {
+                    "status": "expired",
+                    "origin_table_number": 92,
+                    "target_table_number": 91,
+                },
+            },
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["layer"] != "rule-table-merge-status"
+    assert "expired" not in body["response"]
+
+
 def test_chat_blocks_table_merge_retry_during_cooldown(chat_client):
     client, provider = chat_client
     res = client.post(

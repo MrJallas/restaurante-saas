@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { apiPost, apiGet } from '../../../lib/api';
+import { apiPost, apiGet, ApiRequestError } from '../../../lib/api';
 import { clearDeliveredContinuationHint } from '../../../lib/continuationHints';
 import { recordCustomerEvent } from '../../../lib/customerEvents';
 import { listMessages } from '../../../lib/api/chat-history';
@@ -12,6 +12,7 @@ import {
   approveTableMerge,
   createTableMergeRequest,
   rejectTableMerge,
+  requestHostAssist,
 } from '../../../lib/api/customer-host';
 import type {
   ChatMessageDto,
@@ -1066,6 +1067,11 @@ export default function AssistentePage() {
   const itemId = searchParams.get('itemId') ?? '';
   const mergeApprovedParam = searchParams.get('mergeApproved') === '1';
   const mergeRequestIdParam = searchParams.get('mergeRequestId') ?? '';
+  // "Tentar de novo/outra mesa" vindo da waiting-approval: abre direto o
+  // mapa do salão (mesmo fluxo do tool call sem target) em vez de mandar
+  // frase pra IA — que caía no eco de status do merge antigo (vídeos
+  // 2026-06-10).
+  const mergeRetryParam = searchParams.get('mergeRetry') === '1';
   // Continuação explícita: só o menu de conversas arquivadas passa
   // `threadId`. Entrada normal em `/assistente` fica sempre nova.
   const threadIdParam = searchParams.get('threadId') ?? '';
@@ -1277,8 +1283,15 @@ export default function AssistentePage() {
   }, [slug, threadIdParam]);
 
   // Inline assistant history (Postgres `assistant_messages`) is separate
-  // from archived Mongo `/chat-history` threads. It keeps staff bubbles visible
-  // after a hard reload of the active `/assistente` page.
+  // from archived Mongo `/chat-history` threads. It keeps STAFF bubbles
+  // visible after a hard reload of the active `/assistente` page.
+  //
+  // SÓ staff: hidratar a conversa de IA inteira aqui fazia toda volta ao
+  // assistente reabrir o último turno ("ver meu pedido" + VIEW_ORDER) no
+  // lugar da landing com greeting contextual (bug dos vídeos 2026-06-10).
+  // A conversa antiga continua acessível em "Conversas com IA"; a regra
+  // canon segue a das linhas acima: /assistente sem threadId = conversa
+  // nova + landing contextual.
   useEffect(() => {
     if (!slug || threadIdParam || prefill || !session.sessionId || !session.customerId) return;
     let cancelled = false;
@@ -1286,7 +1299,8 @@ export default function AssistentePage() {
       try {
         const res = await apiGet<AssistantInlineHistoryResponse>(`/${slug}/assistant/history`);
         if (cancelled) return;
-        const hydrated = mapInlineHistoryToChat(res.messages ?? []);
+        const staffOnly = (res.messages ?? []).filter((m) => m.role === 'staff');
+        const hydrated = mapInlineHistoryToChat(staffOnly);
         const automaticMergeMessage = mergeApprovedParam
           ? [tableMergeApprovedMessage(mergeRequestIdParam)]
           : [];
@@ -1461,6 +1475,26 @@ export default function AssistentePage() {
         session.sessionId !== payload.originSessionId &&
         session.sessionId !== payload.targetSessionId
       ) {
+        return;
+      }
+      // Quem CANCELOU/recusou ativamente não recebe o card "Vocês seguem
+      // separados" — ele acabou de tomar essa decisão (vídeos 2026-06-10:
+      // cancelar mostrava "a outra mesa preferiu continuar"). Só limpa as
+      // bubbles de waiting/incoming daquele request.
+      const iDecided =
+        (payload.rejectedBy === 'a' && session.sessionId === payload.originSessionId) ||
+        (payload.rejectedBy === 'b' && session.sessionId === payload.targetSessionId);
+      if (iDecided) {
+        setMessages((prev) =>
+          prev.filter(
+            (msg) =>
+              !(
+                msg.tableMerge &&
+                ['incoming', 'waiting'].includes(msg.tableMerge.kind) &&
+                (!payload.requestId || msg.tableMerge.requestId === payload.requestId)
+              ),
+          ),
+        );
         return;
       }
       setChatStarted(true);
@@ -1840,6 +1874,70 @@ export default function AssistentePage() {
     return null;
   };
 
+  /**
+   * Handlers REAIS dos botões do card de junção (rejected/cooldown) — os
+   * vídeos de 2026-06-10 mostraram os três quebrados: "Chamar
+   * recepcionista" abria o sheet do GARÇOM, "Tentar outra mesa" virava
+   * frase pra IA (que ecoava o status expired do merge antigo) e
+   * "Continuar aqui" só trocava chips.
+   */
+  const callHostToTable = async () => {
+    try {
+      await requestHostAssist(slug, 'Ajuda com junção de mesas');
+      appendToolFeedback(
+        'Recepção avisada — alguém vem até a mesa pra ajudar com a junção.',
+      );
+    } catch (error) {
+      appendToolFeedback(
+        error instanceof ApiRequestError && error.message
+          ? error.message
+          : 'Não consegui avisar a recepção agora. Tente de novo em instantes.',
+      );
+    }
+  };
+
+  const tryAnotherTableMerge = async () => {
+    // Mesmo caminho do tool call do LLM sem target: abre o OverlaySalonMap
+    // e, na escolha, cria o request real — nada de mandar frase pra IA.
+    const enriched = await tableMerge.handleToolCall({
+      name: 'request_table_merge',
+      arguments: {},
+    });
+    if (!enriched) return;
+    const resolved = enriched instanceof Promise ? await enriched : enriched;
+    if (!resolved.arguments?.targetTable) return; // fechou o mapa sem escolher
+    await createTableMergeFromToolCall({
+      name: 'request_table_merge',
+      arguments: resolved.arguments as AssistantToolCall['arguments'],
+    });
+  };
+
+  const dismissMergeOutcome = () => {
+    setMessages((prev) => {
+      const next = prev.filter(
+        (msg) =>
+          !(msg.tableMerge && ['rejected', 'cooldown'].includes(msg.tableMerge.kind)),
+      );
+      if (next.length === 0) {
+        // Sem mais nada na conversa → volta pra landing contextual com
+        // greeting fresco da continuation.
+        setChatStarted(false);
+        setContinuationRefreshKey((key) => key + 1);
+      }
+      return next;
+    });
+    setSuggestions(DEFAULT_SUGGESTIONS);
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- dispara uma vez
+  // por entrada com ?mergeRetry=1; handlers são estáveis o suficiente aqui.
+  useEffect(() => {
+    if (!mergeRetryParam || !session.sessionId) return;
+    window.history.replaceState(null, '', `/${slug}/assistente`);
+    void tryAnotherTableMerge();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mergeRetryParam, session.sessionId, slug]);
+
   const createTableMergeFromToolCall = async (call: AssistantToolCall): Promise<void> => {
     const args = call.arguments ?? {};
     const payload = actionPayload(call);
@@ -1899,27 +1997,10 @@ export default function AssistentePage() {
       setMessages((prev) =>
         mergeUniqueChatMessages(prev, [tableMergeCooldownMessage(result.cooldown)]),
       );
-      setSuggestions([
-        {
-          id: 'merge-cooldown-host',
-          label: 'Chamar recepcionista',
-          action: 'send',
-          payload: 'chamar recepcionista',
-          primary: true,
-        },
-        {
-          id: 'merge-cooldown-another',
-          label: 'Tentar outra mesa',
-          action: 'send',
-          payload: 'quero tentar juntar com outra mesa',
-        },
-        {
-          id: 'merge-cooldown-stay',
-          label: 'Continuar aqui',
-          action: 'send',
-          payload: 'vamos continuar aqui',
-        },
-      ]);
+      // O card de cooldown já traz os 3 CTAs REAIS (recepção/mapa/dismiss);
+      // os chips 'send' antigos duplicavam os botões mandando frases pra IA
+      // — era exatamente o caminho quebrado dos vídeos 2026-06-10.
+      setSuggestions(DEFAULT_SUGGESTIONS);
       return;
     }
 
@@ -2761,9 +2842,10 @@ export default function AssistentePage() {
                     key={msg.id}
                     originTableNumber={origin}
                     targetTableNumber={target}
-                    onCallHost={openCallWaiterSheet}
-                    onTryAnother={() => sendMessage('quero tentar juntar com outra mesa')}
-                    onContinueHere={() => setSuggestions(DEFAULT_SUGGESTIONS)}
+                    rejectedBy={merge.rejectedBy ?? null}
+                    onCallHost={callHostToTable}
+                    onTryAnother={tryAnotherTableMerge}
+                    onContinueHere={dismissMergeOutcome}
                   />
                 );
               }
@@ -2775,9 +2857,9 @@ export default function AssistentePage() {
                     merge.cooldownEndsAt ?? new Date(Date.now() + 10 * 60 * 1000).toISOString()
                   }
                   message={merge.message}
-                  onCallHost={openCallWaiterSheet}
-                  onTryAnother={() => sendMessage('quero tentar juntar com outra mesa')}
-                  onContinueHere={() => setSuggestions(DEFAULT_SUGGESTIONS)}
+                  onCallHost={callHostToTable}
+                  onTryAnother={tryAnotherTableMerge}
+                  onContinueHere={dismissMergeOutcome}
                 />
               );
             }
