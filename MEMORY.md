@@ -412,6 +412,38 @@ Pontos entendidos dos superprompts:
 - Toda tela nova precisa screenshot/Playwright antes de ser marcada pronta.
 - Todo CTA precisa API real com erro visivel ou stub explicito de desenvolvimento.
 
+Bugs dos videos de 2026-06-10 corrigidos (assistente + juncao):
+
+- `/assistente` sem threadId volta a abrir a LANDING contextual: o inline
+  history hidrata SO mensagens de staff (proposito do round 10) — antes
+  reabria a ultima conversa de IA inteira e a landing nunca aparecia.
+  Conversas antigas: menu "Conversas com IA".
+- Hierarquia do greeting contextual (continuation.service.ts:107-118),
+  primeira que casar vence: reclamacao<10min → pagamento<10min → pedido
+  ativo<30min → chamou garcom<5min → viu cardapio<10min →
+  voltou_sem_acao → first_time. Merge/late-arrival NAO entram no
+  greeting — chegam como cards via WS por cima de qualquer landing.
+- Card de juncao (rejected/cooldown): "Chamar recepcionista" usa o fluxo
+  REAL `POST /:slug/host/assist` (SessionGuard → alert kind
+  host_assist_table visivel pro papel host + WS host.assist_requested no
+  room tenant:slug:host); "Tentar outra mesa" abre o OverlaySalonMap
+  (mesmo caminho do tool call; waiting-approval navega com ?mergeRetry=1);
+  "Continuar aqui" dismissa e volta pra landing contextual.
+- Cancelar convite na waiting-approval cancela DE VERDADE (reject do
+  origin); quem cancelou/recusou nao ve o card "Voces seguem separados".
+  Timeout agora emite `table_merge.rejected` rejectedBy='timeout' no
+  expireOverdueRequests (antes era UPDATE silencioso e o FE esperava um
+  evento que nunca chegava); copy do card varia por motivo.
+- ai-service: intencao de NOVA juncao ("quero tentar juntar com outra
+  mesa") nao cai no rule layer de status — segue pro tool path/mapa;
+  cooldown ativo mantem o bloqueio amigavel de 10min (teste cobre os
+  dois). Status terminais respondem com proximo passo, nao eco cru.
+- Migrations: 032 ganhou ADD COLUMN IF NOT EXISTS (021 ja criava ends_at
+  — sequencia limpa 021→032 quebrava o boot fatal); 003 indexa
+  session_token so se a coluna existe (pos-039). ensureOtherTenant (e2e)
+  cria o tenant de isolamento REAL: todas as migrations + __migrations__
+  (o schema parcial via LIKE derrubava o boot fatal).
+
 Decisoes de Caleb em 2026-06-10 (rodada de perguntas abertas):
 
 - Reclamacoes customer: GET/list definitivos SAO canonicos — ja existem
