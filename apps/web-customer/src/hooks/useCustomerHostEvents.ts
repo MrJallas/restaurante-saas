@@ -112,7 +112,16 @@ export function useCustomerHostEvents({
     }
 
     return () => {
-      socket.disconnect();
+      // Mesmo cuidado do useTableSocket: não fechar WS em pleno handshake
+      // (console.error no WebKit + badge do dev overlay — prompt 100 §6).
+      if (socket.connected) {
+        socket.disconnect();
+        return;
+      }
+      socket.io.opts.reconnection = false;
+      socket.removeAllListeners();
+      socket.once('connect', () => socket.disconnect());
+      socket.io.once('error', () => socket.disconnect());
     };
   }, [sessionId, customerId]);
 }

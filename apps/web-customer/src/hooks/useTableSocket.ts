@@ -90,7 +90,19 @@ export function useTableSocket(
     }
 
     return () => {
-      socket.disconnect();
+      // Fechar um WebSocket ainda em handshake faz o WebKit logar
+      // "WebSocket is closed before the connection is established"
+      // (console.error → badge "N errors" do dev overlay; prompt 100 §6).
+      // Se ainda está conectando, esperamos o connect/erro pra encerrar
+      // limpo; reconnection desligada pra não renascer depois do unmount.
+      if (socket.connected) {
+        socket.disconnect();
+        return;
+      }
+      socket.io.opts.reconnection = false;
+      socket.removeAllListeners();
+      socket.once('connect', () => socket.disconnect());
+      socket.io.once('error', () => socket.disconnect());
     };
   }, [sessionId, customerId]);
 }
