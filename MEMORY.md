@@ -466,15 +466,56 @@ Decisoes de Caleb em 2026-06-10 (rodada de perguntas abertas):
   (varanda etc.) ja atende; mantém alvo = ultimo que atendeu → turno
   ativo → round-robin.
 
-Perguntas abertas para Caleb (aguardando retorno com evidencias/explicacao):
+Decisoes de Caleb em 2026-06-11 (fecharam as perguntas 1/2/3/7 + nova spec):
 
-1. `CallWaiterSheet` com title 22/600 e CTA raw e excecao aceita ou falha?
-   (print enviado em 2026-06-10 — title da sheet e 22px/600 vs canon V20
-   26px/700 dos outros titulos)
-2. `mode=expand` deve sempre preencher o assistente sem autoenviar?
-   (comportamento atual explicado em 2026-06-10)
-3. `assistant.staff_message_received` chega hoje no room
-   `session:<tableSessionId>` (mesa toda ve); alternativa e
-   `customer:<customerId>` (so o destinatario). Qual?
-7. Formalizar Jest/Supertest em `apps/api` ou manter specs ts-node?
-   (explicacao enviada em 2026-06-10)
+- CallWaiterSheet 22/600: ACEITA como excecao do canon V20. Nao "corrigir".
+- `mode=expand`: SEMPRE so preenche o input (nunca autoenvia). E no envio,
+  frases diretas (chips/comandos como "ver cardapio", "me indica", "ver
+  meu pedido") devem resolver por REGEX/rule-layer no ai-service SEM
+  chamar o LLM — mantendo o front como esta (indicadores de tool/teclado
+  como se a IA respondesse) pra economizar tokens. So vai pro LLM o que
+  precisa de raciocinio real.
+- `assistant.staff_message_received`: mudar do room `session:<id>` (mesa
+  toda ve) para o room `customer:<customerId>` — SO o cliente que abriu a
+  reclamacao/conversa ve a resposta do gerente (cada um tem a propria
+  reclamacao). Emit hoje em assistant.service.ts (sendStaffToCustomer →
+  emitToSession) — trocar e ajustar o listener do FE.
+- Jest/Supertest em apps/api: SIM, formalizar (npm test unico; migrar
+  specs ts-node aos poucos).
+- Pendencia host UI: RESOLVER — superficie do host mostrando "Mesa X
+  pediu a recepcao" em tempo real (alerts kind host_assist_table + WS
+  host.assist_requested ja existem no backend).
+
+Spec nova do CONTEXTO DO ASSISTENTE (decisao 2026-06-11 — detalhada no
+prompts-codex/100-fable-contexto-assistente-chips-regex.md):
+
+- Problema: com pedido ativo, ir ao cardapio e voltar mostrava sempre o
+  contexto de cardapio e NUNCA o do pedido (ou vice-versa) — falta de
+  hierarquia visivel + mensagem unica disputada.
+- EYEBROW DE STATUS PERSISTENTE: com pedido ativo, a faixa acima da fala
+  da IA (hoje "ASSISTENTE · DE VOLTA") mostra SEMPRE o tempo do pedido
+  (ETA dinamica ja existente: eta_minutes_min/max) + um ponto/indicador
+  com o ESTADO do pedido (Em preparo / Pronto / A caminho — mesmos
+  labels/cores da tela Meu pedido), atualizando via WS order:status.
+- MENSAGEM DE CONTEXTO CONSUMIVEL (1x por evento): a mensagem de um
+  EVENTO (pos-pedido, pos-reclamacao, pos-pagamento, pos-chamado) aparece
+  UMA vez apos o evento; depois de exibida, o contexto fica liberado pros
+  contextos de navegacao (ex.: voltou do cardapio com pedido em preparo →
+  mensagem de cardapio, pois o status do pedido ja esta na eyebrow).
+  Persistir o "ja exibido" por sessao+evento (ha precedente parcial:
+  clearDeliveredContinuationHint no FE).
+- TESTES OBRIGATORIOS dessa matriz de interacoes (continuation service +
+  Playwright): cada acao do app → qual mensagem aparece, quantas vezes,
+  e o que a eyebrow mostra. Comportamentos esperados descritos no prompt
+  100.
+- CHIPS DE SUGESTAO CONTEXTUAIS: auditar todos os chips genericos
+  ("Sobremesa combina?", "Sugestao leve" etc.) que nao conversam com a
+  mensagem atual da IA; chips devem ser coerentes com o estado/ultima
+  fala. Cliques de chips e frases diretas roteiam por regex sem LLM (ver
+  acima), com bateria de testes de frases reais (positivas → rule layer;
+  negativas → LLM) pra garantir que o regex nao engole o que precisa de
+  raciocinio.
+- BUG a investigar junto: toast vermelho "1 error" aparecendo na landing
+  do assistente no iOS (screenshot 2026-06-11, sim iPhone 16) — achar a
+  origem (provavel erro silencioso de fetch na landing) e corrigir com
+  erro tratado/visivel correto.
