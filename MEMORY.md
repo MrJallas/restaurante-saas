@@ -519,3 +519,72 @@ prompts-codex/100-fable-contexto-assistente-chips-regex.md):
   do assistente no iOS (screenshot 2026-06-11, sim iPhone 16) — achar a
   origem (provavel erro silencioso de fetch na landing) e corrigir com
   erro tratado/visivel correto.
+
+Implementacao do prompt 100 (2026-06-12, branch
+claude/compassionate-haslett-5b2f60 — regras novas que ficam):
+
+- Canon de status de pedido do customer vive em
+  `apps/web-customer/src/lib/orderStatus.ts` (labels/cores/formatEtaCompact)
+  — tela Meu pedido e eyebrow do assistente importam de la; NUNCA duplicar
+  o mapa nem hardcodar tempo. Eyebrow: `useActiveOrderStatus` (sem socket
+  proprio — refresh vem do socket da page + poll 60s).
+- Continuation consumivel: kinds de evento (pos_reclamacao, pagou,
+  abriu_pedido, chamou_garcom) sao 1x por evento via Redis
+  `continuation_shown:<tableSessionId>:<kind>:<eventId>` (TTL 4h). SO a
+  superficie `assistente` consome (POST /continuation com
+  `surface:'assistente'`); home le sem queimar; fallback do AI service NAO
+  consome; clientKindHint nao fura consumo; evento novo (id novo)
+  re-libera. A derivacao PULA consumidos e cai pro proximo da hierarquia.
+- Chips: mapa kind→chips vive no BACKEND (pools de continuation.py +
+  chips das tools). DEFAULT_SUGGESTIONS do FE são so fallback e todos os
+  payloads resolvem no rule-layer sem LLM. ATENCAO: pools sao seedados no
+  Redis com TTL 1h (`continuation:<tenant>:<segment>`) — mudou DEFAULTS,
+  flush `continuation:*` ou espere o TTL pra ver no stack.
+- Rule-layer sem LLM: o contrato e a guarda `_is_direct_phrase` (≤6
+  palavras, sem negacao) + a bateria
+  services/ai-service/tests/test_rule_layer_phrases.py. TODA regra nova
+  entra na bateria (positivas → rule, negativas → LLM). "falar com
+  gerente" responde texto que CASA com _MANAGER_MESSAGE_PROMPT_RE — e
+  assim que o turno seguinte vira send_message_to_manager sem LLM.
+  mode=expand segue SO preenchendo o input.
+- Resposta do gerente: POST /assistant/staff-to-customer exige
+  `toCustomerId` (participante aprovado); persiste customer_id; WS
+  `assistant.staff_message_received` vai SO pro room
+  `customer:<toCustomerId>`; GET /assistant/history filtra staff msgs por
+  destinatario (legado customer_id NULL continua visivel pra mesa).
+- LIMITACAO CONHECIDA (pergunta aberta pro Caleb): o token de sessao e
+  COMPARTILHADO pela mesa (token == tableSessionId) e o payload Redis
+  `session:<id>` guarda UM customerId (ultimo welcome/identify via
+  attachCustomerToSession). `join:customer` so autentica o ULTIMO
+  attachado — destinatario "antigo" da mesa recebe a resposta privada no
+  reload (history) mas pode nao receber em realtime. Resolver de verdade
+  exige credencial por participante no handshake WS (ex.:
+  recognition_token) — decisao de produto pendente.
+- Socket do customer e COMPARTILHADO:
+  `apps/web-customer/src/lib/customerSocket.ts` (refcount + linger 5s +
+  retry pos 'io server disconnect'). NAO criar `io()` novo em hook/page
+  customer — o gateway rate-limita 30 handshakes/60s POR IP (restaurante
+  inteiro sai pelo mesmo IP). useTableSocket/useCustomerHostEvents/
+  useComplaintEvents ja usam o shared (o useComplaintEvents antigo nem
+  autenticava — so queimava rate-limit).
+- Toast "1 error" (bug 2026-06-11) RESOLVIDO: era a chave de viewport
+  `interactive-widget` (Chromium-only) — WebKit loga console.error em
+  toda pagina e o dev overlay do Next 14 conta console.error no badge.
+  NAO reintroduzir a chave (teclado ja e tratado via visualViewport).
+  Segunda fonte (WS fechado em pleno handshake a cada navegacao) sumiu
+  com o socket compartilhado.
+- apps/api tem Jest/Supertest: `npm test --workspace @restaurant/api`
+  roda `*.test.ts`; `*.spec.ts` legados sao ts-node manuais (migracao
+  gradual — padrao em apps/api/TESTING.md; template supertest em
+  continuation.controller.test.ts).
+- Host: WS `host.assist_requested` esta em DEFAULT_HOST_EVENTS; inbox
+  /host/inbox inclui alerts `host_assist_table` abertos como kind
+  `host_assist` ("Mesa X pediu a recepcao") com beep + badge AGORA +
+  resolve real via POST /alerts/:id/resolve (host pode agir — pattern
+  'host' em ROLE_ALERT_PATTERNS).
+- E2E novo: e2e/specs/assistente-context.spec.ts (serial; matriz do
+  prompt 100 §7 + rule-layer UX + privacidade). Higiene de beforeAll:
+  alem de throttle:*, limpar continuation_shown:*, customers:welcome:*,
+  customers:identify:* (locks de 15min de runs anteriores derrubam o
+  newSession). PATCH /orders/:id/status NAO aceita in_transit (so o
+  fluxo de entrega do garcom) — ready→delivered direto e valido.

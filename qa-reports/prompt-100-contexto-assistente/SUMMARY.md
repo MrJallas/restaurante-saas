@@ -54,7 +54,7 @@ Data: 2026-06-12 · Ambiente: stack docker dev (repo base em detached checkout d
 
 ## Evidências (pequenas)
 
-- `commands.log` — comandos de validação e resultados.
+- `validations.md` — comandos de validação e resultados.
 - `regex-manual-validation.md` — frases reais no stack e camada de roteamento.
 - `toast-probe-before.txt` / `toast-probe-after.txt` — console da landing
   (iPhone 14/WebKit) antes e depois do fix.
@@ -62,4 +62,23 @@ Data: 2026-06-12 · Ambiente: stack docker dev (repo base em detached checkout d
 
 ## Riscos restantes / pendências
 
-(preenchido no fechamento da rodada)
+- **Realtime privado em mesa multi-cliente (pergunta aberta pro Caleb)**:
+  o token de sessão é compartilhado pela mesa e o payload Redis guarda UM
+  customerId (último welcome/identify). `join:customer` só autentica o
+  último attachado — um destinatário "antigo" recebe a resposta privada
+  do gerente no reload (history filtrado), mas pode não receber a bubble
+  em realtime. Resolver de verdade pede credencial por participante no
+  handshake WS (ex.: recognition_token). Registrado no MEMORY.md.
+- **Pools de chips com TTL 1h no Redis**: mudanças nos DEFAULTS do
+  continuation.py só aparecem no stack após flush de `continuation:*` ou
+  expiração do TTL (registrado no MEMORY.md).
+- **Negativas do regex validadas sem LLM local**: as 8 frases de
+  raciocínio foram comprovadamente roteadas pra rota LLM (503 sem
+  provider). A QUALIDADE da resposta do LLM pra essas frases não foi
+  re-validada nesta rodada (LM Studio desligado) — comportamento do
+  roteamento está coberto pela bateria pytest.
+- **Eyebrow em modo chat**: aparece nas bubbles de IA com tool dispatch
+  (canon "Assistente · agora" substituído pelo status quando há pedido
+  ativo). Bubbles de texto puro sem tool seguem sem eyebrow — mesmo
+  comportamento de antes.
+
