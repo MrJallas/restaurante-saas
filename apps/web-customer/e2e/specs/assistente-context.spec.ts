@@ -106,6 +106,9 @@ async function gotoAssistenteAndGetKind(page: Page): Promise<string> {
   await page.goto(`/${SLUG}/assistente`, { waitUntil: 'commit' });
   const res = await responsePromise;
   const body = (await res.json()) as { kind: string };
+  // Deixa a navegação assentar antes do próximo goto (evita corrida
+  // "interrupted by another navigation").
+  await page.waitForLoadState('load').catch(() => {});
   return body.kind;
 }
 
@@ -130,6 +133,10 @@ test.beforeAll(() => {
   redisDel('throttle:*');
   // Estado limpo da matriz: sem consumo de rodadas anteriores.
   redisDel('continuation_shown:*');
+  // Locks de rate-limit de welcome/identify herdados de runs anteriores
+  // (TTL 15min) derrubam o newSession — mesma higiene do throttle.
+  redisDel('customers:welcome:*');
+  redisDel('customers:identify:*');
 });
 
 test('matriz de contexto: eyebrow de status + mensagem consumível 1x + WS ao vivo', async ({
@@ -172,8 +179,9 @@ test('matriz de contexto: eyebrow de status + mensagem consumível 1x + WS ao vi
   );
 
   // ── Entregue: eyebrow volta ao normal ──
+  // (in_transit só existe via fluxo de entrega do garçom — o PATCH staff
+  // genérico aceita ready→delivered direto, suficiente pra matriz.)
   await patchStatus(orderId, 'ready');
-  await patchStatus(orderId, 'in_transit');
   await patchStatus(orderId, 'delivered');
   await expect(page.getByTestId('order-status-eyebrow')).toHaveCount(0, {
     timeout: 15_000,
@@ -199,16 +207,16 @@ test('chip/frase direta: rule-layer sem LLM com UX de IA (indicador + chips coer
   await expect(input).toBeVisible();
 
   // "me indica algo" → recommend_dish via regex (zero LLM), com indicador
-  // de tool e chips de categoria coerentes com a resposta.
+  // de tool e resposta coerente: o apps/api enriquece com itens REAIS do
+  // cardápio (cards "Pedir" + chips com os nomes dos pratos).
   await input.fill('me indica algo');
   await input.press('Enter');
   await expect(page.getByTestId('tool-indicator-recommend_dish')).toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByRole('button', { name: 'Entrada' })).toBeVisible({
+  await expect(page.getByRole('button', { name: 'Pedir', exact: true }).first()).toBeVisible({
     timeout: 10_000,
   });
-  await expect(page.getByRole('button', { name: 'Prato principal' })).toBeVisible();
 
   // "quero ver o cardápio" → view_menu via regex; FE abre o MenuOverlay
   // (mesma UX do tool call do LLM).
@@ -262,7 +270,7 @@ test('resposta do gerente é privada: só o destinatário vê (realtime + reload
     await guest.page.goto(`/${SLUG}/assistente`, { waitUntil: 'networkidle' });
 
     // Gerente manda mensagem PRO CONVIDADO (toCustomerId = B).
-    const manager = staffByRole('manager');
+    const manager = await staffByRole('manager');
     expect(manager?.id).toBeTruthy();
     const message = `Mensagem privada do gerente ${Date.now()}`;
     const sendRes = await fetch(`${API}/assistant/staff-to-customer`, {

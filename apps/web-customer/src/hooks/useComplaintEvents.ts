@@ -1,11 +1,15 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { io, type Socket } from 'socket.io-client';
 import type {
   WsComplaintResponded,
   WsComplaintResolved,
 } from '@restaurant/shared-types';
+import {
+  acquireCustomerSocket,
+  joinSessionRoom,
+  releaseCustomerSocket,
+} from '../lib/customerSocket';
 
 export type ComplaintEvent =
   | WsComplaintResponded
@@ -37,30 +41,26 @@ export function useComplaintEvents(
     if (!sessionId) return;
     if (typeof window === 'undefined') return;
 
-    const wsUrl =
-      process.env.NEXT_PUBLIC_WS_URL ||
-      `${window.location.protocol}//${window.location.hostname}:3001`;
+    // Socket COMPARTILHADO (lib/customerSocket). Bônus: a versão antiga
+    // conectava SEM sessionToken — o gateway rejeitava o handshake e o
+    // hook nunca recebia nada, só queimava o rate-limit de 30/60s por IP.
+    const entry = acquireCustomerSocket();
+    if (!entry) return;
+    joinSessionRoom(entry, sessionId);
 
-    const socket: Socket = io(wsUrl, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelayMax: 10_000,
-    });
-
-    socket.on('connect', () => {
-      socket.emit('join:session', { sessionId });
-    });
-
-    socket.on('complaint.responded', (payload: WsComplaintResponded['payload']) => {
+    const onResponded = (payload: WsComplaintResponded['payload']) => {
       onEventRef.current({ event: 'complaint.responded', payload });
-    });
-    socket.on('complaint.resolved', (payload: WsComplaintResolved['payload']) => {
+    };
+    const onResolved = (payload: WsComplaintResolved['payload']) => {
       onEventRef.current({ event: 'complaint.resolved', payload });
-    });
+    };
+    entry.socket.on('complaint.responded', onResponded);
+    entry.socket.on('complaint.resolved', onResolved);
 
     return () => {
-      socket.disconnect();
+      entry.socket.off('complaint.responded', onResponded);
+      entry.socket.off('complaint.resolved', onResolved);
+      releaseCustomerSocket(entry);
     };
   }, [sessionId]);
 }

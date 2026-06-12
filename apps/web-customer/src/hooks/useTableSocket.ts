@@ -1,8 +1,12 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { io, type Socket } from 'socket.io-client';
-import { getSessionToken } from '../lib/storage';
+import {
+  acquireCustomerSocket,
+  joinCustomerRoom,
+  joinSessionRoom,
+  releaseCustomerSocket,
+} from '../lib/customerSocket';
 
 /**
  * Hook que conecta o customer ao WebSocket do servidor e entra na sala
@@ -21,11 +25,10 @@ import { getSessionToken } from '../lib/storage';
  *   pelo assistente pra receber `assistant.staff_message_received`, que
  *   desde 2026-06-11 e PRIVADO do destinatario (nao vai mais pro session
  *   room). Outros callers seguem com a assinatura de 2 argumentos.
- * - Reconnect automatico do socket.io ja cobre flicker de rede iOS.
- * - Same-origin: usa o proprio host do customer (3003) — o Next nao
- *   proxya WebSocket pra :3001 hoje, entao apontamos direto pra
- *   NEXT_PUBLIC_WS_URL (configurado pelo docker-compose pra
- *   localhost:3001). Em prod com cloudflare/cdn vai virar mesmo host.
+ * - O socket por baixo e COMPARTILHADO por sessionToken (lib/customerSocket)
+ *   com linger pos-unmount — navegar entre paginas nao derruba/recria a
+ *   conexao (o gateway rate-limita 30 handshakes/60s por IP do restaurante,
+ *   e fechar WS em pleno handshake logava console.error no WebKit).
  */
 export function useTableSocket(
   sessionId: string | null,
@@ -40,29 +43,12 @@ export function useTableSocket(
     if (!sessionId) return;
     if (typeof window === 'undefined') return;
 
-    const wsUrl =
-      process.env.NEXT_PUBLIC_WS_URL ||
-      (typeof window !== 'undefined'
-        ? `${window.location.protocol}//${window.location.hostname}:3001`
-        : '');
-
-    const sessionToken = getSessionToken();
-    const socket: Socket = io(wsUrl, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      auth: sessionToken ? { sessionToken } : undefined,
-      // 4h cobre uma sessao de mesa inteira; depois disso o customer ja
-      // tera reabrido o QR e teremos sessionId novo.
-      reconnectionAttempts: Infinity,
-      reconnectionDelayMax: 10_000,
-    });
-
-    socket.on('connect', () => {
-      socket.emit('join:session', { sessionId });
-      if (customerId) {
-        socket.emit('join:customer', { customerId });
-      }
-    });
+    const entry = acquireCustomerSocket();
+    if (!entry) return;
+    joinSessionRoom(entry, sessionId);
+    if (customerId) {
+      joinCustomerRoom(entry, customerId);
+    }
 
     // Eventos que importam pro customer. Round 19 — adicionados
     // `participant:join_request` (host vê quando alguém pediu pra
@@ -85,24 +71,17 @@ export function useTableSocket(
       'merge.cooldown_started',
       'merge.cooldown_expired',
     ] as const;
-    for (const ev of events) {
-      socket.on(ev, (data: unknown) => onEventRef.current(ev, data));
-    }
+    const handlers = events.map((ev) => {
+      const handler = (data: unknown) => onEventRef.current(ev, data);
+      entry.socket.on(ev, handler);
+      return [ev, handler] as const;
+    });
 
     return () => {
-      // Fechar um WebSocket ainda em handshake faz o WebKit logar
-      // "WebSocket is closed before the connection is established"
-      // (console.error → badge "N errors" do dev overlay; prompt 100 §6).
-      // Se ainda está conectando, esperamos o connect/erro pra encerrar
-      // limpo; reconnection desligada pra não renascer depois do unmount.
-      if (socket.connected) {
-        socket.disconnect();
-        return;
+      for (const [ev, handler] of handlers) {
+        entry.socket.off(ev, handler);
       }
-      socket.io.opts.reconnection = false;
-      socket.removeAllListeners();
-      socket.once('connect', () => socket.disconnect());
-      socket.io.once('error', () => socket.disconnect());
+      releaseCustomerSocket(entry);
     };
   }, [sessionId, customerId]);
 }
