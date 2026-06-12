@@ -228,6 +228,21 @@ _RECOMMEND_RE = re.compile(
     r"\bsugest([aã]o|[oõ]es)\b|\bo\s+que\s+voc[eê]\s+recomenda\b",
     re.IGNORECASE,
 )
+# SEGURANÇA ALIMENTAR (decisão Caleb 2026-06-12): recomendação com
+# restrição alimentar NUNCA resolve no rule-layer genérico — o
+# recommend_dish sem dietary devolve itens quaisquer do cardápio e
+# poderia sugerir exatamente o alérgeno ("me indica algo sem camarão").
+# Essas frases vão pro LLM, que recebe os allergens de cada item no
+# system prompt. Única exceção: glúten DIRETO (_GLUTEN_FREE_RE, avaliado
+# antes) — o apps/api filtra `allergens` de verdade pra esse caso
+# (menuItemMatchesDietary/enrichRecommendationToolCalls).
+_DIETARY_RESTRICTION_RE = re.compile(
+    r"\bsem\s+\w+|"
+    r"\b(al[eé]rgic[oa]s?|alergias?|al[eé]rgenos?|intoler[aâ]ncias?|intolerantes?|"
+    r"cel[ií]ac[oa]s?|vegan[oa]s?|vegetarian[oa]s?|lactose|gl[uú]ten|"
+    r"amendoim|camar[aã]o|camar[oõ]es|frutos\s+do\s+mar|mariscos?|crust[aá]ceos?)\b",
+    re.IGNORECASE,
+)
 _CALL_WAITER_RE = re.compile(
     r"\b(chama|chamar|chame|cad[eê]|preciso\s+d[eo]|pode\s+chamar|quero)\b[^.!?]*\b(gar[cç]o(?:m|nete)|atendente)\b|"
     r"^\s*(o\s+)?(gar[cç]om|atendente)\s*[,!.]*\s*(por\s+favor)?\s*[.!?]*\s*$",
@@ -849,7 +864,10 @@ async def chat(req: ChatRequest):
                 start_time,
                 layer="rule-view-menu",
             )
-        if _RECOMMEND_RE.search(text):
+        if _RECOMMEND_RE.search(text) and not _DIETARY_RESTRICTION_RE.search(text):
+            # Restrição alimentar presente → cai pro LLM (ver
+            # _DIETARY_RESTRICTION_RE) — nunca recomendar às cegas pra
+            # quem declarou alergia/restrição.
             rec_category = _recommend_category(text)
             return _rule_tool_response(
                 "recommend_dish",

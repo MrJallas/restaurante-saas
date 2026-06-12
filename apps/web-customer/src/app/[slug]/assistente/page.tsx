@@ -2813,6 +2813,22 @@ export default function AssistentePage() {
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="gpu-layer flex min-h-0 flex-1 flex-col gap-3.5 overflow-auto px-[22px] pb-4 pt-3">
+          {/* Faixa de status FIXA no modo chat (decisão Caleb 2026-06-12):
+              com pedido ativo, o estado + ETA ficam visíveis o tempo todo
+              no topo do transcript — independente das bolhas. O
+              ToolCallIndicator e a eyebrow por bolha continuam; isto é um
+              complemento, não substituto. Mesma tipografia mono 10px do
+              canon — só sticky + fundo pra rolagem passar por baixo. */}
+          {chatStarted && !historyLoading && activeOrder && (
+            <div
+              data-testid="order-status-strip"
+              className="sticky -top-3 z-10 -mx-[22px] -mt-3 bg-bg px-[22px] pb-2 pt-3"
+            >
+              <span className="font-mono text-[10px] uppercase tracking-[1.5px] text-mute">
+                <AssistantOrderEyebrow active={activeOrder} />
+              </span>
+            </div>
+          )}
           {/* Round 22 §A/§D — loader inline enquanto hidrata o histórico
               persistido. Some logo que listMessages resolve (sucesso ou
               erro). Sem ele teríamos um flash da landing antes do chat

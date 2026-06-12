@@ -69,6 +69,12 @@ export function acquireCustomerSocket(): CustomerSocketEntry | null {
     reconnectionAttempts: Infinity,
     reconnectionDelayMax: 10_000,
     auth: sessionToken ? { sessionToken } : undefined,
+    // Manda o cookie httpOnly `recognition_token` também no transporte de
+    // polling (no upgrade WS o browser já manda sozinho) — é a identidade
+    // POR PARTICIPANTE no gateway (decisão 2026-06-12): cada cliente da
+    // mesa entra no próprio room `customer:<id>` mesmo com o token de
+    // sessão compartilhado.
+    withCredentials: true,
   });
 
   const entry: CustomerSocketEntry = {

@@ -7,6 +7,8 @@ time-of-day). Falls back to a built-in default per `vip-customer.md` (warmer
 tone for VIP).
 """
 
+import hashlib
+import json
 import random
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -503,8 +505,17 @@ DEFAULTS: dict[str, list[dict]] = {
 }
 
 
+# Fingerprint dos DEFAULTS embutido na chave do pool (decisão Caleb
+# 2026-06-12): mudou template/chip no CÓDIGO → chave nova → re-seed na
+# primeira leitura, sem esperar o TTL de 1h nem flush manual de
+# `continuation:*`. As chaves antigas morrem sozinhas pelo TTL.
+_DEFAULTS_FINGERPRINT = hashlib.sha1(
+    json.dumps(DEFAULTS, sort_keys=True, ensure_ascii=False).encode("utf-8")
+).hexdigest()[:10]
+
+
 def _key(tenant_id: str, segment: str) -> str:
-    return f"continuation:{tenant_id}:{segment}"
+    return f"continuation:{tenant_id}:{segment}:{_DEFAULTS_FINGERPRINT}"
 
 
 def _segment_for_kind(kind: str) -> str:

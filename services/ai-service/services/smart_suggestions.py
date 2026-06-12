@@ -33,6 +33,8 @@ the FE can use for analytics or copy variation). NO BREAKING CHANGE:
 existing callers that only send `surface` keep working unchanged.
 """
 
+import hashlib
+import json
 import random
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -67,8 +69,15 @@ DEFAULT_POOL: dict[str, list[dict]] = {
 }
 
 
+# Mesmo esquema do continuation.py (decisão Caleb 2026-06-12): fingerprint
+# do DEFAULT_POOL na chave — mudou o código, re-seed imediato sem TTL/flush.
+_DEFAULTS_FINGERPRINT = hashlib.sha1(
+    json.dumps(DEFAULT_POOL, sort_keys=True, ensure_ascii=False).encode("utf-8")
+).hexdigest()[:10]
+
+
 def _key(tenant_id: str, surface: str) -> str:
-    return f"smart-sug:{tenant_id}:{surface}"
+    return f"smart-sug:{tenant_id}:{surface}:{_DEFAULTS_FINGERPRINT}"
 
 
 def get_suggestions(

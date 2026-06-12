@@ -188,6 +188,15 @@ NEGATIVE_CASES = [
     "quero adicionar 1 risoto",
     "tem prato com camarão?",
     "que sobremesa combina com peixe?",
+    # SEGURANÇA ALIMENTAR (decisão Caleb 2026-06-12): recomendação com
+    # restrição/alergia vai pro LLM — o rule-layer genérico não filtra
+    # alérgenos e poderia sugerir exatamente o que a pessoa não pode.
+    "me indica algo sem camarão",
+    "me indica algo sem lactose",
+    "me indica algo vegano",
+    "me recomenda algo sem amendoim",
+    "sugere algo pra alérgico",
+    "me indica algo sem cebola",
 ]
 
 

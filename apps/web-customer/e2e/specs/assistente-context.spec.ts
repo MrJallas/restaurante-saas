@@ -218,6 +218,11 @@ test('chip/frase direta: rule-layer sem LLM com UX de IA (indicador + chips coer
     timeout: 10_000,
   });
 
+  // Faixa de status FIXA no modo chat (decisão 2026-06-12): com pedido
+  // ativo (criado no teste anterior, mesma sessão), o estado + ETA ficam
+  // visíveis no topo do transcript junto com o tool indicator.
+  await expect(page.getByTestId('order-status-strip')).toBeVisible({ timeout: 10_000 });
+
   // "quero ver o cardápio" → view_menu via regex; FE abre o MenuOverlay
   // (mesma UX do tool call do LLM).
   await input.fill('quero ver o cardápio');
@@ -263,13 +268,19 @@ test('resposta do gerente é privada: só o destinatário vê (realtime + reload
       15_000,
     );
     const guestRow = participants!.find((r) => r.customer_name === guestName);
+    const hostRow = participants!.find((r) => r.customer_name !== guestName);
     expect(guestRow?.customer_id).toBeTruthy();
+    expect(hostRow?.customer_id).toBeTruthy();
 
     // Os dois abrem o assistente (host A + convidado B).
     await page.goto(`/${SLUG}/assistente`, { waitUntil: 'networkidle' });
     await guest.page.goto(`/${SLUG}/assistente`, { waitUntil: 'networkidle' });
 
-    // Gerente manda mensagem PRO CONVIDADO (toCustomerId = B).
+    // Gerente manda mensagem PRO HOST (toCustomerId = A). Caso forte de
+    // propósito: o host fez welcome PRIMEIRO, então o payload Redis
+    // compartilhado da mesa aponta pro convidado — só a identidade por
+    // participante (cookie recognition_token no handshake WS, decisão
+    // 2026-06-12) entrega o realtime pro host.
     const manager = await staffByRole('manager');
     expect(manager?.id).toBeTruthy();
     const message = `Mensagem privada do gerente ${Date.now()}`;
@@ -284,22 +295,22 @@ test('resposta do gerente é privada: só o destinatário vê (realtime + reload
         tableSessionId: session.id,
         message,
         fromStaffId: manager!.id,
-        toCustomerId: guestRow!.customer_id,
+        toCustomerId: hostRow!.customer_id,
       }),
     });
     expect(sendRes.status, 'POST staff-to-customer').toBe(201);
 
-    // Realtime: SÓ o convidado vê a bubble.
-    await expect(guest.page.getByText(message)).toBeVisible({ timeout: 15_000 });
-    await page.waitForTimeout(4_000);
-    await expect(page.getByText(message)).toHaveCount(0);
+    // Realtime: SÓ o host vê a bubble; o convidado não recebe nada.
+    await expect(page.getByText(message)).toBeVisible({ timeout: 15_000 });
+    await guest.page.waitForTimeout(4_000);
+    await expect(guest.page.getByText(message)).toHaveCount(0);
 
     // Reload: histórico continua privado por destinatário.
-    await guest.page.reload({ waitUntil: 'networkidle' });
-    await expect(guest.page.getByText(message)).toBeVisible({ timeout: 20_000 });
     await page.reload({ waitUntil: 'networkidle' });
-    await page.waitForTimeout(4_000);
-    await expect(page.getByText(message)).toHaveCount(0);
+    await expect(page.getByText(message)).toBeVisible({ timeout: 20_000 });
+    await guest.page.reload({ waitUntil: 'networkidle' });
+    await guest.page.waitForTimeout(4_000);
+    await expect(guest.page.getByText(message)).toHaveCount(0);
   } finally {
     await guest.context.close();
   }

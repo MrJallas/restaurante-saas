@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.continuation import DEFAULTS  # noqa: E402
+from services.continuation import DEFAULTS, _key  # noqa: E402
 from services.redis_pool import pool_seed  # noqa: E402
 
 
@@ -20,9 +20,10 @@ def seed_tenant(tenant_id: str) -> int:
     for segment, entries in DEFAULTS.items():
         if not entries:
             continue
-        n = pool_seed(f"continuation:{tenant_id}:{segment}", entries, ttl_seconds=3600)
+        # Chave versionada por fingerprint dos DEFAULTS (ver continuation._key)
+        n = pool_seed(_key(tenant_id, segment), entries, ttl_seconds=3600)
         total += n
-        print(f"  seeded {n} entries → continuation:{tenant_id}:{segment}")
+        print(f"  seeded {n} entries → {_key(tenant_id, segment)}")
     return total
 
 

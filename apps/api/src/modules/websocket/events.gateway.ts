@@ -109,6 +109,52 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
+   * Identidade por PARTICIPANTE no handshake customer (decisão Caleb
+   * 2026-06-12, evolução 1-b do prompt 100): o token de sessão é
+   * COMPARTILHADO pela mesa (token == tableSessionId) e o payload Redis
+   * só guarda o customerId do ÚLTIMO welcome/identify — `join:customer`
+   * autenticava só esse último e o realtime privado (resposta do
+   * gerente) não chegava pros demais. O cookie `recognition_token`
+   * (httpOnly, individual por cliente, enviado automaticamente no
+   * upgrade do WS — cookies ignoram porta e o site é o mesmo) prova quem
+   * É a pessoa naquele device. Quando presente e válido no schema do
+   * tenant da sessão, ele DEFINE o customerId da conexão; sem ele, cai
+   * no fallback do payload compartilhado (comportamento anterior).
+   */
+  private async resolveRecognizedCustomer(
+    client: AuthedSocket,
+    schemaName: string | undefined,
+  ): Promise<string | null> {
+    try {
+      if (!schemaName || !/^[a-z_][a-z0-9_]{0,62}$/.test(schemaName)) return null;
+      const rawCookie = client.handshake.headers.cookie;
+      if (!rawCookie) return null;
+      const match = /(?:^|;\s*)recognition_token=([^;]+)/.exec(rawCookie);
+      if (!match) return null;
+      const token = decodeURIComponent(match[1]);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token)) {
+        return null;
+      }
+      const cacheKey = `recognition_customer:${schemaName}:${token}`;
+      const cached = await this.redis.get(cacheKey);
+      if (cached) return cached;
+      const rows = (await this.dataSource.query(
+        `SELECT id FROM "${schemaName}".customers WHERE recognition_token = $1 LIMIT 1`,
+        [token],
+      )) as Array<{ id: string }>;
+      const customerId = rows[0]?.id ?? null;
+      if (customerId) {
+        await this.redis.set(cacheKey, customerId, 300);
+      }
+      return customerId;
+    } catch {
+      // Cookie é um upgrade de identidade — falha aqui nunca derruba o
+      // handshake; só cai no fallback do payload compartilhado.
+      return null;
+    }
+  }
+
+  /**
    * Round 15 (P1-NEW-1 round14): valida que `customerId` pertence ao
    * tenant do staff. Antes `join:customer` staff-path entrava na room
    * sem checar — staff de tenant A com customerId de tenant B (UUID
@@ -239,11 +285,23 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const session = safeJsonParse<{
           sessionId: string;
           customerId?: string;
+          schemaName?: string;
         }>(data);
         if (session) {
           client.data.authType = 'session';
           client.data.sessionId = session.sessionId;
-          if (session.customerId) {
+          // Identidade por PARTICIPANTE (2026-06-12): o cookie
+          // recognition_token (individual) vence o customerId do payload
+          // compartilhado da mesa (último welcome/identify). É o que
+          // permite cada cliente entrar no PRÓPRIO room `customer:<id>`
+          // e receber a resposta privada do gerente em realtime.
+          const recognizedCustomerId = await this.resolveRecognizedCustomer(
+            client,
+            session.schemaName,
+          );
+          if (recognizedCustomerId) {
+            client.data.customerId = recognizedCustomerId;
+          } else if (session.customerId) {
             client.data.customerId = session.customerId;
           }
           this.logger.log(`Session client connected: ${client.id}`);
