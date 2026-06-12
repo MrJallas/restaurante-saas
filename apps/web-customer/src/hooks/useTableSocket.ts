@@ -17,6 +17,10 @@ import { getSessionToken } from '../lib/storage';
  *   });
  *
  * - `sessionId` null: nao conecta (custos zero antes do welcome).
+ * - `customerId` (opcional): tambem entra no room `customer:<id>` — usado
+ *   pelo assistente pra receber `assistant.staff_message_received`, que
+ *   desde 2026-06-11 e PRIVADO do destinatario (nao vai mais pro session
+ *   room). Outros callers seguem com a assinatura de 2 argumentos.
  * - Reconnect automatico do socket.io ja cobre flicker de rede iOS.
  * - Same-origin: usa o proprio host do customer (3003) — o Next nao
  *   proxya WebSocket pra :3001 hoje, entao apontamos direto pra
@@ -26,6 +30,7 @@ import { getSessionToken } from '../lib/storage';
 export function useTableSocket(
   sessionId: string | null,
   onEvent: (event: string, data: unknown) => void,
+  customerId?: string | null,
 ): void {
   const onEventRef = useRef(onEvent);
   // Sempre atualiza o ref pra a callback mais recente sem reconectar.
@@ -54,6 +59,9 @@ export function useTableSocket(
 
     socket.on('connect', () => {
       socket.emit('join:session', { sessionId });
+      if (customerId) {
+        socket.emit('join:customer', { customerId });
+      }
     });
 
     // Eventos que importam pro customer. Round 19 — adicionados
@@ -84,5 +92,5 @@ export function useTableSocket(
     return () => {
       socket.disconnect();
     };
-  }, [sessionId]);
+  }, [sessionId, customerId]);
 }

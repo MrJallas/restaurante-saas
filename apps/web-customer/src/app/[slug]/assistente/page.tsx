@@ -29,6 +29,10 @@ import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
 import { useTableMerge } from '../../../hooks/useTableMerge';
 import { useTableSocket } from '../../../hooks/useTableSocket';
+import {
+  useActiveOrderStatus,
+  type ActiveOrderStatus,
+} from '../../../hooks/useActiveOrderStatus';
 import { useDraftOrder } from '../../../providers/DraftOrderProvider';
 import { AppShell } from '../../../components/layout/AppShell';
 import { Bubble } from '../../../components/ui/Bubble';
@@ -370,32 +374,57 @@ function filterLastVisitItems(
 // quando a tool dispatched não retornou chips canônicos. Backend devolve
 // `chips` quando vier de uma tool com chips populated; aí esses defaults
 // somem.
+//
+// Prompt 100 (chips contextuais): os genéricos desconectados ("Sobremesa
+// combina?", "Pratos com camarão") saíram — o fallback agora espelha a
+// fala idle da landing ("Posso ajudar com sugestões, ingredientes, pedido
+// e pagamento") e todos os payloads resolvem no rule-layer sem LLM.
 const DEFAULT_SUGGESTIONS: ChipCanon[] = [
   {
-    id: 'default-leve',
-    label: 'Sugestão leve',
+    id: 'default-cardapio',
+    label: 'Ver cardápio',
     action: 'send' as const,
-    payload: 'me indica algo leve',
+    payload: 'quero ver o cardápio',
   },
   {
-    id: 'default-sobremesa',
-    label: 'Sobremesa combina?',
+    id: 'default-indica',
+    label: 'Me indica algo',
     action: 'send' as const,
-    payload: 'que sobremesa combina?',
+    payload: 'me indica algo',
   },
   {
-    id: 'default-camarao',
-    label: 'Pratos com camarão',
+    id: 'default-garcom',
+    label: 'Chamar garçom',
     action: 'send' as const,
-    payload: 'tem prato com camarão?',
+    payload: 'chama o garçom',
   },
   {
-    id: 'default-pagar',
-    label: 'Como pagar?',
+    id: 'default-conta',
+    label: 'Pedir a conta',
     action: 'send' as const,
-    payload: 'como pago a conta?',
+    payload: 'quero pagar a conta',
   },
 ];
+
+/**
+ * Eyebrow de status do pedido (prompt 100 §1): com pedido ativo, a faixa
+ * acima da fala da IA mostra SEMPRE o estado canon (labels/cores da tela
+ * Meu pedido) + a ETA dinâmica — `Assistente · ● Em preparo · 5–9 min`.
+ * Sem pedido ativo o caller renderiza o conteúdo padrão atual.
+ */
+function AssistantOrderEyebrow({ active }: { active: ActiveOrderStatus }) {
+  return (
+    <span data-testid="order-status-eyebrow">
+      Assistente ·{' '}
+      <span
+        aria-hidden
+        className={`inline-block h-[6px] w-[6px] rounded-full align-middle ${active.dotClass}`}
+      />{' '}
+      {active.label}
+      {active.etaText ? ` · ${active.etaText}` : ''}
+    </span>
+  );
+}
 
 function tableMergeStateFromPayload(
   payload: Partial<
@@ -1177,6 +1206,14 @@ export default function AssistentePage() {
     );
   }, [messages]);
 
+  // Pedido ativo da sessão pra eyebrow de status (prompt 100 §1). O
+  // refresh é disparado pelos eventos `order:created`/`order:status` do
+  // socket da page (abaixo) + poll de fallback dentro do hook.
+  const { active: activeOrder, refresh: refreshActiveOrder } = useActiveOrderStatus(
+    slug,
+    session.sessionId,
+  );
+
   useEffect(() => {
     if (!slug || !session.sessionId) return;
     recordCustomerEvent(slug, 'assistant_opened', {
@@ -1223,6 +1260,9 @@ export default function AssistentePage() {
           customerId: session.customerId ?? undefined,
           hasDraftOrder: draftItems.length > 0,
           isReturning: session.isReturning ?? false,
+          // Prompt 100 §2: só a superfície do assistente consome a
+          // mensagem de evento (1x por evento) — a home não queima o hint.
+          surface: 'assistente',
         });
         if (res?.text) {
           setLandingGreeting(res.text);
@@ -1394,10 +1434,13 @@ export default function AssistentePage() {
   /**
    * Round 18 (Onda 4 batch 2) — WS subscriber pra mensagens inbound do
    * staff (manager). Backend emite `assistant.staff_message_received` no
-   * room `session:<tableSessionId>` quando um manager envia via
-   * MContactClientSheet (POST /assistant/staff-to-customer). Payload
-   * shape vem direto de `assistant.service.ts::sendStaffToCustomer`:
-   *   { id, tableSessionId, message, fromStaffId, fromStaffName, createdAt }
+   * room `customer:<toCustomerId>` (decisão 2026-06-11: resposta do
+   * gerente é privada do destinatário; antes era o session room e a mesa
+   * toda via) quando um manager envia via MContactClientSheet
+   * (POST /assistant/staff-to-customer). Payload shape vem direto de
+   * `assistant.service.ts::sendStaffToCustomer`:
+   *   { id, tableSessionId, message, fromStaffId, fromStaffName,
+   *     toCustomerId, createdAt }
    *
    * O bubble é apendado on-the-fly. O reload agora reidrata via
    * `/assistant/history`, e o merge abaixo deduplica caso historico + socket
@@ -1409,6 +1452,12 @@ export default function AssistentePage() {
    * o bubble fica escondido atrás do hero/PillButtons).
    */
   useTableSocket(session.sessionId, (event, data) => {
+    if (event === 'order:created' || event === 'order:status') {
+      // Eyebrow de status muda ao vivo quando o pedido avança (prompt 100
+      // matriz: "Pedido avança (WS) com assistente aberto").
+      refreshActiveOrder();
+      return;
+    }
     if (event === 'table_merge.created' && isTableMergeCreatedPayload(data)) {
       try {
         window.sessionStorage.setItem(
@@ -1595,7 +1644,9 @@ export default function AssistentePage() {
         },
       ]);
     });
-  });
+    // O 3º argumento entra no room `customer:<id>` — desde 2026-06-11 a
+    // resposta do gerente chega SÓ pra esse room (privacidade por cliente).
+  }, session.customerId);
 
   const [placingOrder, setPlacingOrder] = useState(false);
   // Guard against double-tap on the LGPD confirm chip — the action is
@@ -2789,7 +2840,9 @@ export default function AssistentePage() {
                 <PillButton onClick={() => push(`/${slug}/cardapio`)}>Ver cardápio</PillButton>
               </div>
               <HomeHero
-                kicker="Assistente"
+                kicker={
+                  activeOrder ? <AssistantOrderEyebrow active={activeOrder} /> : 'Assistente'
+                }
                 animate={false}
                 message={
                   landingGreeting ||
@@ -2993,7 +3046,14 @@ export default function AssistentePage() {
                 {msg.role === 'ai' && msg.toolCall && (
                   <>
                     <span className="font-mono text-[10px] uppercase tracking-[1.5px] text-mute">
-                      Assistente · agora
+                      {/* Prompt 100 §1: com pedido ativo a faixa acima da
+                          fala da IA carrega estado + ETA ao vivo; sem
+                          pedido, mantém o canon `Assistente · agora`. */}
+                      {activeOrder ? (
+                        <AssistantOrderEyebrow active={activeOrder} />
+                      ) : (
+                        'Assistente · agora'
+                      )}
                     </span>
                     <ToolCallIndicator name={msg.toolCall.name} category={msg.toolCall.category} />
                   </>

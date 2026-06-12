@@ -10,10 +10,10 @@
 //   `lib/api/manager.ts → fetchSmartSuggestions`).
 //
 // On send: POSTs to `/assistant/staff-to-customer` (round 18 Onda 4 batch 2).
-// Persiste em `assistant_messages` (from_role='staff') e emite WS pra
-// `session:<tableSessionId>` — customer ve a bubble em real-time no
-// /[slug]/assistente. Antes (round 18 Onda 1) batia em `/staff-messages`
-// (staff↔staff) e o service ignorava os fields customer/tableSession.
+// Persiste em `assistant_messages` (from_role='staff', customer_id =
+// destinatário) e emite WS pro room `customer:<toCustomerId>` — SÓ o
+// cliente contatado vê a bubble em real-time no /[slug]/assistente
+// (decisão Caleb 2026-06-11; antes ia pro session room e a mesa toda via).
 // State machine: idle → selected → sent.
 
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -167,6 +167,9 @@ export function MContactClientSheet({
         tableSessionId,
         message: draft.trim(),
         fromStaffId,
+        // Resposta privada por cliente (2026-06-11): o backend emite o WS
+        // só pro room `customer:<toCustomerId>` — a mesa toda não vê mais.
+        toCustomerId: customerId,
       });
       if (draftStorageKey && typeof window !== 'undefined') {
         window.localStorage.removeItem(draftStorageKey);

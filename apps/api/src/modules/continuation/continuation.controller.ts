@@ -5,7 +5,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import type { TenantRequest } from '../tenant/tenant.middleware';
 import {
@@ -37,6 +37,15 @@ class ContinuationDto {
   @IsOptional()
   @IsBoolean()
   isReturning?: boolean;
+
+  /**
+   * Superfície que pede a continuation. Só `assistente` consome mensagens
+   * de evento (1x por evento — prompt 100); a home da mesa não queima o
+   * contexto do assistente. Ausente = comportamento de leitura pura.
+   */
+  @IsOptional()
+  @IsIn(['assistente', 'home'])
+  surface?: 'assistente' | 'home';
 }
 
 /**
@@ -75,6 +84,7 @@ export class ContinuationController {
         hasDraftOrder:
           dto.hasDraftOrder === true || (Number.isFinite(draftCount) && draftCount > 0),
         isReturning: dto.isReturning === true,
+        surface: dto.surface ?? null,
       },
     );
   }

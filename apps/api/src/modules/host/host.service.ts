@@ -216,6 +216,39 @@ export class HostService {
   async listInbox(limit = 30): Promise<HostInboxItemDto[]> {
     const items: HostInboxItemDto[] = [];
 
+    // Pedidos de recepção em aberto ("Mesa X pediu a recepção") — alerts
+    // kind=host_assist_table criados por requestAssist(). Entram no inbox
+    // enquanto não resolvidos/dispensados e dentro do TTL (30min). O WS
+    // `host.assist_requested` cobre o realtime; o inbox cobre reload e
+    // quem abriu a tela depois do evento.
+    const assistAlerts = (await this.tenantConn.query(
+      `SELECT id, title, sub, created_at
+         FROM alerts
+        WHERE kind = 'host_assist_table'
+          AND dismissed_at IS NULL
+          AND resolved_at IS NULL
+          AND (ttl_at IS NULL OR ttl_at > now())
+        ORDER BY created_at DESC
+        LIMIT $1`,
+      [limit],
+    )) as Array<{
+      id: string;
+      title: string;
+      sub: string | null;
+      created_at: string;
+    }>;
+    for (const row of assistAlerts) {
+      items.push({
+        id: `host_assist:${row.id}`,
+        kind: 'host_assist' as HostInboxKind,
+        refId: row.id,
+        title: row.title,
+        subtitle: row.sub ?? undefined,
+        at: row.created_at,
+        context: { alertId: row.id },
+      });
+    }
+
     // Late-arrival consumed (approved / rejected — nao mais pending).
     const lateArrival = (await this.tenantConn.query(
       `SELECT lar.id, lar.status, lar.decided_at, lar.requested_at,

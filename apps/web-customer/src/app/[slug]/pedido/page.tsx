@@ -11,6 +11,10 @@ import { useTableSocket } from '../../../hooks/useTableSocket';
 import { AppShell } from '../../../components/layout/AppShell';
 import { PillButton } from '../../../components/ui/PillButton';
 import { Row } from '../../../components/ui/Row';
+import {
+  ORDER_STATUS_COLORS,
+  ORDER_STATUS_LABELS,
+} from '../../../lib/orderStatus';
 
 interface OrderItemApi {
   id: string;
@@ -37,23 +41,10 @@ interface OrderApi {
   items: OrderItemApi[];
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  pending_confirmation: 'Aguardando confirmação',
-  received: 'Recebido pela cozinha',
-  in_progress: 'Em preparo',
-  ready: 'Pronto para servir',
-  in_transit: 'A caminho da mesa',
-  delivered: 'Entregue',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  pending_confirmation: 'bg-mute',
-  received: 'bg-success',
-  in_progress: 'bg-success',
-  ready: 'bg-success',
-  in_transit: 'bg-success',
-  delivered: 'bg-mute',
-};
+// Labels/cores canon agora vivem em `lib/orderStatus.ts` — compartilhados
+// com a eyebrow de status do assistente (prompt 100). Mantidos idênticos.
+const STATUS_LABELS = ORDER_STATUS_LABELS;
+const STATUS_COLORS = ORDER_STATUS_COLORS;
 
 const PROGRESS_STEPS: { key: string; label: string }[] = [
   { key: 'received', label: 'Recebido pela cozinha' },

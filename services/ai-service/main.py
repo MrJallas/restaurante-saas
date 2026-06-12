@@ -157,6 +157,102 @@ _JOIN_REJECT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ─────────────────────────────────────────────────────────────
+# Prompt 100 §4 (decisão Caleb 2026-06-11) · rule-layer expandido.
+#
+# Cliques de chips e frases DIRETAS não gastam LLM: o regex resolve e o
+# front continua igual (tool indicator + typewriter — UX idêntica à de
+# uma resposta de IA). Só vai pro LLM o que precisa de raciocínio real.
+#
+# O guarda `_is_direct_phrase` é o que separa comando de conversa:
+# frases curtas (≤ N palavras) e sem negação são comandos ("quero ver o
+# cardápio", "me indica algo"); frases longas ou negadas ("não quero ver
+# o cardápio agora, me fala de você", "tem algo sem glúten que chegue
+# rápido?") seguem pro LLM. Testado contra conversas reais em
+# tests/test_rule_layer_phrases.py — toda regra nova DEVE entrar lá.
+# ─────────────────────────────────────────────────────────────
+_DIRECT_NEGATION_RE = re.compile(
+    r"\b(n[aã]o|nunca|jamais|nem|depois|mais\s+tarde|outra\s+hora|agora\s+n[aã]o)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_direct_phrase(text: str, max_words: int = 6) -> bool:
+    """Frase curta e sem negação = comando direto (chip/atalho)."""
+    if _DIRECT_NEGATION_RE.search(text):
+        return False
+    return len(text.strip().split()) <= max_words
+
+
+_VIEW_MENU_RE = re.compile(
+    r"\b(ver|v[eê]|olhar|abrir?|abre|mostrar?|mostra|cad[eê]|manda)\b[^.!?]*\b(card[aá]pio|menu)\b|"
+    r"\b(card[aá]pio|menu)\b[^.!?]*\b(ver|v[eê]|olhar|abrir?|abre|mostrar?|mostra)\b",
+    re.IGNORECASE,
+)
+_BARE_MENU_RE = re.compile(r"^\s*(o\s+)?(card[aá]pio|menu)\s*[.!?]*\s*$", re.IGNORECASE)
+
+# Filtro de categoria espelha o mapeamento do system prompt (view_menu
+# com category) — "mostra as bebidas" não deveria custar uma rodada de LLM.
+_MENU_CATEGORY_RES: list[tuple[str, "re.Pattern[str]"]] = [
+    ("bebida", re.compile(r"\b(bebidas?|drinks?)\b", re.IGNORECASE)),
+    ("sobremesa", re.compile(r"\b(sobremesas?|doces?)\b", re.IGNORECASE)),
+    ("entrada", re.compile(r"\b(entradas?|aperitivos?|petiscos?)\b", re.IGNORECASE)),
+    ("principal", re.compile(r"\b(pratos?\s+principa(?:l|is)|principais)\b", re.IGNORECASE)),
+]
+_VIEW_CATEGORY_VERB_RE = re.compile(
+    r"\b(ver|v[eê]|olhar|mostrar?|mostra|abre|abrir|quais|op[cç][oõ]es\s+de)\b",
+    re.IGNORECASE,
+)
+
+
+def _direct_menu_category(text: str) -> str | None:
+    """'mostra as bebidas' → 'bebida'; sem verbo de visualização → None."""
+    if not _VIEW_CATEGORY_VERB_RE.search(text):
+        return None
+    for category, rx in _MENU_CATEGORY_RES:
+        if rx.search(text):
+            return category
+    return None
+
+
+def _recommend_category(text: str) -> str | None:
+    """'me indica uma sobremesa' → 'sobremesa' (sem exigir verbo de menu)."""
+    for category, rx in _MENU_CATEGORY_RES:
+        if rx.search(text):
+            return category
+    return None
+
+
+_RECOMMEND_RE = re.compile(
+    r"\b(me\s+)?(indica|indicar|recomenda|recomendar|sugere|sugerir)\b|"
+    r"\bsugest([aã]o|[oõ]es)\b|\bo\s+que\s+voc[eê]\s+recomenda\b",
+    re.IGNORECASE,
+)
+_CALL_WAITER_RE = re.compile(
+    r"\b(chama|chamar|chame|cad[eê]|preciso\s+d[eo]|pode\s+chamar|quero)\b[^.!?]*\b(gar[cç]o(?:m|nete)|atendente)\b|"
+    r"^\s*(o\s+)?(gar[cç]om|atendente)\s*[,!.]*\s*(por\s+favor)?\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+_COURTESY_RE = re.compile(r"\bcortesias?\b", re.IGNORECASE)
+_TALK_TO_MANAGER_RE = re.compile(
+    r"\b(falar|fala|conversar|chama|chamar|chame|quero\s+falar)\b[^.!?]*\b(gerente|ger[eê]ncia)\b",
+    re.IGNORECASE,
+)
+# Conta direta sem as palavras de _PAYMENT_RE: "a conta, por favor",
+# "quero finalizar".
+_BILL_DIRECT_RE = re.compile(
+    r"^\s*(a\s+)?conta(,?\s+por\s+favor)?\s*[.!?]*\s*$|\b(quero|queria|vou)\s+finalizar\b",
+    re.IGNORECASE,
+)
+
+# Resposta do rule-layer pra intenção de falar com o gerente. PRECISA casar
+# _MANAGER_MESSAGE_PROMPT_RE ("mensagem ... gerente") — é assim que o turno
+# seguinte cai em `rule-manager-message-followup` e envia o texto do
+# cliente via send_message_to_manager, sem LLM.
+_MANAGER_INTENT_REPLY = (
+    "Claro. Me conta a mensagem que você quer mandar pro gerente que eu já repasso."
+)
+
 
 def _last_assistant_requested_manager_message(history: list["ChatMessage"]) -> bool:
     """Detect the follow-up turn after "me conte a mensagem pro gerente"."""
@@ -677,7 +773,17 @@ async def chat(req: ChatRequest):
             layer="rule-order-status",
         )
 
-    if _PAYMENT_RE.search(text):
+    # Negação manda pro LLM ("não quero pagar agora" não é pedido de conta).
+    # _PAYMENT_SPLIT_RE entra na condição também: "quero dividir a conta"
+    # não tem os verbos de _PAYMENT_RE mas é comando direto de pagamento.
+    if (
+        (
+            _PAYMENT_RE.search(text)
+            or _BILL_DIRECT_RE.search(text)
+            or _PAYMENT_SPLIT_RE.search(text)
+        )
+        and not _DIRECT_NEGATION_RE.search(text)
+    ):
         tool_name = "open_payment_screen"
         if _PAYMENT_SPLIT_RE.search(text):
             tool_name = "split_bill"
@@ -694,7 +800,10 @@ async def chat(req: ChatRequest):
             layer="rule-payment",
         )
 
-    if _GLUTEN_FREE_RE.search(text):
+    # Prompt 100 §4: só frases DIRETAS ficam no rule-layer — "tem algo sem
+    # glúten que chegue rápido?" precisa de raciocínio (LLM), "opções sem
+    # glúten" é comando.
+    if _GLUTEN_FREE_RE.search(text) and _is_direct_phrase(text):
         return _rule_tool_response(
             "recommend_dish",
             {"dietary": "gluten_free"},
@@ -716,6 +825,73 @@ async def chat(req: ChatRequest):
             start_time,
             layer="rule-manager-message-followup",
         )
+
+    # ─── Prompt 100 §4 · frases diretas resolvidas sem LLM ───
+    # A UX é idêntica à de uma resposta de IA: texto curto da tool +
+    # tool_calls (indicador no FE) + chips coerentes vindos da própria tool.
+    if _is_direct_phrase(text):
+        menu_category = _direct_menu_category(text)
+        if menu_category:
+            return _rule_tool_response(
+                "view_menu",
+                {"category": menu_category},
+                req,
+                text,
+                start_time,
+                layer="rule-view-menu",
+            )
+        if _VIEW_MENU_RE.search(text) or _BARE_MENU_RE.match(text):
+            return _rule_tool_response(
+                "view_menu",
+                {},
+                req,
+                text,
+                start_time,
+                layer="rule-view-menu",
+            )
+        if _RECOMMEND_RE.search(text):
+            rec_category = _recommend_category(text)
+            return _rule_tool_response(
+                "recommend_dish",
+                {"category": rec_category} if rec_category else {},
+                req,
+                text,
+                start_time,
+                layer="rule-recommend-dish",
+            )
+        if _CALL_WAITER_RE.search(text):
+            return _rule_tool_response(
+                "call_waiter",
+                {},
+                req,
+                text,
+                start_time,
+                layer="rule-call-waiter",
+            )
+        if _COURTESY_RE.search(text):
+            return _rule_tool_response(
+                "view_courtesy",
+                {},
+                req,
+                text,
+                start_time,
+                layer="rule-courtesy",
+            )
+        if _TALK_TO_MANAGER_RE.search(text):
+            # Sem tool ainda — a regra pede o texto da mensagem (mesma
+            # copy que o LLM usaria); o próximo turno cai no followup
+            # `rule-manager-message-followup` e dispara a tool de verdade.
+            return ChatResponse(
+                response=_MANAGER_INTENT_REPLY,
+                tokens_in=0,
+                tokens_out=0,
+                model="rule-layer",
+                provider="local",
+                latency_ms=int((time.time() - start_time) * 1000),
+                estimated_cost_cents=0,
+                layer="rule-manager-intent",
+                tool_calls=[],
+            )
 
     # Otherwise hand off to the regular LLM chat path.
     provider = get_provider()

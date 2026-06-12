@@ -623,6 +623,16 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
+   * Generic single-customer emitter (`customer:<id>` room). Usado quando o
+   * evento é PRIVADO do destinatário — ex.: resposta do gerente no
+   * assistente (decisão Caleb 2026-06-11: `assistant.staff_message_received`
+   * NÃO vai mais pro session room, só o cliente que abriu a conversa vê).
+   */
+  emitToCustomer(customerId: string, event: string, data: unknown) {
+    this.server.to(`customer:${customerId}`).emit(event, data);
+  }
+
+  /**
    * Generic tenant-room emitter — every staff dashboard joined to
    * `tenant:<slug>` receives the event. Used by features that don't have
    * a specific room-routing helper (`emitCustomerStaffMessage`, etc.) and
