@@ -1,6 +1,8 @@
 import { expect, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { io, type Socket } from 'socket.io-client';
 import { QR_TEST_TABLES, type TableCode } from './qr';
 
@@ -736,19 +738,34 @@ export async function ensureOtherTenant(): Promise<void> {
           updated_at = now();
   `);
 
+  // Tenant REAL com TODAS as migrations + tracking em __migrations__.
+  // Antes: 4 tabelas via LIKE sem __migrations__ — o migrate-tenants do
+  // boot (FATAL desde 2026-06-10) tentava aplicar as 55 migrations num
+  // schema meio-copiado e derrubava a API inteira (achado dessa decisão).
   psql(`
     DROP SCHEMA IF EXISTS ${OTHER_SLUG} CASCADE;
     CREATE SCHEMA ${OTHER_SLUG};
+    CREATE TABLE ${OTHER_SLUG}.__migrations__ (
+      filename TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  const migrationsDir = join(
+    __dirname,
+    '../../../../packages/database/migrations/tenant-template',
+  );
+  const migrationFiles = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  for (const file of migrationFiles) {
+    const sql = readFileSync(join(migrationsDir, file), 'utf8');
+    psql(`SET search_path TO ${OTHER_SLUG};\n${sql}`);
+    psql(
+      `INSERT INTO ${OTHER_SLUG}.__migrations__ (filename) VALUES (${sqlLiteral(file)}) ON CONFLICT DO NOTHING;`,
+    );
+  }
 
-    CREATE TABLE ${OTHER_SLUG}.tables
-      (LIKE restaurant_dev.tables INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES);
-    CREATE TABLE ${OTHER_SLUG}.customers
-      (LIKE restaurant_dev.customers INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES);
-    CREATE TABLE ${OTHER_SLUG}.table_sessions
-      (LIKE restaurant_dev.table_sessions INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES);
-    CREATE TABLE ${OTHER_SLUG}.scan_verification_requests
-      (LIKE restaurant_dev.scan_verification_requests INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES);
-
+  psql(`
     INSERT INTO ${OTHER_SLUG}.tables
       (code, label, qr_hmac_secret, qr_public_token, capacity, sort_order)
     VALUES (

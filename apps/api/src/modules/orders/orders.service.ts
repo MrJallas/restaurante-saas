@@ -38,6 +38,36 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 
 const PENDING_CONFIRMATION_WINDOW_SECONDS = 15;
 
+// ── Motor de ETA do cliente ─────────────────────────────────────────────
+// O "22–28 minutos" do app do cliente era HARDCODED no front. Aqui vira
+// estimativa real e explicável, com três entradas:
+//  1. estágio do pedido — o range encolhe conforme o processo resolve
+//     (recebido → preparo → pronto → a caminho);
+//  2. fila à frente — pedidos ativos do tenant na MESMA ordenação canônica
+//     da cozinha (urgência > VIP > normal, FIFO dentro da fila), então
+//     prioridade muda a posição e portanto o tempo;
+//  3. paralelismo da cozinha — pedidos à frente são divididos pelas linhas
+//     que preparam em paralelo.
+// Valores são heurística de dev (TODO: configuráveis por restaurante nas
+// settings junto com meta_minutes do KDS).
+const ETA_KITCHEN_PARALLEL_LINES = 2;
+const ETA_PER_QUEUED_ORDER_MIN = 4;
+const ETA_PER_QUEUED_ORDER_MAX = 7;
+const ETA_STAGE_RANGE: Record<string, [number, number]> = {
+  pending_confirmation: [10, 16],
+  received: [10, 16],
+  in_progress: [5, 9],
+  ready: [2, 5],
+  in_transit: [1, 3],
+  // aliases legados
+  open: [10, 16],
+  confirmed: [10, 16],
+  preparing: [5, 9],
+};
+// Estágios em que o pedido ainda disputa a fila da cozinha (a partir de
+// in_progress ele já está no fogão — fila à frente deixa de somar).
+const ETA_QUEUED_STATUSES = new Set(['pending_confirmation', 'received', 'open', 'confirmed']);
+
 export interface CreateOrderItemDto {
   menuItemId: string;
   quantity: number;
@@ -770,6 +800,112 @@ export class OrdersService {
     return ids;
   }
 
+  /**
+   * Snapshot leve da fila ativa da cozinha na ordenação canônica
+   * (urgência > VIP > normal, FIFO dentro da fila) — mesma regra do _kds.
+   * O índice do pedido no array = quantos pedidos existem à frente dele.
+   */
+  private async getKitchenQueueSnapshot(): Promise<string[]> {
+    const rows = (await this.tenantConn.query(
+      `SELECT o.id
+         FROM orders o
+         JOIN table_sessions ts ON ts.id = o.table_session_id
+         LEFT JOIN visits vip_visit ON vip_visit.id = o.visit_id
+         LEFT JOIN customers vip_customer ON vip_customer.id = vip_visit.customer_id
+        WHERE o.status IN ('pending_confirmation', 'received', 'open', 'confirmed')
+          AND o.created_at > now() - interval '8 hours'
+        ORDER BY
+          CASE
+            WHEN o.priority_rank > 0 THEN 0
+            WHEN ('vip' = ANY(COALESCE(ts.flags, '{}'::text[])))
+              OR COALESCE(vip_customer.is_vip, false) THEN 1
+            ELSE 2
+          END ASC,
+          o.priority_rank DESC,
+          o.created_at ASC
+        LIMIT 200`,
+    )) as Array<{ id: string }>;
+    return rows.map((r) => r.id);
+  }
+
+  /**
+   * Range base de preparo: configurado pela cozinha em /cozinha/eu
+   * (settings.kitchen_eta_*, decisão Caleb 2026-06-10 Q9) com fallback
+   * pros defaults do código quando NULL/ausente.
+   */
+  private async getKitchenEtaBase(): Promise<[number, number]> {
+    try {
+      const rows = (await this.tenantConn.query(
+        `SELECT kitchen_eta_min_minutes AS min, kitchen_eta_max_minutes AS max
+           FROM settings LIMIT 1`,
+      )) as Array<{ min: number | null; max: number | null }>;
+      const min = rows[0]?.min;
+      const max = rows[0]?.max;
+      if (min != null && max != null && min >= 1 && max >= min) {
+        return [min, max];
+      }
+    } catch {
+      // settings sem as colunas (tenant pré-056) ou falha pontual → default
+    }
+    return ETA_STAGE_RANGE.received;
+  }
+
+  private computeEtaRange(
+    status: string,
+    aheadCount: number,
+    base: [number, number],
+  ): { min: number; max: number } | null {
+    const stage = ETA_STAGE_RANGE[status];
+    if (!stage) return null; // delivered/cancelled — não há espera
+    let [min, max] = stage;
+    // Estágios de preparo derivam do range BASE configurado pela cozinha:
+    // na fila = base cheio; no fogão = metade restante. Pronto/a caminho
+    // são handoff/deslocamento — independem do tempo de preparo.
+    if (ETA_QUEUED_STATUSES.has(status)) {
+      [min, max] = base;
+    } else if (status === 'in_progress' || status === 'preparing') {
+      [min, max] = [Math.max(1, Math.ceil(base[0] / 2)), Math.max(2, Math.ceil(base[1] / 2))];
+    }
+    if (ETA_QUEUED_STATUSES.has(status) && aheadCount > 0) {
+      const slots = Math.ceil(aheadCount / ETA_KITCHEN_PARALLEL_LINES);
+      min += slots * ETA_PER_QUEUED_ORDER_MIN;
+      max += slots * ETA_PER_QUEUED_ORDER_MAX;
+    }
+    return { min, max };
+  }
+
+  /**
+   * Anota pedidos do cliente com ETA dinâmica (min/max) + posição na fila.
+   * Uma consulta de snapshot por chamada; falha de snapshot degrada pra
+   * ETA sem componente de fila (nunca derruba a listagem do cliente).
+   */
+  private async decorateWithEta<T extends { id: string; status: string }>(
+    orders: T[],
+  ): Promise<Array<T & { etaMin: number | null; etaMax: number | null; queueAhead: number }>> {
+    const needsEta = orders.some((o) => ETA_STAGE_RANGE[o.status]);
+    const needsQueue = orders.some((o) => ETA_QUEUED_STATUSES.has(o.status));
+    const base = needsEta ? await this.getKitchenEtaBase() : ETA_STAGE_RANGE.received;
+    let position = new Map<string, number>();
+    if (needsQueue) {
+      try {
+        const snapshot = await this.getKitchenQueueSnapshot();
+        position = new Map(snapshot.map((id, index) => [id, index]));
+      } catch {
+        position = new Map();
+      }
+    }
+    return orders.map((o) => {
+      const ahead = position.get(o.id) ?? 0;
+      const eta = this.computeEtaRange(o.status, ahead, base);
+      return {
+        ...o,
+        etaMin: eta?.min ?? null,
+        etaMax: eta?.max ?? null,
+        queueAhead: ETA_QUEUED_STATUSES.has(o.status) ? ahead : 0,
+      };
+    });
+  }
+
   async getOrderById(tableSessionId: string, orderId: string) {
     const rows = (await this.tenantConn.query(
       `SELECT o.id, o.status, o.billing_mode, o.total_cents, o.notes,
@@ -817,7 +953,8 @@ export class OrdersService {
     }>;
 
     if (!rows.length) throw new NotFoundException('Pedido nao encontrado.');
-    const o = rows[0];
+    const [withEta] = await this.decorateWithEta(rows);
+    const o = withEta;
     return {
       id: o.id,
       status: o.status,
@@ -828,6 +965,9 @@ export class OrdersService {
       createdAt: o.created_at,
       updatedAt: o.updated_at,
       autoConfirmAt: o.auto_confirm_at,
+      etaMinutesMin: o.etaMin,
+      etaMinutesMax: o.etaMax,
+      queueAhead: o.queueAhead,
       items: o.items,
     };
   }
@@ -1005,7 +1145,19 @@ export class OrdersService {
 
     sql += ` GROUP BY o.id ORDER BY o.created_at DESC`;
 
-    return this.tenantConn.query(sql, params);
+    const rows = (await this.tenantConn.query(sql, params)) as Array<{
+      id: string;
+      status: string;
+    }>;
+    // ETA dinâmica pro tracker do cliente (/pedido): muda com a fila, com a
+    // prioridade (ordenação canônica) e encolhe a cada estágio resolvido.
+    const withEta = await this.decorateWithEta(rows);
+    return withEta.map(({ etaMin, etaMax, queueAhead, ...row }) => ({
+      ...row,
+      eta_minutes_min: etaMin,
+      eta_minutes_max: etaMax,
+      queue_ahead: queueAhead,
+    }));
   }
 
   /**
@@ -1087,7 +1239,12 @@ export class OrdersService {
         ? `${normalizedCategoryName} = 'bebidas'`
         : `${normalizedCategoryName} <> 'bebidas'`;
 
-    return this.tenantConn.query(
+    // Três filas/prioridades canônicas (decisão 2026-06-10, prompt 99 §6):
+    // 1. urgência (priority_rank > 0 — reorder/urgência da cozinha),
+    // 2. VIP (flag 'vip' da sessão OU customer is_vip da visita),
+    // 3. normal. Dentro de cada fila, FIFO por created_at.
+    const PRIORITY_BY_BUCKET = ['urgent', 'vip', 'normal'] as const;
+    const rows = (await this.tenantConn.query(
       `
       SELECT
         o.id,
@@ -1098,6 +1255,16 @@ export class OrdersService {
         o.created_at,
         o.updated_at,
         t.label AS table_label,
+        -- Bucket numérico calculado UMA vez (0=urgência, 1=VIP, 2=normal);
+        -- ORDER BY referencia o alias e o label string deriva no TS abaixo
+        -- — CASE duplicado em SELECT e ORDER BY era armadilha de divergência
+        -- (badge ≠ ordem, code-review).
+        CASE
+          WHEN o.priority_rank > 0 THEN 0
+          WHEN ('vip' = ANY(COALESCE(ts.flags, '{}'::text[])))
+            OR COALESCE(vip_customer.is_vip, false) THEN 1
+          ELSE 2
+        END AS priority_bucket,
         COALESCE(
           json_agg(
             json_build_object(
@@ -1126,20 +1293,37 @@ export class OrdersService {
          ORDER BY od.created_at DESC
          LIMIT 1
       ) delivery ON true
+      LEFT JOIN visits vip_visit ON vip_visit.id = o.visit_id
+      LEFT JOIN customers vip_customer ON vip_customer.id = vip_visit.customer_id
       WHERE o.status NOT IN ('delivered', 'cancelled', 'pending_confirmation', 'in_transit')
         AND (ts.status = 'active' OR o.status IN ('in_progress', 'ready'))
         AND o.created_at > now() - interval '8 hours'
         AND o.created_at <= now()
         AND ${itemPredicate}
-        AND NOT (
-          o.status = 'ready'
-          AND delivery.status IN ('called', 'claimed', 'in_transit')
+        AND (
+          o.status != 'ready'
+          -- Pronto continua na TV até chamarem o garçom; entrega ativa
+          -- (pending/claimed) tira do feed pra evitar chamada duplicada.
+          -- COALESCE: sem row de entrega o predicado antigo virava NULL e
+          -- o WHERE descartava TODO pedido ready sem delivery — a coluna
+          -- "Prontos" da TV ficava sempre vazia com dados reais (achado
+          -- do E2E tv-delivery-flow). Os statuses reais de order_deliveries
+          -- são pending/claimed/delivered/cancelled — 'called'/'in_transit'
+          -- do filtro antigo nunca existiram.
+          OR COALESCE(delivery.status, '') NOT IN ('pending', 'claimed')
         )
-      GROUP BY o.id, t.label, delivery.status
-      ORDER BY o.created_at ASC
+      GROUP BY o.id, t.label, ts.flags, vip_customer.is_vip, delivery.status
+      ORDER BY
+        priority_bucket ASC,
+        o.priority_rank DESC,
+        o.created_at ASC
       LIMIT 100
       `,
-    );
+    )) as Array<Record<string, unknown> & { priority_bucket: number }>;
+    return rows.map(({ priority_bucket, ...row }) => ({
+      ...row,
+      priority: PRIORITY_BY_BUCKET[priority_bucket] ?? 'normal',
+    }));
   }
 
   async getKitchenQueue(): Promise<KitchenQueueItem[]> {
@@ -1206,12 +1390,14 @@ export class OrdersService {
     ) as Promise<KitchenQueueItem[]>;
   }
 
-  async callWaiterForOrder(orderId: string, slug: string, staffId: string) {
+  async callWaiterForOrder(orderId: string, slug: string, staffId: string | null) {
     const orderRows = (await this.tenantConn.query(
-      `SELECT o.id, o.status, o.table_session_id, t.label AS table_label, t.code AS table_code
+      `SELECT o.id, o.status, o.table_session_id, t.label AS table_label, t.code AS table_code,
+              z.name AS zone_name
          FROM orders o
          JOIN table_sessions ts ON ts.id = o.table_session_id
          JOIN tables t ON t.id = ts.table_id
+         LEFT JOIN zones z ON z.id = t.zone_id
         WHERE o.id = $1`,
       [orderId],
     )) as Array<{
@@ -1220,6 +1406,7 @@ export class OrdersService {
       table_session_id: string;
       table_label: string;
       table_code: string;
+      zone_name: string | null;
     }>;
 
     if (!orderRows.length) {
@@ -1250,13 +1437,27 @@ export class OrdersService {
     }>;
     const delivery = deliveryRows[0];
 
+    // Re-call: o ON CONFLICT mantém o target_waiter_id ORIGINAL (COALESCE),
+    // mas `target` veio de um resolve fresco — podia divergir e o payload
+    // saía com id de A e nome de B (cozinha cobrando o garçom errado,
+    // achado do code-review). Garante que nome e id são do MESMO garçom.
+    let targetWaiterName = target.name;
+    if (delivery.target_waiter_id && delivery.target_waiter_id !== target.id) {
+      const persisted = (await this.tenantConn.query(
+        `SELECT name FROM staff WHERE id = $1`,
+        [delivery.target_waiter_id],
+      )) as Array<{ name: string }>;
+      targetWaiterName = persisted[0]?.name ?? null;
+    }
+
     this.eventsGateway?.emitOrderHandoffCalled(slug, {
       orderId,
       deliveryId: delivery.id,
       tableLabel: order.table_label,
       tableCode: order.table_code,
+      zoneName: order.zone_name,
       targetWaiterId: delivery.target_waiter_id,
-      targetWaiterName: target.name,
+      targetWaiterName,
     });
     this.eventsGateway?.emitOrderStatusUpdate(slug, orderId, 'ready', order.table_label);
 
@@ -1265,8 +1466,9 @@ export class OrdersService {
       deliveryId: delivery.id,
       deliveryStatus: delivery.status,
       calledAt: delivery.called_at,
+      zoneName: order.zone_name,
       targetWaiterId: delivery.target_waiter_id,
-      targetWaiterName: target.name,
+      targetWaiterName,
     };
   }
 
@@ -1305,18 +1507,11 @@ export class OrdersService {
         [orderId],
       )) as Array<{ id: string; status: string; claimed_by: string | null }>;
 
-      let delivery: { id: string; status: string; claimed_by: string | null };
-      if (!existing.length) {
-        const inserted = (await tx.query(
-          `INSERT INTO order_deliveries
-             (order_id, status, claimed_by, claimed_at, called_at, target_waiter_id)
-           VALUES ($1, 'claimed', $2, now(), now(), $2)
-           RETURNING id, status, claimed_by`,
-          [orderId, staffId],
-        )) as Array<{ id: string; status: string; claimed_by: string | null }>;
-        delivery = inserted[0];
-      } else {
-        const current = existing[0];
+      const claimExistingRow = async (current: {
+        id: string;
+        status: string;
+        claimed_by: string | null;
+      }) => {
         if (current.status === 'claimed' && current.claimed_by && current.claimed_by !== staffId) {
           throw new BadRequestException('Pedido ja esta sendo levado por outro garcom.');
         }
@@ -1335,7 +1530,45 @@ export class OrdersService {
             [current.id, staffId],
           ),
         );
-        delivery = updated[0];
+        return updated[0];
+      };
+
+      let delivery: { id: string; status: string; claimed_by: string | null };
+      if (!existing.length) {
+        // ON CONFLICT DO NOTHING: o call-waiter da TV roda fora de transação
+        // e pode commitar a row 'pending' entre o SELECT vazio acima e este
+        // INSERT — sem o arbiter, o índice parcial único (migration 038)
+        // estourava 23505 cru → HTTP 500 pro garçom (achado do code-review).
+        // DO NOTHING não aborta a transação; ao perder a corrida, re-lê a
+        // row vencedora e segue o caminho normal de claim.
+        const inserted = (await tx.query(
+          `INSERT INTO order_deliveries
+             (order_id, status, claimed_by, claimed_at, called_at, target_waiter_id)
+           VALUES ($1, 'claimed', $2, now(), now(), $2)
+           ON CONFLICT (order_id) WHERE status != 'cancelled' DO NOTHING
+           RETURNING id, status, claimed_by`,
+          [orderId, staffId],
+        )) as Array<{ id: string; status: string; claimed_by: string | null }>;
+        if (inserted.length) {
+          delivery = inserted[0];
+        } else {
+          const raced = (await tx.query(
+            `SELECT id, status, claimed_by
+               FROM order_deliveries
+              WHERE order_id = $1
+                AND status != 'cancelled'
+              ORDER BY created_at DESC
+              LIMIT 1
+              FOR UPDATE`,
+            [orderId],
+          )) as Array<{ id: string; status: string; claimed_by: string | null }>;
+          if (!raced.length) {
+            throw new BadRequestException('Nao foi possivel registrar a entrega. Tente novamente.');
+          }
+          delivery = await claimExistingRow(raced[0]);
+        }
+      } else {
+        delivery = await claimExistingRow(existing[0]);
       }
 
       if (order.status !== 'in_transit') {
@@ -1392,9 +1625,11 @@ export class OrdersService {
       if (order.status === 'delivered') {
         return {
           orderId,
+          deliveryId: null as string | null,
           tableSessionId: order.table_session_id,
           tableLabel: order.table_label,
           status: 'delivered' as const,
+          alreadyDelivered: true,
         };
       }
 
@@ -1412,15 +1647,19 @@ export class OrdersService {
       if (!delivery || delivery.status !== 'claimed') {
         throw new BadRequestException('Pedido ainda nao esta em transito.');
       }
-      if (delivery.claimed_by && delivery.claimed_by !== staffId) {
-        throw new BadRequestException('Pedido esta em transito com outro garcom.');
-      }
 
+      // Qualquer staff ativo pode confirmar a entrega — quem claimou pode
+      // ter saído de cena (celular morreu, fim de turno) e bloquear o
+      // colega criava beco sem saída: pedido preso em in_transit e cliente
+      // preso em "A caminho da mesa" pra sempre (achado do code-review; o
+      // módulo deliveries antigo já permitia conclusão cross-staff).
+      // claimed_by é atualizado pra quem CONFIRMOU quando difere — reflete
+      // quem de fato levou; a trilha completa fica em order_status_history.
       await tx.query(
         `UPDATE order_deliveries
-            SET status = 'delivered', delivered_at = now()
+            SET status = 'delivered', delivered_at = now(), claimed_by = $2
           WHERE id = $1`,
-        [delivery.id],
+        [delivery.id, staffId],
       );
       await tx.query(`UPDATE orders SET status = 'delivered', updated_at = now() WHERE id = $1`, [
         orderId,
@@ -1433,12 +1672,20 @@ export class OrdersService {
 
       return {
         orderId,
-        deliveryId: delivery.id,
+        deliveryId: delivery.id as string | null,
         tableSessionId: order.table_session_id,
         tableLabel: order.table_label,
         status: 'delivered' as const,
+        alreadyDelivered: false,
       };
     });
+
+    if (result.alreadyDelivered) {
+      // Retry/segundo device de um pedido já entregue: idempotente de
+      // verdade — sem re-emitir order:status pro cliente nem re-agendar
+      // rating prompt (achado do code-review: side effects rodavam de novo).
+      return result;
+    }
 
     await this.updateConsumptionSummary(orderId);
     if (this.orderRatings) {
@@ -1693,14 +1940,79 @@ export class OrdersService {
       return recentWaiter[0];
     }
 
-    const fallback = (await this.tenantConn.query(
-      `SELECT id, name
-         FROM staff
-        WHERE role = 'waiter'
-          AND is_active = true
-        ORDER BY name ASC
-        LIMIT 1`,
-    )) as Array<{ id: string; name: string }>;
+    // Fallback sem chamado prévio na sessão: prefere garçom EM TURNO
+    // AGORA (staff_shift_assignments + janela do staff_shifts, no fuso do
+    // restaurante em settings.timezone) e, dentro do grupo, o MENOS
+    // recentemente acionado (round-robin por max(called_at)) — antes era
+    // ordem alfabética e a primeira garçonete recebia toda entrega
+    // não-direcionada. Turnos sem assignment hoje caem pro grupo geral.
+    //
+    // Turno overnight (time_start > time_end, ex.: 18h–02h): o assignment
+    // tem work_date do DIA QUE O TURNO COMEÇA. Depois da meia-noite a data
+    // local já virou, então o trecho pós-meia-noite casa com o assignment
+    // de ONTEM (work_date = ln.ts::date - 1) e o trecho pré-meia-noite com
+    // o de HOJE — sem isso, quem estava trabalhando às 00h30 perdia a
+    // preferência e quem só entra hoje à noite ganhava (code-review).
+    let fallback: Array<{ id: string; name: string }>;
+    try {
+      fallback = (await this.tenantConn.query(
+        `WITH local_now AS (
+           SELECT now() AT TIME ZONE COALESCE(
+             (SELECT timezone FROM settings LIMIT 1),
+             'America/Sao_Paulo'
+           ) AS ts
+         )
+         SELECT s.id, s.name
+           FROM staff s
+           LEFT JOIN LATERAL (
+             SELECT max(od.called_at) AS last_called
+               FROM order_deliveries od
+              WHERE od.target_waiter_id = s.id
+                AND od.status != 'cancelled'
+           ) recent ON true
+           LEFT JOIN LATERAL (
+             SELECT 1 AS on_shift
+               FROM staff_shift_assignments sa
+               JOIN staff_shifts sh ON sh.id = sa.shift_id
+              CROSS JOIN local_now ln
+              WHERE sa.staff_id = s.id
+                AND sa.removed_at IS NULL
+                AND (
+                  (sh.time_start <= sh.time_end
+                    AND sa.work_date = ln.ts::date
+                    AND ln.ts::time >= sh.time_start
+                    AND ln.ts::time < sh.time_end)
+                  OR (sh.time_start > sh.time_end AND (
+                    (sa.work_date = ln.ts::date AND ln.ts::time >= sh.time_start)
+                    OR (sa.work_date = (ln.ts - interval '1 day')::date
+                      AND ln.ts::time < sh.time_end)
+                  ))
+                )
+              LIMIT 1
+           ) shift ON true
+          WHERE s.role = 'waiter'
+            AND s.is_active = true
+          ORDER BY (shift.on_shift IS NULL) ASC,
+                   recent.last_called ASC NULLS FIRST,
+                   s.name ASC
+          LIMIT 1`,
+      )) as Array<{ id: string; name: string }>;
+    } catch (err) {
+      // settings.timezone é texto livre (001) — um valor não-IANA faria
+      // TODO call-waiter do tenant falhar 500. Degrada pro fallback simples
+      // (garçom ativo por nome) em vez de derrubar o fluxo de entrega.
+      this.ordersLogger.warn(
+        `resolveTargetWaiter: fallback por turno falhou (${(err as Error).message}) — usando fallback simples.`,
+      );
+      fallback = (await this.tenantConn.query(
+        `SELECT id, name
+           FROM staff
+          WHERE role = 'waiter'
+            AND is_active = true
+          ORDER BY name ASC
+          LIMIT 1`,
+      )) as Array<{ id: string; name: string }>;
+    }
     if (fallback[0]) {
       return fallback[0];
     }

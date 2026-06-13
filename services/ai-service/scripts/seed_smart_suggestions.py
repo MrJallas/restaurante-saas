@@ -17,7 +17,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.smart_suggestions import DEFAULT_POOL  # noqa: E402
+from services.smart_suggestions import DEFAULT_POOL, _key  # noqa: E402
 from services.redis_pool import pool_seed  # noqa: E402
 
 
@@ -30,9 +30,10 @@ def seed_tenant(tenant_id: str) -> int:
         entries = DEFAULT_POOL.get(surface, [])
         if not entries:
             continue
-        n = pool_seed(f"smart-sug:{tenant_id}:{surface}", entries, ttl_seconds=3600)
+        # Chave versionada por fingerprint do DEFAULT_POOL (ver smart_suggestions._key)
+        n = pool_seed(_key(tenant_id, surface), entries, ttl_seconds=3600)
         total += n
-        print(f"  seeded {n} entries → smart-sug:{tenant_id}:{surface}")
+        print(f"  seeded {n} entries → {_key(tenant_id, surface)}")
     return total
 
 

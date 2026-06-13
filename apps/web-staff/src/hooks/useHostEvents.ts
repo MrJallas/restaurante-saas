@@ -33,6 +33,9 @@ interface UseHostEventsOptions {
 }
 
 const DEFAULT_HOST_EVENTS: WsEventName[] = [
+  // Mesa pediu a recepção (room tenant:slug:host) — prompt 100 §5.5:
+  // a superfície do host mostra "Mesa X pediu a recepção" em tempo real.
+  'host.assist_requested',
   'late_arrival.created',
   'late_arrival.approved',
   'late_arrival.rejected',

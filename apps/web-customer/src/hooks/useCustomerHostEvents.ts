@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { io, type Socket } from 'socket.io-client';
 import type {
   WsLateArrivalCreated,
   WsLateArrivalApproved,
@@ -14,7 +13,12 @@ import type {
   WsMergeCooldownExpired,
   WsEscalationAdvanced,
 } from '@restaurant/shared-types';
-import { getSessionToken } from '../lib/storage';
+import {
+  acquireCustomerSocket,
+  joinCustomerRoom,
+  joinSessionRoom,
+  releaseCustomerSocket,
+} from '../lib/customerSocket';
 
 /**
  * Customer-host WS events the customer app listens to. Per
@@ -74,33 +78,17 @@ export function useCustomerHostEvents({
     if (typeof window === 'undefined') return;
     if (!sessionId && !customerId) return;
 
-    const wsUrl =
-      process.env.NEXT_PUBLIC_WS_URL ||
-      `${window.location.protocol}//${window.location.hostname}:3001`;
+    // Socket COMPARTILHADO por sessionToken (lib/customerSocket) — mesma
+    // conexão do useTableSocket; aqui só registramos rooms + handlers.
+    // (Cada page com socket próprio + StrictMode + navegação estourava o
+    // rate-limit de 30 handshakes/60s por IP do gateway.)
+    const entry = acquireCustomerSocket();
+    if (!entry) return;
+    if (sessionId) joinSessionRoom(entry, sessionId);
+    if (customerId) joinCustomerRoom(entry, customerId);
 
-    // Pass the session token in the handshake auth so the gateway can verify
-    // the join before letting us into rooms — same pattern as useTableSocket.
-    const sessionToken = getSessionToken();
-
-    const socket: Socket = io(wsUrl, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelayMax: 10_000,
-      auth: sessionToken ? { sessionToken } : undefined,
-    });
-
-    socket.on('connect', () => {
-      if (sessionId) {
-        socket.emit('join:session', { sessionId });
-      }
-      if (customerId) {
-        socket.emit('join:customer', { customerId });
-      }
-    });
-
-    for (const ev of EVENTS) {
-      socket.on(ev, (payload: unknown) => {
+    const handlers = EVENTS.map((ev) => {
+      const handler = (payload: unknown) => {
         // Guard against malformed events; ws-events.ts pins the shape on the
         // server side, but a runtime check costs nothing and protects the UI.
         if (!payload || typeof payload !== 'object') return;
@@ -108,11 +96,16 @@ export function useCustomerHostEvents({
           type: ev,
           payload,
         } as CustomerHostEvent);
-      });
-    }
+      };
+      entry.socket.on(ev, handler);
+      return [ev, handler] as const;
+    });
 
     return () => {
-      socket.disconnect();
+      for (const [ev, handler] of handlers) {
+        entry.socket.off(ev, handler);
+      }
+      releaseCustomerSocket(entry);
     };
   }, [sessionId, customerId]);
 }

@@ -53,13 +53,22 @@ DELETE FROM tables;
 DELETE FROM staff;
 DELETE FROM promotions;
 
+-- === Zones ===
+-- Local da mesa pro fluxo de entrega do garçom (prompt 99 §6): a tela
+-- /waiter/entrega mostra a zona (Varanda, Salão Principal…) + mapa.
+INSERT INTO zones (name, description, sort_order) VALUES
+  ('Salão Principal', 'Área interna principal', 1),
+  ('Varanda', 'Área externa coberta', 2);
+
 -- === Tables ===
-INSERT INTO tables (code, label, capacity, sort_order) VALUES
-  ('M01', 'Mesa 01', 2, 1),
-  ('M02', 'Mesa 02', 4, 2),
-  ('M03', 'Mesa 03', 4, 3),
-  ('M04', 'Mesa 04', 6, 4),
-  ('M05', 'Mesa 05 (Varanda)', 4, 5);
+-- map_x/map_y (migration 055): planta lógica do salão — Salão Principal à
+-- esquerda (colunas 0-4), Varanda à direita (colunas 6-7).
+INSERT INTO tables (code, label, capacity, sort_order, zone_id, map_x, map_y) VALUES
+  ('M01', 'Mesa 01', 2, 1, (SELECT id FROM zones WHERE name = 'Salão Principal'), 0, 0),
+  ('M02', 'Mesa 02', 4, 2, (SELECT id FROM zones WHERE name = 'Salão Principal'), 2, 0),
+  ('M03', 'Mesa 03', 4, 3, (SELECT id FROM zones WHERE name = 'Salão Principal'), 4, 0),
+  ('M04', 'Mesa 04', 6, 4, (SELECT id FROM zones WHERE name = 'Salão Principal'), 0, 2),
+  ('M05', 'Mesa 05 (Varanda)', 4, 5, (SELECT id FROM zones WHERE name = 'Varanda'), 6, 0);
 
 -- Fixed physical QR tables used by automated and manual QR-entry tests.
 -- They intentionally use high table numbers so host endpoints that receive
@@ -70,7 +79,10 @@ INSERT INTO tables (
   qr_hmac_secret,
   qr_public_token,
   capacity,
-  sort_order
+  sort_order,
+  zone_id,
+  map_x,
+  map_y
 ) VALUES
   (
     'QRTEST91',
@@ -78,7 +90,10 @@ INSERT INTO tables (
     'qrtest91-secret-fixed',
     'qrtest91-public-token-fixed',
     2,
-    91
+    91,
+    (SELECT id FROM zones WHERE name = 'Varanda'),
+    7,
+    2
   ),
   (
     'QRTEST92',
@@ -86,7 +101,10 @@ INSERT INTO tables (
     'qrtest92-secret-fixed',
     'qrtest92-public-token-fixed',
     2,
-    92
+    92,
+    (SELECT id FROM zones WHERE name = 'Salão Principal'),
+    2,
+    2
   );
 
 -- === Staff (PIN 1234 everywhere = sha256) ===
@@ -112,16 +130,19 @@ ON CONFLICT (cpf) WHERE cpf IS NOT NULL DO UPDATE
 
 -- === Menu items ===
 -- (category ids from default_categories seed; fetch by name)
-INSERT INTO menu_items (category_id, name, short_description, long_description, price_cents, tags, ingredients, prep_time_minutes, is_featured, sort_order)
+-- Allergens declarados (achado da validacao de alergia 2026-06-12 com LLM:
+-- itens com gluten/lactose obvios estavam SEM allergens e entravam na
+-- recomendacao "sem gluten declarado" — o dado e a fronteira de seguranca).
+INSERT INTO menu_items (category_id, name, short_description, long_description, price_cents, tags, allergens, ingredients, prep_time_minutes, is_featured, sort_order)
 SELECT c.id, 'Bruschetta de Tomate', 'Pao italiano com tomate e manjericao',
        'Fatias de pao italiano tostadas cobertas com tomate fresco, manjericao e azeite extra virgem.',
-       1890, ARRAY['vegetariano'], ARRAY['pao','tomate','manjericao','azeite'], 10, true, 1
+       1890, ARRAY['vegetariano'], ARRAY['gluten'], ARRAY['pao','tomate','manjericao','azeite'], 10, true, 1
 FROM menu_categories c WHERE c.name = 'Entradas';
 
-INSERT INTO menu_items (category_id, name, short_description, long_description, price_cents, tags, ingredients, prep_time_minutes, sort_order)
+INSERT INTO menu_items (category_id, name, short_description, long_description, price_cents, tags, allergens, ingredients, prep_time_minutes, sort_order)
 SELECT c.id, 'Bolinho de Bacalhau', '6 unidades, crocante por fora',
        'Bolinhos tradicionais portugueses de bacalhau com batata, servidos com molho tartaro.',
-       2490, ARRAY['peixe'], ARRAY['bacalhau','batata','ovo','cebola'], 15, 2
+       2490, ARRAY['peixe'], ARRAY['gluten','peixe','ovo'], ARRAY['bacalhau','batata','ovo','cebola'], 15, 2
 FROM menu_categories c WHERE c.name = 'Entradas';
 
 INSERT INTO menu_items (category_id, name, short_description, long_description, price_cents, tags, allergens, ingredients, prep_time_minutes, is_featured, sort_order)
@@ -159,8 +180,8 @@ SELECT c.id, 'Pudim da Casa', 'Calda caramelizada', 'Pudim de leite condensado t
        1590, ARRAY['classico','doce'], ARRAY['leite','ovo'], ARRAY['leite condensado','ovo','acucar'], 5, true, 1
 FROM menu_categories c WHERE c.name = 'Sobremesas';
 
-INSERT INTO menu_items (category_id, name, short_description, price_cents, tags, ingredients, prep_time_minutes, sort_order)
-SELECT c.id, 'Brownie com Sorvete', 'Chocolate quente + baunilha', 1890, ARRAY['doce','quente'], ARRAY['chocolate','sorvete'], 8, 2
+INSERT INTO menu_items (category_id, name, short_description, price_cents, tags, allergens, ingredients, prep_time_minutes, sort_order)
+SELECT c.id, 'Brownie com Sorvete', 'Chocolate quente + baunilha', 1890, ARRAY['doce','quente'], ARRAY['gluten','lactose','ovo'], ARRAY['chocolate','sorvete'], 8, 2
 FROM menu_categories c WHERE c.name = 'Sobremesas';
 
 -- === Promotions ===

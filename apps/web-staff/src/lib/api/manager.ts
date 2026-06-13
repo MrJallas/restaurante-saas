@@ -315,6 +315,11 @@ export interface AssistantStaffToCustomerDto {
   tableSessionId: string;
   message: string;
   fromStaffId: string;
+  /**
+   * Destinatário (obrigatório desde 2026-06-11): a resposta do gerente é
+   * privada por cliente — backend emite WS só no room `customer:<id>`.
+   */
+  toCustomerId: string;
 }
 
 export interface AssistantStaffMessageResponseDto {
@@ -323,6 +328,7 @@ export interface AssistantStaffMessageResponseDto {
   message: string;
   fromStaffId: string;
   fromStaffName: string | null;
+  toCustomerId: string;
   createdAt: string;
 }
 

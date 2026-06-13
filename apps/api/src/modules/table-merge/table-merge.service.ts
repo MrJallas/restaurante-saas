@@ -1001,14 +1001,50 @@ export class TableMergeService {
   }
 
   private async expireOverdueRequests() {
-    await this.tenantConn.query(
+    const expired = (await this.tenantConn.query(
       `UPDATE table_merge_requests
           SET status = 'expired',
               decided_at = now(),
               updated_at = now()
         WHERE status = 'pending'
-          AND ttl_expires_at < now()`,
-    );
+          AND ttl_expires_at < now()
+        RETURNING id`,
+    )) as Array<{ id: string }>;
+
+    // Timeout precisa de evento: a waiting-approval e o assistente esperam
+    // `table_merge.rejected` com rejectedBy='timeout' (o FE já tratava esse
+    // valor que nunca chegava — vídeos 2026-06-10: countdown morria em 0s
+    // sem desfecho e o card de "sem resposta" nunca tinha o motivo certo).
+    const slug = this.tenantConn.getTenantSlug();
+    if (!slug || !this.events || expired.length === 0) return;
+    for (const row of expired.slice(0, 10)) {
+      try {
+        const enriched = await this.getById(row.id);
+        const details = this.tableMergeLifecyclePayload({
+          originSessionId: enriched.sourceTableSessionId,
+          targetSessionId: enriched.targetTableSessionId,
+          originTableNumber: enriched.originTableNumber,
+          targetTableNumber: enriched.targetTableNumber,
+          originHostName: enriched.originHostName || null,
+          targetHostName: enriched.targetHostName,
+          originPartySize: enriched.originPartySize,
+          targetPartySize: enriched.targetPartySize,
+        });
+        this.events.emitTableMergeRejected(
+          slug,
+          enriched.sourceTableSessionId,
+          enriched.targetTableSessionId,
+          {
+            requestId: enriched.id,
+            rejectedBy: 'timeout',
+            ...details,
+            expiresAt: enriched.expiresAt,
+          },
+        );
+      } catch {
+        // Best-effort: expiração já persistiu; evento é notificação.
+      }
+    }
   }
 }
 

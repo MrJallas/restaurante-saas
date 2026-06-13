@@ -179,7 +179,7 @@ export default function DashboardPage() {
               <MessageSquare className="h-5 w-5 text-purple-400" /> Acesso rapido
             </h2>
             <div className="grid grid-cols-2 gap-2">
-              <QuickLink href="/garcom/pedidos" label="Pedidos" color="bg-staff-accent/20 text-staff-accent" />
+              <QuickLink href="/waiter" label="Garçom" color="bg-staff-accent/20 text-staff-accent" />
               <QuickLink href="/cozinha" label="Cozinha" color="bg-staff-warning/20 text-staff-warning" />
               <QuickLink href="/dashboard/promocoes" label="Promocoes" color="bg-purple-500/20 text-purple-400" />
               <QuickLink href="/dashboard/funcionarios" label="Funcionarios" color="bg-blue-500/20 text-blue-400" />

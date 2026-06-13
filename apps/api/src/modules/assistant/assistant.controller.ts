@@ -82,6 +82,12 @@ class StaffToCustomerDto {
   @IsUUID() tableSessionId!: string;
   @IsString() @IsNotEmpty() @MaxLength(2000) message!: string;
   @IsUUID() fromStaffId!: string;
+  /**
+   * Destinatário da mensagem (decisão Caleb 2026-06-11): a resposta do
+   * gerente é PRIVADA por cliente — persiste com customer_id e emite WS
+   * só no room `customer:<id>`, nunca mais no session room (mesa toda).
+   */
+  @IsUUID() toCustomerId!: string;
 }
 
 @Controller(':slug/assistant')
@@ -170,6 +176,7 @@ export class AssistantController {
       tableSessionId: dto.tableSessionId,
       message: dto.message,
       fromStaffId: dto.fromStaffId,
+      toCustomerId: dto.toCustomerId,
       tenantId,
     });
   }

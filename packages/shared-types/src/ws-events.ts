@@ -355,6 +355,27 @@ export interface WsOrderReady {
   };
 }
 
+/** Transição de status emitida pros rooms waiter/kitchen do tenant. */
+export interface WsOrderStatus {
+  event: 'order:status';
+  payload: {
+    orderId: string;
+    status: string;
+    tableLabel?: string | null;
+    timestamp: string;
+  };
+}
+
+/** Garçom reivindicou a entrega ("Estou levando") — remove das outras telas. */
+export interface WsOrderClaimed {
+  event: 'order:claimed';
+  payload: {
+    orderId: string;
+    claimedBy: string;
+    timestamp: string;
+  };
+}
+
 export interface WsWaiterCall {
   event: 'waiter:call';
   payload: {
@@ -381,6 +402,8 @@ export interface WsOrderHandoffCalled {
     deliveryId: string;
     tableLabel: string;
     tableCode: string;
+    /** Nome da zona da mesa (Varanda, Salão Principal…) — null se a mesa não tem zona. */
+    zoneName?: string | null;
     targetWaiterId: string | null;
     targetWaiterName?: string | null;
     timestamp: string;
@@ -467,6 +490,18 @@ export interface WsSessionFlagChanged {
  *  - `manual_force` : recepcionista forcou close mesmo sem pagar (motivo
  *                     livre — comp, no-show, mesa abandonada, etc).
  */
+/** Cliente pediu a RECEPÇÃO na mesa (assistente · junção de mesas etc.). */
+export interface WsHostAssistRequested {
+  event: 'host.assist_requested';
+  payload: {
+    tableLabel: string | null;
+    tableCode: string | null;
+    tableSessionId: string;
+    reason?: string | null;
+    timestamp: string;
+  };
+}
+
 export interface WsHostTableLiberated {
   event: 'host.table_liberated';
   payload: {
@@ -579,6 +614,8 @@ export type WsEvent =
   | WsCourtesyCreated
   | WsCourtesyUpdated
   | WsOrderReady
+  | WsOrderStatus
+  | WsOrderClaimed
   | WsOrderHandoffCalled
   | WsKitchenPriorityRequest
   | WsKitchenPriorityResponse
@@ -587,6 +624,7 @@ export type WsEvent =
   | WsZonePauseStarted
   | WsZonePauseEnded
   | WsSessionFlagChanged
+  | WsHostAssistRequested
   | WsHostTableLiberated
   | WsHostSwapRequested
   | WsHostSwapStateChanged

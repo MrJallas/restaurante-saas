@@ -20,8 +20,9 @@ interface OrderResponse {
   status: string;
   totalCents: number;
   items: OrderItem[];
-  etaMinutesMin?: number;
-  etaMinutesMax?: number;
+  etaMinutesMin?: number | null;
+  etaMinutesMax?: number | null;
+  queueAhead?: number;
   createdAt?: string;
 }
 
@@ -29,6 +30,7 @@ const DEFAULT_STEPS: { key: string; label: string }[] = [
   { key: 'received', label: 'Recebido pela cozinha' },
   { key: 'in_progress', label: 'Em preparo' },
   { key: 'ready', label: 'Pronto para servir' },
+  { key: 'in_transit', label: 'A caminho da mesa' },
   { key: 'delivered', label: 'Na sua mesa' },
 ];
 
@@ -36,7 +38,8 @@ const STATUS_INDEX: Record<string, number> = {
   received: 0,
   in_progress: 1,
   ready: 2,
-  delivered: 3,
+  in_transit: 3,
+  delivered: 4,
 };
 
 export default function PedidoEnviadoPage() {
@@ -70,9 +73,17 @@ export default function PedidoEnviadoPage() {
 
   const currentIndex = order ? STATUS_INDEX[order.status] ?? 0 : 0;
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
-  const eta = order?.etaMinutesMin && order?.etaMinutesMax
-    ? `${order.etaMinutesMin}–${order.etaMinutesMax} minutos`
-    : '22–28 minutos';
+  // ETA real do backend (fila + prioridade + estágio) — o fallback
+  // hardcoded "22–28 minutos" saiu; antes do primeiro fetch mostra
+  // "calculando…" e pedido entregue mostra "—".
+  const eta =
+    order?.etaMinutesMin != null && order?.etaMinutesMax != null
+      ? order.etaMinutesMax <= 3
+        ? `~${order.etaMinutesMax} min`
+        : `${order.etaMinutesMin}–${order.etaMinutesMax} minutos`
+      : order
+        ? '—'
+        : 'calculando…';
   const items = order?.items ?? [];
   const totalCents = order?.totalCents ?? 0;
 

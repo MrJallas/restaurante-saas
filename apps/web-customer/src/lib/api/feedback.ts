@@ -135,24 +135,20 @@ export function createComplaint(
 }
 
 /**
- * Best-effort fetch of a single complaint by id.
- *
- * The current BE controller does NOT expose `GET /:slug/complaints/:id`
- * (only the staff-only list and POST create/respond/resolve/forward). To
- * keep the waiting screen functional today, the FE caches the
- * just-created complaint in sessionStorage and pulls it from there. This
- * helper stays exported so the waiting screen can swap to a real GET when
- * the BE adds the endpoint.
+ * Fetch de uma reclamação por id — `GET /:slug/complaints/:id` é real e
+ * SessionGuard-ed no BE (complaints.controller.ts), então deep link e hard
+ * reload funcionam sem depender de cache local. (O comentário antigo dizia
+ * que o BE não expunha o endpoint — defasado. Decisão Caleb 2026-06-10:
+ * GET/list definitivos são o caminho canônico.)
  */
 export function getComplaint(slug: string, id: string): Promise<ComplaintRecord> {
   return apiGet<ComplaintRecord>(`/${slug}/complaints/${id}`);
 }
 
 /**
- * List the customer's complaints. The BE list endpoint is currently
- * staff-only — when the BE adds a customer scope, we'll wire it. Today this
- * helper is used by the FE drawer and gracefully falls back to a single-item
- * list (the cached complaint) on 401.
+ * Lista as reclamações do cliente da sessão — `GET /:slug/complaints/mine`
+ * (SessionGuard). Usado pela tela Reclamações no mount, então o histórico
+ * sobrevive a hard reload e vem do BE, não do sessionStorage.
  */
 export function listMyComplaints(
   slug: string,
@@ -162,10 +158,9 @@ export function listMyComplaints(
 }
 
 // === SessionStorage cache for in-flight complaints ===
-// The BE has no customer-facing GET endpoint yet (see `getComplaint` note).
-// We cache the just-created complaint so the waiting screen has data on a
-// hard reload of `/complaints/:id`. Cleared when the user navigates back
-// to the slug home or the complaint is resolved.
+// Fallback de UX: mantém a reclamação recém-criada disponível offline-ish
+// enquanto o GET real resolve (os endpoints customer GET :id/mine existem;
+// o cache é só primeira-pintura, não fonte de verdade).
 
 const COMPLAINT_CACHE_PREFIX = 'complaint:cache:';
 

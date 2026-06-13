@@ -237,3 +237,19 @@ export async function rejectTableMerge(
     },
   );
 }
+
+/**
+ * Cliente pede a RECEPÇÃO na mesa (`POST /:slug/host/assist`, SessionGuard).
+ * Nasceu do card de junção de mesas no assistente — o botão "Chamar
+ * recepcionista" abria o sheet do GARÇOM (bug dos vídeos 2026-06-10).
+ * Backend persiste alert visível pro papel host + emite WS
+ * `host.assist_requested`.
+ */
+export async function requestHostAssist(
+  slug: string,
+  reason?: string,
+): Promise<{ ok: true; tableLabel: string | null }> {
+  return apiPost<{ ok: true; tableLabel: string | null }>(`/${slug}/host/assist`, {
+    reason,
+  });
+}

@@ -698,13 +698,19 @@ function enrichRecommendationToolCalls(
     return { response, toolCalls };
   }
 
-  const alreadySpecific = extractLinkedItems(response, menuItems, toolCalls).length > 0;
-  if (alreadySpecific) {
-    return { response, toolCalls };
-  }
-
   const category = inferRecommendationCategory(message, toolCalls[idx]);
   const dietary = inferRecommendationDietary(message, toolCalls[idx]);
+
+  // SEGURANÇA ALIMENTAR (validação com LLM local, 2026-06-12): com
+  // restrição dietary ativa a lista É SEMPRE re-gerada do filtro
+  // determinístico por allergens — o LLM citou "Bruschetta, é sem
+  // glúten!" mesmo com `gluten` declarado no prompt, e o atalho
+  // `alreadySpecific` deixava esse texto passar intacto. Modelo não tem
+  // voto em recomendação pra alérgico; o dado declarado decide.
+  const alreadySpecific = extractLinkedItems(response, menuItems, toolCalls).length > 0;
+  if (alreadySpecific && !dietary) {
+    return { response, toolCalls };
+  }
   const candidates = menuItems.filter(
     (item) =>
       menuItemMatchesRecommendationCategory(item, category) &&
@@ -1322,16 +1328,25 @@ export class AssistantService {
              )
              OR (
                am.from_role = 'staff'
-               AND am.customer_id IS NULL
                AND (
-                 $2::uuid IS NULL
-                 OR EXISTS (
-                   SELECT 1
-                   FROM session_participants sp
-                   WHERE sp.table_session_id = am.table_session_id
-                     AND sp.customer_id = $2
-                     AND sp.status = 'approved'
-                     AND sp.left_at IS NULL
+                 -- Mensagem privada do gerente (2026-06-11): customer_id é
+                 -- o DESTINATÁRIO — só ele rehidrata a bubble no reload.
+                 ($2::uuid IS NOT NULL AND am.customer_id = $2)
+                 -- Legado (broadcast pré-privacidade, customer_id NULL):
+                 -- mantém visível pra participantes aprovados.
+                 OR (
+                   am.customer_id IS NULL
+                   AND (
+                     $2::uuid IS NULL
+                     OR EXISTS (
+                       SELECT 1
+                       FROM session_participants sp
+                       WHERE sp.table_session_id = am.table_session_id
+                         AND sp.customer_id = $2
+                         AND sp.status = 'approved'
+                         AND sp.left_at IS NULL
+                     )
+                   )
                  )
                )
              )
@@ -1417,12 +1432,16 @@ export class AssistantService {
    * sem migration nova.
    *
    * Emite WS `assistant.staff_message_received` no room
-   * `session:<tableSessionId>` pra cliente atualizar UI em real-time.
+   * `customer:<toCustomerId>` (decisão Caleb 2026-06-11: resposta do
+   * gerente é PRIVADA — só o destinatário vê; antes ia pro room
+   * `session:<id>` e a mesa toda recebia).
    */
   async sendStaffToCustomer(input: {
     tableSessionId: string;
     message: string;
     fromStaffId: string;
+    /** Destinatário — participante aprovado da sessão. */
+    toCustomerId: string;
     /**
      * Schema name of the tenant (canonical "tenantId" used for Mongo
      * partitioning). Optional so legacy callers that don't yet thread it
@@ -1436,6 +1455,7 @@ export class AssistantService {
     message: string;
     fromStaffId: string;
     fromStaffName: string | null;
+    toCustomerId: string;
     createdAt: string;
   }> {
     if (!input.message || !input.message.trim()) {
@@ -1464,18 +1484,42 @@ export class AssistantService {
     }
     const staffName = staffRows[0].name;
 
+    // Destinatário precisa ser participante aprovado da sessão — sem isso
+    // um manager poderia mandar mensagem pra customer de outra mesa (ou o
+    // FE mandar um UUID errado e a mensagem sumir num room vazio).
+    const recipientRows = (await this.tenantConn.query(
+      `SELECT 1 FROM session_participants
+        WHERE table_session_id = $1
+          AND customer_id = $2
+          AND status = 'approved'
+          AND left_at IS NULL
+        LIMIT 1`,
+      [input.tableSessionId, input.toCustomerId],
+    )) as unknown[];
+    if (!recipientRows.length) {
+      throw new NotFoundException(
+        'Cliente destinatário não está ativo nesta mesa.',
+      );
+    }
+
     // Persiste em assistant_messages. Usa `assistant_response` pro corpo
     // (o customer-side render le essa coluna) e `from_role='staff'`
     // (migration 030 check constraint aceita). `provider_used`+`model_used`
-    // identificam o autor (workaround sem migration extra).
+    // identificam o autor (workaround sem migration extra). `customer_id`
+    // marca o DESTINATÁRIO — o history filtra por ele (privacidade).
     const inserted = (await this.tenantConn.query(
       `INSERT INTO assistant_messages
-         (table_session_id, user_message, assistant_response,
+         (table_session_id, customer_id, user_message, assistant_response,
           from_role, to_role, provider_used, model_used,
           was_blocked, tokens_in, tokens_out)
-       VALUES ($1, '', $2, 'staff', 'customer', 'staff', $3, false, 0, 0)
+       VALUES ($1, $2, '', $3, 'staff', 'customer', 'staff', $4, false, 0, 0)
        RETURNING id, created_at`,
-      [input.tableSessionId, input.message.trim(), input.fromStaffId],
+      [
+        input.tableSessionId,
+        input.toCustomerId,
+        input.message.trim(),
+        input.fromStaffId,
+      ],
     )) as Array<{ id: string; created_at: string }>;
 
     if (!inserted.length) {
@@ -1489,13 +1533,16 @@ export class AssistantService {
       message: input.message.trim(),
       fromStaffId: input.fromStaffId,
       fromStaffName: staffName,
+      toCustomerId: input.toCustomerId,
       createdAt: row.created_at,
     };
 
-    // Emit WS pra session room — customer recebe em real-time.
+    // Emit WS PRIVADO pro room do destinatário — só ele vê a resposta do
+    // gerente (decisão 2026-06-11; antes era emitToSession e a mesa toda
+    // recebia a bubble).
     if (this.events) {
-      this.events.emitToSession(
-        input.tableSessionId,
+      this.events.emitToCustomer(
+        input.toCustomerId,
         'assistant.staff_message_received',
         payload,
       );
@@ -1504,33 +1551,21 @@ export class AssistantService {
     // Persistência paralela no Mongo (`staff_threads` + `staff_messages`)
     // pra inbox "Mensagens com a equipe" do cliente. Best-effort: falha
     // aqui não derruba o realtime flow (Postgres + WS já confirmaram a
-    // entrega visual). Persistimos UM doc por participant aprovado na
-    // mesa — cada cliente tem sua própria thread no histórico, mesmo
-    // que a mensagem do staff seja broadcast pro session room.
+    // entrega visual). Só o DESTINATÁRIO ganha a thread — espelha a
+    // privacidade do realtime (antes era um doc por participante).
     if (this.customerStaffMessages && input.tenantId) {
       try {
-        const participants = (await this.tenantConn.query(
-          `SELECT customer_id FROM session_participants
-            WHERE table_session_id = $1
-              AND status = 'approved'
-              AND left_at IS NULL`,
-          [input.tableSessionId],
-        )) as Array<{ customer_id: string }>;
-        await Promise.all(
-          participants.map((p) =>
-            this.customerStaffMessages!.appendInbound({
-              tenantId: input.tenantId!,
-              customerId: p.customer_id,
-              tableSessionId: input.tableSessionId,
-              staffName,
-              // Hoje só manager envia (StaffOnlyGuard + ManagerOnlyGuard).
-              // Quando waiter/host/kitchen ganharem a primitiva, expor
-              // como parâmetro opcional aqui.
-              staffRoleLabel: 'gerente',
-              content: input.message.trim(),
-            }),
-          ),
-        );
+        await this.customerStaffMessages.appendInbound({
+          tenantId: input.tenantId,
+          customerId: input.toCustomerId,
+          tableSessionId: input.tableSessionId,
+          staffName,
+          // Hoje só manager envia (StaffOnlyGuard + ManagerOnlyGuard).
+          // Quando waiter/host/kitchen ganharem a primitiva, expor
+          // como parâmetro opcional aqui.
+          staffRoleLabel: 'gerente',
+          content: input.message.trim(),
+        });
       } catch (err) {
         // Não bloqueia a resposta — log e segue.
         this.logger.warn(

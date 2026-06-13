@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { RedisService } from '../../infra/redis/redis.service';
 import { aiConfig } from '../../config/ai.config';
 
 /**
@@ -25,14 +26,36 @@ type ContinuationClientKindHint =
   | 'pagou'
   | 'voltou_sem_acao';
 
+/**
+ * Kinds de EVENTO são consumíveis (decisão Caleb 2026-06-11, prompt 100):
+ * a mensagem de um evento aparece UMA vez na primeira entrada no
+ * assistente após o evento; depois disso a derivação pula o kind e cai
+ * pro próximo da hierarquia (tipicamente o contexto de navegação). Um
+ * NOVO evento do mesmo tipo (segundo pedido, segunda reclamação) gera
+ * outro `eventId` e re-libera a mensagem.
+ */
+type ConsumableKind = 'pos_reclamacao' | 'pagou' | 'abriu_pedido' | 'chamou_garcom';
+
 interface ContinuationSignals {
   clientKindHint?: string | null;
   hasDraftOrder?: boolean;
   isReturning?: boolean;
+  /**
+   * Superfície que está pedindo a continuation. Só `assistente` consome
+   * mensagens de evento — a home da mesa continua exibindo o contexto
+   * sem queimar o "1x por evento" do assistente.
+   */
+  surface?: 'assistente' | 'home' | null;
 }
 
 interface DerivedContext {
   kind: ContinuationKind;
+  /**
+   * Presente quando o kind derivado é um evento consumível. `eventId`
+   * identifica o evento específico (complaint/payment/order/waiter_call
+   * id) pra que um novo evento do mesmo tipo re-libere a mensagem.
+   */
+  consumable?: { kind: ConsumableKind; eventId: string } | null;
   slots: {
     tenant_slug: string;
     table_number: number | string | null;
@@ -66,11 +89,64 @@ const FALLBACK_RESPONSE: ContinuationResponse = {
 // landing never breaks the page just because the Python service hiccups.
 const AI_TIMEOUT_MS = 1500;
 
+// TTL do marcador `continuation_shown:*` — mesma janela de vida da sessão
+// de mesa no Redis (4h). Depois disso a sessão já expirou de qualquer jeito.
+const SHOWN_TTL_SECONDS = 4 * 60 * 60;
+
 @Injectable()
 export class ContinuationService {
   private readonly logger = new Logger(ContinuationService.name);
 
-  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+  constructor(
+    private readonly tenantConn: TenantConnectionProvider,
+    // Optional pra que unit tests (e ambientes sem Redis) não precisem
+    // do provider — sem Redis o consumo simplesmente não persiste e a
+    // mensagem de evento volta a aparecer (degradação aceitável).
+    @Optional() private readonly redis?: RedisService,
+  ) {}
+
+  private shownKey(
+    tableSessionId: string,
+    kind: ConsumableKind,
+    eventId: string,
+  ): string {
+    return `continuation_shown:${tableSessionId}:${kind}:${eventId}`;
+  }
+
+  /** Já exibimos a mensagem desse evento nessa sessão? Falha → false. */
+  private async wasShown(
+    tableSessionId: string,
+    kind: ConsumableKind,
+    eventId: string,
+  ): Promise<boolean> {
+    if (!this.redis) return false;
+    try {
+      return (await this.redis.get(this.shownKey(tableSessionId, kind, eventId))) !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  private async markShown(
+    tableSessionId: string,
+    kind: ConsumableKind,
+    eventId: string,
+  ): Promise<void> {
+    if (!this.redis) return;
+    try {
+      await this.redis.set(
+        this.shownKey(tableSessionId, kind, eventId),
+        new Date().toISOString(),
+        SHOWN_TTL_SECONDS,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Failed to persist continuation consumption for ${tableSessionId}: ${
+          (err as Error).message
+        }`,
+      );
+    }
+  }
 
   /**
    * Inspect DB state for `tableSessionId`, derive the most-relevant
@@ -101,18 +177,43 @@ export class ContinuationService {
       return FALLBACK_RESPONSE;
     }
 
-    return this.forwardToAi(derived);
+    const response = await this.forwardToAi(derived);
+
+    // Consome a mensagem de evento SOMENTE quando ela realmente foi
+    // entregue pra superfície do assistente: a home não queima o 1x, e o
+    // fallback genérico (AI service fora) não conta como exibição — o
+    // cliente ainda não viu o contexto do evento.
+    if (
+      derived.consumable &&
+      signals.surface === 'assistente' &&
+      response.kind === derived.kind
+    ) {
+      await this.markShown(
+        tableSessionId,
+        derived.consumable.kind,
+        derived.consumable.eventId,
+      );
+    }
+
+    return response;
   }
 
   /**
-   * Heuristic priority chain:
-   *   1. complaint < 10 min  → pos_reclamacao
-   *   2. payment paid_at < 10 min → pagou
-   *   3. active order < 30 min → abriu_pedido
-   *   4. waiter_call < 5 min → chamou_garcom
+   * Heuristic priority chain (first match wins entre os NÃO consumidos):
+   *   1. complaint < 10 min  → pos_reclamacao        (consumível 1x/evento)
+   *   2. payment paid_at < 10 min → pagou            (consumível 1x/evento)
+   *   3. active order < 30 min → abriu_pedido        (consumível 1x/evento)
+   *   4. waiter_call < 5 min → chamou_garcom         (consumível 1x/evento)
    *   5. explicit/recent menu event < 10 min → viu_cardapio
    *   6. any prior event for this session → voltou_sem_acao
    *   7. nothing → first_time
+   *
+   * Eventos já exibidos no assistente (`continuation_shown:*` no Redis)
+   * são PULADOS — é o cenário do Caleb 2026-06-11: voltou do cardápio com
+   * pedido em preparo → mensagem de cardápio (o status do pedido já está
+   * garantido na eyebrow). O clientKindHint não fura a regra: hints de
+   * evento também passam pelo checador de consumo, e hints de navegação
+   * (viu_menu) continuam avaliados DEPOIS dos eventos não consumidos.
    *
    * Slot population is opportunistic; missing slots are passed
    * as null and the AI service renders a sensible fallback (C-NEW-4).
@@ -182,7 +283,7 @@ export class ContinuationService {
     // popular slots managerName + avgResponseMin nos templates pos_reclamacao
     // ricos (canvas V20 §F5). Fallback no manager: pc_fallback template kicks in.
     const complaintEnriched = (await this.tenantConn.query(
-      `SELECT s.name AS manager_name
+      `SELECT c.id AS complaint_id, s.name AS manager_name
          FROM complaints c
     LEFT JOIN orders o ON o.id = c.order_id
     LEFT JOIN staff s ON s.id = c.assigned_manager_id
@@ -191,8 +292,15 @@ export class ContinuationService {
         ORDER BY c.created_at DESC
         LIMIT 1`,
       [tableSessionId, resolvedCustomerId],
-    )) as { manager_name: string | null }[];
-    if (complaintEnriched.length > 0) {
+    )) as { complaint_id: string; manager_name: string | null }[];
+    if (
+      complaintEnriched.length > 0 &&
+      !(await this.wasShown(
+        tableSessionId,
+        'pos_reclamacao',
+        complaintEnriched[0].complaint_id,
+      ))
+    ) {
       const managerName = complaintEnriched[0].manager_name;
       // Avg response time across all closed complaints for this manager.
       // Round to nearest minute; fallback to 2 if no historical data.
@@ -211,6 +319,10 @@ export class ContinuationService {
       }
       return {
         kind: 'pos_reclamacao',
+        consumable: {
+          kind: 'pos_reclamacao',
+          eventId: complaintEnriched[0].complaint_id,
+        },
         slots: {
           ...baseSlots,
           manager_name: managerName,
@@ -221,7 +333,7 @@ export class ContinuationService {
 
     // ── Priority 2: payment.paid_at within 10 min ────────────────────
     const payRows = (await this.tenantConn.query(
-      `SELECT latest_order.id AS order_id
+      `SELECT p.id AS payment_id, latest_order.id AS order_id
          FROM payments p
     LEFT JOIN LATERAL (
           SELECT o.id
@@ -238,31 +350,48 @@ export class ContinuationService {
         ORDER BY p.paid_at DESC
         LIMIT 1`,
       [tableSessionId],
-    )) as { order_id: string | null }[];
-    if (payRows.length > 0) {
+    )) as { payment_id: string; order_id: string | null }[];
+    if (
+      payRows.length > 0 &&
+      !(await this.wasShown(tableSessionId, 'pagou', payRows[0].payment_id))
+    ) {
       return {
         kind: 'pagou',
+        consumable: { kind: 'pagou', eventId: payRows[0].payment_id },
         slots: { ...baseSlots, last_order_id: payRows[0].order_id },
       };
     }
-    if (clientHint === 'pagou') {
-      return {
-        kind: 'pagou',
-        slots: {
-          ...baseSlots,
-          last_order_id: await this.latestOrderIdForSession(tableSessionId),
-        },
-      };
+    if (clientHint === 'pagou' && payRows.length === 0) {
+      // Hint sem payment row (ex.: pagamento externo): usa o último pedido
+      // como identidade do evento — um pagamento novo na mesma sessão tem
+      // pedido novo na prática; sem pedido cai num id sintético único.
+      const hintOrderId = await this.latestOrderIdForSession(tableSessionId);
+      const eventId = `hint:${hintOrderId ?? 'none'}`;
+      if (!(await this.wasShown(tableSessionId, 'pagou', eventId))) {
+        return {
+          kind: 'pagou',
+          consumable: { kind: 'pagou', eventId },
+          slots: {
+            ...baseSlots,
+            last_order_id: hintOrderId,
+          },
+        };
+      }
     }
 
     if (signals.hasDraftOrder || clientHint === 'abriu_pedido') {
-      return {
-        kind: 'abriu_pedido',
-        slots: {
-          ...baseSlots,
-          last_order_id: await this.latestOrderIdForSession(tableSessionId),
-        },
-      };
+      const hintOrderId = await this.latestOrderIdForSession(tableSessionId);
+      const eventId = hintOrderId ?? 'draft';
+      if (!(await this.wasShown(tableSessionId, 'abriu_pedido', eventId))) {
+        return {
+          kind: 'abriu_pedido',
+          consumable: { kind: 'abriu_pedido', eventId },
+          slots: {
+            ...baseSlots,
+            last_order_id: hintOrderId,
+          },
+        };
+      }
     }
 
     // ── Priority 3: active order within 30 min ───────────────────────
@@ -276,10 +405,14 @@ export class ContinuationService {
         LIMIT 1`,
       [tableSessionId],
     )) as { id: string }[];
-    if (orderRows.length > 0) {
+    if (
+      orderRows.length > 0 &&
+      !(await this.wasShown(tableSessionId, 'abriu_pedido', orderRows[0].id))
+    ) {
       const summary = await this.summariseOrder(orderRows[0].id);
       return {
         kind: 'abriu_pedido',
+        consumable: { kind: 'abriu_pedido', eventId: orderRows[0].id },
         slots: {
           ...baseSlots,
           last_order_summary: summary,
@@ -290,26 +423,37 @@ export class ContinuationService {
 
     // ── Priority 4: waiter call within 5 min ─────────────────────────
     const waiterRows = (await this.tenantConn.query(
-      `SELECT EXTRACT(EPOCH FROM (now() - created_at))::int AS age_sec
+      `SELECT id, EXTRACT(EPOCH FROM (now() - created_at))::int AS age_sec
          FROM waiter_calls
         WHERE table_session_id = $1
           AND created_at >= now() - INTERVAL '5 minutes'
         ORDER BY created_at DESC
         LIMIT 1`,
       [tableSessionId],
-    )) as { age_sec: number }[];
-    if (waiterRows.length > 0) {
+    )) as { id: string; age_sec: number }[];
+    if (
+      waiterRows.length > 0 &&
+      !(await this.wasShown(tableSessionId, 'chamou_garcom', waiterRows[0].id))
+    ) {
       const waitMinutes = Math.max(
         0,
         Math.floor((waiterRows[0].age_sec ?? 0) / 60),
       );
       return {
         kind: 'chamou_garcom',
+        consumable: { kind: 'chamou_garcom', eventId: waiterRows[0].id },
         slots: { ...baseSlots, wait_minutes: waitMinutes },
       };
     }
-    if (clientHint === 'chamou_garcom') {
-      return { kind: 'chamou_garcom', slots: baseSlots };
+    if (clientHint === 'chamou_garcom' && waiterRows.length === 0) {
+      const eventId = 'hint';
+      if (!(await this.wasShown(tableSessionId, 'chamou_garcom', eventId))) {
+        return {
+          kind: 'chamou_garcom',
+          consumable: { kind: 'chamou_garcom', eventId },
+          slots: baseSlots,
+        };
+      }
     }
 
     if (clientHint === 'viu_menu') {

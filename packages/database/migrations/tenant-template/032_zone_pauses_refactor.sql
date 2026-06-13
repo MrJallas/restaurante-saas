@@ -73,17 +73,24 @@ BEGIN
     -- runtime — por ora assumimos dev/test only (legacy 021 não foi
     -- atingido em prod).
     IF NOT has_waiter_id THEN
+      -- IF NOT EXISTS por coluna: a 021 JÁ cria ends_at/reason — o ADD
+      -- direto quebrava a sequência limpa 021→032 ("column ends_at
+      -- already exists") e derrubava o boot fatal do migrate-tenants em
+      -- tenants re-migrados (achado 2026-06-10, decisão Q6).
       ALTER TABLE zone_pauses
-        ADD COLUMN waiter_id UUID REFERENCES staff(id),
-        ADD COLUMN ends_at TIMESTAMPTZ,
-        ADD COLUMN started_by UUID REFERENCES staff(id),
-        ADD COLUMN ended_at TIMESTAMPTZ,
-        ADD COLUMN ended_by UUID REFERENCES staff(id),
-        ADD COLUMN reason TEXT;
+        ADD COLUMN IF NOT EXISTS waiter_id UUID REFERENCES staff(id),
+        ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS started_by UUID REFERENCES staff(id),
+        ADD COLUMN IF NOT EXISTS ended_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS ended_by UUID REFERENCES staff(id),
+        ADD COLUMN IF NOT EXISTS reason TEXT;
       -- NOT NULL após ADD; sem dados a migrar em legacy ainda
       -- (round 3+ já roda 032 no create-tenant antes de qualquer pause
       -- legacy ser inserida). Em prod com dados legacy de 021 ativos,
-      -- backfill manual antes desse migration step.
+      -- backfill manual antes desse migration step. DELETE defensivo:
+      -- rows legacy (zone-based, waiter_id NULL) impediriam o SET NOT
+      -- NULL — em dev/test são pausas órfãs sem significado pós-refactor.
+      DELETE FROM zone_pauses WHERE waiter_id IS NULL;
       ALTER TABLE zone_pauses ALTER COLUMN waiter_id SET NOT NULL;
       ALTER TABLE zone_pauses ALTER COLUMN ends_at SET NOT NULL;
       ALTER TABLE zone_pauses ALTER COLUMN started_by SET NOT NULL;

@@ -67,8 +67,16 @@ export async function newSession(
     await welcomeAs(page, name, cpf);
   }
 
+  // Marcador estável de "home pronta": o input do assistente existe em
+  // TODAS as variantes da home. O botão "Chamar garçom" não — quando a
+  // continuation reconhece visita recente (ex.: pedido entregue), o
+  // greeting vem com chips dinâmicos no lugar dos PillButtons e o spec
+  // quebrava por estado de dados, não por bug.
   await expect(
-    page.getByRole('button', { name: 'Chamar garçom' }),
+    page
+      .getByPlaceholder('Digite aqui')
+      .or(page.getByRole('button', { name: 'Chamar garçom' }))
+      .first(),
   ).toBeVisible({ timeout: 10_000 });
 }
 

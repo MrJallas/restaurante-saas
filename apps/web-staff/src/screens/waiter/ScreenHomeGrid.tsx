@@ -17,8 +17,9 @@ import {
 } from '../../components/waiter/Primitives';
 import { useWaiterEvents } from '../../hooks/useWaiterEvents';
 import {
-  listMyTables, listMyZonePauses, listPendingCalls,
-  type ActiveTableSummary, type WaiterCallSummary,
+  isDeliveryClaimedBy, isDeliveryForWaiter,
+  listMyTables, listMyZonePauses, listPendingCalls, listPendingDeliveries,
+  type ActiveTableSummary, type PendingDelivery, type WaiterCallSummary,
 } from '../../lib/api/waiter';
 import type { ZonePauseDto, WsEvent } from '@restaurant/shared-types';
 
@@ -45,6 +46,30 @@ function fmtBRL(cents: number): string {
   return (cents / 100).toFixed(2).replace('.', ',');
 }
 
+// "1414 min"/"16136 min" era vazamento de fixture pro operador (prompt 99,
+// dados demo ruins) — acima de 1h humaniza pra h/d.
+function fmtOpenedDuration(min: number): string {
+  if (min < 60) return `${min} min`;
+  if (min < 24 * 60) return `${Math.floor(min / 60)} h`;
+  return `${Math.floor(min / (24 * 60))} d`;
+}
+
+// last_event vem do order_status_history.to_status — traduz o status
+// técnico (ex.: `ready`) pra label de operador.
+const LAST_EVENT_LABEL: Record<string, string> = {
+  pending_confirmation: 'Pedido aguardando confirmação',
+  received: 'Pedido recebido',
+  in_progress: 'Pedido em preparo',
+  ready: 'Pedido pronto p/ servir',
+  in_transit: 'Pedido a caminho da mesa',
+  delivered: 'Pedido entregue',
+  cancelled: 'Pedido cancelado',
+  // aliases legados
+  open: 'Pedido aberto',
+  confirmed: 'Pedido confirmado',
+  preparing: 'Pedido em preparo',
+};
+
 function fmtTimeLeft(endsAt: string): string {
   const ms = new Date(endsAt).getTime() - Date.now();
   if (ms <= 0) return '00:00';
@@ -64,6 +89,7 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
   const [tables, setTables] = useState<ActiveTableSummary[]>([]);
   const [calls, setCalls] = useState<WaiterCallSummary[]>([]);
   const [pauses, setPauses] = useState<ZonePauseDto[]>([]);
+  const [deliveries, setDeliveries] = useState<PendingDelivery[]>([]);
 
   const { on } = useWaiterEvents({ tenantSlug, waiterId });
 
@@ -72,15 +98,26 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
     let alive = true;
     async function load() {
       try {
-        const [t, c, p] = await Promise.all([
+        const [t, c, p, d] = await Promise.all([
           listMyTables(tenantSlug).catch(() => []),
           listPendingCalls(tenantSlug).catch(() => []),
           listMyZonePauses(tenantSlug, waiterId).catch(() => []),
+          listPendingDeliveries(tenantSlug).catch(() => [] as PendingDelivery[]),
         ]);
         if (!alive) return;
         setTables(t);
         setCalls(c);
         setPauses(p);
+        // Entregas relevantes pra mim: pendentes broadcast/direcionadas
+        // ou já claimed por mim (em trânsito) — predicados canônicos de
+        // lib/api/waiter (code-review: variantes locais divergiam).
+        setDeliveries(
+          d.filter(
+            (row) =>
+              isDeliveryForWaiter(row, waiterId || null) ||
+              isDeliveryClaimedBy(row, waiterId || null),
+          ),
+        );
       } catch {
         /* noop · screen renders empty */
       }
@@ -131,7 +168,8 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
     [pauses],
   );
   const firstUrgentCall = calls[0];
-  const callsCount = calls.length;
+  const firstDelivery = deliveries[0];
+  const callsCount = calls.length + deliveries.length;
 
   return (
     <div
@@ -191,6 +229,34 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
       )}
 
       <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px 16px' }}>
+        {/* faixa de entrega pendente — handoff TV cozinha/bar */}
+        {firstDelivery && (
+          <button
+            type="button"
+            data-testid="home-delivery-strip"
+            onClick={() =>
+              router.push(`/waiter/entrega/${firstDelivery.order_id}?tenant=${tenantSlug}`)
+            }
+            style={{
+              all: 'unset', cursor: 'pointer', boxSizing: 'border-box', width: '100%',
+              background: C.successBg, border: `1px solid ${C.success}`,
+              borderRadius: 14, padding: '12px 14px',
+              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
+              color: C.success,
+            }}
+          >
+            {Icon.bell(20)}
+            <div style={{ flex: 1, fontSize: 13.5, fontWeight: 600, minWidth: 0 }}>
+              {firstDelivery.table_label}
+              {firstDelivery.zone_name ? ` · ${firstDelivery.zone_name}` : ''} · pronto na cozinha
+              {deliveries.length > 1 ? ` · +${deliveries.length - 1}` : ''}
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', flexShrink: 0 }}>
+              {firstDelivery.delivery_status === 'claimed' ? 'Confirmar →' : 'Entregar →'}
+            </span>
+          </button>
+        )}
+
         {/* faixa de chamados ativos */}
         {firstUrgentCall && (
           <button
@@ -253,7 +319,7 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
                   {t.is_vip && <GBadge tone="warn" dark={dark}>VIP</GBadge>}
                 </div>
                 <div style={{ fontSize: 11.5, color: C.mute, marginTop: 8, lineHeight: 1.4 }}>
-                  {t.last_event ?? '—'}
+                  {t.last_event ? LAST_EVENT_LABEL[t.last_event] ?? '—' : '—'}
                 </div>
                 {!isLivre && (
                   <div
@@ -262,7 +328,7 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
                       marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.borderFaint}`,
                     }}
                   >
-                    <span style={{ fontSize: 11, color: C.faint }}>{t.opened_min} min</span>
+                    <span style={{ fontSize: 11, color: C.faint }}>{fmtOpenedDuration(t.opened_min)}</span>
                     <span style={{ fontSize: 14, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
                       R$ {fmtBRL(t.ticket_total_cents)}
                     </span>

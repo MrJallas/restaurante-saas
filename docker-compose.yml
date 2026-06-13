@@ -102,12 +102,15 @@ services:
       - "3001:3001"
     # Round 4 §C-NEW-1: roda `migrate:tenants` ANTES do start:dev pra que
     # migrations adicionadas em tenant-template sejam aplicadas a todos os
-    # schemas existentes automaticamente. Falha de migration é fatal — a
-    # API não sobe com schema stale.
+    # schemas existentes automaticamente. Falha de migration é FATAL de
+    # verdade (decisão Caleb 2026-06-10): sem migrations o schema fica
+    # inconsistente e a API não pode subir. O caso "primeiro boot sem
+    # tenants" já sai 0 no próprio script ('nenhum tenant encontrado ·
+    # skip') — o `|| echo` antigo só servia pra engolir erro real.
     command: >-
       sh -c "cd /repo &&
       npm install --no-audit --no-fund &&
-      (cd packages/database && npx ts-node scripts/migrate-tenants.ts || echo '[migrate-tenants] sem tenants ou primeiro boot — pulando') &&
+      (cd packages/database && npx ts-node scripts/migrate-tenants.ts) &&
       cd /repo/apps/api &&
       (npm run start:dev || npm run dev)"
 
@@ -190,6 +193,13 @@ services:
       NEXT_PUBLIC_WS_URL: http://${PUBLIC_HOST:-localhost}:3001
       NEXT_PUBLIC_TENANT_SLUG: restaurant_dev
       NEXT_PUBLIC_STAFF_API_KEY: ${STAFF_API_KEY:-dev-staff-api-key-change-in-prod}
+      # Proxy server-side das TVs (/api/proxy): roda DENTRO do container,
+      # então a API é o service docker `api`, não localhost. Sem isso o
+      # default localhost:3001 dava 502 "fetch failed" e a TV ficava em
+      # "Erro inesperado" no stack dockerizado (achado do E2E tv-delivery).
+      STAFF_API_BASE_URL: http://api:3001/api
+      # O proxy injeta x-staff-key server-side (P1-F: key fora do bundle).
+      STAFF_API_KEY: ${STAFF_API_KEY:-dev-staff-api-key-change-in-prod}
     volumes:
       - ./:/repo
       - /repo/node_modules

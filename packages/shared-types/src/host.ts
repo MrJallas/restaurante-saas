@@ -47,7 +47,9 @@ export type HostInboxKind =
   | 'merge_consumed'
   | 'complaint'
   | 'zone_pause_started'
-  | 'zone_pause_ended';
+  | 'zone_pause_ended'
+  /** Mesa pediu a recepção (alert `host_assist_table` + WS `host.assist_requested`). */
+  | 'host_assist';
 
 /**
  * Item de notificacao passiva no inbox da recepcionista. Cada source tem

@@ -9,7 +9,7 @@ const PROXY = `${STAFF}/api/proxy/restaurant_dev`;
 
 function psql(query: string): string {
   const out = execSync(
-    `PGPASSWORD=postgres psql -h localhost -p 5434 -U postgres -d restaurant_saas -tA -c "SET search_path = restaurant_dev; ${query}"`,
+    `docker exec restaurant-postgres psql -U postgres -p 5434 -d restaurant_saas -tA -c "SET search_path = restaurant_dev; ${query}"`,
     { encoding: 'utf8' },
   );
   const lines = out.split('\n').filter((l) => l.trim() !== '' && l.trim() !== 'SET');
@@ -18,7 +18,7 @@ function psql(query: string): string {
 
 function psqlAll(query: string): string[] {
   const out = execSync(
-    `PGPASSWORD=postgres psql -h localhost -p 5434 -U postgres -d restaurant_saas -tA -c "SET search_path = restaurant_dev; ${query}"`,
+    `docker exec restaurant-postgres psql -U postgres -p 5434 -d restaurant_saas -tA -c "SET search_path = restaurant_dev; ${query}"`,
     { encoding: 'utf8' },
   );
   return out
@@ -171,7 +171,7 @@ test.describe('P2-4 — TRIM unicode station filtering', () => {
       INSERT INTO menu_categories (name, sort_order) VALUES ('BEBIDAS', 99);
     `;
     execSync(
-      `PGPASSWORD=postgres psql -h localhost -p 5434 -U postgres -d restaurant_saas -c "SET search_path = restaurant_dev; ${setupSql}"`,
+      `docker exec restaurant-postgres psql -U postgres -p 5434 -d restaurant_saas -c "SET search_path = restaurant_dev; ${setupSql}"`,
       { encoding: 'utf8' },
     );
     const catIds = psqlAll(`SELECT id FROM menu_categories WHERE sort_order = 99`);

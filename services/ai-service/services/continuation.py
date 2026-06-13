@@ -7,6 +7,8 @@ time-of-day). Falls back to a built-in default per `vip-customer.md` (warmer
 tone for VIP).
 """
 
+import hashlib
+import json
 import random
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -18,12 +20,19 @@ from .redis_pool import pool_get_all, pool_seed
 # Defaults seeded on first miss. Each entry mirrors `ContinuationMessage`.
 DEFAULTS: dict[str, list[dict]] = {
     # segment: returning · regular
+    # Prompt 100 (chips contextuais): chips coerentes com a fala — todos os
+    # payloads `send` abaixo caem no rule-layer do ai-service (sem LLM).
     "returning:regular": [
         {
             "id": "r1",
             "kind": "idle_nudge",
             "template": "E aí, {customerName}! Que bom te ver de novo. Quer pedir o {favoriteItem} de novo?",
             "slots": ["customerName", "favoriteItem"],
+            "chips": [
+                {"id": "repetir-ultima", "label": "Pedir de novo", "action": "send", "payload": "quero pedir igual da última vez"},
+                {"id": "ver-cardapio", "label": "Ver cardápio", "action": "send", "payload": "quero ver o cardápio"},
+                {"id": "indicacao", "label": "Me indica algo", "action": "send", "payload": "me indica algo"},
+            ],
             "weight": 1.0,
         },
         {
@@ -31,6 +40,11 @@ DEFAULTS: dict[str, list[dict]] = {
             "kind": "idle_nudge",
             "template": "Olá, {customerName}! Posso te sugerir uma novidade hoje?",
             "slots": ["customerName"],
+            "chips": [
+                {"id": "indicacao", "label": "Sim, me indica", "action": "send", "payload": "me indica algo"},
+                {"id": "ver-cardapio", "label": "Ver cardápio", "action": "send", "payload": "quero ver o cardápio"},
+                {"id": "chamar-garcom", "label": "Chamar garçom", "action": "send", "payload": "chama o garçom"},
+            ],
             "weight": 1.0,
         },
     ],
@@ -41,6 +55,11 @@ DEFAULTS: dict[str, list[dict]] = {
             "kind": "idle_nudge",
             "template": "Bem-vindo de volta, {customerName}! Já reservei a melhor energia da casa pra você.",
             "slots": ["customerName"],
+            "chips": [
+                {"id": "indicacao", "label": "Me indica algo", "action": "send", "payload": "me indica algo"},
+                {"id": "ver-cardapio", "label": "Ver cardápio", "action": "send", "payload": "quero ver o cardápio"},
+                {"id": "chamar-garcom", "label": "Chamar garçom", "action": "send", "payload": "chama o garçom"},
+            ],
             "weight": 1.0,
         },
         {
@@ -48,6 +67,11 @@ DEFAULTS: dict[str, list[dict]] = {
             "kind": "idle_nudge",
             "template": "{customerName}, que prazer te ter aqui de novo. Posso já mandar seu {favoriteItem}?",
             "slots": ["customerName", "favoriteItem"],
+            "chips": [
+                {"id": "repetir-ultima", "label": "Pode mandar", "action": "send", "payload": "quero pedir igual da última vez"},
+                {"id": "ver-cardapio", "label": "Ver cardápio", "action": "send", "payload": "quero ver o cardápio"},
+                {"id": "indicacao", "label": "Outra sugestão", "action": "send", "payload": "me indica algo"},
+            ],
             "weight": 1.0,
         },
     ],
@@ -58,6 +82,11 @@ DEFAULTS: dict[str, list[dict]] = {
             "kind": "idle_nudge",
             "template": "Bem-vindo! Posso te ajudar a escolher? Tem prato do dia legal hoje.",
             "slots": [],
+            "chips": [
+                {"id": "ver-cardapio", "label": "Ver cardápio", "action": "send", "payload": "quero ver o cardápio"},
+                {"id": "indicacao", "label": "Me indica algo", "action": "send", "payload": "me indica algo"},
+                {"id": "chamar-garcom", "label": "Chamar garçom", "action": "send", "payload": "chama o garçom"},
+            ],
             "weight": 1.0,
         },
     ],
@@ -296,7 +325,7 @@ DEFAULTS: dict[str, list[dict]] = {
                 {"id": "adicionar-bebida", "label": "Adicionar bebida", "action": "send", "payload": "quero adicionar uma bebida"},
                 {"id": "ver-pedido", "label": "Ver pedido", "action": "send", "payload": "ver meu pedido"},
                 {"id": "pedir-mais", "label": "Pedir mais", "action": "send", "payload": "quero pedir mais alguma coisa"},
-                {"id": "eta-cozinha", "label": "Quanto tempo?", "action": "send", "payload": "quanto tempo demora o pedido?"},
+                {"id": "chamar-garcom", "label": "Chamar garçom", "action": "send", "payload": "chama o garçom"},
             ],
             "primary_cta": {"label": "Acompanhar pedido", "action": "navigate", "payload": "pedido"},
             "weight": 1.0,
@@ -312,7 +341,7 @@ DEFAULTS: dict[str, list[dict]] = {
                 {"id": "adicionar-bebida", "label": "Adicionar bebida", "action": "send", "payload": "quero adicionar uma bebida"},
                 {"id": "ver-pedido", "label": "Ver pedido", "action": "send", "payload": "ver meu pedido"},
                 {"id": "pedir-mais", "label": "Pedir mais", "action": "send", "payload": "quero pedir mais alguma coisa"},
-                {"id": "eta-cozinha", "label": "Quanto tempo?", "action": "send", "payload": "quanto tempo demora o pedido?"},
+                {"id": "chamar-garcom", "label": "Chamar garçom", "action": "send", "payload": "chama o garçom"},
             ],
             "primary_cta": {"label": "Acompanhar pedido", "action": "navigate", "payload": "pedido"},
             "weight": 1.0,
@@ -327,7 +356,7 @@ DEFAULTS: dict[str, list[dict]] = {
                 {"id": "ver-sobremesas", "label": "Ver sobremesas", "action": "send", "payload": "mostra as sobremesas"},
                 {"id": "adicionar-bebida", "label": "Adicionar bebida", "action": "send", "payload": "quero adicionar uma bebida"},
                 {"id": "ver-pedido", "label": "Ver pedido", "action": "send", "payload": "ver meu pedido"},
-                {"id": "eta-cozinha", "label": "Quanto tempo?", "action": "send", "payload": "quanto tempo demora o pedido?"},
+                {"id": "chamar-garcom", "label": "Chamar garçom", "action": "send", "payload": "chama o garçom"},
             ],
             "primary_cta": {"label": "Acompanhar pedido", "action": "navigate", "payload": "pedido"},
             "weight": 1.0,
@@ -476,8 +505,17 @@ DEFAULTS: dict[str, list[dict]] = {
 }
 
 
+# Fingerprint dos DEFAULTS embutido na chave do pool (decisão Caleb
+# 2026-06-12): mudou template/chip no CÓDIGO → chave nova → re-seed na
+# primeira leitura, sem esperar o TTL de 1h nem flush manual de
+# `continuation:*`. As chaves antigas morrem sozinhas pelo TTL.
+_DEFAULTS_FINGERPRINT = hashlib.sha1(
+    json.dumps(DEFAULTS, sort_keys=True, ensure_ascii=False).encode("utf-8")
+).hexdigest()[:10]
+
+
 def _key(tenant_id: str, segment: str) -> str:
-    return f"continuation:{tenant_id}:{segment}"
+    return f"continuation:{tenant_id}:{segment}:{_DEFAULTS_FINGERPRINT}"
 
 
 def _segment_for_kind(kind: str) -> str:

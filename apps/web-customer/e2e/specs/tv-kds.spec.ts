@@ -69,7 +69,7 @@ function psql(query: string): string {
   // -tA: tuples-only + unaligned. Mas SET ainda emite "SET" no stdout
   // antes do resultado da query. Pegamos so a ultima linha nao-vazia.
   const out = execSync(
-    `PGPASSWORD=postgres psql -h localhost -p 5434 -U postgres -d restaurant_saas -tA -c "SET search_path = restaurant_dev; ${query}"`,
+    `docker exec restaurant-postgres psql -U postgres -p 5434 -d restaurant_saas -tA -c "SET search_path = restaurant_dev; ${query}"`,
     { encoding: 'utf8' },
   );
   const lines = out.split('\n').filter((l) => l.trim() !== '' && l.trim() !== 'SET');
@@ -490,7 +490,9 @@ test.describe('P2-G — middleware Next.js gateia /cozinha/tv e /bar/tv', () => 
     const file = path.resolve(__dirname, '../../../web-staff/src/middleware.ts');
     const src = await fs.readFile(file, 'utf8');
     expect(src, 'middleware deve existir e cobrir /cozinha e /bar').toMatch(
-      /matcher.*cozinha.*bar|cozinha.*bar.*matcher/s,
+      // [\s\S] em vez da flag /s — tsconfig do workspace targeta < es2018
+      // e o tsc --noEmit (validação obrigatória) rejeitava TS1501 aqui.
+      /matcher[\s\S]*cozinha[\s\S]*bar|cozinha[\s\S]*bar[\s\S]*matcher/,
     );
     expect(src, 'middleware deve checar cookie tv_pin').toMatch(/tv_pin/);
     expect(src, 'middleware deve redirecionar pra unlock').toMatch(/cozinha\/unlock/);

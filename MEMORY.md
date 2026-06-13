@@ -154,9 +154,43 @@ Cozinha/KDS:
   `/cozinha/tv`, `/bar/tv`, `/cozinha/unlock`, `/api/tv-unlock` e
   `/api/proxy/:path*`. O board usa `GET /:slug/orders/_kds?station=kitchen|bar`
   e, quando pedido fica `ready`, chama `POST /:slug/orders/:orderId/call-waiter`
-  em vez de marcar como `delivered`. A rota TV e o proxy sao base inicial; ainda
-  validar ponta a ponta notificação in-app/banner do garcom, mapa/localizacao
-  da mesa e botao final `Entregue`.
+  em vez de marcar como `delivered`.
+- Regras do fluxo de entrega consolidadas pós code-review (2026-06-10):
+  qualquer staff ativo pode CONFIRMAR `Entregue` (takeover — `claimed_by`
+  registra quem confirmou; bloquear o colega criava pedido preso em
+  in_transit); `call-waiter` sem `x-staff-id` = chamada de estação
+  (`called_by` NULL), com header presente valida 401; predicados de
+  audiência de entrega vivem em `lib/api/waiter` (`isDeliveryForWaiter`/
+  `isDeliveryClaimedBy`) — não reimplementar; `useWaiterEvents` usa socket
+  COMPARTILHADO por (tenant|staffId) com retry pós-rejeição (gateway
+  rate-limita handshakes por IP do restaurante); turnos overnight casam
+  assignment de ontem no trecho pós-meia-noite.
+- ETA do cliente é DINÂMICA (2026-06-10): `GET /:slug/orders[/:id]`
+  devolve eta_minutes_min/max + queue_ahead — fila à frente na ordenação
+  canônica (urgência>VIP>normal ÷ ETA_KITCHEN_PARALLEL_LINES) + range por
+  estágio que encolhe (10–16 → 5–9 → 2–5 → 1–3). Nunca hardcodar tempo no
+  front. Constantes em orders.service (TODO: settings por restaurante).
+- Fluxo validado também em iOS real (simulador iPhone 16, xcodebuildmcp +
+  idb): Safari → QR → geofence (2 prompts de localização + retry) →
+  welcome digitado → pedido → tracker atualizando via WS sem reload.
+  Evidências: `qa-reports/tv-delivery-e2e/sim-ios/`.
+- Backlog de cleanup aceito (code-review, sem bug): consolidar
+  relativeTime/playBeep/psql()/labels de status duplicados; extrair
+  TableMap compartilhado (planta); unificar cânon de prioridade com
+  priority.util (alergia vs vip); sweep de entregas órfãs no
+  TtlTickService; e2e não mutar pedidos alheios do DB dev.
+- Fluxo de entrega TV→garçom→cliente validado ponta a ponta em 2026-06-10
+  (spec `tv-delivery-flow.spec.ts`, evidencia `qa-reports/tv-delivery-e2e/`):
+  banner in-app via WS `order:handoff_called` + poll em todas as rotas
+  `/waiter/*` (layout monta `WaiterDeliveryAlerts`), tela
+  `/waiter/entrega/[orderId]` com zona (`zones`) + mapa por zona e mesa-alvo
+  destacada, `Estou levando` (in_transit) → `Confirmar entrega` (delivered);
+  cliente so muda pra `Entregue` depois disso (WS pra sala da sessao, sem
+  reload). Feed canonico do garcom: `GET /:slug/deliveries/pending`
+  (pending+claimed, com zone_name/itens/target). `call-waiter` da TV nao
+  exige `x-staff-id` (estacao; `called_by` NULL = chamado pela estacao).
+  `/garcom/pedidos` arquivada como redirect pra `/waiter`. Specs TV usam
+  psql via `docker exec restaurant-postgres` (porta 5434 nao publicada).
 
 Staff usa poucos `data-testid`; preferir roles, labels e texto visivel:
 `Notificações`, `Mensagens`, `Perfil`, `Mais ações`, `NOVOS`,
@@ -397,19 +431,216 @@ Pontos entendidos dos superprompts:
 - Toda tela nova precisa screenshot/Playwright antes de ser marcada pronta.
 - Todo CTA precisa API real com erro visivel ou stub explicito de desenvolvimento.
 
-Perguntas abertas para Caleb:
+Bugs dos videos de 2026-06-10 corrigidos (assistente + juncao):
 
-1. `CallWaiterSheet` com title 22/600 e CTA raw e excecao aceita ou falha?
-2. `mode=expand` deve sempre preencher o assistente sem autoenviar?
-3. `assistant.staff_message_received` deve chegar pelo `useTableSocket` ou outro
-   canal?
-4. Reclamações customer precisam de GET/list definitivo para hard reload,
-   push/deep link e historico?
-5. API `3001` fica publica para staff/WS ou deve ir para reverse proxy
-   same-origin?
-6. Falha em `migrate-tenants` deve ser fatal ou o `|| echo` do Compose e
-   intencional em dev?
-7. Quer formalizar Jest/Supertest em `apps/api` ou manter specs ts-node?
-8. Em qual tela o dono deve configurar localizacao/raio do restaurante:
-   financeiro/configuracoes do gerente, dashboard owner futuro, ou painel
-   separado?
+- `/assistente` sem threadId volta a abrir a LANDING contextual: o inline
+  history hidrata SO mensagens de staff (proposito do round 10) — antes
+  reabria a ultima conversa de IA inteira e a landing nunca aparecia.
+  Conversas antigas: menu "Conversas com IA".
+- Hierarquia do greeting contextual (continuation.service.ts:107-118),
+  primeira que casar vence: reclamacao<10min → pagamento<10min → pedido
+  ativo<30min → chamou garcom<5min → viu cardapio<10min →
+  voltou_sem_acao → first_time. Merge/late-arrival NAO entram no
+  greeting — chegam como cards via WS por cima de qualquer landing.
+- Card de juncao (rejected/cooldown): "Chamar recepcionista" usa o fluxo
+  REAL `POST /:slug/host/assist` (SessionGuard → alert kind
+  host_assist_table visivel pro papel host + WS host.assist_requested no
+  room tenant:slug:host); "Tentar outra mesa" abre o OverlaySalonMap
+  (mesmo caminho do tool call; waiting-approval navega com ?mergeRetry=1);
+  "Continuar aqui" dismissa e volta pra landing contextual.
+- Cancelar convite na waiting-approval cancela DE VERDADE (reject do
+  origin); quem cancelou/recusou nao ve o card "Voces seguem separados".
+  Timeout agora emite `table_merge.rejected` rejectedBy='timeout' no
+  expireOverdueRequests (antes era UPDATE silencioso e o FE esperava um
+  evento que nunca chegava); copy do card varia por motivo.
+- ai-service: intencao de NOVA juncao ("quero tentar juntar com outra
+  mesa") nao cai no rule layer de status — segue pro tool path/mapa;
+  cooldown ativo mantem o bloqueio amigavel de 10min (teste cobre os
+  dois). Status terminais respondem com proximo passo, nao eco cru.
+- Migrations: 032 ganhou ADD COLUMN IF NOT EXISTS (021 ja criava ends_at
+  — sequencia limpa 021→032 quebrava o boot fatal); 003 indexa
+  session_token so se a coluna existe (pos-039). ensureOtherTenant (e2e)
+  cria o tenant de isolamento REAL: todas as migrations + __migrations__
+  (o schema parcial via LIKE derrubava o boot fatal).
+
+Decisoes de Caleb em 2026-06-10 (rodada de perguntas abertas):
+
+- Reclamacoes customer: GET/list definitivos SAO canonicos — ja existem
+  (`GET /:slug/complaints/mine` + `GET /:slug/complaints/:id`,
+  SessionGuard) e o FE busca no mount + WS `complaint.responded/resolved`.
+  Hard reload e deep link funcionam; sessionStorage e so primeira pintura.
+- API 3001: direcao decidida = reverse proxy same-origin para nao expor a
+  API mantendo-a funcional (staff + WS ainda batem direto na 3001 —
+  implementacao pendente; o padrao do /api/proxy do web-staff e a base).
+- `migrate-tenants` FATAL: sem migrations os dados nao sao consistentes —
+  o `|| echo` foi removido do docker-compose; primeiro boot sem tenants ja
+  sai 0 no proprio script.
+- Geofence (localizacao/raio): UI vai no DASHBOARD DE OWNER futuro.
+- Tempo de espera do cliente: configurado pela COZINHA em `/cozinha/eu`
+  (card "Tempo de preparo · ETA do cliente") — migration 056
+  (`settings.kitchen_eta_min/max_minutes`), `GET/PATCH
+  /:slug/settings/kitchen-eta` (PATCH so cook|manager), e o motor de ETA
+  parte desse range, somando fila dinamica e encolhendo por estagio.
+- Roteamento garcom↔zona: NAO fazer — mostrar onde a mesa fica
+  (varanda etc.) ja atende; mantém alvo = ultimo que atendeu → turno
+  ativo → round-robin.
+
+Decisoes de Caleb em 2026-06-11 (fecharam as perguntas 1/2/3/7 + nova spec):
+
+- CallWaiterSheet 22/600: ACEITA como excecao do canon V20. Nao "corrigir".
+- `mode=expand`: SEMPRE so preenche o input (nunca autoenvia). E no envio,
+  frases diretas (chips/comandos como "ver cardapio", "me indica", "ver
+  meu pedido") devem resolver por REGEX/rule-layer no ai-service SEM
+  chamar o LLM — mantendo o front como esta (indicadores de tool/teclado
+  como se a IA respondesse) pra economizar tokens. So vai pro LLM o que
+  precisa de raciocinio real.
+- `assistant.staff_message_received`: mudar do room `session:<id>` (mesa
+  toda ve) para o room `customer:<customerId>` — SO o cliente que abriu a
+  reclamacao/conversa ve a resposta do gerente (cada um tem a propria
+  reclamacao). Emit hoje em assistant.service.ts (sendStaffToCustomer →
+  emitToSession) — trocar e ajustar o listener do FE.
+- Jest/Supertest em apps/api: SIM, formalizar (npm test unico; migrar
+  specs ts-node aos poucos).
+- Pendencia host UI: RESOLVER — superficie do host mostrando "Mesa X
+  pediu a recepcao" em tempo real (alerts kind host_assist_table + WS
+  host.assist_requested ja existem no backend).
+
+Spec nova do CONTEXTO DO ASSISTENTE (decisao 2026-06-11 — detalhada no
+prompts-codex/100-fable-contexto-assistente-chips-regex.md):
+
+- Problema: com pedido ativo, ir ao cardapio e voltar mostrava sempre o
+  contexto de cardapio e NUNCA o do pedido (ou vice-versa) — falta de
+  hierarquia visivel + mensagem unica disputada.
+- EYEBROW DE STATUS PERSISTENTE: com pedido ativo, a faixa acima da fala
+  da IA (hoje "ASSISTENTE · DE VOLTA") mostra SEMPRE o tempo do pedido
+  (ETA dinamica ja existente: eta_minutes_min/max) + um ponto/indicador
+  com o ESTADO do pedido (Em preparo / Pronto / A caminho — mesmos
+  labels/cores da tela Meu pedido), atualizando via WS order:status.
+- MENSAGEM DE CONTEXTO CONSUMIVEL (1x por evento): a mensagem de um
+  EVENTO (pos-pedido, pos-reclamacao, pos-pagamento, pos-chamado) aparece
+  UMA vez apos o evento; depois de exibida, o contexto fica liberado pros
+  contextos de navegacao (ex.: voltou do cardapio com pedido em preparo →
+  mensagem de cardapio, pois o status do pedido ja esta na eyebrow).
+  Persistir o "ja exibido" por sessao+evento (ha precedente parcial:
+  clearDeliveredContinuationHint no FE).
+- TESTES OBRIGATORIOS dessa matriz de interacoes (continuation service +
+  Playwright): cada acao do app → qual mensagem aparece, quantas vezes,
+  e o que a eyebrow mostra. Comportamentos esperados descritos no prompt
+  100.
+- CHIPS DE SUGESTAO CONTEXTUAIS: auditar todos os chips genericos
+  ("Sobremesa combina?", "Sugestao leve" etc.) que nao conversam com a
+  mensagem atual da IA; chips devem ser coerentes com o estado/ultima
+  fala. Cliques de chips e frases diretas roteiam por regex sem LLM (ver
+  acima), com bateria de testes de frases reais (positivas → rule layer;
+  negativas → LLM) pra garantir que o regex nao engole o que precisa de
+  raciocinio.
+- BUG a investigar junto: toast vermelho "1 error" aparecendo na landing
+  do assistente no iOS (screenshot 2026-06-11, sim iPhone 16) — achar a
+  origem (provavel erro silencioso de fetch na landing) e corrigir com
+  erro tratado/visivel correto.
+
+Implementacao do prompt 100 (2026-06-12, branch
+claude/compassionate-haslett-5b2f60 — regras novas que ficam):
+
+- Canon de status de pedido do customer vive em
+  `apps/web-customer/src/lib/orderStatus.ts` (labels/cores/formatEtaCompact)
+  — tela Meu pedido e eyebrow do assistente importam de la; NUNCA duplicar
+  o mapa nem hardcodar tempo. Eyebrow: `useActiveOrderStatus` (sem socket
+  proprio — refresh vem do socket da page + poll 60s).
+- Continuation consumivel: kinds de evento (pos_reclamacao, pagou,
+  abriu_pedido, chamou_garcom) sao 1x por evento via Redis
+  `continuation_shown:<tableSessionId>:<kind>:<eventId>` (TTL 4h). SO a
+  superficie `assistente` consome (POST /continuation com
+  `surface:'assistente'`); home le sem queimar; fallback do AI service NAO
+  consome; clientKindHint nao fura consumo; evento novo (id novo)
+  re-libera. A derivacao PULA consumidos e cai pro proximo da hierarquia.
+- Chips: mapa kind→chips vive no BACKEND (pools de continuation.py +
+  chips das tools). DEFAULT_SUGGESTIONS do FE são so fallback e todos os
+  payloads resolvem no rule-layer sem LLM. Cache do pool NAO fica stale
+  (decisao Caleb 2026-06-12): a chave do Redis carrega fingerprint dos
+  DEFAULTS (`continuation:<tenant>:<segment>:<sha>`; idem
+  `smart-sug:...`) — mudou o codigo, re-seed na primeira leitura; chaves
+  antigas morrem pelo TTL de 1h. Seeds (scripts/seed_*.py) usam o mesmo
+  `_key()`.
+- SEGURANCA ALIMENTAR (decisao Caleb 2026-06-12, validado com LLM local):
+  recomendacao com restricao/alergia ("sem camarao", "sem lactose",
+  "vegano", "alergico"...) NUNCA resolve no rule-layer generico
+  (`_DIETARY_RESTRICTION_RE` manda pro LLM, que recebe allergens por
+  item). E no apps/api, com dietary ativo (gluten_free hoje) a resposta e
+  SEMPRE re-gerada do filtro deterministico por allergens — o atalho
+  `alreadySpecific` deixava o texto do LLM passar e o qwen3-coder-30b
+  recomendou item COM gluten declarado ("Bruschetta, e sem gluten!").
+  Modelo nao tem voto em alergia; o dado declarado decide. Pendencias
+  registradas em qa-reports/prompt-100-contexto-assistente/
+  allergy-validation.md: vocabulario canonico de alergenos (seed mistura
+  leite/lactose, egg/ovo) e estender o filtro deterministico alem de
+  gluten quando houver enum canonico. Seeds de demo ganharam allergens
+  que faltavam (Bruschetta/Bolinho/Brownie) — dado e a fronteira de
+  seguranca.
+- Faixa de status FIXA no chat do assistente (decisao Caleb 2026-06-12):
+  com pedido ativo, strip sticky `order-status-strip` no topo do
+  transcript (mesmo conteudo da eyebrow, mono canon); ToolCallIndicator e
+  eyebrow por bolha continuam.
+- .env local: LLM_BASE_URL deve ser `http://host.docker.internal:1234/v1`
+  (default do compose) — IP de LAN hardcoded quebra quando a rede muda
+  (achado 2026-06-12: apontava pra 192.168.0.56 morta e TODA rota LLM
+  caia no fallback 503).
+- Rule-layer sem LLM: o contrato e a guarda `_is_direct_phrase` (≤6
+  palavras, sem negacao) + a bateria
+  services/ai-service/tests/test_rule_layer_phrases.py. TODA regra nova
+  entra na bateria (positivas → rule, negativas → LLM). "falar com
+  gerente" responde texto que CASA com _MANAGER_MESSAGE_PROMPT_RE — e
+  assim que o turno seguinte vira send_message_to_manager sem LLM.
+  mode=expand segue SO preenchendo o input.
+- Resposta do gerente: POST /assistant/staff-to-customer exige
+  `toCustomerId` (participante aprovado); persiste customer_id; WS
+  `assistant.staff_message_received` vai SO pro room
+  `customer:<toCustomerId>`; GET /assistant/history filtra staff msgs por
+  destinatario (legado customer_id NULL continua visivel pra mesa).
+- RESOLVIDO em 2026-06-12 (evolucao 1-b aprovada pelo Caleb): identidade
+  por PARTICIPANTE no WS. O gateway le o cookie httpOnly
+  `recognition_token` (individual por cliente; browser manda sozinho no
+  upgrade — cookie ignora porta) no handshake customer e resolve o
+  customerId REAL no schema do tenant (cache redis
+  `recognition_customer:<schema>:<token>` 5min); fallback continua o
+  payload compartilhado `session:<id>`. Cada participante entra no
+  proprio room `customer:<id>` e recebe a resposta privada do gerente em
+  realtime — e2e cobre o caso forte (mensagem pro HOST, que NAO e o
+  ultimo attach do payload). customerSocket manda withCredentials no
+  polling.
+- CORRIDA DO HANDSHAKE WS (achado 2026-06-12, pre-existente): o Socket.IO
+  entrega `join:*` ASSIM que a conexao abre, sem esperar o
+  handleConnection async — `join:customer` era rejeitado lendo
+  client.data ainda vazio, e `join:session` ENTRAVA em room sem auth
+  nenhuma (curto-circuito dos checks por tipo com authType undefined).
+  Fix: `client.data.authReady` (promise do handshake) aguardada em TODOS
+  os handlers de join + guard explicito de authType no join:session. As
+  rejeicoes de join:customer agora sao logadas server-side (warn).
+- Socket do customer e COMPARTILHADO:
+  `apps/web-customer/src/lib/customerSocket.ts` (refcount + linger 5s +
+  retry pos 'io server disconnect'). NAO criar `io()` novo em hook/page
+  customer — o gateway rate-limita 30 handshakes/60s POR IP (restaurante
+  inteiro sai pelo mesmo IP). useTableSocket/useCustomerHostEvents/
+  useComplaintEvents ja usam o shared (o useComplaintEvents antigo nem
+  autenticava — so queimava rate-limit).
+- Toast "1 error" (bug 2026-06-11) RESOLVIDO: era a chave de viewport
+  `interactive-widget` (Chromium-only) — WebKit loga console.error em
+  toda pagina e o dev overlay do Next 14 conta console.error no badge.
+  NAO reintroduzir a chave (teclado ja e tratado via visualViewport).
+  Segunda fonte (WS fechado em pleno handshake a cada navegacao) sumiu
+  com o socket compartilhado.
+- apps/api tem Jest/Supertest: `npm test --workspace @restaurant/api`
+  roda `*.test.ts`; `*.spec.ts` legados sao ts-node manuais (migracao
+  gradual — padrao em apps/api/TESTING.md; template supertest em
+  continuation.controller.test.ts).
+- Host: WS `host.assist_requested` esta em DEFAULT_HOST_EVENTS; inbox
+  /host/inbox inclui alerts `host_assist_table` abertos como kind
+  `host_assist` ("Mesa X pediu a recepcao") com beep + badge AGORA +
+  resolve real via POST /alerts/:id/resolve (host pode agir — pattern
+  'host' em ROLE_ALERT_PATTERNS).
+- E2E novo: e2e/specs/assistente-context.spec.ts (serial; matriz do
+  prompt 100 §7 + rule-layer UX + privacidade). Higiene de beforeAll:
+  alem de throttle:*, limpar continuation_shown:*, customers:welcome:*,
+  customers:identify:* (locks de 15min de runs anteriores derrubam o
+  newSession). PATCH /orders/:id/status NAO aceita in_transit (so o
+  fluxo de entrega do garcom) — ready→delivered direto e valido.

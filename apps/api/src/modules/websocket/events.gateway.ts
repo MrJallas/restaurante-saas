@@ -67,6 +67,16 @@ interface AuthedSocket extends Socket {
      * key is valid.
      */
     staffTenantSlug?: string;
+    /**
+     * Promise do handshake async (2026-06-12): o Socket.IO entrega
+     * `join:*` assim que a conexão abre, SEM esperar o handleConnection
+     * async terminar — os handlers de join precisam `await` isto antes
+     * de validar, senão leem `authType`/`customerId` ainda não
+     * carimbados (era a causa do `join:customer` rejeitado com
+     * connCustomer=none, e deixava `join:session` entrar em room sem
+     * auth nenhuma pelo curto-circuito dos checks por tipo).
+     */
+    authReady?: Promise<void>;
   };
 }
 
@@ -106,6 +116,52 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .toString()
       .split(',')[0]
       .trim();
+  }
+
+  /**
+   * Identidade por PARTICIPANTE no handshake customer (decisão Caleb
+   * 2026-06-12, evolução 1-b do prompt 100): o token de sessão é
+   * COMPARTILHADO pela mesa (token == tableSessionId) e o payload Redis
+   * só guarda o customerId do ÚLTIMO welcome/identify — `join:customer`
+   * autenticava só esse último e o realtime privado (resposta do
+   * gerente) não chegava pros demais. O cookie `recognition_token`
+   * (httpOnly, individual por cliente, enviado automaticamente no
+   * upgrade do WS — cookies ignoram porta e o site é o mesmo) prova quem
+   * É a pessoa naquele device. Quando presente e válido no schema do
+   * tenant da sessão, ele DEFINE o customerId da conexão; sem ele, cai
+   * no fallback do payload compartilhado (comportamento anterior).
+   */
+  private async resolveRecognizedCustomer(
+    client: AuthedSocket,
+    schemaName: string | undefined,
+  ): Promise<string | null> {
+    try {
+      if (!schemaName || !/^[a-z_][a-z0-9_]{0,62}$/.test(schemaName)) return null;
+      const rawCookie = client.handshake.headers.cookie;
+      if (!rawCookie) return null;
+      const match = /(?:^|;\s*)recognition_token=([^;]+)/.exec(rawCookie);
+      if (!match) return null;
+      const token = decodeURIComponent(match[1]);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token)) {
+        return null;
+      }
+      const cacheKey = `recognition_customer:${schemaName}:${token}`;
+      const cached = await this.redis.get(cacheKey);
+      if (cached) return cached;
+      const rows = (await this.dataSource.query(
+        `SELECT id FROM "${schemaName}".customers WHERE recognition_token = $1 LIMIT 1`,
+        [token],
+      )) as Array<{ id: string }>;
+      const customerId = rows[0]?.id ?? null;
+      if (customerId) {
+        await this.redis.set(cacheKey, customerId, 300);
+      }
+      return customerId;
+    } catch {
+      // Cookie é um upgrade de identidade — falha aqui nunca derruba o
+      // handshake; só cai no fallback do payload compartilhado.
+      return null;
+    }
   }
 
   /**
@@ -152,6 +208,22 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   async handleConnection(client: AuthedSocket) {
+    // O trabalho async fica em authenticateConnection; a promise vai pro
+    // client.data pra que os handlers de join aguardem o carimbo de
+    // identidade antes de validar (ver AuthedSocket.authReady).
+    const ready = this.authenticateConnection(client).catch((err) => {
+      this.logger.warn(`WS handshake failed: ${(err as Error).message}`);
+      try {
+        client.disconnect(true);
+      } catch {
+        /* ignore */
+      }
+    });
+    client.data.authReady = ready;
+    await ready;
+  }
+
+  private async authenticateConnection(client: AuthedSocket) {
     // Round 16 (B-NEW-55): rate-limit handshake por IP — atacante sem
     // credentials válidas conseguia bater handshake centenas de vezes
     // por segundo (CPU spend em timingSafeEqual + Redis get). 30
@@ -239,11 +311,23 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const session = safeJsonParse<{
           sessionId: string;
           customerId?: string;
+          schemaName?: string;
         }>(data);
         if (session) {
           client.data.authType = 'session';
           client.data.sessionId = session.sessionId;
-          if (session.customerId) {
+          // Identidade por PARTICIPANTE (2026-06-12): o cookie
+          // recognition_token (individual) vence o customerId do payload
+          // compartilhado da mesa (último welcome/identify). É o que
+          // permite cada cliente entrar no PRÓPRIO room `customer:<id>`
+          // e receber a resposta privada do gerente em realtime.
+          const recognizedCustomerId = await this.resolveRecognizedCustomer(
+            client,
+            session.schemaName,
+          );
+          if (recognizedCustomerId) {
+            client.data.customerId = recognizedCustomerId;
+          } else if (session.customerId) {
             client.data.customerId = session.customerId;
           }
           this.logger.log(`Session client connected: ${client.id}`);
@@ -283,10 +367,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    *    diferente de data.staffId.
    */
   @SubscribeMessage('join:tenant')
-  handleJoinTenant(
+  async handleJoinTenant(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { slug: string; role: string },
   ) {
+    await client.data.authReady;
     if (client.data.authType !== 'staff') {
       client.emit('error', { message: 'Staff auth required for tenant rooms' });
       return;
@@ -315,6 +400,16 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { sessionId: string },
   ) {
+    await client.data.authReady;
+    // 2026-06-12: handshake reprovado/ainda sem authType NUNCA entra em
+    // room. Antes, os checks por tipo curto-circuitavam com authType
+    // undefined e o join:session passava sem auth nenhuma (corrida do
+    // handshake async — mesma família do join:customer rejeitado).
+    if (!client.data.authType) {
+      client.emit('error', { message: 'Authentication required' });
+      return;
+    }
+
     // Customer: cross-check próprio sessionId.
     if (client.data.authType === 'session' && client.data.sessionId !== data.sessionId) {
       client.emit('error', { message: 'Session mismatch' });
@@ -365,6 +460,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { customerId: string },
   ) {
+    await client.data.authReady;
     if (client.data.authType === 'staff') {
       // Round 15 (P1-NEW-1 round14): staff só entra em customer room
       // se o customer pertence ao tenant carimbado no handshake. Antes
@@ -388,6 +484,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
     if (client.data.authType !== 'session' || client.data.customerId !== data.customerId) {
+      // Logado server-side de propósito: rejeição silenciosa escondeu o
+      // bug do realtime privado por dias (prompt 100 rodada 2).
+      this.logger.warn(
+        `join:customer rejected for ${client.id}: authType=${client.data.authType} ` +
+          `connCustomer=${client.data.customerId ?? 'none'} requested=${data.customerId}`,
+      );
       client.emit('error', { message: 'Customer mismatch' });
       return;
     }
@@ -401,10 +503,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * manager receiving complaint escalations).
    */
   @SubscribeMessage('join:staff')
-  handleJoinStaff(
+  async handleJoinStaff(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { staffId: string },
   ) {
+    await client.data.authReady;
     if (client.data.authType !== 'staff') {
       client.emit('error', { message: 'Staff auth required' });
       return;
@@ -432,10 +535,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * fan-out from leaking to unauthenticated peers).
    */
   @SubscribeMessage('join:manager')
-  handleJoinManager(
+  async handleJoinManager(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { managerId: string },
   ) {
+    await client.data.authReady;
     if (client.data.authType !== 'staff') {
       client.emit('error', { message: 'Staff auth required' });
       return;
@@ -507,6 +611,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       deliveryId: string;
       tableLabel: string;
       tableCode: string;
+      zoneName?: string | null;
       targetWaiterId: string | null;
       targetWaiterName?: string | null;
     },
@@ -570,6 +675,27 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(`tenant:${slug}:manager`).emit('kitchen:priority_response', payload);
   }
 
+  /**
+   * Cliente pediu a RECEPÇÃO na mesa (ex.: ajuda com junção de mesas pelo
+   * assistente). Room do papel host — garçom não é o destinatário aqui
+   * (code-review dos vídeos 2026-06-10: o botão "Chamar recepcionista"
+   * abria o sheet de garçom).
+   */
+  emitHostAssistRequested(
+    slug: string,
+    data: {
+      tableLabel: string | null;
+      tableCode: string | null;
+      tableSessionId: string;
+      reason?: string | null;
+    },
+  ) {
+    this.server.to(`tenant:${slug}:host`).emit('host.assist_requested', {
+      ...data,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   emitWaiterCall(
     slug: string,
     callData: {
@@ -598,6 +724,16 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   emitToSession(sessionId: string, event: string, data: unknown) {
     this.server.to(`session:${sessionId}`).emit(event, data);
+  }
+
+  /**
+   * Generic single-customer emitter (`customer:<id>` room). Usado quando o
+   * evento é PRIVADO do destinatário — ex.: resposta do gerente no
+   * assistente (decisão Caleb 2026-06-11: `assistant.staff_message_received`
+   * NÃO vai mais pro session room, só o cliente que abriu a conversa vê).
+   */
+  emitToCustomer(customerId: string, event: string, data: unknown) {
+    this.server.to(`customer:${customerId}`).emit(event, data);
   }
 
   /**

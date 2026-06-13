@@ -10,7 +10,16 @@ import { useRouter } from 'next/navigation';
 import { useG, G_FONT, MONO_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GIconBtn, GBottomNav } from '../../components/waiter/Primitives';
-import { listPendingCalls, type WaiterCallSummary } from '../../lib/api/waiter';
+import { readStaffSession } from '../../lib/api';
+import {
+  deliveryTimestamp,
+  isDeliveryClaimedBy,
+  isDeliveryForWaiter,
+  listPendingCalls,
+  listPendingDeliveries,
+  type PendingDelivery,
+  type WaiterCallSummary,
+} from '../../lib/api/waiter';
 
 type CallType = 'pediu-conta' | 'chamou-garcom' | 'pronto-cozinha' | 'mais-bebida';
 type Urgency = 'high' | 'med' | 'low';
@@ -23,6 +32,10 @@ interface CallRow {
   sub: string;
   ts: string;
   urgency: Urgency;
+  /** Presente quando a row é uma entrega (handoff cozinha/bar) — roteia pra /waiter/entrega. */
+  deliveryOrderId?: string;
+  /** Entrega direcionada/claimed pra mim — alimenta o filtro "Minhas mesas". */
+  mine?: boolean;
 }
 
 const COPY: Record<CallType, { label: string; tint: string; icon: (s?: number) => ReactNode }> = {
@@ -82,6 +95,36 @@ function mapCall(row: WaiterCallSummary): CallRow {
   };
 }
 
+function mapDelivery(row: PendingDelivery, staffId: string | null): CallRow {
+  const itemsCount = row.items.reduce((sum, it) => sum + it.quantity, 0);
+  const inTransit = row.delivery_status === 'claimed';
+  // Predicado canônico (lib/api/waiter) — variantes locais divergiam entre
+  // banner/home/aba e o portador exibido era o ALVO original, não quem
+  // claimou (code-review).
+  const mine =
+    isDeliveryForWaiter(row, staffId) || isDeliveryClaimedBy(row, staffId);
+  const carrierName = row.claimed_by_name ?? row.target_waiter_name;
+  const parts = [
+    `${itemsCount} ${itemsCount === 1 ? 'item' : 'itens'} prontos`,
+    row.zone_name ?? undefined,
+    inTransit ? `em trânsito${carrierName ? ` · ${carrierName}` : ''}` : undefined,
+  ].filter(Boolean);
+  // Timestamp estável (called_at → claimed_at → created_at): o fallback
+  // antigo re-stampava now() a cada poll e a urgência nunca escalava.
+  const referenceAt = deliveryTimestamp(row);
+  return {
+    id: `delivery:${row.delivery_id}`,
+    type: 'pronto-cozinha',
+    tableNumber: tableNumberFromCode({ table_code: row.table_code, table_label: row.table_label } as WaiterCallSummary),
+    partySize: row.party_size || undefined,
+    sub: parts.join(' · '),
+    ts: relativeTime(referenceAt),
+    urgency: urgencyFromCreatedAt(referenceAt),
+    deliveryOrderId: row.order_id,
+    mine,
+  };
+}
+
 export function ScreenWaiterCalls({ dark = false, tenantSlug }: { dark?: boolean; tenantSlug: string }) {
   const C = useG(dark);
   const router = useRouter();
@@ -92,12 +135,21 @@ export function ScreenWaiterCalls({ dark = false, tenantSlug }: { dark?: boolean
 
   useEffect(() => {
     let cancelled = false;
+    const staffId = readStaffSession()?.staffId ?? null;
     const load = async (showLoading = false) => {
       if (showLoading) setLoading(true);
       try {
-        const rows = await listPendingCalls(tenantSlug);
+        const [rows, deliveries] = await Promise.all([
+          listPendingCalls(tenantSlug),
+          // Entregas pendentes (handoff TV cozinha/bar) entram como
+          // 'pronto-cozinha' — antes a aba "Pronto" era código morto.
+          listPendingDeliveries(tenantSlug).catch(() => [] as PendingDelivery[]),
+        ]);
         if (cancelled) return;
-        setCalls(rows.map(mapCall));
+        setCalls([
+          ...deliveries.map((d) => mapDelivery(d, staffId)),
+          ...rows.map(mapCall),
+        ]);
         setErrorMsg(null);
       } catch (error) {
         console.error('[waiter-calls] list failed', error);
@@ -118,11 +170,15 @@ export function ScreenWaiterCalls({ dark = false, tenantSlug }: { dark?: boolean
   const filtered = calls.filter((c) => {
     if (filter === 'urgentes') return c.urgency === 'high';
     if (filter === 'pronto') return c.type === 'pronto-cozinha';
-    if (filter === 'minhas') return false; // requires waiter-table assignment data
+    if (filter === 'minhas') return c.mine === true;
     return true;
   });
 
   const open = (c: CallRow) => {
+    if (c.deliveryOrderId) {
+      router.push(`/waiter/entrega/${c.deliveryOrderId}?tenant=${tenantSlug}`);
+      return;
+    }
     const qs = new URLSearchParams({
       type: c.type,
       tenant: tenantSlug,
@@ -135,7 +191,7 @@ export function ScreenWaiterCalls({ dark = false, tenantSlug }: { dark?: boolean
     { id: 'todos', lbl: 'Todos', count: calls.length },
     { id: 'urgentes', lbl: 'Urgentes', count: calls.filter((c) => c.urgency === 'high').length },
     { id: 'pronto', lbl: 'Pronto', count: calls.filter((c) => c.type === 'pronto-cozinha').length },
-    { id: 'minhas', lbl: 'Minhas mesas', count: 0 },
+    { id: 'minhas', lbl: 'Minhas mesas', count: calls.filter((c) => c.mine).length },
   ];
 
   return (

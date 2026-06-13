@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { PillButton } from '../../components/ui/PillButton';
 import { useSession } from '../../hooks/useSession';
-import { useUIState } from '../../providers/UIStateProvider';
 import { useCustomerHostEvents } from '../../hooks/useCustomerHostEvents';
 import { ScreenCustomerMergeCooldown } from './ScreenCustomerMergeCooldown';
+import { rejectTableMerge, requestHostAssist } from '../../lib/api/customer-host';
 
 export type WaitingMode = 'late-arrival' | 'merge-target' | 'merge-origin';
 export type WaitingState = 'waiting' | 'approved' | 'rejected' | 'expired' | 'cooldown';
@@ -61,7 +61,6 @@ export function ScreenCustomerWaitingApproval({
   retryEnabled = true,
 }: ScreenCustomerWaitingApprovalProps) {
   const router = useRouter();
-  const { openCallWaiterSheet } = useUIState();
   const { sessionId, customerId } = useSession();
 
   const [state, setState] = useState<WaitingState>('waiting');
@@ -72,6 +71,44 @@ export function ScreenCustomerWaitingApproval({
     targetTableNumber?: number | null;
     message?: string | null;
   } | null>(null);
+  // Bugfix funcional (vídeos 2026-06-10) — sem mudança visual no bloco V20:
+  // "Chamar recepcionista" abria o sheet do GARÇOM e "Cancelar pedido" era
+  // só router.back() (o request seguia pending e expirava como timeout).
+  const [hostAssist, setHostAssist] = useState<'idle' | 'sent' | 'error'>('idle');
+  const [cancelBusy, setCancelBusy] = useState(false);
+
+  const callHostToTable = async () => {
+    try {
+      await requestHostAssist(slug, 'Ajuda com junção de mesas');
+      setHostAssist('sent');
+    } catch {
+      setHostAssist('error');
+    }
+  };
+
+  const cancelMergeRequest = async () => {
+    // Cancelamento REAL do convite (origin host = lado 'a'); o handler do
+    // assistente filtra o card pra quem cancelou. Late-arrival não tem
+    // cancel customer-side — mantém o back() de antes.
+    if (mode === 'late-arrival' || !requestId) {
+      router.back();
+      return;
+    }
+    if (cancelBusy) return;
+    setCancelBusy(true);
+    try {
+      await rejectTableMerge(requestId, {
+        slug,
+        decidedByCustomerId: customerId ?? undefined,
+        reason: 'cancelled_by_requester',
+      });
+      router.push(`/${slug}/assistente`);
+    } catch {
+      // Sem desfecho confirmado → mantém a tela; o WS autoritativo decide.
+      setCancelBusy(false);
+      setHostAssist('error');
+    }
+  };
 
   // ─── Countdown ─────────────────────────────────────────────────────────
   // Keep recomputing seconds left until the deadline; fall back to "60 s"
@@ -251,10 +288,8 @@ export function ScreenCustomerWaitingApproval({
           targetTableNumber={cooldown.targetTableNumber}
           cooldownEndsAt={cooldown.cooldownEndsAt}
           message={cooldown.message}
-          onCallHost={openCallWaiterSheet}
-          onTryAnother={() =>
-            router.push(`/${slug}/assistente?prefill=quero%20tentar%20outra%20mesa`)
-          }
+          onCallHost={callHostToTable}
+          onTryAnother={() => router.push(`/${slug}/assistente?mergeRetry=1`)}
           onContinueHere={() => router.push(`/${slug}/assistente`)}
         />
       </main>
@@ -318,10 +353,10 @@ export function ScreenCustomerWaitingApproval({
           {state === 'waiting' && (
             <PillButton
               variant="outline"
-              onClick={() => router.back()}
+              onClick={cancelMergeRequest}
               className="mt-7"
             >
-              Cancelar pedido
+              {cancelBusy ? 'Cancelando…' : 'Cancelar pedido'}
             </PillButton>
           )}
 
@@ -330,20 +365,27 @@ export function ScreenCustomerWaitingApproval({
               <PillButton
                 variant="filled"
                 fullWidth
-                onClick={openCallWaiterSheet}
+                onClick={callHostToTable}
+                disabled={hostAssist === 'sent'}
               >
-                Chamar recepcionista
+                {hostAssist === 'sent' ? 'Recepção avisada ✓' : 'Chamar recepcionista'}
               </PillButton>
               {retryEnabled && (
                 <PillButton
                   variant="outline"
                   fullWidth
-                  onClick={() => window.location.reload()}
+                  onClick={() => router.push(`/${slug}/assistente?mergeRetry=1`)}
                 >
                   Tentar de novo
                 </PillButton>
               )}
             </div>
+          )}
+
+          {hostAssist === 'error' && (
+            <p role="status" className="mt-3 text-[12px] font-medium text-mute">
+              Não consegui avisar a recepção agora — tente de novo.
+            </p>
           )}
         </div>
       </div>

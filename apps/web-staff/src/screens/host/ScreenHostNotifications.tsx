@@ -7,6 +7,9 @@ import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
 import { listHostInbox } from '../../lib/api/host';
+import { alertsApi } from '../../lib/api/manager';
+import { useHostEvents } from '../../hooks/useHostEvents';
+import { playBeep } from '../../lib/sound';
 import { useStaffTheme } from '../../lib/theme';
 
 interface ScreenHostNotificationsProps {
@@ -21,7 +24,11 @@ const KIND_LABEL: Record<HostInboxKind, string> = {
   complaint: 'Reclamação',
   zone_pause_started: 'Pausa iniciada',
   zone_pause_ended: 'Pausa encerrada',
+  host_assist: 'Pediu a recepção',
 };
+
+/** Janela em que um pedido de recepção ainda ganha o destaque "AGORA". */
+const FRESH_ASSIST_MS = 2 * 60 * 1000;
 
 export const ScreenHostNotifications: React.FC<ScreenHostNotificationsProps> = ({
   tenantSlug,
@@ -33,6 +40,7 @@ export const ScreenHostNotifications: React.FC<ScreenHostNotificationsProps> = (
   const [items, setItems] = useState<HostInboxItemDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasFriendlyError, setHasFriendlyError] = useState(false);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   const refresh = React.useCallback(async () => {
     if (!tenantSlug) {
@@ -56,6 +64,39 @@ export const ScreenHostNotifications: React.FC<ScreenHostNotificationsProps> = (
     const tid = setInterval(refresh, 15_000);
     return () => clearInterval(tid);
   }, [refresh]);
+
+  // Realtime "Mesa X pediu a recepção" (prompt 100 §5.5): o backend emite
+  // `host.assist_requested` no room tenant:slug:host. Beep + refresh
+  // imediato — sem esperar o polling de 15s.
+  const { on } = useHostEvents({ tenantSlug });
+  useEffect(
+    () =>
+      on((evt) => {
+        if (evt.event !== 'host.assist_requested') return;
+        playBeep(620);
+        refresh();
+      }),
+    [on, refresh],
+  );
+
+  // "Resolver" do pedido de recepção — POST /:slug/alerts/:id/resolve
+  // (mesmo backend dos alerts do manager; o papel host pode agir em
+  // alerts host_* via ensureRoleCanActOnAlert).
+  const resolveAssist = React.useCallback(
+    async (alertId: string) => {
+      if (!tenantSlug || resolvingId) return;
+      setResolvingId(alertId);
+      try {
+        await alertsApi(tenantSlug).resolve(alertId);
+        await refresh();
+      } catch {
+        setHasFriendlyError(true);
+      } finally {
+        setResolvingId(null);
+      }
+    },
+    [tenantSlug, resolvingId, refresh],
+  );
 
   const grouped = useMemo(() => {
     const today = new Date().toDateString();
@@ -95,13 +136,25 @@ export const ScreenHostNotifications: React.FC<ScreenHostNotificationsProps> = (
           <>
             <Section title="Hoje" count={grouped.now.length} dark={dark}>
               {grouped.now.map((item) => (
-                <NotificationRow key={item.id} item={item} dark={dark} />
+                <NotificationRow
+                  key={item.id}
+                  item={item}
+                  dark={dark}
+                  resolving={resolvingId === item.refId}
+                  onResolve={item.kind === 'host_assist' ? resolveAssist : undefined}
+                />
               ))}
             </Section>
             {grouped.previous.length > 0 && (
               <Section title="Anteriores" count={grouped.previous.length} dark={dark}>
                 {grouped.previous.map((item) => (
-                  <NotificationRow key={item.id} item={item} dark={dark} />
+                  <NotificationRow
+                    key={item.id}
+                    item={item}
+                    dark={dark}
+                    resolving={resolvingId === item.refId}
+                    onResolve={item.kind === 'host_assist' ? resolveAssist : undefined}
+                  />
                 ))}
               </Section>
             )}
@@ -149,11 +202,26 @@ function Section({
   );
 }
 
-function NotificationRow({ item, dark }: { item: HostInboxItemDto; dark: boolean }) {
+function NotificationRow({
+  item,
+  dark,
+  resolving,
+  onResolve,
+}: {
+  item: HostInboxItemDto;
+  dark: boolean;
+  resolving?: boolean;
+  /** Presente só pra kinds acionáveis (host_assist) — CTA real de resolve. */
+  onResolve?: (alertId: string) => void;
+}) {
   const C = useG(dark);
   const tone = toneForKind(item.kind);
+  // Destaque do pedido de recepção recém-chegado: badge AGORA + sombra.
+  const isFreshAssist =
+    item.kind === 'host_assist' && Date.now() - Date.parse(item.at) < FRESH_ASSIST_MS;
   return (
     <div
+      data-testid={item.kind === 'host_assist' ? 'host-assist-row' : undefined}
       style={{
         padding: 12,
         borderRadius: 12,
@@ -163,6 +231,7 @@ function NotificationRow({ item, dark }: { item: HostInboxItemDto; dark: boolean
         display: 'flex',
         gap: 12,
         alignItems: 'flex-start',
+        boxShadow: isFreshAssist ? `0 0 0 2px ${tone.border}` : undefined,
       }}
     >
       <div
@@ -185,6 +254,22 @@ function NotificationRow({ item, dark }: { item: HostInboxItemDto; dark: boolean
           <div style={{ fontSize: 10, color: tone.dot, fontWeight: 800, textTransform: 'uppercase' }}>
             {KIND_LABEL[item.kind]}
           </div>
+          {isFreshAssist && (
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 800,
+                letterSpacing: 0.6,
+                textTransform: 'uppercase',
+                color: '#fff',
+                background: tone.dot,
+                borderRadius: 100,
+                padding: '2px 7px',
+              }}
+            >
+              Agora
+            </span>
+          )}
           <div style={{ marginLeft: 'auto', color: C.faint, fontSize: 11, fontWeight: 700 }}>
             {formatRelative(item.at)}
           </div>
@@ -196,6 +281,27 @@ function NotificationRow({ item, dark }: { item: HostInboxItemDto; dark: boolean
           <div style={{ fontSize: 12, color: C.mute, lineHeight: 1.4, marginTop: 2 }}>
             {item.subtitle}
           </div>
+        )}
+        {onResolve && (
+          <button
+            type="button"
+            onClick={() => onResolve(item.refId)}
+            disabled={resolving}
+            style={{
+              all: 'unset',
+              cursor: resolving ? 'default' : 'pointer',
+              marginTop: 10,
+              padding: '7px 14px',
+              borderRadius: 100,
+              background: resolving ? C.surface : C.ink,
+              color: resolving ? C.faint : C.bg,
+              fontSize: 12,
+              fontWeight: 700,
+              border: `1.3px solid ${resolving ? C.borderSoft : C.ink}`,
+            }}
+          >
+            {resolving ? 'Resolvendo…' : 'Marcar resolvido'}
+          </button>
         )}
       </div>
     </div>
@@ -247,6 +353,9 @@ function EmptyState({ dark, hasFriendlyError }: { dark: boolean; hasFriendlyErro
 }
 
 function toneForKind(kind: HostInboxKind): { dot: string; bg: string; border: string } {
+  // Pedido de recepção é o item acionável do inbox — tom mais quente que
+  // os passivos pra puxar o olho (destaque do prompt 100 §5.5).
+  if (kind === 'host_assist') return { dot: '#B4541E', bg: '#FFF1E8', border: '#F2CBB1' };
   if (kind === 'complaint') return { dot: '#C43A3A', bg: '#FFF1F1', border: '#F4C7C7' };
   if (kind === 'late_arrival_consumed' || kind === 'merge_consumed') {
     return { dot: '#D98E2B', bg: '#FFF7E8', border: '#F0DCB6' };
@@ -255,6 +364,7 @@ function toneForKind(kind: HostInboxKind): { dot: string; bg: string; border: st
 }
 
 function iconForKind(kind: HostInboxKind): React.ReactElement {
+  if (kind === 'host_assist') return Icon.bell(17);
   if (kind === 'complaint') return Icon.bell(17);
   if (kind === 'merge_consumed') return Icon.table(17);
   if (kind === 'zone_pause_started' || kind === 'zone_pause_ended') return Icon.pause(17);

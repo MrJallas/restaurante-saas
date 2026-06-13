@@ -11,9 +11,13 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: 'cover',
   themeColor: '#ffffff',
-  // iOS 16.4+ redimensiona o layout quando o teclado abre em vez de empurrar
-  // a pagina toda. Em versoes antigas cai no fallback do visualViewport.
-  interactiveWidget: 'resizes-content',
+  // NÃO reintroduzir `interactiveWidget`: a chave `interactive-widget` é
+  // Chromium-only — o WebKit/iOS não a reconhece e loga console.error em
+  // TODA página ("Viewport argument key \"interactive-widget\" not
+  // recognized"), que era a origem do toast "1 error" do dev overlay na
+  // landing do assistente (bug 2026-06-11, prompt 100 §6). O ajuste de
+  // teclado já é feito via visualViewport (SoftInput/mesa page) nos dois
+  // engines.
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

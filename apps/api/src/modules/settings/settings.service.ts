@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 
 export interface PublicSettings {
@@ -66,5 +66,65 @@ export class SettingsService {
     }
 
     return value;
+  }
+
+  // ── Tempo de preparo base (ETA do cliente) ────────────────────────────
+  // Decisão Caleb 2026-06-10 (Q9): o líder da cozinha configura o range
+  // base em /cozinha/eu; o motor de ETA (orders.service) parte dele e
+  // ajusta dinamicamente com fila/prioridade/estágio. NULL = defaults.
+
+  async getKitchenEta(): Promise<{
+    kitchenEtaMinMinutes: number | null;
+    kitchenEtaMaxMinutes: number | null;
+  }> {
+    const rows = (await this.tenantConn.query(
+      `SELECT kitchen_eta_min_minutes, kitchen_eta_max_minutes FROM settings LIMIT 1`,
+    )) as Array<{
+      kitchen_eta_min_minutes: number | null;
+      kitchen_eta_max_minutes: number | null;
+    }>;
+    return {
+      kitchenEtaMinMinutes: rows[0]?.kitchen_eta_min_minutes ?? null,
+      kitchenEtaMaxMinutes: rows[0]?.kitchen_eta_max_minutes ?? null,
+    };
+  }
+
+  /**
+   * Atualiza o range base. Permissão: cozinha (cook) ou gerente — o
+   * x-staff-id já passou pelo requireActiveStaffId no controller; aqui
+   * validamos o papel no DB (mesmo padrão do HostOrManagerGuard).
+   */
+  async updateKitchenEta(
+    staffId: string,
+    minMinutes: number,
+    maxMinutes: number,
+  ): Promise<{ kitchenEtaMinMinutes: number; kitchenEtaMaxMinutes: number }> {
+    const staffRows = (await this.tenantConn.query(
+      `SELECT role FROM staff WHERE id = $1 AND is_active = true`,
+      [staffId],
+    )) as Array<{ role: string }>;
+    const role = staffRows[0]?.role;
+    if (role !== 'cook' && role !== 'manager') {
+      throw new ForbiddenException('Apenas cozinha ou gerente alteram o tempo de preparo.');
+    }
+    if (
+      !Number.isInteger(minMinutes) ||
+      !Number.isInteger(maxMinutes) ||
+      minMinutes < 1 ||
+      maxMinutes > 120 ||
+      minMinutes > maxMinutes
+    ) {
+      throw new BadRequestException(
+        'Tempo de preparo inválido: use minutos inteiros, 1–120, mínimo ≤ máximo.',
+      );
+    }
+    await this.tenantConn.query(
+      `UPDATE settings
+          SET kitchen_eta_min_minutes = $1,
+              kitchen_eta_max_minutes = $2,
+              updated_at = now()`,
+      [minMinutes, maxMinutes],
+    );
+    return { kitchenEtaMinMinutes: minMinutes, kitchenEtaMaxMinutes: maxMinutes };
   }
 }

@@ -5,7 +5,12 @@ import { BlinkingCursor } from '../ui/BlinkingCursor';
 
 interface HomeHeroProps {
   message: string | ReactNode;
-  kicker?: string;
+  /**
+   * Eyebrow acima da fala da IA. Aceita ReactNode pra eyebrow de status do
+   * pedido (prompt 100 — `Assistente · ● Em preparo · 5–9 min`); a
+   * tipografia continua a mesma (o container uppercase/tracking não muda).
+   */
+  kicker?: ReactNode;
   onTypingComplete?: () => void;
   animate?: boolean;
 }

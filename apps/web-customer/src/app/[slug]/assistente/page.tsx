@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { apiPost, apiGet } from '../../../lib/api';
+import { apiPost, apiGet, ApiRequestError } from '../../../lib/api';
 import { clearDeliveredContinuationHint } from '../../../lib/continuationHints';
 import { recordCustomerEvent } from '../../../lib/customerEvents';
 import { listMessages } from '../../../lib/api/chat-history';
@@ -12,6 +12,7 @@ import {
   approveTableMerge,
   createTableMergeRequest,
   rejectTableMerge,
+  requestHostAssist,
 } from '../../../lib/api/customer-host';
 import type {
   ChatMessageDto,
@@ -28,6 +29,10 @@ import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
 import { useTableMerge } from '../../../hooks/useTableMerge';
 import { useTableSocket } from '../../../hooks/useTableSocket';
+import {
+  useActiveOrderStatus,
+  type ActiveOrderStatus,
+} from '../../../hooks/useActiveOrderStatus';
 import { useDraftOrder } from '../../../providers/DraftOrderProvider';
 import { AppShell } from '../../../components/layout/AppShell';
 import { Bubble } from '../../../components/ui/Bubble';
@@ -369,32 +374,57 @@ function filterLastVisitItems(
 // quando a tool dispatched não retornou chips canônicos. Backend devolve
 // `chips` quando vier de uma tool com chips populated; aí esses defaults
 // somem.
+//
+// Prompt 100 (chips contextuais): os genéricos desconectados ("Sobremesa
+// combina?", "Pratos com camarão") saíram — o fallback agora espelha a
+// fala idle da landing ("Posso ajudar com sugestões, ingredientes, pedido
+// e pagamento") e todos os payloads resolvem no rule-layer sem LLM.
 const DEFAULT_SUGGESTIONS: ChipCanon[] = [
   {
-    id: 'default-leve',
-    label: 'Sugestão leve',
+    id: 'default-cardapio',
+    label: 'Ver cardápio',
     action: 'send' as const,
-    payload: 'me indica algo leve',
+    payload: 'quero ver o cardápio',
   },
   {
-    id: 'default-sobremesa',
-    label: 'Sobremesa combina?',
+    id: 'default-indica',
+    label: 'Me indica algo',
     action: 'send' as const,
-    payload: 'que sobremesa combina?',
+    payload: 'me indica algo',
   },
   {
-    id: 'default-camarao',
-    label: 'Pratos com camarão',
+    id: 'default-garcom',
+    label: 'Chamar garçom',
     action: 'send' as const,
-    payload: 'tem prato com camarão?',
+    payload: 'chama o garçom',
   },
   {
-    id: 'default-pagar',
-    label: 'Como pagar?',
+    id: 'default-conta',
+    label: 'Pedir a conta',
     action: 'send' as const,
-    payload: 'como pago a conta?',
+    payload: 'quero pagar a conta',
   },
 ];
+
+/**
+ * Eyebrow de status do pedido (prompt 100 §1): com pedido ativo, a faixa
+ * acima da fala da IA mostra SEMPRE o estado canon (labels/cores da tela
+ * Meu pedido) + a ETA dinâmica — `Assistente · ● Em preparo · 5–9 min`.
+ * Sem pedido ativo o caller renderiza o conteúdo padrão atual.
+ */
+function AssistantOrderEyebrow({ active }: { active: ActiveOrderStatus }) {
+  return (
+    <span data-testid="order-status-eyebrow">
+      Assistente ·{' '}
+      <span
+        aria-hidden
+        className={`inline-block h-[6px] w-[6px] rounded-full align-middle ${active.dotClass}`}
+      />{' '}
+      {active.label}
+      {active.etaText ? ` · ${active.etaText}` : ''}
+    </span>
+  );
+}
 
 function tableMergeStateFromPayload(
   payload: Partial<
@@ -1066,6 +1096,11 @@ export default function AssistentePage() {
   const itemId = searchParams.get('itemId') ?? '';
   const mergeApprovedParam = searchParams.get('mergeApproved') === '1';
   const mergeRequestIdParam = searchParams.get('mergeRequestId') ?? '';
+  // "Tentar de novo/outra mesa" vindo da waiting-approval: abre direto o
+  // mapa do salão (mesmo fluxo do tool call sem target) em vez de mandar
+  // frase pra IA — que caía no eco de status do merge antigo (vídeos
+  // 2026-06-10).
+  const mergeRetryParam = searchParams.get('mergeRetry') === '1';
   // Continuação explícita: só o menu de conversas arquivadas passa
   // `threadId`. Entrada normal em `/assistente` fica sempre nova.
   const threadIdParam = searchParams.get('threadId') ?? '';
@@ -1171,6 +1206,14 @@ export default function AssistentePage() {
     );
   }, [messages]);
 
+  // Pedido ativo da sessão pra eyebrow de status (prompt 100 §1). O
+  // refresh é disparado pelos eventos `order:created`/`order:status` do
+  // socket da page (abaixo) + poll de fallback dentro do hook.
+  const { active: activeOrder, refresh: refreshActiveOrder } = useActiveOrderStatus(
+    slug,
+    session.sessionId,
+  );
+
   useEffect(() => {
     if (!slug || !session.sessionId) return;
     recordCustomerEvent(slug, 'assistant_opened', {
@@ -1217,6 +1260,9 @@ export default function AssistentePage() {
           customerId: session.customerId ?? undefined,
           hasDraftOrder: draftItems.length > 0,
           isReturning: session.isReturning ?? false,
+          // Prompt 100 §2: só a superfície do assistente consome a
+          // mensagem de evento (1x por evento) — a home não queima o hint.
+          surface: 'assistente',
         });
         if (res?.text) {
           setLandingGreeting(res.text);
@@ -1277,8 +1323,15 @@ export default function AssistentePage() {
   }, [slug, threadIdParam]);
 
   // Inline assistant history (Postgres `assistant_messages`) is separate
-  // from archived Mongo `/chat-history` threads. It keeps staff bubbles visible
-  // after a hard reload of the active `/assistente` page.
+  // from archived Mongo `/chat-history` threads. It keeps STAFF bubbles
+  // visible after a hard reload of the active `/assistente` page.
+  //
+  // SÓ staff: hidratar a conversa de IA inteira aqui fazia toda volta ao
+  // assistente reabrir o último turno ("ver meu pedido" + VIEW_ORDER) no
+  // lugar da landing com greeting contextual (bug dos vídeos 2026-06-10).
+  // A conversa antiga continua acessível em "Conversas com IA"; a regra
+  // canon segue a das linhas acima: /assistente sem threadId = conversa
+  // nova + landing contextual.
   useEffect(() => {
     if (!slug || threadIdParam || prefill || !session.sessionId || !session.customerId) return;
     let cancelled = false;
@@ -1286,7 +1339,8 @@ export default function AssistentePage() {
       try {
         const res = await apiGet<AssistantInlineHistoryResponse>(`/${slug}/assistant/history`);
         if (cancelled) return;
-        const hydrated = mapInlineHistoryToChat(res.messages ?? []);
+        const staffOnly = (res.messages ?? []).filter((m) => m.role === 'staff');
+        const hydrated = mapInlineHistoryToChat(staffOnly);
         const automaticMergeMessage = mergeApprovedParam
           ? [tableMergeApprovedMessage(mergeRequestIdParam)]
           : [];
@@ -1380,10 +1434,13 @@ export default function AssistentePage() {
   /**
    * Round 18 (Onda 4 batch 2) — WS subscriber pra mensagens inbound do
    * staff (manager). Backend emite `assistant.staff_message_received` no
-   * room `session:<tableSessionId>` quando um manager envia via
-   * MContactClientSheet (POST /assistant/staff-to-customer). Payload
-   * shape vem direto de `assistant.service.ts::sendStaffToCustomer`:
-   *   { id, tableSessionId, message, fromStaffId, fromStaffName, createdAt }
+   * room `customer:<toCustomerId>` (decisão 2026-06-11: resposta do
+   * gerente é privada do destinatário; antes era o session room e a mesa
+   * toda via) quando um manager envia via MContactClientSheet
+   * (POST /assistant/staff-to-customer). Payload shape vem direto de
+   * `assistant.service.ts::sendStaffToCustomer`:
+   *   { id, tableSessionId, message, fromStaffId, fromStaffName,
+   *     toCustomerId, createdAt }
    *
    * O bubble é apendado on-the-fly. O reload agora reidrata via
    * `/assistant/history`, e o merge abaixo deduplica caso historico + socket
@@ -1395,6 +1452,12 @@ export default function AssistentePage() {
    * o bubble fica escondido atrás do hero/PillButtons).
    */
   useTableSocket(session.sessionId, (event, data) => {
+    if (event === 'order:created' || event === 'order:status') {
+      // Eyebrow de status muda ao vivo quando o pedido avança (prompt 100
+      // matriz: "Pedido avança (WS) com assistente aberto").
+      refreshActiveOrder();
+      return;
+    }
     if (event === 'table_merge.created' && isTableMergeCreatedPayload(data)) {
       try {
         window.sessionStorage.setItem(
@@ -1461,6 +1524,26 @@ export default function AssistentePage() {
         session.sessionId !== payload.originSessionId &&
         session.sessionId !== payload.targetSessionId
       ) {
+        return;
+      }
+      // Quem CANCELOU/recusou ativamente não recebe o card "Vocês seguem
+      // separados" — ele acabou de tomar essa decisão (vídeos 2026-06-10:
+      // cancelar mostrava "a outra mesa preferiu continuar"). Só limpa as
+      // bubbles de waiting/incoming daquele request.
+      const iDecided =
+        (payload.rejectedBy === 'a' && session.sessionId === payload.originSessionId) ||
+        (payload.rejectedBy === 'b' && session.sessionId === payload.targetSessionId);
+      if (iDecided) {
+        setMessages((prev) =>
+          prev.filter(
+            (msg) =>
+              !(
+                msg.tableMerge &&
+                ['incoming', 'waiting'].includes(msg.tableMerge.kind) &&
+                (!payload.requestId || msg.tableMerge.requestId === payload.requestId)
+              ),
+          ),
+        );
         return;
       }
       setChatStarted(true);
@@ -1561,7 +1644,9 @@ export default function AssistentePage() {
         },
       ]);
     });
-  });
+    // O 3º argumento entra no room `customer:<id>` — desde 2026-06-11 a
+    // resposta do gerente chega SÓ pra esse room (privacidade por cliente).
+  }, session.customerId);
 
   const [placingOrder, setPlacingOrder] = useState(false);
   // Guard against double-tap on the LGPD confirm chip — the action is
@@ -1840,6 +1925,70 @@ export default function AssistentePage() {
     return null;
   };
 
+  /**
+   * Handlers REAIS dos botões do card de junção (rejected/cooldown) — os
+   * vídeos de 2026-06-10 mostraram os três quebrados: "Chamar
+   * recepcionista" abria o sheet do GARÇOM, "Tentar outra mesa" virava
+   * frase pra IA (que ecoava o status expired do merge antigo) e
+   * "Continuar aqui" só trocava chips.
+   */
+  const callHostToTable = async () => {
+    try {
+      await requestHostAssist(slug, 'Ajuda com junção de mesas');
+      appendToolFeedback(
+        'Recepção avisada — alguém vem até a mesa pra ajudar com a junção.',
+      );
+    } catch (error) {
+      appendToolFeedback(
+        error instanceof ApiRequestError && error.message
+          ? error.message
+          : 'Não consegui avisar a recepção agora. Tente de novo em instantes.',
+      );
+    }
+  };
+
+  const tryAnotherTableMerge = async () => {
+    // Mesmo caminho do tool call do LLM sem target: abre o OverlaySalonMap
+    // e, na escolha, cria o request real — nada de mandar frase pra IA.
+    const enriched = await tableMerge.handleToolCall({
+      name: 'request_table_merge',
+      arguments: {},
+    });
+    if (!enriched) return;
+    const resolved = enriched instanceof Promise ? await enriched : enriched;
+    if (!resolved.arguments?.targetTable) return; // fechou o mapa sem escolher
+    await createTableMergeFromToolCall({
+      name: 'request_table_merge',
+      arguments: resolved.arguments as AssistantToolCall['arguments'],
+    });
+  };
+
+  const dismissMergeOutcome = () => {
+    setMessages((prev) => {
+      const next = prev.filter(
+        (msg) =>
+          !(msg.tableMerge && ['rejected', 'cooldown'].includes(msg.tableMerge.kind)),
+      );
+      if (next.length === 0) {
+        // Sem mais nada na conversa → volta pra landing contextual com
+        // greeting fresco da continuation.
+        setChatStarted(false);
+        setContinuationRefreshKey((key) => key + 1);
+      }
+      return next;
+    });
+    setSuggestions(DEFAULT_SUGGESTIONS);
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- dispara uma vez
+  // por entrada com ?mergeRetry=1; handlers são estáveis o suficiente aqui.
+  useEffect(() => {
+    if (!mergeRetryParam || !session.sessionId) return;
+    window.history.replaceState(null, '', `/${slug}/assistente`);
+    void tryAnotherTableMerge();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mergeRetryParam, session.sessionId, slug]);
+
   const createTableMergeFromToolCall = async (call: AssistantToolCall): Promise<void> => {
     const args = call.arguments ?? {};
     const payload = actionPayload(call);
@@ -1899,27 +2048,10 @@ export default function AssistentePage() {
       setMessages((prev) =>
         mergeUniqueChatMessages(prev, [tableMergeCooldownMessage(result.cooldown)]),
       );
-      setSuggestions([
-        {
-          id: 'merge-cooldown-host',
-          label: 'Chamar recepcionista',
-          action: 'send',
-          payload: 'chamar recepcionista',
-          primary: true,
-        },
-        {
-          id: 'merge-cooldown-another',
-          label: 'Tentar outra mesa',
-          action: 'send',
-          payload: 'quero tentar juntar com outra mesa',
-        },
-        {
-          id: 'merge-cooldown-stay',
-          label: 'Continuar aqui',
-          action: 'send',
-          payload: 'vamos continuar aqui',
-        },
-      ]);
+      // O card de cooldown já traz os 3 CTAs REAIS (recepção/mapa/dismiss);
+      // os chips 'send' antigos duplicavam os botões mandando frases pra IA
+      // — era exatamente o caminho quebrado dos vídeos 2026-06-10.
+      setSuggestions(DEFAULT_SUGGESTIONS);
       return;
     }
 
@@ -2681,6 +2813,22 @@ export default function AssistentePage() {
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="gpu-layer flex min-h-0 flex-1 flex-col gap-3.5 overflow-auto px-[22px] pb-4 pt-3">
+          {/* Faixa de status FIXA no modo chat (decisão Caleb 2026-06-12):
+              com pedido ativo, o estado + ETA ficam visíveis o tempo todo
+              no topo do transcript — independente das bolhas. O
+              ToolCallIndicator e a eyebrow por bolha continuam; isto é um
+              complemento, não substituto. Mesma tipografia mono 10px do
+              canon — só sticky + fundo pra rolagem passar por baixo. */}
+          {chatStarted && !historyLoading && activeOrder && (
+            <div
+              data-testid="order-status-strip"
+              className="sticky -top-3 z-10 -mx-[22px] -mt-3 bg-bg px-[22px] pb-2 pt-3"
+            >
+              <span className="font-mono text-[10px] uppercase tracking-[1.5px] text-mute">
+                <AssistantOrderEyebrow active={activeOrder} />
+              </span>
+            </div>
+          )}
           {/* Round 22 §A/§D — loader inline enquanto hidrata o histórico
               persistido. Some logo que listMessages resolve (sucesso ou
               erro). Sem ele teríamos um flash da landing antes do chat
@@ -2708,7 +2856,9 @@ export default function AssistentePage() {
                 <PillButton onClick={() => push(`/${slug}/cardapio`)}>Ver cardápio</PillButton>
               </div>
               <HomeHero
-                kicker="Assistente"
+                kicker={
+                  activeOrder ? <AssistantOrderEyebrow active={activeOrder} /> : 'Assistente'
+                }
                 animate={false}
                 message={
                   landingGreeting ||
@@ -2761,9 +2911,10 @@ export default function AssistentePage() {
                     key={msg.id}
                     originTableNumber={origin}
                     targetTableNumber={target}
-                    onCallHost={openCallWaiterSheet}
-                    onTryAnother={() => sendMessage('quero tentar juntar com outra mesa')}
-                    onContinueHere={() => setSuggestions(DEFAULT_SUGGESTIONS)}
+                    rejectedBy={merge.rejectedBy ?? null}
+                    onCallHost={callHostToTable}
+                    onTryAnother={tryAnotherTableMerge}
+                    onContinueHere={dismissMergeOutcome}
                   />
                 );
               }
@@ -2775,9 +2926,9 @@ export default function AssistentePage() {
                     merge.cooldownEndsAt ?? new Date(Date.now() + 10 * 60 * 1000).toISOString()
                   }
                   message={merge.message}
-                  onCallHost={openCallWaiterSheet}
-                  onTryAnother={() => sendMessage('quero tentar juntar com outra mesa')}
-                  onContinueHere={() => setSuggestions(DEFAULT_SUGGESTIONS)}
+                  onCallHost={callHostToTable}
+                  onTryAnother={tryAnotherTableMerge}
+                  onContinueHere={dismissMergeOutcome}
                 />
               );
             }
@@ -2911,7 +3062,14 @@ export default function AssistentePage() {
                 {msg.role === 'ai' && msg.toolCall && (
                   <>
                     <span className="font-mono text-[10px] uppercase tracking-[1.5px] text-mute">
-                      Assistente · agora
+                      {/* Prompt 100 §1: com pedido ativo a faixa acima da
+                          fala da IA carrega estado + ETA ao vivo; sem
+                          pedido, mantém o canon `Assistente · agora`. */}
+                      {activeOrder ? (
+                        <AssistantOrderEyebrow active={activeOrder} />
+                      ) : (
+                        'Assistente · agora'
+                      )}
                     </span>
                     <ToolCallIndicator name={msg.toolCall.name} category={msg.toolCall.category} />
                   </>
