@@ -249,6 +249,17 @@ npm run format:check
 git diff --check
 ```
 
+Estado 2026-06-13: build / lint / format:check / jest (`npm test --workspace
+@restaurant/api`, 42) todos VERDES na main. O repo foi formatado com prettier
+(`npm run format`) — rode prettier nas suas mudancas pra manter o
+format:check verde. `.prettierignore` cobre gerados (node_modules, dist,
+.next, package-lock.json) e `qa-reports/` (evidencias/artefatos, incl. dumps
+JSON-lines do idb que o prettier nao parseia) — NAO reformatar qa-reports.
+`apps/api` tem `tsconfig.build.json` (exclui _.test.ts/_.spec.ts do `nest
+build`); os testes rodam via `jest` (precisa `ts-jest` instalado —
+`npm install` se `npm test` reclamar de preset). `AI_SERVICE_API_KEY` agora
+documentado nos `.env.example` (ai-service FAIL-CLOSE em prod sem ele).
+
 Por workspace:
 
 ```bash
