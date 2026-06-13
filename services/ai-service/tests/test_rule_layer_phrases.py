@@ -197,6 +197,17 @@ NEGATIVE_CASES = [
     "me recomenda algo sem amendoim",
     "sugere algo pra alérgico",
     "me indica algo sem cebola",
+    # TRAPS da auditoria de roteamento (2026-06-13) — confirmados no
+    # stack vivo, travados aqui: nenhum pode cair num rule errado.
+    "me indica um prato pra quem é alérgico",   # alergia sem "sem X"
+    "me indica algo sem ser muito pesado",      # "sem X" não-alérgeno → LLM
+    "tenho alergia a glúten",                   # statement de alergia, não atalho
+    "sou alérgico a frutos do mar",
+    "tem algo sem camarão no cardápio?",        # "cardápio" mas sem verbo de menu
+    "cadê meu amor",                            # "cadê" sem pedido/comida → não é status
+    "quero juntar com a mesa 5",                # intenção de merge → tool/LLM, não rule
+    "tira a cebola do meu prato",               # modificação de pedido → LLM
+    "queria muito ver o cardápio de sobremesas especiais hoje",  # >6 palavras → LLM
 ]
 
 
