@@ -128,14 +128,39 @@ export class CustomersService {
       );
       totalVisits = updatedRows[0].total_visits;
     } else {
-      recognitionToken = uuidv4();
-      const result = await this.tenantConn.query(
-        `INSERT INTO customers (name, cpf, recognition_token, total_visits, last_visit_at)
-         VALUES ($1, $2, $3, 1, now())
-         RETURNING id`,
-        [name.trim(), cleanCpf, recognitionToken],
+      const newRecognitionToken = uuidv4();
+      // ON CONFLICT (cpf): sob welcomes concorrentes do MESMO CPF novo, todos
+      // passam pelo SELECT acima sem encontrar o customer e caem aqui. Sem o
+      // ON CONFLICT, os inserts perdedores colidem na unique de cpf e estouram
+      // 500 (P1-1 — welcome customer race). O DO UPDATE incrementa total_visits
+      // no perdedor: o contador converge (1 insert + N-1 updates) e ninguém
+      // recebe 5xx. total_visits == 1 ⇒ ganhou a corrida (novo); > 1 ⇒ perdeu
+      // (returning, com nome/token canônicos da linha já existente).
+      const upserted = unwrapRows<{
+        id: string;
+        name: string;
+        recognition_token: string;
+        total_visits: number;
+      }>(
+        await this.tenantConn.query(
+          `INSERT INTO customers (name, cpf, recognition_token, total_visits, last_visit_at)
+           VALUES ($1, $2, $3, 1, now())
+           ON CONFLICT (cpf) DO UPDATE
+             SET total_visits = customers.total_visits + 1,
+                 last_visit_at = now(),
+                 updated_at = now()
+           RETURNING id, name, recognition_token, total_visits`,
+          [name.trim(), cleanCpf, newRecognitionToken],
+        ),
       );
-      customerId = (result as Record<string, unknown>[])[0].id as string;
+      const row = upserted[0];
+      customerId = row.id;
+      totalVisits = row.total_visits;
+      recognitionToken = row.recognition_token;
+      if (totalVisits > 1) {
+        isReturning = true;
+        resolvedName = row.name;
+      }
     }
 
     // Idempotent visit: ON CONFLICT returns nothing, so we SELECT after.

@@ -1,11 +1,25 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
+import {
+  ensureTvFixtures,
+  clearWelcomeAndThrottleLocks,
+  dailyAccessToken,
+} from '../helpers/tv-fixtures';
+import { resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 
 const API = 'http://localhost:3001/api/restaurant_dev';
 const STAFF = 'http://localhost:3002';
 const STAFF_KEY = 'dev-staff-api-key-change-in-prod';
 const M01_SECRET = '38889aad-20d1-4778-b4ab-df35774c0398';
 const PROXY = `${STAFF}/api/proxy/restaurant_dev`;
+
+// Caminhos de código-fonte PORTÁVEIS, relativos a este spec. Antes os
+// testes liam de `/Users/.../.claude/worktrees/charming-yonath-d5e23e/...`
+// — uma worktree do autor que não existe mais (ENOENT) e nem batia com o
+// layout do repo. __dirname aqui é `apps/web-customer/e2e/specs`.
+const apiSrc = (rel: string) => resolve(__dirname, '../../../api/src', rel);
+const staffSrc = (rel: string) => resolve(__dirname, '../../../web-staff/src', rel);
 
 function psql(query: string): string {
   const out = execSync(
@@ -42,21 +56,20 @@ async function getSessionToken(): Promise<string> {
   const res = await fetch(`${API}/session/init`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ tableCode: 'M01', hmacSignature: sig, timestamp: String(ts) }),
+    body: JSON.stringify({
+      tableCode: 'M01',
+      hmacSignature: sig,
+      timestamp: String(ts),
+      accessToken: dailyAccessToken('M01', M01_SECRET),
+    }),
   });
   const body = (await res.json()) as { sessionId: string };
   return body.sessionId;
 }
 
 test.beforeAll(() => {
-  try {
-    execSync(
-      `docker exec restaurant-redis redis-cli --no-raw EVAL "local keys = redis.call('keys', ARGV[1]); for i=1,#keys do redis.call('del', keys[i]) end; return #keys" 0 'throttle:*'`,
-      { stdio: 'pipe' },
-    );
-  } catch {
-    /* no-op */
-  }
+  ensureTvFixtures();
+  clearWelcomeAndThrottleLocks();
 });
 
 // P1-4: XFF bypass — rate-limit must use real IP, not X-Forwarded-For
@@ -409,7 +422,12 @@ async function getM02Session(): Promise<string> {
   const res = await fetch(`${API}/session/init`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ tableCode: 'M02', hmacSignature: sig, timestamp: String(ts) }),
+    body: JSON.stringify({
+      tableCode: 'M02',
+      hmacSignature: sig,
+      timestamp: String(ts),
+      accessToken: dailyAccessToken('M02', M02_SECRET),
+    }),
   });
   if (!res.ok) throw new Error(`M02 session init failed: ${res.status}`);
   return ((await res.json()) as { sessionId: string }).sessionId;
@@ -423,7 +441,14 @@ async function welcomeCustomer(
   const res = await fetch(`${API}/customer/welcome`, {
     method: 'POST',
     headers: { 'x-session-token': sessionToken, 'content-type': 'application/json' },
-    body: JSON.stringify({ name, cpf }),
+    body: JSON.stringify({
+      name,
+      cpf,
+      // Geofence está desligada no dev (lat/lng NULL), mas mandamos uma
+      // localização "granted" como o helper canônico (physical-qr.ts) faz,
+      // pra não tomar 403 caso o owner configure o raio depois.
+      location: { status: 'granted', latitude: -23.56, longitude: -46.64, accuracyMeters: 12 },
+    }),
   });
   if (!res.ok) throw new Error(`welcomeCustomer failed: ${res.status} ${await res.text()}`);
   return (await res.json()) as { customerId: string; recognitionToken: string; visitId: string };
@@ -839,15 +864,15 @@ test.describe('P2-X7-2 — payments dedup race', () => {
   });
 });
 
-// P2-X7-3: SQL logs no longer contain PII
+// P2-X7-3: SQL logs no longer contain PII. Nesta branch o logging do TypeORM
+// fica DESLIGADO por padrão e só liga com DEBUG_DB=true — ainda mais estrito
+// que ['error','warn'] da sibling, e sem vazar query log com PII em dev.
 test.describe('P2-X7-3 — SQL logs mask PII', () => {
-  test('database.config logging is error/warn only', async () => {
-    const fs = await import('node:fs');
-    const configPath =
-      '/Users/calebmedeiros/meus_projetos/.claude/worktrees/charming-yonath-d5e23e/apps/api/src/config/database.config.ts';
-    const content = fs.readFileSync(configPath, 'utf8');
-    expect(content).toContain("['error', 'warn']");
+  test('database.config logging is off by default (DEBUG_DB gate)', () => {
+    const content = readFileSync(apiSrc('config/database.config.ts'), 'utf8');
+    expect(content).toContain("process.env.DEBUG_DB === 'true'");
     expect(content).not.toMatch(/logging:\s*process\.env\.NODE_ENV\s*!==\s*'production'/);
+    expect(content).not.toMatch(/logging:\s*true\b/);
   });
 });
 
@@ -923,29 +948,30 @@ test.describe('P2-X7-4 — decideJoinRequest CAS', () => {
 
 // P2-X4-1: TV responsive — header condenses at 1024
 test.describe('P2-X4-1 — TV responsive header at 1024', () => {
-  test('1024px hides secondary counters via CSS', async () => {
-    const fs = await import('node:fs');
-    const stylesPath =
-      '/Users/calebmedeiros/meus_projetos/.claude/worktrees/charming-yonath-d5e23e/apps/web-staff/src/components/tv/styles.ts';
-    const content = fs.readFileSync(stylesPath, 'utf8');
+  test('1024px hides secondary counters via CSS', () => {
+    const content = readFileSync(staffSrc('components/tv/styles.ts'), 'utf8');
     expect(content).toContain('max-width: 1024px');
     expect(content).toContain('max-width: 480px');
     expect(content).toContain('kds-counter-totals');
   });
 });
 
-// P2-X5-1: stale comments removed
-test.describe('P2-X5-1 — stale StaffOrSessionGuard comments removed', () => {
-  test('no source files reference StaffOrSessionGuard', async () => {
-    const fs = await import('node:fs');
-    const files = [
-      '/Users/calebmedeiros/meus_projetos/.claude/worktrees/charming-yonath-d5e23e/apps/api/src/modules/orders/orders.controller.ts',
-      '/Users/calebmedeiros/meus_projetos/.claude/worktrees/charming-yonath-d5e23e/apps/api/src/modules/waiter-calls/waiter-calls.controller.ts',
-    ];
-    for (const f of files) {
-      const content = fs.readFileSync(f, 'utf8');
-      expect(content, `${f} should not reference StaffOrSessionGuard`).not.toContain(
-        'StaffOrSessionGuard',
+// P2-X5-1: os P0 de auth continuam fechados. A sibling branch removeu o
+// StaffOrSessionGuard inteiro; ESTA branch o mantém só pra acesso-duplo
+// legítimo (GET /orders, menu, etc.) e fechou os P0 perigosos migrando os
+// controllers ofensores pra StaffOnly. O invariante de segurança aqui é:
+// os controllers que TIVERAM P0 (dashboard B-NEW-20, deliveries B-NEW-21)
+// NÃO aceitam mais session token. Runtime equivalente: P2-6 e P1-NEW-1.
+test.describe('P2-X5-1 — controllers P0 são StaffOnly (sem session)', () => {
+  test('dashboard e deliveries não usam @UseGuards(StaffOrSessionGuard)', () => {
+    for (const rel of [
+      'modules/dashboard/dashboard.controller.ts',
+      'modules/deliveries/deliveries.controller.ts',
+    ]) {
+      const content = readFileSync(apiSrc(rel), 'utf8');
+      expect(content, `${rel} deve usar StaffOnlyGuard`).toMatch(/StaffOnlyGuard/);
+      expect(content, `${rel} não pode reabrir o P0 aceitando session`).not.toMatch(
+        /@UseGuards\([^)]*StaffOrSessionGuard/,
       );
     }
   });
@@ -990,25 +1016,36 @@ test.describe('P2-X6-1 — PIN timing consistency (measured)', () => {
   });
 });
 
-// P3-X1: dead guard file removed
-test.describe('P3-X5 — dead StaffOrSessionGuard file removed', () => {
-  test('staff-or-session.guard.ts no longer exists', async () => {
-    const fs = await import('node:fs');
-    const exists = fs.existsSync(
-      '/Users/calebmedeiros/meus_projetos/.claude/worktrees/charming-yonath-d5e23e/apps/api/src/common/guards/staff-or-session.guard.ts',
-    );
-    expect(exists, 'dead guard file should be deleted').toBe(false);
+// P3-X5: decisão desta branch (2026-06-13, confirmada com Caleb) — manter o
+// StaffOrSessionGuard pro acesso-duplo legítimo em vez do refactor de remoção
+// total da sibling (migrar ~10 rotas de 8 módulos). Invariante: o guard
+// documenta os DOIS paths (staff-key + session) e NÃO cobre os controllers
+// P0 (esses são StaffOnly). Code review dedicado roda depois pra confirmar
+// que nenhum P0 antigo (B-NEW-19/20/21/24) regrediu.
+test.describe('P3-X5 — StaffOrSessionGuard contido a acesso-duplo legítimo', () => {
+  test('guard existe, documenta os 2 paths e não cobre controllers P0', () => {
+    const guardPath = apiSrc('common/guards/staff-or-session.guard.ts');
+    expect(existsSync(guardPath), 'guard de acesso-duplo é mantido nesta branch').toBe(true);
+    const guard = readFileSync(guardPath, 'utf8');
+    expect(guard).toMatch(/x-staff-key/);
+    expect(guard).toMatch(/x-session-token|session_token/);
+    for (const rel of [
+      'modules/dashboard/dashboard.controller.ts',
+      'modules/deliveries/deliveries.controller.ts',
+    ]) {
+      const content = readFileSync(apiSrc(rel), 'utf8');
+      expect(content, `${rel} não pode usar o guard de acesso-duplo`).not.toMatch(
+        /@UseGuards\([^)]*StaffOrSessionGuard/,
+      );
+    }
   });
 });
 
-// P3-X2: home.service rpush has expire
+// P3-X2: home.service rpush tem expire (TTL na welcome_pool:* — evita
+// acúmulo unbounded de keys por sessão, que esta branch não tinha).
 test.describe('P3-X2 — home.service rpush has expire', () => {
-  test('home.service.ts calls expire after rpush', async () => {
-    const fs = await import('node:fs');
-    const content = fs.readFileSync(
-      '/Users/calebmedeiros/meus_projetos/.claude/worktrees/charming-yonath-d5e23e/apps/api/src/modules/home/home.service.ts',
-      'utf8',
-    );
+  test('home.service.ts calls expire after rpush', () => {
+    const content = readFileSync(apiSrc('modules/home/home.service.ts'), 'utf8');
     const rpushIdx = content.indexOf('rpush(poolKey');
     const expireIdx = content.indexOf('expire(poolKey', rpushIdx);
     expect(rpushIdx, 'rpush should exist').toBeGreaterThan(-1);
@@ -1016,28 +1053,30 @@ test.describe('P3-X2 — home.service rpush has expire', () => {
   });
 });
 
-// P3-X3: idempotency lock cleaned on error
-test.describe('P3-X3 — idem lock cleanup on error', () => {
-  test('orders.service.ts has try/catch around transaction with idemKey del', async () => {
-    const fs = await import('node:fs');
-    const content = fs.readFileSync(
-      '/Users/calebmedeiros/meus_projetos/.claude/worktrees/charming-yonath-d5e23e/apps/api/src/modules/orders/orders.service.ts',
-      'utf8',
-    );
-    expect(content).toContain('if (idemKey) await this.redis.del(idemKey)');
+// P3-X3: idempotência de orders. A sibling fazia redis.del(idemKey) num
+// catch; ESTA branch usa lock atômico via setNX EX (sentinela inflight) e
+// marca {orderId} DEPOIS do commit, com TTL de 5min — falha de transação
+// não persiste orderId e o lock expira sozinho pelo TTL. Runtime: P1-NEW-2
+// (5 POSTs paralelos com mesma idempotencyKey → exatamente 1 orderId).
+test.describe('P3-X3 — idempotência de orders é atômica e com TTL', () => {
+  test('orders.service.ts usa setNX(idemKey) com TTL e chave order_idem:', () => {
+    const content = readFileSync(apiSrc('modules/orders/orders.service.ts'), 'utf8');
+    expect(content).toMatch(/setNX\(\s*idemKey/);
+    expect(content).toMatch(/IDEMPOTENCY_TTL_SECONDS/);
+    expect(content).toContain('order_idem:');
   });
 });
 
-// P1-X7-1: WS staff cannot join session rooms
-test.describe('P1-X7-1 — WS staff blocked from session rooms', () => {
-  test('events.gateway blocks staff from join:session', async () => {
-    const fs = await import('node:fs');
-    const content = fs.readFileSync(
-      '/Users/calebmedeiros/meus_projetos/.claude/worktrees/charming-yonath-d5e23e/apps/api/src/modules/websocket/events.gateway.ts',
-      'utf8',
-    );
+// P1-X7-1: nesta branch o staff PODE entrar em session room, mas só se a
+// session pertence ao tenant carimbado no handshake (B-NEW-34) — senão
+// "Cross-tenant session join blocked". (A sibling bloqueava staff de
+// join:session inteiro; modelo diferente, ambos previnem leak cross-tenant.)
+test.describe('P1-X7-1 — WS join:session cross-checa tenant do staff', () => {
+  test('events.gateway bloqueia staff cross-tenant em join:session', () => {
+    const content = readFileSync(apiSrc('modules/websocket/events.gateway.ts'), 'utf8');
     expect(content).toContain("client.data.authType === 'staff'");
-    expect(content).toContain('Staff must use join:tenant, not join:session');
+    expect(content).toContain('Cross-tenant session join blocked');
+    expect(content).toMatch(/staffTenantSlug/);
   });
 });
 

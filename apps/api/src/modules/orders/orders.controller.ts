@@ -29,6 +29,7 @@ import type { Request } from 'express';
 import { SessionGuard, SessionData, SessionRequest } from '../../common/guards/session.guard';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { RedisThrottleGuard } from '../../common/guards/redis-throttle.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
@@ -251,7 +252,9 @@ export class OrdersController {
    * estação sem vazar pedidos de outras áreas.
    */
   @Get('_kds')
-  @UseGuards(StaffOnlyGuard)
+  // RedisThrottleGuard ANTES do StaffOnly: limita flood (200/60s por IP real)
+  // mesmo de chamador não autenticado, protegendo o polling das TVs.
+  @UseGuards(RedisThrottleGuard, StaffOnlyGuard)
   async getKdsOrders(@Query('station') station?: string) {
     const resolvedStation = station === 'bar' ? 'bar' : 'kitchen';
     const orders = await this.ordersService.getActiveOrdersForKds(resolvedStation);
@@ -437,12 +440,15 @@ export class OrdersController {
    * only touches expired rows and is idempotent. A lazy sweep also runs
    * on every GET /orders so this is a backstop, not the primary path.
    *
-   * Protegido pelo StaffOrSessionGuard pra que atacante externo nao
-   * consiga forcar auto-confirmacao em massa eliminando a janela de 15s
-   * que o cliente tem pra cancelar (P1 do bug-hunt).
+   * Protegido por StaffOnlyGuard: é hook de scheduler/cozinha, sem caso de
+   * uso customer-side. Antes usava StaffOrSessionGuard, mas o path "Or
+   * Session" deixava QUALQUER cliente com sessão ativa forçar a
+   * auto-confirmação em massa de pedidos do tenant — eliminando a janela de
+   * 15s de cancelamento dos outros clientes (mesma família de footgun do
+   * B-NEW-24). Sweep é só staff/cron.
    */
   @Post('_sweep-auto-confirm')
-  @UseGuards(StaffOrSessionGuard)
+  @UseGuards(StaffOnlyGuard)
   async sweepAutoConfirm() {
     const ids = await this.ordersService.sweepAutoConfirm();
     return { promoted: ids.length, orderIds: ids };

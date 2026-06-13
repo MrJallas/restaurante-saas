@@ -2167,6 +2167,13 @@ export class OrdersService {
       }
     }
 
+    // Idempotência: se já está no status alvo, não re-transiciona nem duplica
+    // history. Cobre tanto um repeat quanto o "perdedor" de uma corrida que
+    // chega aqui já vendo o estado final.
+    if (currentStatus === newStatus) {
+      return { orderId, previousStatus: currentStatus, newStatus };
+    }
+
     const allowed = VALID_TRANSITIONS[currentStatus] || [];
 
     if (!allowed.includes(newStatus)) {
@@ -2175,10 +2182,32 @@ export class OrdersService {
       );
     }
 
-    await this.tenantConn.query(`UPDATE orders SET status = $1, updated_at = now() WHERE id = $2`, [
-      newStatus,
-      orderId,
-    ]);
+    // CAS atômico (mesmo padrão de confirmOrder/cancelOrder): UPDATE com
+    // WHERE status = $expected RETURNING. Sob N PATCHes concorrentes só 1
+    // ganha (rowCount=1) e grava history; os perdedores veem rowCount=0,
+    // re-leem o status e retornam idempotente — sem duplicar
+    // order_status_history nem estourar 400 "transição inválida" (P1-A).
+    const updated = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `UPDATE orders SET status = $1, updated_at = now()
+         WHERE id = $2 AND status = $3
+         RETURNING id`,
+        [newStatus, orderId, currentStatus],
+      ),
+    );
+
+    if (!updated.length) {
+      // Perdeu a corrida: outra request já transicionou. Re-lê e retorna
+      // idempotente (o caller pediu exatamente essa transição).
+      const refresh = (await this.tenantConn.query(`SELECT status FROM orders WHERE id = $1`, [
+        orderId,
+      ])) as { status: string }[];
+      return {
+        orderId,
+        previousStatus: currentStatus,
+        newStatus: refresh[0]?.status ?? newStatus,
+      };
+    }
 
     await this.tenantConn.query(
       `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)

@@ -140,11 +140,19 @@ export default function PedidoPage() {
   // Quando outro customer da mesma mesa cria/cancela/avanca pedido, recebe
   // event e refetcha. Multi-user passa a coordenar em tempo real (P1-A do
   // bug-hunt: antes precisavam esperar 15s do polling).
-  useTableSocket(sessionId, (event) => {
-    if (event === 'order:created' || event === 'order:status') {
-      reload();
-    }
-  });
+  // 4o arg (onResync): apos um reconnect do socket, refetcha os pedidos —
+  // eventos emitidos enquanto a aba estava offline nao chegam, entao o
+  // estado precisa ser re-sincronizado na volta da conexao.
+  useTableSocket(
+    sessionId,
+    (event) => {
+      if (event === 'order:created' || event === 'order:status') {
+        reload();
+      }
+    },
+    null,
+    () => reload(),
+  );
 
   const activeOrders = useMemo(
     () => orders.filter((o) => o.status !== 'cancelled'),

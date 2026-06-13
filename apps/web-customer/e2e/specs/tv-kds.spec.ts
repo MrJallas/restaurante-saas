@@ -9,6 +9,11 @@ import {
   LATE_THRESHOLD_MIN,
   type KdsOrder,
 } from '../../../web-staff/src/components/tv/types';
+import {
+  ensureTvFixtures,
+  clearWelcomeAndThrottleLocks,
+  dailyAccessToken,
+} from '../helpers/tv-fixtures';
 
 /**
  * Suite de bugs P1+P2 das telas TV (Cozinha + Bar). Cada test cobre um
@@ -30,6 +35,16 @@ const STAFF_KEY = 'dev-staff-api-key-change-in-prod';
 // session token de customer.
 const M01_SECRET = '38889aad-20d1-4778-b4ab-df35774c0398';
 
+// O /customer/welcome exige um objeto `location` (status granted) — sem ele
+// responde 403 "Permita o acesso à localização", mesmo com a geofence
+// desligada (lat/lng NULL). Mesmo shape do helper canônico physical-qr.ts.
+const WELCOME_LOCATION = {
+  status: 'granted',
+  latitude: -23.56,
+  longitude: -46.64,
+  accuracyMeters: 12,
+};
+
 async function getSessionToken(): Promise<string> {
   const crypto = await import('node:crypto');
   const ts = Date.now();
@@ -41,6 +56,10 @@ async function getSessionToken(): Promise<string> {
       tableCode: 'M01',
       hmacSignature: sig,
       timestamp: String(ts),
+      // Hardening do QR físico (2026-06-09/10) passou a exigir o token
+      // diário no session/init. ensureTvFixtures sincroniza o secret do
+      // DB com M01_SECRET, então este accessToken valida.
+      accessToken: dailyAccessToken('M01', M01_SECRET),
     }),
   });
   if (res.status !== 201) {
@@ -50,19 +69,15 @@ async function getSessionToken(): Promise<string> {
   return body.sessionId;
 }
 
-// Limpa as keys de throttle:* no Redis no inicio da suite. Sem isso,
-// runs back-to-back deixariam a janela populada do P2-I (flood) e
-// P1-D/P1-E/P1-B (que fazem 1 call /_kds cada) tomariam 429 espurio
-// no round seguinte.
+// Setup determinístico da suite:
+//  - ensureTvFixtures: cria/garante (idempotente) os UUIDs fixos que os
+//    specs assumem pré-existentes e sincroniza o secret HMAC das mesas.
+//  - clearWelcomeAndThrottleLocks: limpa throttle:* (senão a janela do
+//    P2-I/flood faz P1-D/P1-E/P1-B tomarem 429 espúrio no round seguinte)
+//    e customers:welcome:* (um 403 conta como tentativa e trava ~15min).
 test.beforeAll(() => {
-  try {
-    execSync(
-      `docker exec restaurant-redis redis-cli --no-raw EVAL "local keys = redis.call('keys', ARGV[1]); for i=1,#keys do redis.call('del', keys[i]) end; return #keys" 0 'throttle:*'`,
-      { stdio: 'pipe' },
-    );
-  } catch {
-    // Em CI sem docker exec, vira no-op. P2-I vai usar a janela natural.
-  }
+  ensureTvFixtures();
+  clearWelcomeAndThrottleLocks();
 });
 
 function psql(query: string): string {
@@ -216,9 +231,12 @@ test.describe('P2-A — getPrimaryActionLabel deriva label do status raw', () =>
     expect(getPrimaryActionLabel('open', 'bar')).toMatch(/Preparar/i);
   });
 
-  test('ready mostra "Servir agora" (kitchen) / "Entregar" (bar)', () => {
-    expect(getPrimaryActionLabel('ready', 'kitchen')).toMatch(/Servir agora/i);
-    expect(getPrimaryActionLabel('ready', 'bar')).toMatch(/Entregar/i);
+  test('ready mostra "Chamar garçom" (canon V20 — cozinha e bar chamam o garçom)', () => {
+    // Decisão Caleb 2026-06-10: a ação final canônica do KDS é "Chamar
+    // garçom" (não "Servir agora"/"Entregar"). getPrimaryActionLabel devolve
+    // o mesmo label pras duas estações quando o pedido está pronto.
+    expect(getPrimaryActionLabel('ready', 'kitchen')).toMatch(/Chamar garçom/i);
+    expect(getPrimaryActionLabel('ready', 'bar')).toMatch(/Chamar garçom/i);
   });
 
   test('in_progress / preparing / confirmed mostram "Marcar pronto"', () => {
@@ -262,37 +280,43 @@ test.describe('P2-B — deriveStatus marca atrasado em elapsed >= 12min (off-by-
   });
 });
 
-test.describe('P1-G — welcome atualiza customers.name quando CPF retorna com nome diferente', () => {
+test.describe('P1-G — welcome de cliente recorrente preserva o nome canônico', () => {
   // Usa CPF dedicado pra nao colidir com o seed (TEST_CPF=12345678909
   // e usado por critical-paths/welcome-validation).
-  const CPF = '52998224725'; // valido (Maria Silva no seed) mas vamos sobrescrever
-  const SESSION_ID = '0d324208-01ce-4d5e-b95e-1acba080304c';
+  const CPF = '52998224725'; // Maria Silva no seed
 
   test.afterEach(() => {
     // Restaura o name original do seed pra nao quebrar outros tests.
     psql(`UPDATE customers SET name = 'Maria Silva' WHERE cpf = '${CPF}';`);
   });
 
-  test('welcome com nome novo atualiza customers.name', async () => {
-    // Confirma que ja existe customer com esse CPF
+  test('welcome com nome novo NÃO sobrescreve — devolve o nome canônico', async () => {
+    // Comportamento desta branch (customers.service.welcome:94 — resolvedName
+    // = customer.name): um CPF já conhecido mantém o nome de cadastro. O
+    // welcome devolve o nome canônico e NÃO grava o nome digitado de novo —
+    // evita overwrite acidental/malicioso da identidade do cliente via
+    // re-scan. (A sibling branch atualizava o nome; aqui a decisão é preservar.)
     const before = psql(`SELECT name FROM customers WHERE cpf = '${CPF}';`);
-    expect(before).toBeTruthy();
+    expect(before).toBe('Maria Silva');
 
-    const newName = 'Maria Atualizada Silva';
     const token = await getSessionToken();
     const res = await fetch(`${API}/customer/welcome`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-session-token': token },
-      body: JSON.stringify({ name: newName, cpf: CPF }),
+      body: JSON.stringify({
+        name: 'Maria Atualizada Silva',
+        cpf: CPF,
+        location: WELCOME_LOCATION,
+      }),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { name: string; isReturning: boolean };
     expect(body.isReturning).toBe(true);
-    expect(body.name).toBe(newName);
+    expect(body.name).toBe('Maria Silva'); // canônico, não o nome digitado
 
-    // O DB tambem reflete
+    // DB inalterado
     const after = psql(`SELECT name FROM customers WHERE cpf = '${CPF}';`);
-    expect(after).toBe(newName);
+    expect(after).toBe('Maria Silva');
   });
 
   test('welcome com nome identico nao toca DB (idempotente)', async () => {
@@ -301,7 +325,7 @@ test.describe('P1-G — welcome atualiza customers.name quando CPF retorna com n
     const res = await fetch(`${API}/customer/welcome`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-session-token': token },
-      body: JSON.stringify({ name: 'Maria Silva', cpf: CPF }),
+      body: JSON.stringify({ name: 'Maria Silva', cpf: CPF, location: WELCOME_LOCATION }),
     });
     expect(res.status).toBe(201);
     const after = psql(`SELECT name FROM customers WHERE cpf = '${CPF}';`);
@@ -725,7 +749,7 @@ test.describe('P1-1 — welcome customer race (ON CONFLICT)', () => {
     }
     try {
       psql(
-        `DELETE FROM session_participants WHERE visit_id IN (SELECT id FROM visits WHERE customer_id IN (SELECT id FROM customers WHERE cpf = '${TEST_CPF}')); DELETE FROM visits WHERE customer_id IN (SELECT id FROM customers WHERE cpf = '${TEST_CPF}'); DELETE FROM customers WHERE cpf = '${TEST_CPF}';`,
+        `DELETE FROM scan_verification_requests WHERE customer_id IN (SELECT id FROM customers WHERE cpf = '${TEST_CPF}'); DELETE FROM session_participants WHERE visit_id IN (SELECT id FROM visits WHERE customer_id IN (SELECT id FROM customers WHERE cpf = '${TEST_CPF}')); DELETE FROM visits WHERE customer_id IN (SELECT id FROM customers WHERE cpf = '${TEST_CPF}'); DELETE FROM customers WHERE cpf = '${TEST_CPF}';`,
       );
     } catch {
       /* no-op */
@@ -743,17 +767,26 @@ test.describe('P1-1 — welcome customer race (ON CONFLICT)', () => {
     }
     try {
       psql(
-        `DELETE FROM session_participants WHERE visit_id IN (SELECT id FROM visits WHERE customer_id IN (SELECT id FROM customers WHERE cpf = '${TEST_CPF}')); DELETE FROM visits WHERE customer_id IN (SELECT id FROM customers WHERE cpf = '${TEST_CPF}'); DELETE FROM customers WHERE cpf = '${TEST_CPF}';`,
+        `DELETE FROM scan_verification_requests WHERE customer_id IN (SELECT id FROM customers WHERE cpf = '${TEST_CPF}'); DELETE FROM session_participants WHERE visit_id IN (SELECT id FROM visits WHERE customer_id IN (SELECT id FROM customers WHERE cpf = '${TEST_CPF}')); DELETE FROM visits WHERE customer_id IN (SELECT id FROM customers WHERE cpf = '${TEST_CPF}'); DELETE FROM customers WHERE cpf = '${TEST_CPF}';`,
       );
     } catch {
       /* no-op */
     }
     const token = await getSessionToken();
-    const calls = Array.from({ length: 20 }).map(() =>
+    const calls = Array.from({ length: 20 }).map((_, i) =>
       fetch(`${API}/customer/welcome`, {
         method: 'POST',
-        headers: { 'x-session-token': token, 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Race Test', cpf: TEST_CPF }),
+        headers: {
+          'x-session-token': token,
+          'content-type': 'application/json',
+          // IP sintético único por call: o /welcome tem rate-limit de 5/15min
+          // por IP (customers:welcome:<ip>, key = X-Forwarded-For). Sem
+          // rotacionar o XFF só 5 dos 20 passariam. O alvo do teste é o dedup
+          // ON CONFLICT (cpf) sob concorrência, não o rate-limit — então
+          // damos um IP distinto a cada request (mesma tática do physical-qr.ts).
+          'x-forwarded-for': `198.18.0.${i}`,
+        },
+        body: JSON.stringify({ name: 'Race Test', cpf: TEST_CPF, location: WELCOME_LOCATION }),
       }),
     );
     const responses = await Promise.all(calls);

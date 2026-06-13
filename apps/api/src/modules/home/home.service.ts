@@ -284,6 +284,10 @@ export class HomeService {
       [indices[i], indices[j]] = [indices[j], indices[i]];
     }
     await this.redis.rpush(poolKey, ...indices.map(String));
+    // TTL na welcome_pool:<sessionId> pra não vazar indefinidamente no Redis
+    // (uma key por sessão, antes nunca expirada). 6h cobre folgado uma
+    // refeição; se expirar, o pool apenas re-embaralha (sem efeito colateral).
+    await this.redis.expire(poolKey, 6 * 60 * 60);
     await this.redis.lpop(poolKey);
     return indices[0];
   }

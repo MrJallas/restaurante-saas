@@ -29,15 +29,21 @@ import {
  *   com linger pos-unmount — navegar entre paginas nao derruba/recria a
  *   conexao (o gateway rate-limita 30 handshakes/60s por IP do restaurante,
  *   e fechar WS em pleno handshake logava console.error no WebKit).
+ * - `onResync` (opcional, 4o arg): chamado a cada RECONNECT do socket (nao
+ *   no primeiro connect). Use pra refetchar o estado que pode ter sido
+ *   perdido enquanto offline — ex.: pedido/page passa `() => reload()`.
  */
 export function useTableSocket(
   sessionId: string | null,
   onEvent: (event: string, data: unknown) => void,
   customerId?: string | null,
+  onResync?: () => void,
 ): void {
   const onEventRef = useRef(onEvent);
   // Sempre atualiza o ref pra a callback mais recente sem reconectar.
   onEventRef.current = onEvent;
+  const onResyncRef = useRef(onResync);
+  onResyncRef.current = onResync;
 
   useEffect(() => {
     if (!sessionId) return;
@@ -77,10 +83,26 @@ export function useTableSocket(
       return [ev, handler] as const;
     });
 
+    // Resync no RECONNECT (nao no primeiro connect): depois de uma queda de
+    // rede o socket.io reemite 'connect', e ai o consumidor deve refetchar
+    // o estado perdido enquanto offline (eventos emitidos durante o gap nao
+    // chegam). Se o socket COMPARTILHADO ja estava conectado no mount, o
+    // proximo 'connect' ja conta como reconnect.
+    let isFirstConnect = !entry.socket.connected;
+    const onConnect = () => {
+      if (isFirstConnect) {
+        isFirstConnect = false;
+        return;
+      }
+      onResyncRef.current?.();
+    };
+    entry.socket.on('connect', onConnect);
+
     return () => {
       for (const [ev, handler] of handlers) {
         entry.socket.off(ev, handler);
       }
+      entry.socket.off('connect', onConnect);
       releaseCustomerSocket(entry);
     };
   }, [sessionId, customerId]);

@@ -6,6 +6,7 @@ import { KitchenController } from './kitchen.controller';
 import { OrdersService } from './orders.service';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
+import { RedisThrottleGuard } from '../../common/guards/redis-throttle.guard';
 import { OrderRatingsModule } from '../order-ratings/order-ratings.module';
 import { CallerResolverModule } from '../../common/services/caller-resolver.module';
 
@@ -21,7 +22,7 @@ import { CallerResolverModule } from '../../common/services/caller-resolver.modu
     forwardRef(() => OrderRatingsModule),
   ],
   controllers: [OrdersController, KitchenController],
-  providers: [OrdersService, StaffOrSessionGuard, ManagerOnlyGuard],
+  providers: [OrdersService, StaffOrSessionGuard, ManagerOnlyGuard, RedisThrottleGuard],
   exports: [OrdersService],
 })
 export class OrdersModule {}
