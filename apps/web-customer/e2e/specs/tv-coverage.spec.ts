@@ -120,11 +120,19 @@ test.describe('P2-3 — acknowledgeCall CAS race', () => {
     psql(`DELETE FROM waiter_calls WHERE status IN ('pending','acknowledged')`);
   });
 
-  test('5 parallel acknowledges produce 1 waiter name in DB', async () => {
+  test('parallel acknowledges produce 1 acknowledged row with the authenticated staff name (CAS)', async () => {
     psql(`DELETE FROM waiter_calls WHERE status IN ('pending','acknowledged')`);
-    // O acknowledge exige x-staff-id de um staff ATIVO (requireActiveStaffId —
-    // hardening de auditoria: registra QUEM atendeu). Resolve um do seed.
-    const staffId = psql(`SELECT id FROM staff WHERE is_active = true LIMIT 1`);
+    // Nesta branch o assigned_waiter_name vem do x-staff-id AUTENTICADO (NÃO do
+    // body — auditoria de QUEM atendeu; mais seguro que confiar no body). Usa
+    // staff ativos DISTINTOS: sob a corrida, o CAS (WHERE status='pending')
+    // deixa só 1 gravar — o nome final é o do garçom autenticado vencedor.
+    const staff = psqlAll(`SELECT id || '|' || name FROM staff WHERE is_active = true LIMIT 5`).map(
+      (row) => {
+        const sep = row.indexOf('|');
+        return { id: row.slice(0, sep), name: row.slice(sep + 1) };
+      },
+    );
+    expect(staff.length, 'precisa de ≥2 staff ativos pra exercitar a corrida').toBeGreaterThan(1);
     const token = await getSessionToken();
     const createRes = await fetch(`${API}/waiter-calls`, {
       method: 'POST',
@@ -133,23 +141,22 @@ test.describe('P2-3 — acknowledgeCall CAS race', () => {
     });
     const { callId } = (await createRes.json()) as { callId: string };
 
-    const waiters = ['Ana', 'Bruno', 'Carla', 'Diego', 'Eva'];
     await Promise.all(
-      waiters.map((name) =>
+      staff.map((s) =>
         fetch(`${API}/waiter-calls/${callId}/acknowledge`, {
           method: 'POST',
           headers: {
             'x-staff-key': STAFF_KEY,
-            'x-staff-id': staffId,
+            'x-staff-id': s.id,
             'content-type': 'application/json',
           },
-          body: JSON.stringify({ waiterName: name }),
+          body: JSON.stringify({}),
         }),
       ),
     );
 
     const dbWaiter = psql(`SELECT assigned_waiter_name FROM waiter_calls WHERE id = '${callId}'`);
-    expect(waiters).toContain(dbWaiter);
+    expect(staff.map((s) => s.name)).toContain(dbWaiter);
     const dbStatus = psql(`SELECT status FROM waiter_calls WHERE id = '${callId}'`);
     expect(dbStatus).toBe('acknowledged');
   });
