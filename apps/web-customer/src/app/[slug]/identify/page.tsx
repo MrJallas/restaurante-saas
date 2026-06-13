@@ -36,10 +36,6 @@ export default function IdentifyPage() {
   }, [slug, router]);
 
   return (
-    <ScreenCustomerIdentifyBeforeJoin
-      slug={slug}
-      hostName={hostName}
-      redirectTo={redirectTo}
-    />
+    <ScreenCustomerIdentifyBeforeJoin slug={slug} hostName={hostName} redirectTo={redirectTo} />
   );
 }

@@ -1,18 +1,9 @@
-import {
-  ConflictException,
-  Injectable,
-  Logger,
-  NotFoundException,
-  Optional,
-} from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
 import { SecurityAuditService } from '../security-audit/security-audit.service';
-import {
-  evaluateCustomerGeofence,
-  type GeofenceConfig,
-} from '../../common/utils/geofence';
+import { evaluateCustomerGeofence, type GeofenceConfig } from '../../common/utils/geofence';
 import type {
   CustomerLocationCheck,
   CustomerLocationSignal,
@@ -66,15 +57,10 @@ export class ScanVerificationService {
     location?: CustomerLocationSignal | null;
     slug?: string;
   }): Promise<ScanVerificationRequestDto> {
-    const existing = await this.findBySessionCustomer(
-      input.tableSessionId,
-      input.customerId,
-    );
+    const existing = await this.findBySessionCustomer(input.tableSessionId, input.customerId);
     if (existing) return existing;
 
-    const ttlExpiresAt = new Date(
-      Date.now() + DEFAULT_TTL_SECONDS * 1000,
-    ).toISOString();
+    const ttlExpiresAt = new Date(Date.now() + DEFAULT_TTL_SECONDS * 1000).toISOString();
     const location = this.normalizeLocation(input.location);
     const locationCheck = await this.evaluateLocation(location);
 
@@ -135,10 +121,7 @@ export class ScanVerificationService {
       });
     } catch (err: unknown) {
       if ((err as { code?: string }).code === '23505') {
-        const raced = await this.findBySessionCustomer(
-          input.tableSessionId,
-          input.customerId,
-        );
+        const raced = await this.findBySessionCustomer(input.tableSessionId, input.customerId);
         if (raced) return raced;
       }
       throw err;
@@ -177,9 +160,7 @@ export class ScanVerificationService {
     return dto;
   }
 
-  async list(filters: {
-    status?: ScanVerificationStatus;
-  }): Promise<ScanVerificationRequestDto[]> {
+  async list(filters: { status?: ScanVerificationStatus }): Promise<ScanVerificationRequestDto[]> {
     const params: unknown[] = [];
     const where: string[] = [];
     if (filters.status) {
@@ -197,21 +178,16 @@ export class ScanVerificationService {
   }
 
   async getById(id: string): Promise<ScanVerificationRequestDto> {
-    const rows = (await this.tenantConn.query(
-      `${this.baseSelect()} WHERE svr.id = $1 LIMIT 1`,
-      [id],
-    )) as ScanVerificationRow[];
+    const rows = (await this.tenantConn.query(`${this.baseSelect()} WHERE svr.id = $1 LIMIT 1`, [
+      id,
+    ])) as ScanVerificationRow[];
     if (!rows.length) {
       throw new NotFoundException('Verificacao de scan nao encontrada.');
     }
     return this.mapRow(rows[0]);
   }
 
-  async approve(
-    id: string,
-    staffId: string,
-    slug?: string,
-  ): Promise<ScanVerificationRequestDto> {
+  async approve(id: string, staffId: string, slug?: string): Promise<ScanVerificationRequestDto> {
     return this.respond(id, 'approved', staffId, undefined, slug);
   }
 
@@ -251,9 +227,7 @@ export class ScanVerificationService {
         throw new NotFoundException('Verificacao de scan nao encontrada.');
       }
       if (current.status !== 'pending') {
-        throw new ConflictException(
-          `Verificacao ja decidida (status=${current.status}).`,
-        );
+        throw new ConflictException(`Verificacao ja decidida (status=${current.status}).`);
       }
 
       await tx.query(
@@ -318,9 +292,7 @@ export class ScanVerificationService {
             WHERE id = $1`,
           [
             current.escalation_chain_id,
-            status === 'approved'
-              ? `approved_by_staff:${staffId}`
-              : `rejected_by_staff:${staffId}`,
+            status === 'approved' ? `approved_by_staff:${staffId}` : `rejected_by_staff:${staffId}`,
           ],
         );
       }
@@ -444,9 +416,7 @@ export class ScanVerificationService {
     };
   }
 
-  private async evaluateLocation(
-    location: CustomerLocationSignal,
-  ): Promise<CustomerLocationCheck> {
+  private async evaluateLocation(location: CustomerLocationSignal): Promise<CustomerLocationCheck> {
     try {
       return evaluateCustomerGeofence(location, await this.readGeofenceConfig());
     } catch {
@@ -480,8 +450,7 @@ export class ScanVerificationService {
       return {
         latitude: envLat ?? this.finiteNumber(row?.geofence_latitude),
         longitude: envLon ?? this.finiteNumber(row?.geofence_longitude),
-        radiusMeters:
-          envRadius ?? this.finiteNumber(row?.geofence_radius_meters) ?? 3,
+        radiusMeters: envRadius ?? this.finiteNumber(row?.geofence_radius_meters) ?? 3,
       };
     } catch (err: unknown) {
       const pgErr = err as { code?: string };
@@ -498,9 +467,7 @@ export class ScanVerificationService {
     return this.finiteNumber(process.env[name]);
   }
 
-  private normalizeLocation(
-    location?: CustomerLocationSignal | null,
-  ): CustomerLocationSignal {
+  private normalizeLocation(location?: CustomerLocationSignal | null): CustomerLocationSignal {
     if (!location) return { status: 'unknown' };
     const allowed = new Set<CustomerLocationStatus>([
       'unknown',
@@ -546,10 +513,7 @@ export class ScanVerificationService {
     return `***.***.***-${clean.slice(-2)}`;
   }
 
-  private async logCreated(
-    dto: ScanVerificationRequestDto,
-    slug?: string,
-  ): Promise<void> {
+  private async logCreated(dto: ScanVerificationRequestDto, slug?: string): Promise<void> {
     const base = {
       tenantId: slug ?? this.tenantConn.getTenantSlug() ?? null,
       tableId: dto.tableId,
@@ -567,9 +531,7 @@ export class ScanVerificationService {
     await Promise.all([
       this.audit.log('scan_verification_events', base),
       this.audit.logAudit(base),
-    ]).catch((err) =>
-      this.logger.warn(`scan verification log failed: ${(err as Error).message}`),
-    );
+    ]).catch((err) => this.logger.warn(`scan verification log failed: ${(err as Error).message}`));
   }
 
   private async logResolved(
@@ -585,9 +547,7 @@ export class ScanVerificationService {
       customerId: dto.customerId,
       staffId,
       eventType:
-        dto.status === 'approved'
-          ? 'scan_verification_approved'
-          : 'scan_verification_rejected',
+        dto.status === 'approved' ? 'scan_verification_approved' : 'scan_verification_rejected',
       metadata: {
         requestId: dto.id,
         tableNumber: dto.tableNumber,
@@ -597,8 +557,6 @@ export class ScanVerificationService {
     await Promise.all([
       this.audit.log('scan_verification_events', base),
       this.audit.logAudit(base),
-    ]).catch((err) =>
-      this.logger.warn(`scan verification log failed: ${(err as Error).message}`),
-    );
+    ]).catch((err) => this.logger.warn(`scan verification log failed: ${(err as Error).message}`));
   }
 }

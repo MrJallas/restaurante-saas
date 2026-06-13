@@ -1467,10 +1467,9 @@ export class OrdersService {
     // achado do code-review). Garante que nome e id são do MESMO garçom.
     let targetWaiterName = target.name;
     if (delivery.target_waiter_id && delivery.target_waiter_id !== target.id) {
-      const persisted = (await this.tenantConn.query(
-        `SELECT name FROM staff WHERE id = $1`,
-        [delivery.target_waiter_id],
-      )) as Array<{ name: string }>;
+      const persisted = (await this.tenantConn.query(`SELECT name FROM staff WHERE id = $1`, [
+        delivery.target_waiter_id,
+      ])) as Array<{ name: string }>;
       targetWaiterName = persisted[0]?.name ?? null;
     }
 

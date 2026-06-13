@@ -33,9 +33,12 @@ export default function PedidoConfirmandoPage() {
     const timers: ReturnType<typeof setTimeout>[] = [];
     items.forEach((_, i) => {
       timers.push(
-        setTimeout(() => {
-          setReveal((r) => Math.max(r, i + 1));
-        }, i * REVEAL_INTERVAL_MS + 200),
+        setTimeout(
+          () => {
+            setReveal((r) => Math.max(r, i + 1));
+          },
+          i * REVEAL_INTERVAL_MS + 200,
+        ),
       );
     });
     return () => timers.forEach(clearTimeout);
@@ -133,7 +136,14 @@ export default function PedidoConfirmandoPage() {
                 className="absolute inset-0"
                 aria-hidden
               >
-                <circle cx="29" cy="29" r={radius} fill="none" stroke="var(--color-border-soft)" strokeWidth="2" />
+                <circle
+                  cx="29"
+                  cy="29"
+                  r={radius}
+                  fill="none"
+                  stroke="var(--color-border-soft)"
+                  strokeWidth="2"
+                />
                 <circle
                   cx="29"
                   cy="29"
@@ -185,18 +195,14 @@ export default function PedidoConfirmandoPage() {
                 <div className="min-w-0 flex-1">
                   <div className="mb-1 flex items-baseline justify-between gap-2">
                     <div className="text-[16px] font-medium tracking-[-0.01em]">{it.name}</div>
-                    <div className="text-[14px] font-semibold tabular-nums">
-                      {fmt(lineTotal)}
-                    </div>
+                    <div className="text-[14px] font-semibold tabular-nums">{fmt(lineTotal)}</div>
                   </div>
                   {it.note && (
                     <div className="mt-0.5 text-[12px] italic leading-[1.4] text-mute text-pretty">
                       obs: {it.note}
                     </div>
                   )}
-                  {it.size && (
-                    <div className="mt-0.5 text-[11px] text-faint">{it.size}</div>
-                  )}
+                  {it.size && <div className="mt-0.5 text-[11px] text-faint">{it.size}</div>}
                 </div>
                 {shown && (
                   <div className="flex h-[22px] w-[22px] shrink-0 animate-pop-in items-center justify-center rounded-full bg-success text-[13px] text-white">
@@ -211,9 +217,8 @@ export default function PedidoConfirmandoPage() {
             <div className="mt-4 flex animate-fade-up items-start gap-2.5 rounded-[14px] border border-border-soft bg-surface p-3.5 text-[13px] leading-[1.45] text-ink text-pretty">
               <span className="text-[14px]">✦</span>
               <div>
-                <b>Tudo certo?</b> Total de{' '}
-                <b className="tabular-nums">{fmt(totalCents)}</b>. O pedido será enviado
-                automaticamente em {seconds}s, ou confirme agora.
+                <b>Tudo certo?</b> Total de <b className="tabular-nums">{fmt(totalCents)}</b>. O
+                pedido será enviado automaticamente em {seconds}s, ou confirme agora.
               </div>
             </div>
           )}
@@ -223,12 +228,7 @@ export default function PedidoConfirmandoPage() {
           <PillButton onClick={cancelEdit} disabled={busy} className="flex-1">
             ← Editar
           </PillButton>
-          <PillButton
-            variant="filled"
-            onClick={confirmNow}
-            disabled={busy}
-            className="flex-[2]"
-          >
+          <PillButton variant="filled" onClick={confirmNow} disabled={busy} className="flex-[2]">
             Confirmar agora
           </PillButton>
         </div>

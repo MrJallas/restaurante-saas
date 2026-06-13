@@ -3,10 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiRequestError } from '../../lib/api';
-import {
-  listMyComplaints,
-  type ComplaintRecord,
-} from '../../lib/api/feedback';
+import { listMyComplaints, type ComplaintRecord } from '../../lib/api/feedback';
 import { useSession } from '../../hooks/useSession';
 import { useRequireCustomerId } from '../../hooks/useRequireCustomerId';
 import { AppShell } from '../../components/layout/AppShell';
@@ -34,9 +31,7 @@ function formatDate(iso: string): string {
   });
 }
 
-export function ScreenCustomerComplaints({
-  slug,
-}: ScreenCustomerComplaintsProps) {
+export function ScreenCustomerComplaints({ slug }: ScreenCustomerComplaintsProps) {
   const session = useSession();
   const router = useRouter();
   const ready = useRequireCustomerId(slug);
@@ -83,9 +78,7 @@ export function ScreenCustomerComplaints({
       showHamburger={false}
     >
       <div className="flex flex-1 flex-col px-[22px] pb-10 pt-3">
-        <h1 className="mb-1 text-[22px] font-semibold tracking-[-0.02em] text-ink">
-          Reclamações
-        </h1>
+        <h1 className="mb-1 text-[22px] font-semibold tracking-[-0.02em] text-ink">Reclamações</h1>
         <p className="mb-5 text-[13px] leading-[1.5] text-mute">
           Histórico do atendimento e respostas da gerência.
         </p>
@@ -96,15 +89,11 @@ export function ScreenCustomerComplaints({
           </div>
         )}
 
-        {loading && (
-          <div className="text-center text-[13px] text-mute">Carregando…</div>
-        )}
+        {loading && <div className="text-center text-[13px] text-mute">Carregando…</div>}
 
         {!loading && complaints.length === 0 && (
           <div className="rounded-[14px] border border-border-soft bg-surface px-4 py-10 text-center">
-            <div className="mb-2 text-[15px] font-medium text-ink">
-              Nenhuma reclamação por aqui
-            </div>
+            <div className="mb-2 text-[15px] font-medium text-ink">Nenhuma reclamação por aqui</div>
             <div className="text-[13px] leading-[1.5] text-mute">
               Se algo sair errado, você fala direto com a gerência por aqui.
             </div>

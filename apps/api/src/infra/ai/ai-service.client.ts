@@ -75,10 +75,7 @@ export class AiServiceClient {
     return headers;
   }
 
-  async classify(
-    message: string,
-    history: ChatMessage[] = [],
-  ): Promise<ClassifyResponse> {
+  async classify(message: string, history: ChatMessage[] = []): Promise<ClassifyResponse> {
     try {
       const res = await fetch(`${this.baseUrl}/classify`, {
         method: 'POST',

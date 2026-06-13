@@ -1,10 +1,4 @@
-import {
-  HttpException,
-  HttpStatus,
-  Injectable,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, Optional } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -74,10 +68,7 @@ export class ComplaintsService {
 
     let enriched = await this.getEnrichedRow(rows[0].id as string);
     if ((!enriched?.table_session_id || !enriched?.table_number) && input.tableSessionId) {
-      enriched = await this.getEnrichedRowForSession(
-        rows[0].id as string,
-        input.tableSessionId,
-      );
+      enriched = await this.getEnrichedRowForSession(rows[0].id as string, input.tableSessionId);
     }
     const result = this.mapRow(enriched ?? rows[0]);
 
@@ -137,12 +128,12 @@ export class ComplaintsService {
     slug?: string,
   ) {
     // Round 5 (B-NEW-1 round 3): hardened CAS — só pode responder quem
-     // não foi assigned ainda OU é o próprio assignee. Evita o caso onde
-     // 2 managers clicam "Responder" em janela ms-distance: o segundo
-     // pega assigned_manager_id != null e diferente do seu staffId, a
-     // WHERE rejeita, throw "ja respondida". Antes só `status IN (...)`
-     // protegia, mas se ambos managers iniciassem antes do commit do
-     // primeiro, ambos passavam.
+    // não foi assigned ainda OU é o próprio assignee. Evita o caso onde
+    // 2 managers clicam "Responder" em janela ms-distance: o segundo
+    // pega assigned_manager_id != null e diferente do seu staffId, a
+    // WHERE rejeita, throw "ja respondida". Antes só `status IN (...)`
+    // protegia, mas se ambos managers iniciassem antes do commit do
+    // primeiro, ambos passavam.
     const updated = unwrapRows<Record<string, unknown>>(
       await this.tenantConn.query(
         `UPDATE complaints
@@ -159,10 +150,7 @@ export class ComplaintsService {
       ),
     );
     if (!updated.length) {
-      throw new HttpException(
-        'Reclamacao nao encontrada ou ja respondida.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Reclamacao nao encontrada ou ja respondida.', HttpStatus.NOT_FOUND);
     }
     const enriched = await this.getEnrichedRow(updated[0].id as string);
     const mapped = this.mapRow(enriched ?? updated[0]);
@@ -211,10 +199,7 @@ export class ComplaintsService {
       ),
     );
     if (!updated.length) {
-      throw new HttpException(
-        'Reclamacao nao encontrada ou ja resolvida.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Reclamacao nao encontrada ou ja resolvida.', HttpStatus.NOT_FOUND);
     }
     const enriched = await this.getEnrichedRow(updated[0].id as string);
     const result = this.mapRow(enriched ?? updated[0]);
@@ -260,18 +245,13 @@ export class ComplaintsService {
         customer_id: string | null;
       }>;
       if (!existingRows.length) {
-        throw new HttpException(
-          'Reclamacao nao encontrada.',
-          HttpStatus.NOT_FOUND,
-        );
+        throw new HttpException('Reclamacao nao encontrada.', HttpStatus.NOT_FOUND);
       }
       const existing = existingRows[0];
 
       let chainId = existing.escalation_chain_id;
       let chainLevel = 1;
-      const ttlExpiresAt = new Date(
-        Date.now() + 5 * 60 * 1000,
-      ).toISOString();
+      const ttlExpiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
       if (!chainId) {
         const inserted = (await tx.query(
           `INSERT INTO escalation_chains
@@ -311,10 +291,7 @@ export class ComplaintsService {
         ),
       );
       if (!updated.length) {
-        throw new HttpException(
-          'Reclamacao nao encontrada.',
-          HttpStatus.NOT_FOUND,
-        );
+        throw new HttpException('Reclamacao nao encontrada.', HttpStatus.NOT_FOUND);
       }
 
       return {
@@ -374,9 +351,7 @@ export class ComplaintsService {
               LEFT JOIN customers cust ON cust.id = c.customer_id
                  ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
                  ORDER BY c.submitted_at DESC LIMIT 100`;
-    const rows = (await this.tenantConn.query(sql, params)) as Array<
-      Record<string, unknown>
-    >;
+    const rows = (await this.tenantConn.query(sql, params)) as Array<Record<string, unknown>>;
     return rows.map((r) => this.mapRow(r));
   }
 
@@ -400,10 +375,7 @@ export class ComplaintsService {
       [id, customerId],
     )) as Array<Record<string, unknown>>;
     if (!rows.length) {
-      throw new HttpException(
-        'Reclamação não encontrada ou já removida.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Reclamação não encontrada ou já removida.', HttpStatus.NOT_FOUND);
     }
     return this.mapRow(rows[0]);
   }

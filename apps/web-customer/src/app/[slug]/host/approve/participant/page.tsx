@@ -33,7 +33,5 @@ export default function HostApproveParticipantPage() {
     }
   }, [slug, sessionId, router]);
 
-  return (
-    <ScreenHostApproveParticipant slug={slug} skipTypewriter={skipTypewriter} />
-  );
+  return <ScreenHostApproveParticipant slug={slug} skipTypewriter={skipTypewriter} />;
 }

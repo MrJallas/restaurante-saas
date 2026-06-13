@@ -18,7 +18,12 @@ interface PushLateArrivalInfoProps {
 }
 
 export const PushLateArrivalInfo: React.FC<PushLateArrivalInfoProps> = ({
-  tableNumber, requesterName, context, time = 'agora', fallback, onTap,
+  tableNumber,
+  requesterName,
+  context,
+  time = 'agora',
+  fallback,
+  onTap,
 }) => (
   <PushCardIOS
     tone={fallback ? 'warn' : 'info'}

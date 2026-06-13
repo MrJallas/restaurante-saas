@@ -22,9 +22,7 @@ const VALID_STATUS: QrIssueStatus[] = ['open', 'in_progress', 'resolved'];
 export class QrIssuesService {
   constructor(private readonly tenantConn: TenantConnectionProvider) {}
 
-  async list(
-    status: QrIssueStatus | 'all' = 'open',
-  ): Promise<QrIssueRow[]> {
+  async list(status: QrIssueStatus | 'all' = 'open'): Promise<QrIssueRow[]> {
     const where: string[] = [];
     const params: unknown[] = [];
     if (status !== 'all') {
@@ -62,12 +60,7 @@ export class QrIssuesService {
          RETURNING id, table_number, description, photo_url,
                    reported_by_staff_id, status, created_at,
                    resolved_at, resolved_by_staff_id`,
-        [
-          dto.table_number ?? null,
-          dto.description ?? null,
-          dto.photo_url ?? null,
-          reporterStaffId,
-        ],
+        [dto.table_number ?? null, dto.description ?? null, dto.photo_url ?? null, reporterStaffId],
       ),
     );
 

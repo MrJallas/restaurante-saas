@@ -38,12 +38,11 @@ interface DrinkDetailProps {
 
 export function DrinkDetail({ drink, onBack, onAdd, isAdding }: DrinkDetailProps) {
   const [sizeIndex, setSizeIndex] = useState(0);
-  const [prefs, setPrefs] = useState<Record<string, boolean>>(
-    () =>
-      (drink.preferences ?? []).reduce<Record<string, boolean>>((acc, p) => {
-        acc[p.id] = Boolean(p.defaultSelected);
-        return acc;
-      }, {}),
+  const [prefs, setPrefs] = useState<Record<string, boolean>>(() =>
+    (drink.preferences ?? []).reduce<Record<string, boolean>>((acc, p) => {
+      acc[p.id] = Boolean(p.defaultSelected);
+      return acc;
+    }, {}),
   );
   const [quantity, setQuantity] = useState(1);
 
@@ -51,14 +50,10 @@ export function DrinkDetail({ drink, onBack, onAdd, isAdding }: DrinkDetailProps
   const unitPrice = chosenSize?.priceCents ?? drink.priceCents;
   const total = unitPrice * quantity;
 
-  const togglePref = (id: string) =>
-    setPrefs((prev) => ({ ...prev, [id]: !prev[id] }));
+  const togglePref = (id: string) => setPrefs((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const selectedPrefs = useMemo(
-    () =>
-      (drink.preferences ?? [])
-        .filter((p) => prefs[p.id])
-        .map((p) => p.label),
+    () => (drink.preferences ?? []).filter((p) => prefs[p.id]).map((p) => p.label),
     [drink.preferences, prefs],
   );
 
@@ -102,17 +97,44 @@ export function DrinkDetail({ drink, onBack, onAdd, isAdding }: DrinkDetailProps
               strokeLinejoin="round"
               className="text-ink"
             />
-            <path d="M24 40 L86 40" stroke="currentColor" strokeWidth="1" opacity="0.3" className="text-ink" />
+            <path
+              d="M24 40 L86 40"
+              stroke="currentColor"
+              strokeWidth="1"
+              opacity="0.3"
+              className="text-ink"
+            />
             <path
               d="M26 60 Q55 55 84 60 L80 130 Q55 138 30 130 Z"
               fill="currentColor"
               opacity="0.1"
               className="text-ink"
             />
-            <circle cx="45" cy="80" r="2.5" fill="currentColor" opacity="0.3" className="text-ink" />
+            <circle
+              cx="45"
+              cy="80"
+              r="2.5"
+              fill="currentColor"
+              opacity="0.3"
+              className="text-ink"
+            />
             <circle cx="62" cy="90" r="2" fill="currentColor" opacity="0.3" className="text-ink" />
-            <circle cx="40" cy="100" r="1.8" fill="currentColor" opacity="0.3" className="text-ink" />
-            <circle cx="68" cy="70" r="1.5" fill="currentColor" opacity="0.3" className="text-ink" />
+            <circle
+              cx="40"
+              cy="100"
+              r="1.8"
+              fill="currentColor"
+              opacity="0.3"
+              className="text-ink"
+            />
+            <circle
+              cx="68"
+              cy="70"
+              r="1.5"
+              fill="currentColor"
+              opacity="0.3"
+              className="text-ink"
+            />
             <circle
               cx="55"
               cy="22"

@@ -81,10 +81,7 @@ export interface ComplaintRecord {
  * `problemType` is optional here because the FE composer hasn't yet picked
  * a chip on first render.
  */
-export type ComplaintComposeDto = Omit<
-  ComplaintCreateDto,
-  'problemType'
-> & {
+export type ComplaintComposeDto = Omit<ComplaintCreateDto, 'problemType'> & {
   orderId?: string;
   orderRatingId?: string;
   customerId?: string;
@@ -112,16 +109,11 @@ interface ComplaintCreateBody {
   attachedImageUrl?: string;
 }
 
-export function createComplaint(
-  slug: string,
-  body: ComplaintComposeDto,
-): Promise<ComplaintRecord> {
+export function createComplaint(slug: string, body: ComplaintComposeDto): Promise<ComplaintRecord> {
   // Combine the chip label + free text into the persisted `text`. The chip
   // type is informational (the manager sees it) — at the BE we don't have a
   // dedicated `problemType` column today, so we prefix it on the text.
-  const prefixed = body.problemType
-    ? `[${body.problemType}] ${body.text}`
-    : body.text;
+  const prefixed = body.problemType ? `[${body.problemType}] ${body.text}` : body.text;
   const payload: ComplaintCreateBody = {
     orderId: body.orderId,
     orderRatingId: body.orderRatingId,
@@ -150,10 +142,7 @@ export function getComplaint(slug: string, id: string): Promise<ComplaintRecord>
  * (SessionGuard). Usado pela tela Reclamações no mount, então o histórico
  * sobrevive a hard reload e vem do BE, não do sessionStorage.
  */
-export function listMyComplaints(
-  slug: string,
-  _customerId: string,
-): Promise<ComplaintRecord[]> {
+export function listMyComplaints(slug: string, _customerId: string): Promise<ComplaintRecord[]> {
   return apiGet<ComplaintRecord[]>(`/${slug}/complaints/mine`);
 }
 
@@ -167,10 +156,7 @@ const COMPLAINT_CACHE_PREFIX = 'complaint:cache:';
 export function cacheComplaint(record: ComplaintRecord): void {
   if (typeof window === 'undefined') return;
   try {
-    window.sessionStorage.setItem(
-      `${COMPLAINT_CACHE_PREFIX}${record.id}`,
-      JSON.stringify(record),
-    );
+    window.sessionStorage.setItem(`${COMPLAINT_CACHE_PREFIX}${record.id}`, JSON.stringify(record));
   } catch {
     /* storage blocked — degrade silently */
   }
@@ -179,9 +165,7 @@ export function cacheComplaint(record: ComplaintRecord): void {
 export function readCachedComplaint(id: string): ComplaintRecord | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.sessionStorage.getItem(
-      `${COMPLAINT_CACHE_PREFIX}${id}`,
-    );
+    const raw = window.sessionStorage.getItem(`${COMPLAINT_CACHE_PREFIX}${id}`);
     return raw ? (JSON.parse(raw) as ComplaintRecord) : null;
   } catch {
     return null;
@@ -233,9 +217,7 @@ export function createLgpdRequest(
           body.consentChipLabel ? ' · chip="' + body.consentChipLabel + '"' : ''
         }${
           body.consentOriginalMessage
-            ? ' · text="' +
-              body.consentOriginalMessage.replace(/"/g, "'") +
-              '"'
+            ? ' · text="' + body.consentOriginalMessage.replace(/"/g, "'") + '"'
             : ''
         }`
       : '';

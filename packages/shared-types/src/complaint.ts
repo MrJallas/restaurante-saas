@@ -7,10 +7,7 @@
  * responds (state = `responded`), 30s later card auto-collapses; complaint
  * is `resolved` when manager taps "Mark as resolved" or after read-receipt.
  */
-export type ComplaintStatus =
-  | 'created'
-  | 'responded'
-  | 'resolved';
+export type ComplaintStatus = 'created' | 'responded' | 'resolved';
 
 /**
  * Predefined problem categories the customer picks via chips. `outro` is the
@@ -27,11 +24,7 @@ export type ComplaintProblemType =
  * Manager response chip-action; renders as `ChipActionInset` inside the
  * `ManagerBubbleWithAction`. `custom` means free text (no inset).
  */
-export type ComplaintChipAction =
-  | 'on-the-way'
-  | 'kitchen-check'
-  | 'courtesy'
-  | 'custom';
+export type ComplaintChipAction = 'on-the-way' | 'kitchen-check' | 'courtesy' | 'custom';
 
 /**
  * Domain entity mirroring `complaints` table.

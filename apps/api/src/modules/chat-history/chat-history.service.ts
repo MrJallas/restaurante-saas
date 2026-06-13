@@ -1,9 +1,4 @@
-import {
-  HttpException,
-  HttpStatus,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import type { Db } from 'mongodb';
 import { MongoService } from '../../infra/mongo/mongo.service';
@@ -62,11 +57,7 @@ function dayKey(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
 
-function isLegacyDayBucketThread(
-  thread: ThreadDoc,
-  tenantId: string,
-  customerId: string,
-): boolean {
+function isLegacyDayBucketThread(thread: ThreadDoc, tenantId: string, customerId: string): boolean {
   const prefix = `${tenantId}:${customerId}:`;
   if (!thread.threadId.startsWith(prefix)) return false;
   const suffix = thread.threadId.slice(prefix.length);
@@ -106,9 +97,7 @@ export class ChatHistoryService {
     const db = this.mongo.tryDb();
     if (!db) {
       // Não bloqueia o flow do customer — apenas log warn.
-      this.logger.warn(
-        `Mongo offline · skipping chat persist for customer ${ctx.customerId}`,
-      );
+      this.logger.warn(`Mongo offline · skipping chat persist for customer ${ctx.customerId}`);
       return;
     }
 
@@ -128,9 +117,7 @@ export class ChatHistoryService {
         if (existingThread) {
           threadId = requestedThreadId;
         } else {
-          this.logger.warn(
-            `Ignoring invalid continueThreadId for customer ${ctx.customerId}`,
-          );
+          this.logger.warn(`Ignoring invalid continueThreadId for customer ${ctx.customerId}`);
         }
       }
 
@@ -202,9 +189,7 @@ export class ChatHistoryService {
       await db.collection<MessageDoc>(MESSAGES_COLLECTION).insertMany(docs);
     } catch (err) {
       // Persist é best-effort — não derruba o turn do customer.
-      this.logger.warn(
-        `Falha ao persistir chat turn em Mongo: ${(err as Error).message}`,
-      );
+      this.logger.warn(`Falha ao persistir chat turn em Mongo: ${(err as Error).message}`);
     }
   }
 
@@ -220,14 +205,11 @@ export class ChatHistoryService {
       .limit(100)
       .toArray();
 
-    const legacyThreadIds = threads
-      .filter((t) => t.tenantId !== tenantId)
-      .map((t) => t.threadId);
+    const legacyThreadIds = threads.filter((t) => t.tenantId !== tenantId).map((t) => t.threadId);
     if (legacyThreadIds.length > 0) {
-      await db.collection<ThreadDoc>(THREADS_COLLECTION).updateMany(
-        { threadId: { $in: legacyThreadIds }, customerId },
-        { $set: { tenantId } },
-      );
+      await db
+        .collection<ThreadDoc>(THREADS_COLLECTION)
+        .updateMany({ threadId: { $in: legacyThreadIds }, customerId }, { $set: { tenantId } });
       this.logger.warn(
         `Normalized ${legacyThreadIds.length} legacy chat thread tenantId(s) for customer ${customerId}`,
       );
@@ -280,9 +262,7 @@ export class ChatHistoryService {
    */
   async listMessagesForCustomer(threadId: string, customerId: string) {
     const db = this.requireDb();
-    const thread = await db
-      .collection<ThreadDoc>(THREADS_COLLECTION)
-      .findOne({ threadId });
+    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
     if (!thread || thread.customerId !== customerId) {
       throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
@@ -295,21 +275,14 @@ export class ChatHistoryService {
    */
   async deleteThread(threadId: string, customerId: string) {
     const db = this.requireDb();
-    const thread = await db
-      .collection<ThreadDoc>(THREADS_COLLECTION)
-      .findOne({ threadId });
+    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
     if (!thread || thread.customerId !== customerId) {
       throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
-    const messages = await db
-      .collection<MessageDoc>(MESSAGES_COLLECTION)
-      .deleteMany({ threadId });
+    const messages = await db.collection<MessageDoc>(MESSAGES_COLLECTION).deleteMany({ threadId });
     await db
       .collection<ThreadDoc>(THREADS_COLLECTION)
-      .updateOne(
-        { threadId },
-        { $set: { deletedByUser: true, deletedAt: new Date() } },
-      );
+      .updateOne({ threadId }, { $set: { deletedByUser: true, deletedAt: new Date() } });
     return {
       deletedAt: new Date().toISOString(),
       messagesDeleted: messages.deletedCount ?? 0,
@@ -335,10 +308,7 @@ export class ChatHistoryService {
       .deleteMany({ customerId });
     const threadsRes = await db
       .collection<ThreadDoc>(THREADS_COLLECTION)
-      .updateMany(
-        { customerId },
-        { $set: { deletedByUser: true, deletedAt: new Date() } },
-      );
+      .updateMany({ customerId }, { $set: { deletedByUser: true, deletedAt: new Date() } });
     return {
       deletedCount: messages.deletedCount ?? 0,
       threadsMarked: threadsRes.modifiedCount ?? 0,
@@ -359,14 +329,9 @@ export class ChatHistoryService {
    * Best-effort: erros aqui são caught pelo caller (appendTurn) e logados,
    * não interrompem a persistência do turno.
    */
-  private async pruneOldestThreads(
-    db: Db,
-    customerId: string,
-  ): Promise<void> {
+  private async pruneOldestThreads(db: Db, customerId: string): Promise<void> {
     const filter = { customerId, deletedByUser: { $ne: true } };
-    const count = await db
-      .collection<ThreadDoc>(THREADS_COLLECTION)
-      .countDocuments(filter);
+    const count = await db.collection<ThreadDoc>(THREADS_COLLECTION).countDocuments(filter);
     if (count <= FIFO_MAX_THREADS_PER_CUSTOMER) return;
 
     const excess = count - FIFO_MAX_THREADS_PER_CUSTOMER;
@@ -385,9 +350,7 @@ export class ChatHistoryService {
     await db
       .collection<MessageDoc>(MESSAGES_COLLECTION)
       .deleteMany({ threadId: { $in: threadIds } });
-    await db
-      .collection<ThreadDoc>(THREADS_COLLECTION)
-      .deleteMany({ threadId: { $in: threadIds } });
+    await db.collection<ThreadDoc>(THREADS_COLLECTION).deleteMany({ threadId: { $in: threadIds } });
 
     this.logger.warn(
       `FIFO 80 · dropped ${threadIds.length} oldest thread(s) for customer ${customerId} (count=${count}, cap=${FIFO_MAX_THREADS_PER_CUSTOMER})`,
@@ -397,10 +360,7 @@ export class ChatHistoryService {
   private requireDb() {
     const db = this.mongo.tryDb();
     if (!db) {
-      throw new HttpException(
-        'Servico de historico indisponivel.',
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
+      throw new HttpException('Servico de historico indisponivel.', HttpStatus.SERVICE_UNAVAILABLE);
     }
     return db;
   }

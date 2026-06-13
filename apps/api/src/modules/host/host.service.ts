@@ -82,11 +82,7 @@ interface ReservationRow {
   note: string | null;
 }
 
-const LIBERATE_MODES: HostLiberateMode[] = [
-  'auto',
-  'manual_paid',
-  'manual_force',
-];
+const LIBERATE_MODES: HostLiberateMode[] = ['auto', 'manual_paid', 'manual_force'];
 
 /**
  * Staff-host service · backbone do modulo da recepcionista. Cobre:
@@ -379,9 +375,7 @@ export class HostService {
         id: `zone_pause:${row.id}:${ended ? 'ended' : 'started'}`,
         kind: (ended ? 'zone_pause_ended' : 'zone_pause_started') as HostInboxKind,
         refId: row.id,
-        title: ended
-          ? 'Pausa do garçom encerrada'
-          : 'Pausa do garçom iniciada',
+        title: ended ? 'Pausa do garçom encerrada' : 'Pausa do garçom iniciada',
         subtitle: row.waiter_name ?? undefined,
         at: row.ended_at ?? row.started_at,
         context: {
@@ -391,9 +385,7 @@ export class HostService {
       });
     }
 
-    return items
-      .sort((a, b) => b.at.localeCompare(a.at))
-      .slice(0, limit);
+    return items.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
   }
 
   // ─── Liberate ───
@@ -404,10 +396,7 @@ export class HostService {
     slug: string,
   ) {
     if (!LIBERATE_MODES.includes(body.mode)) {
-      throw new HttpException(
-        `Modo desconhecido: ${body.mode}.`,
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException(`Modo desconhecido: ${body.mode}.`, HttpStatus.BAD_REQUEST);
     }
 
     const tableRow = await this.findTableByNumber(tableNumber);
@@ -430,10 +419,7 @@ export class HostService {
 
     if (!activeSession) {
       if (body.mode !== 'auto') {
-        throw new HttpException(
-          'Sem sessao ativa pra liberar.',
-          HttpStatus.CONFLICT,
-        );
+        throw new HttpException('Sem sessao ativa pra liberar.', HttpStatus.CONFLICT);
       }
     } else {
       const closedBy = body.mode === 'auto' ? 'system' : `staff:${body.mode}`;
@@ -450,10 +436,7 @@ export class HostService {
         ),
       );
       if (!updated.length) {
-        throw new HttpException(
-          'Sessao ja foi fechada.',
-          HttpStatus.CONFLICT,
-        );
+        throw new HttpException('Sessao ja foi fechada.', HttpStatus.CONFLICT);
       }
     }
 
@@ -509,10 +492,7 @@ export class HostService {
       throw new NotFoundException(`Mesa destino ${body.toTable} nao encontrada.`);
     }
     if (fromRow.id === toRow.id) {
-      throw new HttpException(
-        'Mesa origem e destino sao iguais.',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException('Mesa origem e destino sao iguais.', HttpStatus.BAD_REQUEST);
     }
 
     let sessionId = body.sessionId;
@@ -526,10 +506,7 @@ export class HostService {
         ),
       )[0];
       if (!active) {
-        throw new HttpException(
-          'Mesa origem nao tem sessao ativa.',
-          HttpStatus.CONFLICT,
-        );
+        throw new HttpException('Mesa origem nao tem sessao ativa.', HttpStatus.CONFLICT);
       }
       sessionId = active.id;
     }
@@ -543,10 +520,7 @@ export class HostService {
       ),
     )[0];
     if (targetActive) {
-      throw new HttpException(
-        'Mesa destino ja tem sessao ativa.',
-        HttpStatus.CONFLICT,
-      );
+      throw new HttpException('Mesa destino ja tem sessao ativa.', HttpStatus.CONFLICT);
     }
 
     const inserted = unwrapRows<SwapRow>(
@@ -627,10 +601,7 @@ export class HostService {
       );
     }
 
-    const setClause: string[] = [
-      'status = $2',
-      'updated_at = now()',
-    ];
+    const setClause: string[] = ['status = $2', 'updated_at = now()'];
     const params: unknown[] = [id, body.status];
     if (body.status === 'completed') setClause.push('completed_at = now()');
     if (body.status === 'cancelled') setClause.push('cancelled_at = now()');
@@ -689,9 +660,7 @@ export class HostService {
     return dto;
   }
 
-  async listSwapRequests(filter?: {
-    status?: HostSwapStatus;
-  }): Promise<HostSwapRequestDto[]> {
+  async listSwapRequests(filter?: { status?: HostSwapStatus }): Promise<HostSwapRequestDto[]> {
     const where: string[] = [];
     const params: unknown[] = [];
     if (filter?.status) {
@@ -732,10 +701,7 @@ export class HostService {
       ),
     )[0];
     if (!activeSession) {
-      throw new HttpException(
-        'Sem sessao ativa pra marcar VIP.',
-        HttpStatus.CONFLICT,
-      );
+      throw new HttpException('Sem sessao ativa pra marcar VIP.', HttpStatus.CONFLICT);
     }
 
     if (body.flag) {
@@ -826,7 +792,10 @@ export class HostService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    if (body.party != null && (!Number.isInteger(body.party) || body.party < 1 || body.party > 99)) {
+    if (
+      body.party != null &&
+      (!Number.isInteger(body.party) || body.party < 1 || body.party > 99)
+    ) {
       throw new HttpException(
         'A quantidade de pessoas deve ficar entre 1 e 99.',
         HttpStatus.BAD_REQUEST,
@@ -847,10 +816,7 @@ export class HostService {
       ),
     )[0];
     if (!activeSession) {
-      throw new HttpException(
-        'Sem sessao ativa pra atualizar a mesa.',
-        HttpStatus.CONFLICT,
-      );
+      throw new HttpException('Sem sessao ativa pra atualizar a mesa.', HttpStatus.CONFLICT);
     }
     if (body.sessionId && body.sessionId !== activeSession.id) {
       throw new HttpException(
@@ -913,22 +879,13 @@ export class HostService {
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id, name, party, phone, cpf, note, status,
                    added_at, seated_at, left_at`,
-        [
-          body.name,
-          body.party,
-          body.phone ?? null,
-          body.cpf ?? null,
-          body.note ?? null,
-        ],
+        [body.name, body.party, body.phone ?? null, body.cpf ?? null, body.note ?? null],
       ),
     )[0];
     return this.mapWaitlistRow(inserted);
   }
 
-  async removeFromWaitlist(
-    id: string,
-    transition: 'seated' | 'left',
-  ): Promise<{ ok: true }> {
+  async removeFromWaitlist(id: string, transition: 'seated' | 'left'): Promise<{ ok: true }> {
     const tsCol = transition === 'seated' ? 'seated_at' : 'left_at';
     const updated = unwrapRows<{ id: string }>(
       await this.tenantConn.query(
@@ -983,10 +940,7 @@ export class HostService {
     } else {
       const parsed = new Date(body.when);
       if (Number.isNaN(parsed.getTime())) {
-        throw new HttpException(
-          'when invalido (use HH:MM ou ISO 8601).',
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException('when invalido (use HH:MM ou ISO 8601).', HttpStatus.BAD_REQUEST);
       }
       scheduledAt = parsed.toISOString();
     }
@@ -1033,10 +987,7 @@ export class HostService {
     },
   ): Promise<ReservationEntryDto> {
     const existing = unwrapRows<{ id: string }>(
-      await this.tenantConn.query(
-        `SELECT id FROM reservations WHERE id = $1`,
-        [id],
-      ),
+      await this.tenantConn.query(`SELECT id FROM reservations WHERE id = $1`, [id]),
     )[0];
     if (!existing) {
       throw new NotFoundException('Reserva nao encontrada.');
@@ -1084,9 +1035,7 @@ export class HostService {
 
   // ─── helpers privados ───
 
-  private async findTableByNumber(
-    number: number,
-  ): Promise<{ id: string } | null> {
+  private async findTableByNumber(number: number): Promise<{ id: string } | null> {
     // O FE conversa em "table number" (int), o DB persiste `code` (text). O
     // padrao convencionado pelo seed eh `code = "<number>"` (ex: "12") ou
     // "M12" — extraimos so os digitos pra comparar.

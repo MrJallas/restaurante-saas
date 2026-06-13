@@ -20,7 +20,9 @@ function PauseInner() {
 
 export default function ManagerOrdersPausePage() {
   return (
-    <Suspense fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}>
+    <Suspense
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}
+    >
       <PauseInner />
     </Suspense>
   );

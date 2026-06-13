@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { RedisService } from '../../infra/redis/redis.service';
@@ -58,9 +54,7 @@ export class PaymentsService {
 
     if (mode === 'individual') {
       if (!visitId) {
-        throw new BadRequestException(
-          'visitId necessario para pagamento individual.',
-        );
+        throw new BadRequestException('visitId necessario para pagamento individual.');
       }
       const rows = (await this.tenantConn.query(
         `SELECT COALESCE(SUM(total_cents), 0) as total
@@ -92,9 +86,7 @@ export class PaymentsService {
     let splitAllocations: SplitAllocation[] | null = null;
     if (options.splitMode) {
       if (!VALID_SPLIT_MODES.has(options.splitMode)) {
-        throw new BadRequestException(
-          `splitMode invalido: ${options.splitMode}.`,
-        );
+        throw new BadRequestException(`splitMode invalido: ${options.splitMode}.`);
       }
       splitMode = options.splitMode;
       splitAllocations = options.allocations ?? null;
@@ -105,15 +97,9 @@ export class PaymentsService {
     // `existing=[]` e ambos INSERTavam → 2 Pix com QRs diferentes,
     // PSP webhook batia em ambos = double charge.
     const lockKey = `payment_lock:${tableSessionId}:${visitId ?? 'table'}`;
-    const gotLock = await this.redis.setNX(
-      lockKey,
-      JSON.stringify({ ts: Date.now() }),
-      30,
-    );
+    const gotLock = await this.redis.setNX(lockKey, JSON.stringify({ ts: Date.now() }), 30);
     if (!gotLock) {
-      throw new BadRequestException(
-        'Pagamento sendo processado. Aguarde alguns segundos.',
-      );
+      throw new BadRequestException('Pagamento sendo processado. Aguarde alguns segundos.');
     }
 
     try {
@@ -127,10 +113,7 @@ export class PaymentsService {
       )) as { id: string; expires_at: string | null }[];
 
       for (const row of existing) {
-        if (
-          row.expires_at &&
-          new Date(row.expires_at).getTime() <= Date.now()
-        ) {
+        if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) {
           await this.tenantConn.query(
             `UPDATE payments SET status = 'expired', updated_at = now() WHERE id = $1`,
             [row.id],
@@ -171,14 +154,7 @@ export class PaymentsService {
     splitAllocations: SplitAllocation[] | null;
     options: RequestPaymentOptions;
   }) {
-    const {
-      tableSessionId,
-      visitId,
-      method,
-      amountCents,
-      splitMode,
-      splitAllocations,
-    } = input;
+    const { tableSessionId, visitId, method, amountCents, splitMode, splitAllocations } = input;
 
     // Generate PIX payload only when method is `pix`. Antes, gerávamos
     // sempre — então `pixQrCode`/`pixCopyPaste` vazavam no response de um
@@ -241,11 +217,7 @@ export class PaymentsService {
    * PSP-confirmed (or manual) success transition. The customer app polls
    * GET /:id and redirects to the feedback screen when it sees 'confirmed'.
    */
-  async confirmPayment(
-    paymentId: string,
-    tableSessionId: string,
-    pspTransactionId?: string,
-  ) {
+  async confirmPayment(paymentId: string, tableSessionId: string, pspTransactionId?: string) {
     const rows = (await this.tenantConn.query(
       `SELECT id, status, table_session_id, expires_at
        FROM payments WHERE id = $1`,
@@ -282,17 +254,12 @@ export class PaymentsService {
     // como pago um Pix com expires_at = '2020-01-01' — fraude direta.
     // Lazy expiry: alem de bloquear o confirm, transiciona o status pra
     // 'expired' pra que polls subsequentes vejam o estado correto.
-    if (
-      payment.expires_at &&
-      new Date(payment.expires_at).getTime() <= Date.now()
-    ) {
+    if (payment.expires_at && new Date(payment.expires_at).getTime() <= Date.now()) {
       await this.tenantConn.query(
         `UPDATE payments SET status = 'expired', updated_at = now() WHERE id = $1`,
         [paymentId],
       );
-      throw new BadRequestException(
-        'Pagamento expirado. Solicite um novo Pix.',
-      );
+      throw new BadRequestException('Pagamento expirado. Solicite um novo Pix.');
     }
 
     await this.tenantConn.query(
@@ -371,11 +338,7 @@ export class PaymentsService {
     // Lazy expiry: if a pending payment has outrun its expires_at, flip it
     // here so the client's next poll sees `expired` and routes to S9c.
     let status = normalizeStatus(p.status);
-    if (
-      status === 'pending' &&
-      p.expires_at &&
-      new Date(p.expires_at).getTime() <= Date.now()
-    ) {
+    if (status === 'pending' && p.expires_at && new Date(p.expires_at).getTime() <= Date.now()) {
       await this.tenantConn.query(
         `UPDATE payments SET status = 'expired', updated_at = now() WHERE id = $1`,
         [paymentId],
@@ -483,22 +446,14 @@ export class PaymentsService {
         amountCents: share + (idx === 0 ? remainder : 0),
       }));
     } else if (mode === 'by_item') {
-      const totals = new Map<string, number>(
-        participantIds.map((id) => [id, 0]),
-      );
+      const totals = new Map<string, number>(participantIds.map((id) => [id, 0]));
       const sharedItems = items.filter((it) => !it.customer_id);
       for (const it of items) {
         if (it.customer_id && totals.has(it.customer_id)) {
-          totals.set(
-            it.customer_id,
-            (totals.get(it.customer_id) ?? 0) + it.subtotal_cents,
-          );
+          totals.set(it.customer_id, (totals.get(it.customer_id) ?? 0) + it.subtotal_cents);
         }
       }
-      const sharedTotal = sharedItems.reduce(
-        (s, it) => s + it.subtotal_cents,
-        0,
-      );
+      const sharedTotal = sharedItems.reduce((s, it) => s + it.subtotal_cents, 0);
       const sharedShare = Math.floor(sharedTotal / participantIds.length);
       const sharedRemainder = sharedTotal - sharedShare * participantIds.length;
       participantIds.forEach((cid, idx) => {
@@ -512,9 +467,7 @@ export class PaymentsService {
     } else {
       // custom — trust the caller but bound-check sum against totalCents
       if (!customAllocations?.length) {
-        throw new BadRequestException(
-          'Para split customizado, envie as allocations.',
-        );
+        throw new BadRequestException('Para split customizado, envie as allocations.');
       }
       const sum = customAllocations.reduce((s, a) => s + a.amountCents, 0);
       if (Math.abs(sum - totalCents) > participantIds.length) {
@@ -533,11 +486,7 @@ export class PaymentsService {
    * without creating a payment. Persists nothing yet; kitchen dashboards can
    * layer on top later. Safe no-op for now so the frontend's CTA works.
    */
-  async notifySplit(
-    tableSessionId: string,
-    mode: string,
-    allocations: SplitAllocation[],
-  ) {
+  async notifySplit(tableSessionId: string, mode: string, allocations: SplitAllocation[]) {
     if (!VALID_SPLIT_MODES.has(mode)) {
       throw new BadRequestException(`splitMode invalido: ${mode}.`);
     }

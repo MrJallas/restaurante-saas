@@ -70,7 +70,7 @@ Todos os arquivos de referência do projeto (schema SQL, entities, DTOs, estrutu
    - `002_create_restaurants.sql`
    - `003_create_admin_users.sql`
    - `004_create_ai_usage_daily.sql`
-   Seguir exatamente o schema SQL do projeto (UUIDs, TIMESTAMPTZ, snake_case).
+     Seguir exatamente o schema SQL do projeto (UUIDs, TIMESTAMPTZ, snake_case).
 
 9. Criar `packages/database/migrations/tenant-template/`:
    - `001_create_settings.sql`
@@ -104,6 +104,7 @@ Todos os arquivos de referência do projeto (schema SQL, entities, DTOs, estrutu
 13. Verificar que todos os serviços sobem: api (3001), web-customer (3000), web-staff (3002), ai-service (8000).
 
 ### Critério de conclusão:
+
 Monorepo funcional com hot reload, banco com schema public + restaurant_dev populados, todos os serviços rodando e conectados.
 
 ---
@@ -220,6 +221,7 @@ Monorepo funcional com hot reload, banco com schema public + restaurant_dev popu
     - Mensagem de erro abaixo do campo: "CPF inválido. Verifique os números digitados."
 
 ### Testes:
+
 - CPF válido aceito, CPF inválido rejeitado (client + server)
 - HMAC válido inicia sessão, HMAC inválido retorna 401
 - Sessão expirada retorna 401

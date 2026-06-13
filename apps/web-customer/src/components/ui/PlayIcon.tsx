@@ -13,13 +13,7 @@ export function PlayIcon({ size = 42 }: PlayIconProps) {
         border: `${strokeW}px solid var(--color-ink)`,
       }}
     >
-      <svg
-        width={size * 0.5}
-        height={size * 0.5}
-        viewBox="0 0 20 20"
-        fill="none"
-        aria-hidden
-      >
+      <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 20 20" fill="none" aria-hidden>
         <path
           d="M5 3.5 L16 10 L5 16.5 Z"
           fill="var(--color-ink)"

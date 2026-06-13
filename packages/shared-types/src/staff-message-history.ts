@@ -17,11 +17,7 @@ export type StaffMessageHistoryFromRole = 'staff' | 'customer';
  * Human-readable label for the staff author. The set is closed for now to
  * keep the customer UI predictable; broaden when product asks for more.
  */
-export type StaffMessageHistoryRoleLabel =
-  | 'gerente'
-  | 'garçom'
-  | 'host'
-  | 'cozinha';
+export type StaffMessageHistoryRoleLabel = 'gerente' | 'garçom' | 'host' | 'cozinha';
 
 /**
  * Domain shape for a staff-message thread. Mirrors `staff_threads`

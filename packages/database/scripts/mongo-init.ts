@@ -216,11 +216,7 @@ async function main() {
     await ensureIndexes(db, 'chat_messages', MESSAGE_INDEXES);
 
     console.log('Ensuring indexes on customer_courtesy_history:');
-    await ensureIndexes(
-      db,
-      'customer_courtesy_history',
-      CUSTOMER_COURTESY_HISTORY_INDEXES,
-    );
+    await ensureIndexes(db, 'customer_courtesy_history', CUSTOMER_COURTESY_HISTORY_INDEXES);
 
     console.log('Ensuring indexes on shift_logs:');
     await ensureIndexes(db, 'shift_logs', SHIFT_LOG_INDEXES);

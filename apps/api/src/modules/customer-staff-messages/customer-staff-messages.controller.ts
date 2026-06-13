@@ -59,8 +59,7 @@ export class CustomerStaffMessagesController {
    */
   private async resolveCallerCustomerId(req: Request): Promise<string> {
     const token =
-      (req as Request & { cookies?: Record<string, string> }).cookies
-        ?.recognition_token ?? null;
+      (req as Request & { cookies?: Record<string, string> }).cookies?.recognition_token ?? null;
     if (!token) {
       throw new HttpException(
         'Identificação ausente. Faça login pra acessar suas mensagens.',
@@ -119,10 +118,7 @@ export class CustomerStaffMessagesController {
 
     // Ownership lookup: the thread doc carries tableSessionId. Looking it
     // up here (instead of trusting the body) keeps the IDOR surface tight.
-    const messages = await this.service.getThreadMessages(
-      threadId,
-      customerId,
-    );
+    const messages = await this.service.getThreadMessages(threadId, customerId);
     // `getThreadMessages` 404s if the thread doesn't belong to this
     // customer; if it succeeds the thread exists & is owned. We then need
     // the thread's tableSessionId — re-fetch via listThreads (cheap with
@@ -131,10 +127,7 @@ export class CustomerStaffMessagesController {
     const threads = await this.service.listThreads(customerId, tenantId);
     const own = threads.find((t) => t.threadId === threadId);
     if (!own) {
-      throw new HttpException(
-        'Conversa não encontrada.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
 
     return this.service.appendOutbound({
@@ -177,19 +170,13 @@ export class CustomerStaffMessagesController {
 
   @Get('staff/threads/:threadId/messages')
   @UseGuards(StaffOnlyGuard)
-  async getStaffThreadMessages(
-    @Param('threadId') threadId: string,
-    @Tenant() tenantId: string,
-  ) {
+  async getStaffThreadMessages(@Param('threadId') threadId: string, @Tenant() tenantId: string) {
     return this.service.getThreadMessagesForStaff(threadId, tenantId);
   }
 
   @Post('staff/threads/:threadId/read')
   @UseGuards(StaffOnlyGuard)
-  async markStaffRead(
-    @Param('threadId') threadId: string,
-    @Tenant() tenantId: string,
-  ) {
+  async markStaffRead(@Param('threadId') threadId: string, @Tenant() tenantId: string) {
     return this.service.markReadByStaff(threadId, tenantId);
   }
 
@@ -202,11 +189,6 @@ export class CustomerStaffMessagesController {
     @Tenant() tenantId: string,
   ) {
     const staffId = await this.callerResolver.requireActiveStaffId(req);
-    return this.service.appendStaffReply(
-      threadId,
-      tenantId,
-      staffId,
-      dto.content,
-    );
+    return this.service.appendStaffReply(threadId, tenantId, staffId, dto.content);
   }
 }

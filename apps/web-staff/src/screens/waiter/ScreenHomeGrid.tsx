@@ -12,14 +12,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
-import {
-  GAppHeader, GBadge, GBottomNav, GIconBtn,
-} from '../../components/waiter/Primitives';
+import { GAppHeader, GBadge, GBottomNav, GIconBtn } from '../../components/waiter/Primitives';
 import { useWaiterEvents } from '../../hooks/useWaiterEvents';
 import {
-  isDeliveryClaimedBy, isDeliveryForWaiter,
-  listMyTables, listMyZonePauses, listPendingCalls, listPendingDeliveries,
-  type ActiveTableSummary, type PendingDelivery, type WaiterCallSummary,
+  isDeliveryClaimedBy,
+  isDeliveryForWaiter,
+  listMyTables,
+  listMyZonePauses,
+  listPendingCalls,
+  listPendingDeliveries,
+  type ActiveTableSummary,
+  type PendingDelivery,
+  type WaiterCallSummary,
 } from '../../lib/api/waiter';
 import type { ZonePauseDto, WsEvent } from '@restaurant/shared-types';
 
@@ -35,7 +39,10 @@ interface ScreenHomeGridProps {
   fab?: boolean;
 }
 
-const STATUS_MAP: Record<ActiveTableSummary['status'], { tone: 'warn' | 'info' | 'soft'; label: string }> = {
+const STATUS_MAP: Record<
+  ActiveTableSummary['status'],
+  { tone: 'warn' | 'info' | 'soft'; label: string }
+> = {
   novo: { tone: 'warn', label: 'Novo' },
   'aguardando-prato': { tone: 'info', label: 'Aguardando' },
   'em-andamento': { tone: 'soft', label: 'Em andamento' },
@@ -80,9 +87,15 @@ function fmtTimeLeft(endsAt: string): string {
 }
 
 export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
-  tenantSlug, waiterId, dark = false, waiterInitials = 'EU',
-  onNewEntry = () => {}, onOpenCall = () => {}, onOpenTable = () => {},
-  onTabChange, fab = false,
+  tenantSlug,
+  waiterId,
+  dark = false,
+  waiterInitials = 'EU',
+  onNewEntry = () => {},
+  onOpenCall = () => {},
+  onOpenTable = () => {},
+  onTabChange,
+  fab = false,
 }) => {
   const C = useG(dark);
   const router = useRouter();
@@ -174,8 +187,14 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
   return (
     <div
       style={{
-        width: '100%', height: '100vh', background: C.bg, color: C.ink,
-        fontFamily: G_FONT, display: 'flex', flexDirection: 'column', position: 'relative',
+        width: '100%',
+        height: '100vh',
+        background: C.bg,
+        color: C.ink,
+        fontFamily: G_FONT,
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
       }}
     >
       <GAppHeader
@@ -183,9 +202,16 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
         left={
           <div
             style={{
-              width: 36, height: 36, borderRadius: 10, background: C.ink, color: C.bg,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontWeight: 700, fontSize: 13,
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              background: C.ink,
+              color: C.bg,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 700,
+              fontSize: 13,
             }}
           >
             {waiterInitials}
@@ -209,17 +235,25 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
         <div
           role="alert"
           style={{
-            background: C.warnBg, color: C.warn,
+            background: C.warnBg,
+            color: C.warn,
             padding: '10px 16px',
             borderBottom: `1px solid ${C.warn}55`,
-            display: 'flex', alignItems: 'center', gap: 10,
-            fontSize: 13, fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            fontSize: 13,
+            fontWeight: 600,
           }}
         >
           <span
             style={{
-              width: 8, height: 8, borderRadius: '50%', background: C.warn,
-              animation: 'gPulse 1.4s infinite', flexShrink: 0,
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: C.warn,
+              animation: 'gPulse 1.4s infinite',
+              flexShrink: 0,
             }}
           />
           <span style={{ flex: 1, minWidth: 0 }}>
@@ -238,10 +272,18 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
               router.push(`/waiter/entrega/${firstDelivery.order_id}?tenant=${tenantSlug}`)
             }
             style={{
-              all: 'unset', cursor: 'pointer', boxSizing: 'border-box', width: '100%',
-              background: C.successBg, border: `1px solid ${C.success}`,
-              borderRadius: 14, padding: '12px 14px',
-              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
+              all: 'unset',
+              cursor: 'pointer',
+              boxSizing: 'border-box',
+              width: '100%',
+              background: C.successBg,
+              border: `1px solid ${C.success}`,
+              borderRadius: 14,
+              padding: '12px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              marginBottom: 16,
               color: C.success,
             }}
           >
@@ -251,7 +293,15 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
               {firstDelivery.zone_name ? ` · ${firstDelivery.zone_name}` : ''} · pronto na cozinha
               {deliveries.length > 1 ? ` · +${deliveries.length - 1}` : ''}
             </div>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', flexShrink: 0 }}>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: 0.5,
+                textTransform: 'uppercase',
+                flexShrink: 0,
+              }}
+            >
               {firstDelivery.delivery_status === 'claimed' ? 'Confirmar →' : 'Entregar →'}
             </span>
           </button>
@@ -263,10 +313,18 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
             type="button"
             onClick={() => onOpenCall(firstUrgentCall.id)}
             style={{
-              all: 'unset', cursor: 'pointer', boxSizing: 'border-box', width: '100%',
-              background: C.dangerBg, border: `1px solid ${C.danger}`,
-              borderRadius: 14, padding: '12px 14px',
-              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
+              all: 'unset',
+              cursor: 'pointer',
+              boxSizing: 'border-box',
+              width: '100%',
+              background: C.dangerBg,
+              border: `1px solid ${C.danger}`,
+              borderRadius: 14,
+              padding: '12px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              marginBottom: 16,
               color: C.danger,
             }}
           >
@@ -274,7 +332,14 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
             <div style={{ flex: 1, fontSize: 13.5, fontWeight: 600 }}>
               {firstUrgentCall.table_label} chamou · agora
             </div>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: 0.5,
+                textTransform: 'uppercase',
+              }}
+            >
               Atender →
             </span>
           </button>
@@ -292,44 +357,93 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
                 type="button"
                 onClick={() => onOpenTable(tableNumber)}
                 style={{
-                  all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
+                  all: 'unset',
+                  cursor: 'pointer',
+                  boxSizing: 'border-box',
                   border: `1.5px solid ${isNovo ? C.warn : C.borderSoft}`,
-                  borderRadius: 16, padding: 14,
+                  borderRadius: 16,
+                  padding: 14,
                   background: isLivre ? 'transparent' : C.bg,
                   opacity: isLivre ? 0.5 : 1,
                   position: 'relative',
-                  display: 'flex', flexDirection: 'column',
+                  display: 'flex',
+                  flexDirection: 'column',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                  }}
+                >
                   <div>
-                    <div style={{ fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', color: C.mute, fontWeight: 600 }}>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        letterSpacing: 1,
+                        textTransform: 'uppercase',
+                        color: C.mute,
+                        fontWeight: 600,
+                      }}
+                    >
                       Mesa
                     </div>
-                    <div style={{ fontSize: 36, fontWeight: 700, letterSpacing: -1, lineHeight: 1, marginTop: 2 }}>
+                    <div
+                      style={{
+                        fontSize: 36,
+                        fontWeight: 700,
+                        letterSpacing: -1,
+                        lineHeight: 1,
+                        marginTop: 2,
+                      }}
+                    >
                       {String(tableNumber).padStart(2, '0')}
                     </div>
                   </div>
-                  <div style={{ fontSize: 11, color: C.mute, textAlign: 'right', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: C.mute,
+                      textAlign: 'right',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
                     {Icon.user(12)} {t.party_size}/{t.capacity}
                   </div>
                 </div>
                 <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <GBadge tone={s.tone} dark={dark} dot pulse={isNovo}>{s.label}</GBadge>
-                  {t.is_vip && <GBadge tone="warn" dark={dark}>VIP</GBadge>}
+                  <GBadge tone={s.tone} dark={dark} dot pulse={isNovo}>
+                    {s.label}
+                  </GBadge>
+                  {t.is_vip && (
+                    <GBadge tone="warn" dark={dark}>
+                      VIP
+                    </GBadge>
+                  )}
                 </div>
                 <div style={{ fontSize: 11.5, color: C.mute, marginTop: 8, lineHeight: 1.4 }}>
-                  {t.last_event ? LAST_EVENT_LABEL[t.last_event] ?? '—' : '—'}
+                  {t.last_event ? (LAST_EVENT_LABEL[t.last_event] ?? '—') : '—'}
                 </div>
                 {!isLivre && (
                   <div
                     style={{
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-                      marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.borderFaint}`,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'baseline',
+                      marginTop: 10,
+                      paddingTop: 10,
+                      borderTop: `1px dashed ${C.borderFaint}`,
                     }}
                   >
-                    <span style={{ fontSize: 11, color: C.faint }}>{fmtOpenedDuration(t.opened_min)}</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                    <span style={{ fontSize: 11, color: C.faint }}>
+                      {fmtOpenedDuration(t.opened_min)}
+                    </span>
+                    <span
+                      style={{ fontSize: 14, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}
+                    >
                       R$ {fmtBRL(t.ticket_total_cents)}
                     </span>
                   </div>
@@ -349,13 +463,22 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
             // P1 #20: o FAB tinha `bottom: 76` cru — ficava sobre o tab
             // bar em iOS Safari (que agora tem padding safe-area). O
             // calc + env mantem 76px acima da tab bar em qualquer device.
-            position: 'fixed', right: 16,
+            position: 'fixed',
+            right: 16,
             bottom: 'calc(76px + env(safe-area-inset-bottom))',
-            width: 56, height: 56, borderRadius: 28,
-            background: C.ink, color: C.bg,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            background: C.ink,
+            color: C.bg,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             boxShadow: '0 10px 24px -8px rgba(0,0,0,0.35)',
-            border: 'none', cursor: 'pointer', padding: 0, zIndex: 3,
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+            zIndex: 3,
           }}
         >
           {Icon.qr(24)}
@@ -363,7 +486,9 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
       )}
 
       <GBottomNav
-        active="home" dark={dark} onNewEntry={onNewEntry}
+        active="home"
+        dark={dark}
+        onNewEntry={onNewEntry}
         callsBadge={callsCount}
         onTabChange={(id) => onTabChange?.(id)}
       />

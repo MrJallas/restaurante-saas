@@ -70,20 +70,21 @@ export class SalonService {
 
     const currentIndex = rows.findIndex((row) => row.table_id === input.currentTableId);
     const current = currentIndex >= 0 ? rows[currentIndex] : null;
-    const currentNumber = current?.table_number ?? this.parseTableNumber(current?.table_code, current?.table_label);
+    const currentNumber =
+      current?.table_number ?? this.parseTableNumber(current?.table_code, current?.table_label);
 
     return {
       tables: rows.map((row, index) => {
         const tableNumber =
           row.table_number ?? this.parseTableNumber(row.table_code, row.table_label) ?? index + 1;
-        const distance = currentNumber !== null
-          ? Math.abs(tableNumber - currentNumber)
-          : currentIndex >= 0
-            ? Math.abs(index - currentIndex)
-            : 0;
+        const distance =
+          currentNumber !== null
+            ? Math.abs(tableNumber - currentNumber)
+            : currentIndex >= 0
+              ? Math.abs(index - currentIndex)
+              : 0;
         const isCurrent =
-          row.table_id === input.currentTableId ||
-          row.active_session_id === input.currentSessionId;
+          row.table_id === input.currentTableId || row.active_session_id === input.currentSessionId;
         const status: SalonTableStatus = isCurrent
           ? 'you'
           : row.active_session_id

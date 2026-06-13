@@ -65,8 +65,7 @@ export default function PagamentoPage() {
   const [method, setMethod] = useState<Method>('pix');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const requestedMode =
-    searchParams.get('mode') === 'individual' ? 'individual' : 'table';
+  const requestedMode = searchParams.get('mode') === 'individual' ? 'individual' : 'table';
 
   useEffect(() => {
     setMode(requestedMode);
@@ -101,7 +100,11 @@ export default function PagamentoPage() {
   const bill = mode === 'table' ? tableBill : individualBill;
 
   const aggregated = useMemo(() => {
-    if (!bill) return { items: [] as { name: string; quantity: number; subtotalCents: number }[], subtotalCents: 0 };
+    if (!bill)
+      return {
+        items: [] as { name: string; quantity: number; subtotalCents: number }[],
+        subtotalCents: 0,
+      };
     const map = new Map<string, { name: string; quantity: number; subtotalCents: number }>();
     bill.orders.forEach((o) => {
       o.items.forEach((it) => {
@@ -110,7 +113,11 @@ export default function PagamentoPage() {
           cur.quantity += it.quantity;
           cur.subtotalCents += it.subtotalCents;
         } else {
-          map.set(it.name, { name: it.name, quantity: it.quantity, subtotalCents: it.subtotalCents });
+          map.set(it.name, {
+            name: it.name,
+            quantity: it.quantity,
+            subtotalCents: it.subtotalCents,
+          });
         }
       });
     });
@@ -290,12 +297,7 @@ export default function PagamentoPage() {
         </div>
 
         <div className="shrink-0 px-[22px] pb-safe pb-6 pt-2.5">
-          <PillButton
-            variant="filled"
-            fullWidth
-            onClick={handleProceed}
-            disabled={submitting}
-          >
+          <PillButton variant="filled" fullWidth onClick={handleProceed} disabled={submitting}>
             {submitting
               ? 'Gerando…'
               : method === 'pix'

@@ -3,6 +3,7 @@
 ## Contexto do projeto
 
 Este é o monorepo `restauranteSaaS`. Este chat trata de:
+
 1. **Auditoria UI sistemática** com IDB (iOS Device Bridge) — descobrir mais bugs do tipo "menu hambúrguer travado" em outras telas
 2. **MongoDB** — diretriz: todos os logs/históricos novos vão pro Mongo, não Postgres
 3. **Diretrizes transversais** de qualidade de UI que aparecem em vários frontends
@@ -16,6 +17,7 @@ Este é o monorepo `restauranteSaaS`. Este chat trata de:
 Tela `/[slug]/conversas-com-ia` (cliente) — o **menu hambúrguer não funciona**. Clicar nos itens do menu não navega ou navega com estado stale.
 
 **Reprodução**:
+
 1. Cliente entra no app
 2. Entra em "Conversas com IA"
 3. Tenta clicar em itens do menu hambúrguer (Cardápio, Chamar garçom, etc.)
@@ -28,6 +30,7 @@ Esse mesmo problema pode existir em outras telas — a auditoria precisa ser sis
 ### Diretriz
 
 Usar o **IDB do Facebook** (https://github.com/facebook/idb) pra controlar o simulador iOS em tempo real e fazer audit de todas as telas:
+
 - Cliente
 - Recepcionista
 - Garçom
@@ -35,6 +38,7 @@ Usar o **IDB do Facebook** (https://github.com/facebook/idb) pra controlar o sim
 - Gerente
 
 Em cada tela, validar:
+
 - Menu hambúrguer funciona (todos os itens navegam corretamente)
 - Botão de voltar funciona e respeita histórico
 - Sininho de notificações abre tela do role correto
@@ -63,6 +67,7 @@ Em cada tela, validar:
 > "tudo que for de logs vamos armazenar no mongo"
 
 Aplica a:
+
 - **Histórico de turnos** (gerente — ver `05-gerente.md` bug 42 + `06-api-transversais.md` bug 42)
 - **Logs de auditoria** (quem fez o que / quando — staff actions)
 - **Logs de notificações enviadas**
@@ -75,11 +80,13 @@ Aplica a:
 ### Setup
 
 Verificar:
+
 - MongoDB já está rodando no ambiente dev (provavelmente sim — checar `docker-compose.yml`)
 - Connection string em env vars
 - Driver instalado no `apps/api` (pymongo / motor pra Python, mongoose / mongodb pra Node)
 
 Se ainda não tem:
+
 - Adicionar serviço MongoDB no `docker-compose.yml`
 - Criar `packages/database/mongo-client.ts` (ou similar) com helper de conexão
 - Documentar em `README.md` como subir
@@ -124,6 +131,7 @@ Erros como `xstaff id inválido`, `manager-only endpoint`, `Thread não encontra
 **Regra**: backend retorna estrutura `{ message_user: "...", code: "...", debug?: {...} }`. UI mostra `message_user` amigavelmente, nunca o `code` ou `debug`.
 
 **Auditoria**: rg por strings técnicas vazando:
+
 ```bash
 rg -i "xstaff|manager-only|host-only|endpoint|undefined|null" apps/web-staff/src apps/web-customer/src
 ```
@@ -143,6 +151,7 @@ Bug confirmado: modal "Apagar essa conversa?" aparece cortado pela barra de nave
 ### E) Tema global (claro/escuro/auto)
 
 Mencionado em vários frontends (host bug 11, cozinha bug 25, gerente bug 44). Criar lib compartilhada `packages/ui/theme/` ou `apps/web-staff/src/lib/theme.ts` com:
+
 - Hook `useTheme()`
 - Toggle `setTheme(mode)`
 - Persistência `localStorage`
@@ -162,11 +171,13 @@ Mencionado em vários frontends (host bug 11, cozinha bug 25, gerente bug 44). C
 ## Item 4. Geolocalização (componente cross-app)
 
 **Detalhes nos chats**:
+
 - Cliente: `01-cliente.md` bug 1
 - Recepcionista: `02-recepcionista.md` bug 1
 - API: `06-api-transversais.md` bug 1
 
 **Componente que cai aqui**: documentar setup completo da feature e config do raio:
+
 - Configuração inicial: 3 metros (raio bem pequeno pra testar)
 - Configurável pelo gerente futuramente (criar issue/TODO)
 - Doc explicando como o gerente seta a lat/long do restaurante (provavelmente via UI futura)
@@ -178,6 +189,7 @@ Mencionado em vários frontends (host bug 11, cozinha bug 25, gerente bug 44). C
 Após fixes dos chats 01-06 mergeados, rodar suite completa de E2E pra detectar regressões. Importante: specs E2E do Playwright rodam **serialmente** — não disparar 2+ specs em paralelo (helpers compartilham QRTEST91/92 sem customer_id, row vaza entre specs).
 
 Comando:
+
 ```bash
 cd apps/web-customer && npx playwright test
 ```

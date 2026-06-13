@@ -10,9 +10,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
-import {
-  GAppHeader, GBottomNav, GIconBtn,
-} from '../../components/waiter/Primitives';
+import { GAppHeader, GBottomNav, GIconBtn } from '../../components/waiter/Primitives';
 import { listMyTables, type ActiveTableSummary } from '../../lib/api/waiter';
 
 interface ScreenWaiterTablePickerProps {
@@ -36,21 +34,40 @@ const TableRow: React.FC<RowProps> = ({ table, mine, onClick, C }) => {
       type="button"
       onClick={onClick}
       style={{
-        all: 'unset', cursor: 'pointer', boxSizing: 'border-box', width: '100%',
-        display: 'flex', alignItems: 'center', gap: 14,
-        padding: '14px 16px', borderBottom: `1px solid ${C.borderFaint}`,
+        all: 'unset',
+        cursor: 'pointer',
+        boxSizing: 'border-box',
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        padding: '14px 16px',
+        borderBottom: `1px solid ${C.borderFaint}`,
       }}
     >
       <div
         style={{
-          width: 56, height: 56, borderRadius: 14,
+          width: 56,
+          height: 56,
+          borderRadius: 14,
           background: mine ? C.ink : C.surface,
           color: mine ? C.bg : C.ink,
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
           flexShrink: 0,
         }}
       >
-        <div style={{ fontSize: 9, letterSpacing: 0.6, textTransform: 'uppercase', fontWeight: 600, opacity: 0.7 }}>
+        <div
+          style={{
+            fontSize: 9,
+            letterSpacing: 0.6,
+            textTransform: 'uppercase',
+            fontWeight: 600,
+            opacity: 0.7,
+          }}
+        >
           Mesa
         </div>
         <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: -0.4, lineHeight: 1 }}>
@@ -74,7 +91,9 @@ const TableRow: React.FC<RowProps> = ({ table, mine, onClick, C }) => {
 };
 
 export const ScreenWaiterTablePicker: React.FC<ScreenWaiterTablePickerProps> = ({
-  tenantSlug, onBack, onPick,
+  tenantSlug,
+  onBack,
+  onPick,
 }) => {
   const dark = false;
   const C = useG(dark);
@@ -101,8 +120,13 @@ export const ScreenWaiterTablePicker: React.FC<ScreenWaiterTablePickerProps> = (
   return (
     <div
       style={{
-        width: '100%', height: '100vh', background: C.bg, color: C.ink,
-        fontFamily: G_FONT, display: 'flex', flexDirection: 'column',
+        width: '100%',
+        height: '100vh',
+        background: C.bg,
+        color: C.ink,
+        fontFamily: G_FONT,
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       <GAppHeader
@@ -115,8 +139,11 @@ export const ScreenWaiterTablePicker: React.FC<ScreenWaiterTablePickerProps> = (
         <div
           style={{
             padding: '14px 16px 8px',
-            fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase',
-            color: C.ink, fontWeight: 700,
+            fontSize: 11,
+            letterSpacing: 1.5,
+            textTransform: 'uppercase',
+            color: C.ink,
+            fontWeight: 700,
           }}
         >
           Atendendo atualmente
@@ -133,8 +160,11 @@ export const ScreenWaiterTablePicker: React.FC<ScreenWaiterTablePickerProps> = (
         <div
           style={{
             padding: '20px 16px 8px',
-            fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase',
-            color: C.mute, fontWeight: 700,
+            fontSize: 11,
+            letterSpacing: 1.5,
+            textTransform: 'uppercase',
+            color: C.mute,
+            fontWeight: 700,
           }}
         >
           Disponíveis

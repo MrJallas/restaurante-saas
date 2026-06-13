@@ -122,14 +122,7 @@ function ManagerMesaInner() {
       <MTopBar
         title={titleFor()}
         dark={dark}
-        left={
-          <GIconBtn
-            icon={Icon.back(20)}
-            onClick={back}
-            ariaLabel="Voltar"
-            dark={dark}
-          />
-        }
+        left={<GIconBtn icon={Icon.back(20)} onClick={back} ariaLabel="Voltar" dark={dark} />}
       />
 
       <div
@@ -156,7 +149,15 @@ function ManagerMesaInner() {
 
 function Loading({ C }: { C: ReturnType<typeof useG> }) {
   return (
-    <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+    <div
+      style={{
+        textAlign: 'center',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 12,
+      }}
+    >
       <Spinner C={C} />
       <span
         style={{
@@ -175,7 +176,15 @@ function Loading({ C }: { C: ReturnType<typeof useG> }) {
 
 function Redirecting({ C }: { C: ReturnType<typeof useG> }) {
   return (
-    <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+    <div
+      style={{
+        textAlign: 'center',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 12,
+      }}
+    >
       <Spinner C={C} />
       <span
         style={{
@@ -220,8 +229,8 @@ function FreeTable({
       </InfoCard>
 
       <Hint C={C}>
-        Quando um cliente escanear o QR ou a recepcionista liberar a mesa, o
-        atendimento abre automaticamente aqui.
+        Quando um cliente escanear o QR ou a recepcionista liberar a mesa, o atendimento abre
+        automaticamente aqui.
       </Hint>
 
       <div style={{ display: 'flex', gap: 10, width: '100%' }}>
@@ -233,15 +242,7 @@ function FreeTable({
   );
 }
 
-function NotFound({
-  C,
-  n,
-  onBack,
-}: {
-  C: ReturnType<typeof useG>;
-  n: number;
-  onBack: () => void;
-}) {
+function NotFound({ C, n, onBack }: { C: ReturnType<typeof useG>; n: number; onBack: () => void }) {
   return (
     <Hero C={C}>
       <Eyebrow C={C}>NÃO ENCONTRADA</Eyebrow>
@@ -276,7 +277,9 @@ function ErrorState({
 }) {
   return (
     <Hero C={C}>
-      <Eyebrow C={C} tone="danger">ERRO · CONSULTA</Eyebrow>
+      <Eyebrow C={C} tone="danger">
+        ERRO · CONSULTA
+      </Eyebrow>
       <Title C={C}>Não consegui carregar</Title>
       <Subtitle C={C}>{message}</Subtitle>
       <div style={{ display: 'flex', gap: 10, width: '100%' }}>
@@ -292,13 +295,7 @@ function ErrorState({
 // Atoms
 // ─────────────────────────────────────────────────────────────
 
-function Hero({
-  C,
-  children,
-}: {
-  C: ReturnType<typeof useG>;
-  children: React.ReactNode;
-}) {
+function Hero({ C, children }: { C: ReturnType<typeof useG>; children: React.ReactNode }) {
   return (
     <div
       style={{
@@ -376,13 +373,7 @@ function Subtitle({ C, children }: { C: ReturnType<typeof useG>; children: React
   );
 }
 
-function InfoCard({
-  C,
-  children,
-}: {
-  C: ReturnType<typeof useG>;
-  children: React.ReactNode;
-}) {
+function InfoCard({ C, children }: { C: ReturnType<typeof useG>; children: React.ReactNode }) {
   return (
     <div
       style={{
@@ -482,11 +473,7 @@ function Spinner({ C }: { C: ReturnType<typeof useG> }) {
 
 export default function ManagerMesaPage() {
   return (
-    <Suspense
-      fallback={
-        <div style={{ padding: 24, fontFamily: G_FONT }}>Carregando…</div>
-      }
-    >
+    <Suspense fallback={<div style={{ padding: 24, fontFamily: G_FONT }}>Carregando…</div>}>
       <ManagerMesaInner />
     </Suspense>
   );

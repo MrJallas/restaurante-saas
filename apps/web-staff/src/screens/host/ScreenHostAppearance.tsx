@@ -23,7 +23,10 @@ const OPTIONS: Array<{ id: StaffThemeMode; label: string; sub: string }> = [
   { id: 'auto', label: 'Automático', sub: 'Acompanha o sistema (claro de dia · escuro de noite)' },
 ];
 
-export const ScreenHostAppearance: React.FC<ScreenHostAppearanceProps> = ({ onBack, onTabChange }) => {
+export const ScreenHostAppearance: React.FC<ScreenHostAppearanceProps> = ({
+  onBack,
+  onTabChange,
+}) => {
   const { mode, dark, setMode } = useStaffTheme();
   const C = useG(dark);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -56,7 +59,16 @@ export const ScreenHostAppearance: React.FC<ScreenHostAppearanceProps> = ({ onBa
         }}
       >
         <GIconBtn dark={dark} icon={Icon.back(20)} onClick={onBack} ariaLabel="Voltar" />
-        <h1 style={{ flex: 1, margin: 0, fontSize: 18, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>
+        <h1
+          style={{
+            flex: 1,
+            margin: 0,
+            fontSize: 18,
+            fontWeight: 700,
+            color: C.ink,
+            letterSpacing: -0.2,
+          }}
+        >
           Aparência
         </h1>
         <div style={{ width: 40 }} />
@@ -72,8 +84,7 @@ export const ScreenHostAppearance: React.FC<ScreenHostAppearanceProps> = ({ onBa
             marginBottom: 16,
           }}
         >
-          Escolha como o app aparece pra você. A preferência fica salva no
-          dispositivo.
+          Escolha como o app aparece pra você. A preferência fica salva no dispositivo.
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -127,7 +138,15 @@ export const ScreenHostAppearance: React.FC<ScreenHostAppearanceProps> = ({ onBa
                   <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, letterSpacing: -0.1 }}>
                     {opt.label}
                   </div>
-                  <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, fontWeight: 500, lineHeight: 1.3 }}>
+                  <div
+                    style={{
+                      fontSize: 11.5,
+                      color: C.faint,
+                      marginTop: 2,
+                      fontWeight: 500,
+                      lineHeight: 1.3,
+                    }}
+                  >
                     {opt.sub}
                   </div>
                 </div>

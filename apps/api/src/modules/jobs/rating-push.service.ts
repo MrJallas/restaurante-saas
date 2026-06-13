@@ -121,10 +121,7 @@ export class RatingPushService {
           }
         }
       } catch (e) {
-        this.logger.error(
-          `[${slug}] rating push send failed order=${row.order_id}`,
-          e as Error,
-        );
+        this.logger.error(`[${slug}] rating push send failed order=${row.order_id}`, e as Error);
       }
     }
   }

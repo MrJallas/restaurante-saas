@@ -15,10 +15,7 @@ import { useComplaintEvents } from '../../hooks/useComplaintEvents';
 import { AppShell } from '../../components/layout/AppShell';
 import { PillButton } from '../../components/ui/PillButton';
 import { Bubble } from '../../components/ui/Bubble';
-import {
-  ManagerBubble,
-  type ManagerChipActionKind,
-} from '../../components/ui/ManagerBubble';
+import { ManagerBubble, type ManagerChipActionKind } from '../../components/ui/ManagerBubble';
 import { BottomSheet } from '../../components/ui/BottomSheet';
 import type { ComplaintChipAction } from '@restaurant/shared-types';
 
@@ -102,9 +99,7 @@ export function ScreenCustomerComplaintWaiting({
       } catch {
         // Silent fallback — cache or empty state takes over.
         if (!cancelled && !cached) {
-          setError(
-            'Sua reclamação foi registrada · acompanhe a resposta aqui.',
-          );
+          setError('Sua reclamação foi registrada · acompanhe a resposta aqui.');
         }
       }
     }
@@ -259,11 +254,7 @@ export function ScreenCustomerComplaintWaiting({
         </div>
 
         <div className="mt-8 flex flex-col gap-2.5">
-          <PillButton
-            variant="outline"
-            fullWidth
-            onClick={() => router.push(`/${slug}`)}
-          >
+          <PillButton variant="outline" fullWidth onClick={() => router.push(`/${slug}`)}>
             Voltar pra mesa
           </PillButton>
           <button
@@ -286,9 +277,7 @@ export function ScreenCustomerComplaintWaiting({
             </h2>
             <div className="flex flex-col gap-2.5">
               {loadingOthers && (
-                <div className="text-center text-[13px] text-mute">
-                  Carregando…
-                </div>
+                <div className="text-center text-[13px] text-mute">Carregando…</div>
               )}
               {!loadingOthers && others.length === 0 && (
                 <div className="text-center text-[13px] text-mute">
@@ -308,9 +297,7 @@ export function ScreenCustomerComplaintWaiting({
                   <span className="text-[10px] font-semibold uppercase tracking-[1.2px] text-mute">
                     {formatRelative(c.submittedAt)} · {c.status}
                   </span>
-                  <span className="line-clamp-2 text-[13px] text-ink">
-                    {c.text}
-                  </span>
+                  <span className="line-clamp-2 text-[13px] text-ink">{c.text}</span>
                 </button>
               ))}
             </div>

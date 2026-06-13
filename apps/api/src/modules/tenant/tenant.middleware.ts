@@ -25,9 +25,7 @@ interface CachedTenantLookup {
 export class TenantMiddleware implements NestMiddleware {
   private readonly logger = new Logger(TenantMiddleware.name);
   private readonly lookupCache = new Map<string, CachedTenantLookup>();
-  private readonly lookupCacheTtlMs = Number(
-    process.env.TENANT_LOOKUP_CACHE_TTL_MS ?? 5_000,
-  );
+  private readonly lookupCacheTtlMs = Number(process.env.TENANT_LOOKUP_CACHE_TTL_MS ?? 5_000);
 
   constructor(private readonly dataSource: DataSource) {}
 
@@ -62,9 +60,7 @@ export class TenantMiddleware implements NestMiddleware {
       // cadastrar `restaurant'; DROP TABLE...`, recusamos a request.
       const schemaName: string = restaurant.schema_name;
       if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schemaName)) {
-        this.logger.error(
-          `Schema name invalido para slug ${slug}: ${schemaName}`,
-        );
+        this.logger.error(`Schema name invalido para slug ${slug}: ${schemaName}`);
         throw new HttpException(
           'Configuracao do restaurante invalida.',
           HttpStatus.INTERNAL_SERVER_ERROR,
@@ -105,11 +101,7 @@ export class TenantMiddleware implements NestMiddleware {
     }
 
     const restaurant = result[0] ?? null;
-    if (
-      restaurant &&
-      Number.isFinite(this.lookupCacheTtlMs) &&
-      this.lookupCacheTtlMs > 0
-    ) {
+    if (restaurant && Number.isFinite(this.lookupCacheTtlMs) && this.lookupCacheTtlMs > 0) {
       this.lookupCache.set(slug, {
         restaurant,
         expiresAt: now + this.lookupCacheTtlMs,

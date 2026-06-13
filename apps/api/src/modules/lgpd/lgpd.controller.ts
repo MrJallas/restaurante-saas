@@ -11,15 +11,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import {
-  IsEmail,
-  IsIn,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Matches,
-  MaxLength,
-} from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
 import { SessionGuard } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
@@ -97,11 +89,7 @@ export class LgpdController {
    */
   @Post()
   @UseGuards(SessionGuard)
-  async create(
-    @Param('slug') slug: string,
-    @Body() dto: CreateLgpdDto,
-    @Req() req: Request,
-  ) {
+  async create(@Param('slug') slug: string, @Body() dto: CreateLgpdDto, @Req() req: Request) {
     const callerCustomerId = await this.resolveCallerCustomerId(req);
     return this.service.createRequest(
       {
@@ -117,8 +105,7 @@ export class LgpdController {
 
   private async resolveCallerCustomerId(req: Request): Promise<string> {
     const token =
-      (req as Request & { cookies?: Record<string, string> }).cookies
-        ?.recognition_token ?? null;
+      (req as Request & { cookies?: Record<string, string> }).cookies?.recognition_token ?? null;
     if (!token) {
       throw new HttpException(
         'Identificação ausente. Faça login pra criar um pedido LGPD.',
@@ -127,10 +114,7 @@ export class LgpdController {
     }
     const resolved = await this.customers.resolveByRecognitionToken(token);
     if (!resolved) {
-      throw new HttpException(
-        'Identificação inválida.',
-        HttpStatus.UNAUTHORIZED,
-      );
+      throw new HttpException('Identificação inválida.', HttpStatus.UNAUTHORIZED);
     }
     return resolved.customerId;
   }

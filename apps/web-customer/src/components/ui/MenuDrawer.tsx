@@ -301,9 +301,7 @@ export function MenuDrawer({
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-[1.2px] border-danger text-[12px] text-danger">
               →
             </span>
-            <span className="text-[13px] font-medium tracking-[-0.008em]">
-              Sair da mesa
-            </span>
+            <span className="text-[13px] font-medium tracking-[-0.008em]">Sair da mesa</span>
           </button>
         </nav>
 

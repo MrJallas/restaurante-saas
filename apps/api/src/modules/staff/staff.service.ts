@@ -71,9 +71,7 @@ export class StaffService {
    * mapa todo).
    */
   async listActiveTables(callerSessionId?: string | null): Promise<unknown[]> {
-    const sessionFilter = callerSessionId
-      ? `AND ts.id = $1`
-      : '';
+    const sessionFilter = callerSessionId ? `AND ts.id = $1` : '';
     const params = callerSessionId ? [callerSessionId] : [];
     return this.tenantConn.query(
       `
@@ -350,10 +348,9 @@ export class StaffService {
     }>;
   }> {
     // Confirma staff existe (404 limpo).
-    const sRows = (await this.tenantConn.query(
-      `SELECT id, role FROM staff WHERE id = $1`,
-      [staffId],
-    )) as Array<{ id: string; role: string }>;
+    const sRows = (await this.tenantConn.query(`SELECT id, role FROM staff WHERE id = $1`, [
+      staffId,
+    ])) as Array<{ id: string; role: string }>;
     if (!sRows.length) {
       throw new NotFoundException('Funcionario nao encontrado.');
     }
@@ -611,9 +608,7 @@ export class StaffService {
       // da migration 041) pra erro amigavel. PG codigo 23505.
       const err = e as { code?: string; constraint?: string };
       if (err.code === '23505' && err.constraint === 'staff_cpf_unique') {
-        throw new BadRequestException(
-          'Ja existe um funcionario com esse CPF.',
-        );
+        throw new BadRequestException('Ja existe um funcionario com esse CPF.');
       }
       throw e;
     }

@@ -4,10 +4,7 @@ import { IsIn, IsObject, IsOptional } from 'class-validator';
 import { Session } from '../../common/decorators/session.decorator';
 import { SessionData, SessionGuard } from '../../common/guards/session.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
-import {
-  CustomerEventsService,
-  type CustomerEventType,
-} from './customer-events.service';
+import { CustomerEventsService, type CustomerEventType } from './customer-events.service';
 
 class CreateCustomerEventDto {
   @IsIn(['menu_viewed', 'assistant_opened', 'session_resumed', 'item_viewed'])
@@ -33,8 +30,7 @@ export class CustomerEventsController {
     @Session() session: SessionData,
     @Req() req: Request,
   ) {
-    const customerId =
-      session.customerId ?? (await this.callerResolver.tryGetCustomerId(req));
+    const customerId = session.customerId ?? (await this.callerResolver.tryGetCustomerId(req));
     const event = await this.service.create({
       tableSessionId: session.sessionId,
       customerId,

@@ -11,14 +11,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import {
-  IsString,
-  IsOptional,
-  IsUUID,
-  IsISO8601,
-  MaxLength,
-  IsIn,
-} from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsISO8601, MaxLength, IsIn } from 'class-validator';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
@@ -119,22 +112,15 @@ export class LateArrivalController {
     requestId: string,
   ): Promise<{ customerId: string }> {
     const token =
-      (req as Request & { cookies?: Record<string, string> }).cookies
-        ?.recognition_token ?? null;
+      (req as Request & { cookies?: Record<string, string> }).cookies?.recognition_token ?? null;
     if (!token) {
-      throw new HttpException(
-        'Identificação ausente.',
-        HttpStatus.UNAUTHORIZED,
-      );
+      throw new HttpException('Identificação ausente.', HttpStatus.UNAUTHORIZED);
     }
     const caller = await this.customers.resolveByRecognitionToken(token);
     if (!caller) {
       throw new HttpException('Identificação inválida.', HttpStatus.UNAUTHORIZED);
     }
-    const isHost = await this.service.isCallerHostOfRequest(
-      requestId,
-      caller.customerId,
-    );
+    const isHost = await this.service.isCallerHostOfRequest(requestId, caller.customerId);
     if (!isHost) {
       throw new HttpException(
         'Apenas o host da mesa pode aprovar ou rejeitar.',
@@ -160,8 +146,7 @@ export class LateArrivalController {
     @Req() req: Request,
   ) {
     const callerCustomerId = await this.customers.resolveByRecognitionToken(
-      ((req as Request & { cookies?: Record<string, string> }).cookies
-        ?.recognition_token ?? ''),
+      (req as Request & { cookies?: Record<string, string> }).cookies?.recognition_token ?? '',
     );
     if (!callerCustomerId) {
       throw new HttpException(
@@ -198,11 +183,7 @@ export class LateArrivalController {
     // alheio pra creditar audit). staffId só via x-staff-key flow num
     // endpoint separado (não exposto aqui — staff usa /staff/late-arrival).
     const caller = await this.assertHostOrThrow(req, id);
-    return this.service.approve(
-      id,
-      { customerId: caller.customerId },
-      slug,
-    );
+    return this.service.approve(id, { customerId: caller.customerId }, slug);
   }
 
   @Post(':id/reject')
@@ -214,12 +195,7 @@ export class LateArrivalController {
     @Req() req: Request,
   ) {
     const caller = await this.assertHostOrThrow(req, id);
-    return this.service.reject(
-      id,
-      { customerId: caller.customerId },
-      dto.reason,
-      slug,
-    );
+    return this.service.reject(id, { customerId: caller.customerId }, dto.reason, slug);
   }
 
   @Get()

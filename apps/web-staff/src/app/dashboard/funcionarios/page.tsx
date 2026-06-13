@@ -207,7 +207,10 @@ export default function FuncionariosPage() {
               <h2 className="text-lg font-bold text-white">
                 {editingId ? 'Editar Funcionario' : 'Novo Funcionario'}
               </h2>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-white">
+              <button
+                onClick={() => setShowModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -227,9 +230,7 @@ export default function FuncionariosPage() {
                 <label className="mb-1 block text-xs text-slate-400">Cargo *</label>
                 <select
                   value={form.role}
-                  onChange={(e) =>
-                    setForm({ ...form, role: e.target.value as StaffForm['role'] })
-                  }
+                  onChange={(e) => setForm({ ...form, role: e.target.value as StaffForm['role'] })}
                   className="w-full rounded-lg bg-white/5 px-3 py-2 text-white outline-none focus:bg-white/10"
                 >
                   <option value="waiter">Garcom</option>

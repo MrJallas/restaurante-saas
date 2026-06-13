@@ -29,10 +29,7 @@ import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
 import { useTableMerge } from '../../../hooks/useTableMerge';
 import { useTableSocket } from '../../../hooks/useTableSocket';
-import {
-  useActiveOrderStatus,
-  type ActiveOrderStatus,
-} from '../../../hooks/useActiveOrderStatus';
+import { useActiveOrderStatus, type ActiveOrderStatus } from '../../../hooks/useActiveOrderStatus';
 import { useDraftOrder } from '../../../providers/DraftOrderProvider';
 import { AppShell } from '../../../components/layout/AppShell';
 import { Bubble } from '../../../components/ui/Bubble';
@@ -439,10 +436,8 @@ function tableMergeStateFromPayload(
     requestId: payload.requestId ?? null,
     originSessionId: payload.originSessionId ?? null,
     targetSessionId: payload.targetSessionId ?? null,
-    originTableNumber:
-      payload.originTableNumber ?? payload.originTable ?? null,
-    targetTableNumber:
-      payload.targetTableNumber ?? payload.targetTable ?? null,
+    originTableNumber: payload.originTableNumber ?? payload.originTable ?? null,
+    targetTableNumber: payload.targetTableNumber ?? payload.targetTable ?? null,
     originHostName: payload.originHostName ?? null,
     targetHostName: payload.targetHostName ?? null,
     originPartySize: payload.originPartySize ?? null,
@@ -525,7 +520,9 @@ function tableMergeCooldownMessage(
       ...tableMergeStateFromPayload(payload),
       message: payload.message ?? payload.message_user ?? null,
       cooldownEndsAt:
-        payload.cooldownEndsAt ?? payload.expiresAt ?? new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        payload.cooldownEndsAt ??
+        payload.expiresAt ??
+        new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     },
   };
 }
@@ -540,10 +537,7 @@ function joinRequestBubbleText(joinerName: string, hostName?: string | null): st
   return `${opener} ${joinerName || 'alguém'} quer entrar na mesa. Pode deixar?`;
 }
 
-function joinRequestChatMessage(
-  req: PendingJoinRequest,
-  hostName?: string | null,
-): ChatMessage {
+function joinRequestChatMessage(req: PendingJoinRequest, hostName?: string | null): ChatMessage {
   return {
     id: `join-request-${joinRequestKey(req)}`,
     role: 'ai',
@@ -553,11 +547,7 @@ function joinRequestChatMessage(
 }
 
 function isJoinRequestSocketPayload(value: unknown): value is JoinRequestSocketPayload {
-  return (
-    isRecord(value) &&
-    typeof value.customerId === 'string' &&
-    value.customerId.length > 0
-  );
+  return isRecord(value) && typeof value.customerId === 'string' && value.customerId.length > 0;
 }
 
 function isJoinDecisionSocketPayload(value: unknown): value is JoinDecisionSocketPayload {
@@ -595,9 +585,7 @@ function isTableMergeRejectedPayload(value: unknown): value is WsTableMergeRejec
 
 function isMergeCooldownStartedPayload(value: unknown): value is WsMergeCooldownStarted['payload'] {
   return (
-    isRecord(value) &&
-    typeof value.cooldownId === 'string' &&
-    typeof value.expiresAt === 'string'
+    isRecord(value) && typeof value.cooldownId === 'string' && typeof value.expiresAt === 'string'
   );
 }
 
@@ -687,7 +675,11 @@ function tableMergeDecisionFromText(text: string): 'approve' | 'reject' | null {
   if (/\b(agora nao|melhor nao|nao|recusa|recusar|separad[oa]s?)\b/.test(normalized)) {
     return 'reject';
   }
-  if (/\b(pode|pode juntar|sim|claro|libera|liberar|aceita|aceitar|junta|ok|beleza)\b/.test(normalized)) {
+  if (
+    /\b(pode|pode juntar|sim|claro|libera|liberar|aceita|aceitar|junta|ok|beleza)\b/.test(
+      normalized,
+    )
+  ) {
     return 'approve';
   }
   return null;
@@ -1199,9 +1191,7 @@ export default function AssistentePage() {
         .reverse()
         .find(
           (msg) =>
-            msg.tableMerge?.kind === 'incoming' &&
-            !msg.tableMerge.busy &&
-            !msg.tableMerge.error,
+            msg.tableMerge?.kind === 'incoming' && !msg.tableMerge.busy && !msg.tableMerge.error,
         ) ?? null
     );
   }, [messages]);
@@ -1451,202 +1441,195 @@ export default function AssistentePage() {
    * subir o customer pro chat mode pra ele ver o staff bubble (sem ele
    * o bubble fica escondido atrás do hero/PillButtons).
    */
-  useTableSocket(session.sessionId, (event, data) => {
-    if (event === 'order:created' || event === 'order:status') {
-      // Eyebrow de status muda ao vivo quando o pedido avança (prompt 100
-      // matriz: "Pedido avança (WS) com assistente aberto").
-      refreshActiveOrder();
-      return;
-    }
-    if (event === 'table_merge.created' && isTableMergeCreatedPayload(data)) {
-      try {
-        window.sessionStorage.setItem(
-          `table-merge:${data.requestId}`,
-          JSON.stringify({
-            id: data.requestId,
-            status: 'pending',
-            originTableNumber: data.originTableNumber,
-            targetTableNumber: data.targetTableNumber,
-            originHostName: data.originHostName,
-            targetHostName: data.targetHostName,
-            originPartySize: data.originPartySize,
-            targetPartySize: data.targetPartySize,
-            approvedByAAt: null,
-            approvedByBAt: null,
-            expiresAt: data.expiresAt,
-            createdAt: new Date().toISOString(),
-          }),
-        );
-      } catch {
-        /* sessionStorage is a convenience for the deep-link route */
-      }
-      if (data.targetSessionId !== session.sessionId) return;
-      setChatStarted(true);
-      setMessages((prev) =>
-        mergeUniqueChatMessages(prev, [tableMergeCreatedMessage(data)]),
-      );
-      return;
-    }
-    if (event === 'table_merge.approved') {
-      if (!isTableMergeApprovedPayload(data)) return;
-      const payload = data;
-      if (
-        payload.originSessionId &&
-        payload.targetSessionId &&
-        session.sessionId !== payload.originSessionId &&
-        session.sessionId !== payload.targetSessionId
-      ) {
+  useTableSocket(
+    session.sessionId,
+    (event, data) => {
+      if (event === 'order:created' || event === 'order:status') {
+        // Eyebrow de status muda ao vivo quando o pedido avança (prompt 100
+        // matriz: "Pedido avança (WS) com assistente aberto").
+        refreshActiveOrder();
         return;
       }
-      if (payload.side !== 'both') {
+      if (event === 'table_merge.created' && isTableMergeCreatedPayload(data)) {
+        try {
+          window.sessionStorage.setItem(
+            `table-merge:${data.requestId}`,
+            JSON.stringify({
+              id: data.requestId,
+              status: 'pending',
+              originTableNumber: data.originTableNumber,
+              targetTableNumber: data.targetTableNumber,
+              originHostName: data.originHostName,
+              targetHostName: data.targetHostName,
+              originPartySize: data.originPartySize,
+              targetPartySize: data.targetPartySize,
+              approvedByAAt: null,
+              approvedByBAt: null,
+              expiresAt: data.expiresAt,
+              createdAt: new Date().toISOString(),
+            }),
+          );
+        } catch {
+          /* sessionStorage is a convenience for the deep-link route */
+        }
+        if (data.targetSessionId !== session.sessionId) return;
+        setChatStarted(true);
+        setMessages((prev) => mergeUniqueChatMessages(prev, [tableMergeCreatedMessage(data)]));
+        return;
+      }
+      if (event === 'table_merge.approved') {
+        if (!isTableMergeApprovedPayload(data)) return;
+        const payload = data;
+        if (
+          payload.originSessionId &&
+          payload.targetSessionId &&
+          session.sessionId !== payload.originSessionId &&
+          session.sessionId !== payload.targetSessionId
+        ) {
+          return;
+        }
+        if (payload.side !== 'both') {
+          setMessages((prev) =>
+            upsertTableMergeChatMessage(prev, tableMergeWaitingMessage(payload.requestId, payload)),
+          );
+          return;
+        }
+        setChatStarted(true);
         setMessages((prev) =>
-          upsertTableMergeChatMessage(
-            prev,
-            tableMergeWaitingMessage(payload.requestId, payload),
-          ),
+          upsertTableMergeChatMessage(prev, tableMergeApprovedMessage(payload.requestId, payload)),
         );
         return;
       }
-      setChatStarted(true);
-      setMessages((prev) =>
-        upsertTableMergeChatMessage(
-          prev,
-          tableMergeApprovedMessage(payload.requestId, payload),
-        ),
-      );
-      return;
-    }
-    if (event === 'table_merge.rejected' && isTableMergeRejectedPayload(data)) {
-      const payload = data;
-      if (
-        payload.originSessionId &&
-        payload.targetSessionId &&
-        session.sessionId !== payload.originSessionId &&
-        session.sessionId !== payload.targetSessionId
-      ) {
-        return;
-      }
-      // Quem CANCELOU/recusou ativamente não recebe o card "Vocês seguem
-      // separados" — ele acabou de tomar essa decisão (vídeos 2026-06-10:
-      // cancelar mostrava "a outra mesa preferiu continuar"). Só limpa as
-      // bubbles de waiting/incoming daquele request.
-      const iDecided =
-        (payload.rejectedBy === 'a' && session.sessionId === payload.originSessionId) ||
-        (payload.rejectedBy === 'b' && session.sessionId === payload.targetSessionId);
-      if (iDecided) {
+      if (event === 'table_merge.rejected' && isTableMergeRejectedPayload(data)) {
+        const payload = data;
+        if (
+          payload.originSessionId &&
+          payload.targetSessionId &&
+          session.sessionId !== payload.originSessionId &&
+          session.sessionId !== payload.targetSessionId
+        ) {
+          return;
+        }
+        // Quem CANCELOU/recusou ativamente não recebe o card "Vocês seguem
+        // separados" — ele acabou de tomar essa decisão (vídeos 2026-06-10:
+        // cancelar mostrava "a outra mesa preferiu continuar"). Só limpa as
+        // bubbles de waiting/incoming daquele request.
+        const iDecided =
+          (payload.rejectedBy === 'a' && session.sessionId === payload.originSessionId) ||
+          (payload.rejectedBy === 'b' && session.sessionId === payload.targetSessionId);
+        if (iDecided) {
+          setMessages((prev) =>
+            prev.filter(
+              (msg) =>
+                !(
+                  msg.tableMerge &&
+                  ['incoming', 'waiting'].includes(msg.tableMerge.kind) &&
+                  (!payload.requestId || msg.tableMerge.requestId === payload.requestId)
+                ),
+            ),
+          );
+          return;
+        }
+        setChatStarted(true);
         setMessages((prev) =>
-          prev.filter(
-            (msg) =>
-              !(
-                msg.tableMerge &&
-                ['incoming', 'waiting'].includes(msg.tableMerge.kind) &&
-                (!payload.requestId || msg.tableMerge.requestId === payload.requestId)
-              ),
+          upsertTableMergeChatMessage(prev, tableMergeRejectedMessage(payload.requestId, payload)),
+        );
+        return;
+      }
+      if (event === 'merge.cooldown_started' && isMergeCooldownStartedPayload(data)) {
+        const payload = data;
+        if (payload.originSessionId && session.sessionId !== payload.originSessionId) {
+          return;
+        }
+        setChatStarted(true);
+        setMessages((prev) =>
+          upsertTableMergeChatMessage(prev, tableMergeCooldownMessage(payload)),
+        );
+        return;
+      }
+      if (event === 'courtesy.created' && isCustomerCourtesyDto(data)) {
+        setChatStarted(true);
+        setMessages((prev) => mergeUniqueChatMessages(prev, [courtesyChatMessage(data)]));
+        return;
+      }
+      if (event === 'courtesy.updated' && isCustomerCourtesyDto(data)) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.courtesy?.id === data.id
+              ? { ...msg, courtesy: data, courtesyBusy: null, courtesyError: null }
+              : msg,
           ),
         );
         return;
       }
-      setChatStarted(true);
-      setMessages((prev) =>
-        upsertTableMergeChatMessage(
-          prev,
-          tableMergeRejectedMessage(payload.requestId, payload),
-        ),
-      );
-      return;
-    }
-    if (event === 'merge.cooldown_started' && isMergeCooldownStartedPayload(data)) {
-      const payload = data;
-      if (payload.originSessionId && session.sessionId !== payload.originSessionId) {
+      if (event === 'participant:join_request' && isJoinRequestSocketPayload(data)) {
+        if (!isCurrentHost) return;
+        if (data.customerId === session.customerId) return;
+        const currentSessionId = data.tableSessionId || session.sessionId;
+        if (!currentSessionId) return;
+        setChatStarted(true);
+        setMessages((prev) =>
+          mergeUniqueChatMessages(prev, [
+            joinRequestChatMessage(
+              {
+                targetCustomerId: data.customerId,
+                joinerName: data.name || 'Cliente',
+                requestedAt: data.requestedAt || new Date().toISOString(),
+                tableSessionId: currentSessionId,
+              },
+              session.customerName,
+            ),
+          ]),
+        );
         return;
       }
-      setChatStarted(true);
-      setMessages((prev) =>
-        upsertTableMergeChatMessage(prev, tableMergeCooldownMessage(payload)),
-      );
-      return;
-    }
-    if (event === 'courtesy.created' && isCustomerCourtesyDto(data)) {
-      setChatStarted(true);
-      setMessages((prev) => mergeUniqueChatMessages(prev, [courtesyChatMessage(data)]));
-      return;
-    }
-    if (event === 'courtesy.updated' && isCustomerCourtesyDto(data)) {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.courtesy?.id === data.id
-            ? { ...msg, courtesy: data, courtesyBusy: null, courtesyError: null }
-            : msg,
-        ),
-      );
-      return;
-    }
-    if (event === 'participant:join_request' && isJoinRequestSocketPayload(data)) {
-      if (!isCurrentHost) return;
-      if (data.customerId === session.customerId) return;
-      const currentSessionId = data.tableSessionId || session.sessionId;
-      if (!currentSessionId) return;
-      setChatStarted(true);
-      setMessages((prev) =>
-        mergeUniqueChatMessages(prev, [
-          joinRequestChatMessage(
-            {
-              targetCustomerId: data.customerId,
-              joinerName: data.name || 'Cliente',
-              requestedAt: data.requestedAt || new Date().toISOString(),
-              tableSessionId: currentSessionId,
-            },
-            session.customerName,
+      if (event === 'participant:decision' && isJoinDecisionSocketPayload(data)) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.joinRequest?.targetCustomerId === data.customerId
+              ? {
+                  ...msg,
+                  joinRequest: {
+                    ...msg.joinRequest,
+                    decision: data.status,
+                    busy: false,
+                    error: null,
+                  },
+                }
+              : msg,
           ),
-        ]),
-      );
-      return;
-    }
-    if (event === 'participant:decision' && isJoinDecisionSocketPayload(data)) {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.joinRequest?.targetCustomerId === data.customerId
-            ? {
-                ...msg,
-                joinRequest: {
-                  ...msg.joinRequest,
-                  decision: data.status,
-                  busy: false,
-                  error: null,
-                },
-              }
-            : msg,
-        ),
-      );
-      return;
-    }
-    if (event !== 'assistant.staff_message_received') return;
-    const payload = (data ?? {}) as {
-      id?: string;
-      message?: string;
-      fromStaffId?: string;
-      fromStaffName?: string | null;
-      createdAt?: string;
-    };
-    if (!payload.id || !payload.message) return;
-    const staff = staffDisplayName(payload.fromStaffName);
-    setChatStarted(true);
-    setMessages((prev) => {
-      return mergeUniqueChatMessages(prev, [
-        {
-          id: `staff-${payload.id}`,
-          role: 'staff' as const,
-          content: payload.message ?? '',
-          staffName: staff.firstName,
-          staffInitial: staff.initial,
-          staffRole: 'Gerente',
-          staffCreatedAt: payload.createdAt,
-        },
-      ]);
-    });
-    // O 3º argumento entra no room `customer:<id>` — desde 2026-06-11 a
-    // resposta do gerente chega SÓ pra esse room (privacidade por cliente).
-  }, session.customerId);
+        );
+        return;
+      }
+      if (event !== 'assistant.staff_message_received') return;
+      const payload = (data ?? {}) as {
+        id?: string;
+        message?: string;
+        fromStaffId?: string;
+        fromStaffName?: string | null;
+        createdAt?: string;
+      };
+      if (!payload.id || !payload.message) return;
+      const staff = staffDisplayName(payload.fromStaffName);
+      setChatStarted(true);
+      setMessages((prev) => {
+        return mergeUniqueChatMessages(prev, [
+          {
+            id: `staff-${payload.id}`,
+            role: 'staff' as const,
+            content: payload.message ?? '',
+            staffName: staff.firstName,
+            staffInitial: staff.initial,
+            staffRole: 'Gerente',
+            staffCreatedAt: payload.createdAt,
+          },
+        ]);
+      });
+      // O 3º argumento entra no room `customer:<id>` — desde 2026-06-11 a
+      // resposta do gerente chega SÓ pra esse room (privacidade por cliente).
+    },
+    session.customerId,
+  );
 
   const [placingOrder, setPlacingOrder] = useState(false);
   // Guard against double-tap on the LGPD confirm chip — the action is
@@ -1713,10 +1696,7 @@ export default function AssistentePage() {
     }
   };
 
-  const patchTableMergeMessage = (
-    messageId: string,
-    patch: Partial<TableMergeChatState>,
-  ) => {
+  const patchTableMergeMessage = (messageId: string, patch: Partial<TableMergeChatState>) => {
     setMessages((prev) =>
       prev.map((msg) =>
         msg.id === messageId && msg.tableMerge
@@ -1726,10 +1706,7 @@ export default function AssistentePage() {
     );
   };
 
-  const decideTableMergeFromChat = async (
-    messageId: string,
-    decision: 'approve' | 'reject',
-  ) => {
+  const decideTableMergeFromChat = async (messageId: string, decision: 'approve' | 'reject') => {
     const msg = messages.find((m) => m.id === messageId);
     const merge = msg?.tableMerge;
     if (!merge?.requestId || merge.busy) return;
@@ -1935,9 +1912,7 @@ export default function AssistentePage() {
   const callHostToTable = async () => {
     try {
       await requestHostAssist(slug, 'Ajuda com junção de mesas');
-      appendToolFeedback(
-        'Recepção avisada — alguém vem até a mesa pra ajudar com a junção.',
-      );
+      appendToolFeedback('Recepção avisada — alguém vem até a mesa pra ajudar com a junção.');
     } catch (error) {
       appendToolFeedback(
         error instanceof ApiRequestError && error.message
@@ -1966,8 +1941,7 @@ export default function AssistentePage() {
   const dismissMergeOutcome = () => {
     setMessages((prev) => {
       const next = prev.filter(
-        (msg) =>
-          !(msg.tableMerge && ['rejected', 'cooldown'].includes(msg.tableMerge.kind)),
+        (msg) => !(msg.tableMerge && ['rejected', 'cooldown'].includes(msg.tableMerge.kind)),
       );
       if (next.length === 0) {
         // Sem mais nada na conversa → volta pra landing contextual com
@@ -2025,10 +1999,7 @@ export default function AssistentePage() {
 
     if (result.ok) {
       const target =
-        result.request.targetTableNumber ||
-        targetTableNumber ||
-        targetTableLabel ||
-        'escolhida';
+        result.request.targetTableNumber || targetTableNumber || targetTableLabel || 'escolhida';
       appendToolFeedback(
         `Pedido enviado para juntar com a mesa ${target}. Agora os hosts das duas mesas precisam confirmar.`,
       );
@@ -2058,10 +2029,7 @@ export default function AssistentePage() {
     appendToolFeedback(result.message || 'Não consegui criar o pedido de junção agora.');
   };
 
-  const markJoinRequest = (
-    targetCustomerId: string,
-    patch: Partial<JoinRequestChatState>,
-  ) => {
+  const markJoinRequest = (targetCustomerId: string, patch: Partial<JoinRequestChatState>) => {
     setMessages((prev) =>
       prev.map((msg) =>
         msg.joinRequest?.targetCustomerId === targetCustomerId
@@ -2079,8 +2047,7 @@ export default function AssistentePage() {
     const targetCustomerId =
       stringValue(payload.targetCustomerId) ?? stringValue(args.targetCustomerId);
     const decisionRaw = stringValue(payload.decision) ?? stringValue(args.decision);
-    const decision =
-      decisionRaw === 'approve' || decisionRaw === 'reject' ? decisionRaw : null;
+    const decision = decisionRaw === 'approve' || decisionRaw === 'reject' ? decisionRaw : null;
     if (!targetCustomerId || !decision) {
       appendToolFeedback('Não encontrei o pedido de entrada pendente para decidir.');
       return;
@@ -2856,9 +2823,7 @@ export default function AssistentePage() {
                 <PillButton onClick={() => push(`/${slug}/cardapio`)}>Ver cardápio</PillButton>
               </div>
               <HomeHero
-                kicker={
-                  activeOrder ? <AssistantOrderEyebrow active={activeOrder} /> : 'Assistente'
-                }
+                kicker={activeOrder ? <AssistantOrderEyebrow active={activeOrder} /> : 'Assistente'}
                 animate={false}
                 message={
                   landingGreeting ||

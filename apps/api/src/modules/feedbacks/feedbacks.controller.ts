@@ -111,10 +111,7 @@ export class FeedbacksController {
 
   @Get()
   @UseGuards(SessionGuard)
-  async getFeedback(
-    @Query('visitId') visitId: string,
-    @Session() session: SessionData,
-  ) {
+  async getFeedback(@Query('visitId') visitId: string, @Session() session: SessionData) {
     return this.feedbacksService.getFeedbackByVisit(visitId, session.sessionId);
   }
 }

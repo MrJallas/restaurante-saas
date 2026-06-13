@@ -122,17 +122,20 @@ export function DraftOrderProvider({
     };
   }, [items, sessionId, hydrated]);
 
-  const addItem = useCallback<DraftOrderContextValue['addItem']>((item) => {
-    recordContinuationHint('abriu_pedido');
-    setItems((prev) => {
-      const next = [
-        ...prev,
-        { ...item, draftId: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}` },
-      ];
-      writeDraftNow(resolvedStorageKey(sessionId), next);
-      return next;
-    });
-  }, [sessionId]);
+  const addItem = useCallback<DraftOrderContextValue['addItem']>(
+    (item) => {
+      recordContinuationHint('abriu_pedido');
+      setItems((prev) => {
+        const next = [
+          ...prev,
+          { ...item, draftId: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}` },
+        ];
+        writeDraftNow(resolvedStorageKey(sessionId), next);
+        return next;
+      });
+    },
+    [sessionId],
+  );
 
   const updateItem = useCallback<DraftOrderContextValue['updateItem']>(
     (draftId, patch) => {
@@ -145,13 +148,16 @@ export function DraftOrderProvider({
     [sessionId],
   );
 
-  const removeItem = useCallback<DraftOrderContextValue['removeItem']>((draftId) => {
-    setItems((prev) => {
-      const next = prev.filter((it) => it.draftId !== draftId);
-      writeDraftNow(resolvedStorageKey(sessionId), next);
-      return next;
-    });
-  }, [sessionId]);
+  const removeItem = useCallback<DraftOrderContextValue['removeItem']>(
+    (draftId) => {
+      setItems((prev) => {
+        const next = prev.filter((it) => it.draftId !== draftId);
+        writeDraftNow(resolvedStorageKey(sessionId), next);
+        return next;
+      });
+    },
+    [sessionId],
+  );
 
   const clear = useCallback(() => {
     clearContinuationHint('abriu_pedido');
@@ -163,10 +169,7 @@ export function DraftOrderProvider({
     () => items.reduce((s, it) => s + it.priceCents * it.quantity, 0),
     [items],
   );
-  const quantity = useMemo(
-    () => items.reduce((s, it) => s + it.quantity, 0),
-    [items],
-  );
+  const quantity = useMemo(() => items.reduce((s, it) => s + it.quantity, 0), [items]);
 
   const value = useMemo<DraftOrderContextValue>(
     () => ({ items, addItem, updateItem, removeItem, clear, totalCents, quantity }),

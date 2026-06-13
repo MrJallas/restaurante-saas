@@ -43,12 +43,7 @@ export interface QuickAction {
   href: string;
 }
 
-type ContinuationKind =
-  | 'viu_menu'
-  | 'chamou_garcom'
-  | 'abriu_pedido'
-  | 'pagou'
-  | 'voltou_sem_acao';
+type ContinuationKind = 'viu_menu' | 'chamou_garcom' | 'abriu_pedido' | 'pagou' | 'voltou_sem_acao';
 
 interface HomeContinuationSignals {
   tenantId?: string;
@@ -81,9 +76,7 @@ export class HomeService {
     string,
     { expiresAt: number; value: HomeData['continuationMessage'] }
   >();
-  private readonly staticDataCacheTtlMs = Number(
-    process.env.HOME_STATIC_CACHE_TTL_MS ?? 5_000,
-  );
+  private readonly staticDataCacheTtlMs = Number(process.env.HOME_STATIC_CACHE_TTL_MS ?? 5_000);
   private readonly continuationCacheTtlMs = Number(
     process.env.HOME_CONTINUATION_CACHE_TTL_MS ?? 1_000,
   );
@@ -105,14 +98,8 @@ export class HomeService {
       this.getCustomerContext(customerId),
     ]);
     const { restaurantName, highlights } = staticData;
-    const {
-      nome,
-      isReturning,
-      lastVisitSummary,
-      ultimoPrato,
-      ultimaBebida,
-      ultimaSobremesa,
-    } = customerContext;
+    const { nome, isReturning, lastVisitSummary, ultimoPrato, ultimaBebida, ultimaSobremesa } =
+      customerContext;
 
     const heroMessage = renderTemplate(templateIndex, {
       nome,
@@ -160,11 +147,7 @@ export class HomeService {
       if (process.env.AI_SERVICE_API_KEY) {
         aiHeaders['x-ai-service-key'] = process.env.AI_SERVICE_API_KEY;
       }
-      continuationMessage = await this.getCachedContinuationMessage(
-        aiUrl,
-        params,
-        aiHeaders,
-      );
+      continuationMessage = await this.getCachedContinuationMessage(aiUrl, params, aiHeaders);
     } catch (err) {
       this.logger.debug(`continuation fetch skipped: ${(err as Error).message}`);
     }
@@ -238,10 +221,7 @@ export class HomeService {
       highlights: this.normalizeHighlights(row?.highlights),
     };
 
-    if (
-      Number.isFinite(this.staticDataCacheTtlMs) &&
-      this.staticDataCacheTtlMs > 0
-    ) {
+    if (Number.isFinite(this.staticDataCacheTtlMs) && this.staticDataCacheTtlMs > 0) {
       HomeService.staticDataCache.set(cacheKey, {
         expiresAt: now + this.staticDataCacheTtlMs,
         value,
@@ -321,22 +301,16 @@ export class HomeService {
     if (!row) return context;
 
     context.nome = row.name;
-    const createdAt = row.created_at instanceof Date
-      ? row.created_at
-      : new Date(row.created_at);
+    const createdAt = row.created_at instanceof Date ? row.created_at : new Date(row.created_at);
     const ageMs = Date.now() - createdAt.getTime();
     const totalVisits =
-      typeof row.total_visits === 'number'
-        ? row.total_visits
-        : Number(row.total_visits ?? 0);
+      typeof row.total_visits === 'number' ? row.total_visits : Number(row.total_visits ?? 0);
     if (ageMs > 30 * 60 * 1000 || totalVisits > 1) {
       context.isReturning = true;
     }
 
     const hasSummary =
-      row.last_items !== null ||
-      row.favorite_items !== null ||
-      row.total_spent_cents !== null;
+      row.last_items !== null || row.favorite_items !== null || row.total_spent_cents !== null;
     if (hasSummary) {
       context.isReturning = true;
       context.lastVisitSummary = {
@@ -352,12 +326,8 @@ export class HomeService {
       context.ultimoPrato = lastItems.find(
         (i) => i.category !== 'Bebidas' && i.category !== 'Sobremesas',
       )?.name;
-      context.ultimaBebida = lastItems.find(
-        (i) => i.category === 'Bebidas',
-      )?.name;
-      context.ultimaSobremesa = lastItems.find(
-        (i) => i.category === 'Sobremesas',
-      )?.name;
+      context.ultimaBebida = lastItems.find((i) => i.category === 'Bebidas')?.name;
+      context.ultimaSobremesa = lastItems.find((i) => i.category === 'Sobremesas')?.name;
     }
 
     return context;
@@ -404,10 +374,7 @@ export class HomeService {
       }
     }
 
-    if (
-      Number.isFinite(this.continuationCacheTtlMs) &&
-      this.continuationCacheTtlMs > 0
-    ) {
+    if (Number.isFinite(this.continuationCacheTtlMs) && this.continuationCacheTtlMs > 0) {
       HomeService.continuationCache.set(cacheKey, {
         expiresAt: now + this.continuationCacheTtlMs,
         value,

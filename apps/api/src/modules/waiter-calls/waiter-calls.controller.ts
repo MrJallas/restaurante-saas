@@ -1,25 +1,6 @@
-import {
-  Controller,
-  Post,
-  Get,
-  Patch,
-  Body,
-  Param,
-  Req,
-  Delete,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Param, Req, Delete, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
-import {
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  Min,
-  Max,
-  MaxLength,
-  IsUUID,
-} from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Min, Max, MaxLength, IsUUID } from 'class-validator';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
@@ -110,10 +91,7 @@ export class WaiterCallsController {
    */
   @Get(':callId')
   @UseGuards(SessionGuard)
-  async getCall(
-    @Session() session: SessionData,
-    @Param('callId') callId: string,
-  ) {
+  async getCall(@Session() session: SessionData, @Param('callId') callId: string) {
     return this.waiterCallsService.getCall(callId, session.sessionId);
   }
 
@@ -123,19 +101,13 @@ export class WaiterCallsController {
    */
   @Patch(':callId/cancel')
   @UseGuards(SessionGuard)
-  async cancelCall(
-    @Session() session: SessionData,
-    @Param('callId') callId: string,
-  ) {
+  async cancelCall(@Session() session: SessionData, @Param('callId') callId: string) {
     return this.waiterCallsService.cancelCall(callId, session.sessionId);
   }
 
   @Delete(':callId')
   @UseGuards(SessionGuard)
-  async deleteCall(
-    @Session() session: SessionData,
-    @Param('callId') callId: string,
-  ) {
+  async deleteCall(@Session() session: SessionData, @Param('callId') callId: string) {
     return this.waiterCallsService.cancelCall(callId, session.sessionId);
   }
 

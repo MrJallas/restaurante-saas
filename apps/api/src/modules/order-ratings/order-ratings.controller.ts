@@ -1,22 +1,6 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
-import {
-  IsInt,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Max,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
@@ -80,10 +64,7 @@ export class OrderRatingsController {
    */
   @Get(':orderId')
   @UseGuards(SessionGuard)
-  async getByOrderId(
-    @Param('orderId') orderId: string,
-    @Session() session: SessionData,
-  ) {
+  async getByOrderId(@Param('orderId') orderId: string, @Session() session: SessionData) {
     return this.service.getByOrderIdForSession(orderId, session.sessionId);
   }
 }

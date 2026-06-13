@@ -37,7 +37,8 @@ function HostHomePageInner() {
         if (tab === 'waitlist') router.push(`/host/waitlist?tenant=${tenantSlug}`);
         if (tab === 'reserva') router.push(`/host/reservations?tenant=${tenantSlug}`);
         if (tab === 'me') router.push(`/host/profile?tenant=${tenantSlug}&hostId=${hostId}`);
-        if (tab === 'inbox') router.push(`/host/notifications?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'inbox')
+          router.push(`/host/notifications?tenant=${tenantSlug}&hostId=${hostId}`);
       }}
     />
   );

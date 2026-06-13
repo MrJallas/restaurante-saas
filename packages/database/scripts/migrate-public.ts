@@ -2,7 +2,8 @@ import { Client } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5434/restaurant_saas';
+const DATABASE_URL =
+  process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5434/restaurant_saas';
 
 async function migratePublic() {
   const client = new Client({ connectionString: DATABASE_URL });

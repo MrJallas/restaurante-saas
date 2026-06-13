@@ -31,10 +31,7 @@ interface ScreenCustomerOrderRatingProps {
  * `attachedImageUrl` exists in the complaint payload but we don't have a
  * file upload endpoint yet, so we keep the surface minimal).
  */
-export function ScreenCustomerOrderRating({
-  slug,
-  orderId,
-}: ScreenCustomerOrderRatingProps) {
+export function ScreenCustomerOrderRating({ slug, orderId }: ScreenCustomerOrderRatingProps) {
   const session = useSession();
   const router = useRouter();
   // P0: rating depende de customerId. Push notification cold-start
@@ -123,18 +120,10 @@ export function ScreenCustomerOrderRating({
             Quer pedir um café ou voltar pro cardápio? Estamos por aqui.
           </div>
           <div className="mt-8 flex w-full max-w-[280px] flex-col gap-2.5">
-            <PillButton
-              variant="filled"
-              fullWidth
-              onClick={() => router.push(`/${slug}/cardapio`)}
-            >
+            <PillButton variant="filled" fullWidth onClick={() => router.push(`/${slug}/cardapio`)}>
               Voltar ao cardápio
             </PillButton>
-            <PillButton
-              variant="outline"
-              fullWidth
-              onClick={() => router.push(`/${slug}`)}
-            >
+            <PillButton variant="outline" fullWidth onClick={() => router.push(`/${slug}`)}>
               Voltar pra mesa
             </PillButton>
           </div>
@@ -159,8 +148,8 @@ export function ScreenCustomerOrderRating({
           Conta pra gente
         </h1>
         <p className="mb-7 text-[14px] leading-[1.45] text-mute">
-          Sua avaliação ajuda a casa a entender o que tá funcionando · e o que
-          ainda precisa ajustar.
+          Sua avaliação ajuda a casa a entender o que tá funcionando · e o que ainda precisa
+          ajustar.
         </p>
 
         {/* 5 stars */}
@@ -236,21 +225,14 @@ export function ScreenCustomerOrderRating({
         )}
 
         <div className="mt-6 flex flex-col gap-2.5">
-          <PillButton
-            variant="filled"
-            fullWidth
-            disabled={!canSubmit}
-            onClick={handleSubmit}
-          >
+          <PillButton variant="filled" fullWidth disabled={!canSubmit} onClick={handleSubmit}>
             {submitting ? 'Enviando…' : 'Enviar avaliação'}
           </PillButton>
           <PillButton
             variant="outline"
             fullWidth
             onClick={() =>
-              router.push(
-                `/${slug}/complaints/new?orderId=${encodeURIComponent(orderId)}`,
-              )
+              router.push(`/${slug}/complaints/new?orderId=${encodeURIComponent(orderId)}`)
             }
           >
             Reportar um problema

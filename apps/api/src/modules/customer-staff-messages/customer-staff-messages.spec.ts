@@ -102,18 +102,8 @@ function buildFakeCollection<T extends Record<string, unknown>>(): Collection<T>
             const av = (a as Record<string, unknown>)[key];
             const bv = (b as Record<string, unknown>)[key];
             // Date or number-friendly compare.
-            const an =
-              av instanceof Date
-                ? av.getTime()
-                : typeof av === 'number'
-                  ? av
-                  : 0;
-            const bn =
-              bv instanceof Date
-                ? bv.getTime()
-                : typeof bv === 'number'
-                  ? bv
-                  : 0;
+            const an = av instanceof Date ? av.getTime() : typeof av === 'number' ? av : 0;
+            const bn = bv instanceof Date ? bv.getTime() : typeof bv === 'number' ? bv : 0;
             return (an - bn) * dir;
           });
           return chain;
@@ -188,9 +178,7 @@ export async function runCustomerStaffMessagesContract(): Promise<void> {
   const emptyDto = plainToInstance(CustomerSendMirrorDto, { content: '' });
   const emptyErrors = await validate(emptyDto);
   if (emptyErrors.length === 0) {
-    throw new Error(
-      'staff-messages: empty content accepted — MinLength(1) decorator missing.',
-    );
+    throw new Error('staff-messages: empty content accepted — MinLength(1) decorator missing.');
   }
 
   // 1b. Content > 2000 rejected.
@@ -210,9 +198,7 @@ export async function runCustomerStaffMessagesContract(): Promise<void> {
   });
   const okErrors = await validate(okDto);
   if (okErrors.length !== 0) {
-    throw new Error(
-      `staff-messages: valid content rejected. Errors: ${JSON.stringify(okErrors)}`,
-    );
+    throw new Error(`staff-messages: valid content rejected. Errors: ${JSON.stringify(okErrors)}`);
   }
 
   // ──────────────────────────────────────────────────────────────────
@@ -253,9 +239,7 @@ export async function runCustomerStaffMessagesContract(): Promise<void> {
   // 2b. List threads — should return ONE thread with messageCount=2.
   const threads = await service.listThreads(customerId, tenantId);
   if (threads.length !== 1) {
-    throw new Error(
-      `staff-messages: expected 1 thread, got ${threads.length}.`,
-    );
+    throw new Error(`staff-messages: expected 1 thread, got ${threads.length}.`);
   }
   if (threads[0].messageCount !== 2) {
     throw new Error(
@@ -277,9 +261,7 @@ export async function runCustomerStaffMessagesContract(): Promise<void> {
   const threadId = threads[0].threadId;
   const messages = await service.getThreadMessages(threadId, customerId);
   if (messages.length !== 2) {
-    throw new Error(
-      `staff-messages: expected 2 messages, got ${messages.length}.`,
-    );
+    throw new Error(`staff-messages: expected 2 messages, got ${messages.length}.`);
   }
   if (messages[0].fromRole !== 'staff' || messages[0].fromName !== 'Renata') {
     throw new Error('staff-messages: message author fields not propagated.');
@@ -291,9 +273,7 @@ export async function runCustomerStaffMessagesContract(): Promise<void> {
     throw new Error('staff-messages: cross-customer read did NOT 404.');
   } catch (err) {
     if (!(err instanceof HttpException) || err.getStatus() !== 404) {
-      throw new Error(
-        `staff-messages: expected HttpException 404, got ${(err as Error).message}.`,
-      );
+      throw new Error(`staff-messages: expected HttpException 404, got ${(err as Error).message}.`);
     }
   }
 
@@ -323,9 +303,7 @@ export async function runCustomerStaffMessagesContract(): Promise<void> {
   }
   const afterReply = await service.getThreadMessages(threadId, customerId);
   if (afterReply.length !== 3) {
-    throw new Error(
-      `staff-messages: after reply expected 3 messages, got ${afterReply.length}.`,
-    );
+    throw new Error(`staff-messages: after reply expected 3 messages, got ${afterReply.length}.`);
   }
   if (afterReply[2].fromRole !== 'customer') {
     throw new Error('staff-messages: customer reply not tagged fromRole=customer.');

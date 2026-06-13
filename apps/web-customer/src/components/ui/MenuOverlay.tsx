@@ -108,9 +108,7 @@ export function MenuOverlay({ open, onClose, slug, category }: MenuOverlayProps)
         style={{
           transform: dragY ? `translateY(${dragY}px)` : undefined,
           animation: dragY > 0 || isDragging ? 'none' : undefined,
-          transition: isDragging
-            ? undefined
-            : 'transform 220ms cubic-bezier(.2,.8,.2,1)',
+          transition: isDragging ? undefined : 'transform 220ms cubic-bezier(.2,.8,.2,1)',
         }}
         onClick={(e) => e.stopPropagation()}
         {...bind}

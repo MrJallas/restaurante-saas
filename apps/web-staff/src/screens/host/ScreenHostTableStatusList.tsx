@@ -206,9 +206,7 @@ function TableRow({
               flexShrink: 0,
             }}
           />
-          <div style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>
-            Mesa {table.number}
-          </div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>Mesa {table.number}</div>
         </div>
         <div style={{ fontSize: 12, color: C.mute, fontWeight: 500, marginTop: 2 }}>
           {meta.join(' · ')}

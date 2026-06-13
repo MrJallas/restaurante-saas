@@ -60,14 +60,21 @@ export function ScreenManagerProfile({
   appVersion = '1.1.0',
   buildDate = '2026-05-06',
   establishment,
-  tenantSlug = process.env.NEXT_PUBLIC_DEFAULT_TENANT || process.env.NEXT_PUBLIC_TENANT_SLUG || 'restaurant_dev',
+  tenantSlug = process.env.NEXT_PUBLIC_DEFAULT_TENANT ||
+    process.env.NEXT_PUBLIC_TENANT_SLUG ||
+    'restaurant_dev',
 }: ScreenManagerProfileProps) {
   const C = useG(!!dark);
   const router = useRouter();
   const isOwner = role === 'owner';
   const initials =
     managerInitials ??
-    managerName.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
+    managerName
+      .split(' ')
+      .map((p) => p[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
   const [confirmEndShift, setConfirmEndShift] = useState(false);
   const [shiftSummary, setShiftSummary] = useState<ManagerShiftLog | null>(null);
   const [shiftBusy, setShiftBusy] = useState(false);
@@ -105,7 +112,11 @@ export function ScreenManagerProfile({
   const fmtCents = (c?: number) =>
     c == null
       ? null
-      : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(c / 100);
+      : new Intl.NumberFormat('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+          maximumFractionDigits: 0,
+        }).format(c / 100);
 
   return (
     <div
@@ -128,7 +139,18 @@ export function ScreenManagerProfile({
             alignItems: 'center',
           }}
         >
-          <h1 style={{ flex: 1, margin: 0, fontSize: 18, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>Eu</h1>
+          <h1
+            style={{
+              flex: 1,
+              margin: 0,
+              fontSize: 18,
+              fontWeight: 700,
+              color: C.ink,
+              letterSpacing: -0.2,
+            }}
+          >
+            Eu
+          </h1>
           <GIconBtn
             dark={dark}
             icon={Icon.bell(20)}
@@ -151,7 +173,9 @@ export function ScreenManagerProfile({
         >
           <MAvatar name={managerName} init={initials} color={managerColor} size={76} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: C.ink, letterSpacing: -0.3 }}>{managerName}</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: C.ink, letterSpacing: -0.3 }}>
+              {managerName}
+            </div>
             <div style={{ fontSize: 12, color: C.faint, marginTop: 3, fontWeight: 600 }}>
               {isOwner ? 'Dona' : 'Gerente'} · {shift}
             </div>
@@ -211,7 +235,15 @@ export function ScreenManagerProfile({
                 border: `1px solid ${C.borderSoft}`,
               }}
             >
-              <div style={{ fontSize: 11, color: C.faint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: C.faint,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.4,
+                }}
+              >
                 Vendas no SEU turno
               </div>
               <div
@@ -232,8 +264,17 @@ export function ScreenManagerProfile({
                   {avgTicketCents != null && ` · ticket médio ${fmtCents(avgTicketCents)}`}
                 </div>
               )}
-              <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6, fontWeight: 400, lineHeight: 1.4 }}>
-                Só o que entrou desde que você abriu o turno ({shiftStartedAt}). Veja o dia inteiro no Financeiro.
+              <div
+                style={{
+                  fontSize: 10.5,
+                  color: C.faint,
+                  marginTop: 6,
+                  fontWeight: 400,
+                  lineHeight: 1.4,
+                }}
+              >
+                Só o que entrou desde que você abriu o turno ({shiftStartedAt}). Veja o dia inteiro
+                no Financeiro.
               </div>
             </div>
           </div>
@@ -275,7 +316,9 @@ export function ScreenManagerProfile({
                 {Icon.pause(18)}
               </div>
               <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: '#1d1c19', letterSpacing: -0.2 }}>
+                <div
+                  style={{ fontSize: 14, fontWeight: 800, color: '#1d1c19', letterSpacing: -0.2 }}
+                >
                   Encerrar turno
                 </div>
                 <div style={{ fontSize: 11.5, color: '#9A7212', marginTop: 2, fontWeight: 600 }}>
@@ -358,7 +401,15 @@ export function ScreenManagerProfile({
           >
             Sair do app
           </button>
-          <div style={{ fontSize: 10.5, color: C.faint, textAlign: 'center', marginTop: 10, lineHeight: 1.5 }}>
+          <div
+            style={{
+              fontSize: 10.5,
+              color: C.faint,
+              textAlign: 'center',
+              marginTop: 10,
+              lineHeight: 1.5,
+            }}
+          >
             Versão {appVersion} · build {buildDate}
             {establishment && (
               <>
@@ -488,11 +539,26 @@ function ActionRow({
         {icon}
       </div>
       <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: danger ? '#A12626' : C.ink, letterSpacing: -0.1 }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: danger ? '#A12626' : C.ink,
+            letterSpacing: -0.1,
+          }}
+        >
           {lbl}
         </div>
         {sub && (
-          <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, fontWeight: 500, lineHeight: 1.3 }}>
+          <div
+            style={{
+              fontSize: 11.5,
+              color: C.faint,
+              marginTop: 2,
+              fontWeight: 500,
+              lineHeight: 1.3,
+            }}
+          >
             {sub}
           </div>
         )}
@@ -559,8 +625,11 @@ function EndShiftConfirmSheet({
         }}
       >
         <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>Encerrar turno?</div>
-        <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.45, color: C.mute, fontWeight: 500 }}>
-          O sistema vai salvar o resumo do turno no histórico, limpar esta sessão e voltar para o login.
+        <div
+          style={{ marginTop: 8, fontSize: 13, lineHeight: 1.45, color: C.mute, fontWeight: 500 }}
+        >
+          O sistema vai salvar o resumo do turno no histórico, limpar esta sessão e voltar para o
+          login.
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
           <button
@@ -662,8 +731,26 @@ function EndShiftSummarySheet({
                 padding: '10px 12px',
               }}
             >
-              <div style={{ fontSize: 10.5, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}>{label}</div>
-              <div style={{ marginTop: 4, fontSize: 18, fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+              <div
+                style={{
+                  fontSize: 10.5,
+                  color: C.faint,
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {label}
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 18,
+                  fontWeight: 900,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {value}
+              </div>
             </div>
           ))}
         </div>

@@ -37,12 +37,7 @@ interface WelcomeModalProps {
  * o pattern, só o conteúdo foi re-skinado pra parecer com as outras telas
  * V20 (V13 amber/heavy-border isolado tirado em round 4 §C-NEW-7).
  */
-export function WelcomeModal({
-  slug,
-  restaurantName,
-  tableLabel,
-  onComplete,
-}: WelcomeModalProps) {
+export function WelcomeModal({ slug, restaurantName, tableLabel, onComplete }: WelcomeModalProps) {
   const [name, setName] = useState('');
   const [cpf, setCpf] = useState('');
   const [nameFocused, setNameFocused] = useState(false);
@@ -72,14 +67,11 @@ export function WelcomeModal({
         setIsLoading(false);
         return;
       }
-      const result = await apiPost<CustomerWelcomeResponseDto>(
-        `/${slug}/customer/welcome`,
-        {
-          name: name.trim(),
-          cpf: cleanCpf(cpf),
-          location,
-        },
-      );
+      const result = await apiPost<CustomerWelcomeResponseDto>(`/${slug}/customer/welcome`, {
+        name: name.trim(),
+        cpf: cleanCpf(cpf),
+        location,
+      });
 
       if (result.recognitionToken) setRecognitionToken(result.recognitionToken);
       setCustomer({
@@ -148,9 +140,8 @@ export function WelcomeModal({
           </h2>
 
           <p className="mt-[12px] max-w-[320px] text-[15px] font-medium leading-[1.5] tracking-[-0.005em] text-mute text-pretty">
-            Estamos no <b className="font-semibold text-ink">{restaurantName}</b>.
-            Seu nome ajuda a personalizar o atendimento. CPF é só pra te
-            reconhecer na próxima visita.
+            Estamos no <b className="font-semibold text-ink">{restaurantName}</b>. Seu nome ajuda a
+            personalizar o atendimento. CPF é só pra te reconhecer na próxima visita.
           </p>
 
           <div className="mt-[24px] flex flex-col gap-[18px]">
@@ -172,11 +163,7 @@ export function WelcomeModal({
             </FieldShell>
 
             <FieldShell label="Seu CPF" focused={cpfFocused} hint="cpf">
-              <CpfInput
-                value={cpf}
-                onChange={(raw) => setCpf(raw)}
-                onFocusChange={setCpfFocused}
-              />
+              <CpfInput value={cpf} onChange={(raw) => setCpf(raw)} onFocusChange={setCpfFocused} />
             </FieldShell>
           </div>
 

@@ -1,11 +1,13 @@
 # Agente: Desenvolvedor Frontend — Staff (Garçom, Cozinha, Dashboard)
 
 ## Papel
+
 Você desenvolve o painel de garçom (mobile), KDS cozinha (TV), e dashboard do dono (desktop).
 
 ## 3 interfaces no mesmo Next.js app
 
 ### /garcom (mobile/tablet)
+
 - Home: mesas ativas com status visual (verde=livre, vermelho=ocupada, amarelo=pedido pronto)
 - Pedidos: lançar pedido por mesa (seleciona itens, notes, confirma) — createdBy: 'waiter'
 - Entregas: cards de pedidos prontos com botão "Eu levo" (claim system)
@@ -18,6 +20,7 @@ Você desenvolve o painel de garçom (mobile), KDS cozinha (TV), e dashboard do 
 - Notificação sonora ao receber alerta
 
 ### /cozinha (TV fullscreen 1920x1080+)
+
 - Layout: 3 colunas — Novos | Preparando | Prontos
 - KdsOrderCard: mesa em destaque, itens com observações em FONTE GRANDE e BOLD
 - Cores: amarelo pra novo, laranja pra preparando, verde pra pronto
@@ -30,6 +33,7 @@ Você desenvolve o painel de garçom (mobile), KDS cozinha (TV), e dashboard do 
 - Observações do cliente em destaque máximo (ex: "SEM CEBOLA" em fundo vermelho, fonte grande)
 
 ### /dashboard (desktop)
+
 - Layout com sidebar de navegação
 - Overview: MetricCards (pedidos hoje, receita, ticket médio, nota média, uso IA)
 - Charts: receita por dia, uso IA (mensagens + custo + bloqueios), feedbacks
@@ -39,6 +43,7 @@ Você desenvolve o painel de garçom (mobile), KDS cozinha (TV), e dashboard do 
 - Clientes: lista com drill-down no histórico de consumo, visitas, feedback
 
 ## Regras
+
 - KDS nunca pode travar — se WebSocket cair, polling como fallback
 - Dashboard usa DataTable reutilizável com sort, filter, pagination
 - Garçom: interface touch-friendly com botões grandes

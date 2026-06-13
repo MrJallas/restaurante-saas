@@ -23,8 +23,13 @@ interface ScreenHostTableLiberateProps {
 }
 
 export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = ({
-  tenantSlug, tableNumber, capacity = 4, sector = 'Salão', partySize: initialParty = capacity,
-  onBack, onDone,
+  tenantSlug,
+  tableNumber,
+  capacity = 4,
+  sector = 'Salão',
+  partySize: initialParty = capacity,
+  onBack,
+  onDone,
 }) => {
   const { dark } = useStaffTheme();
   const C = useG(dark);
@@ -48,8 +53,13 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
   return (
     <div
       style={{
-        width: '100%', height: '100vh', background: C.bg, color: C.ink,
-        fontFamily: G_FONT, display: 'flex', flexDirection: 'column',
+        width: '100%',
+        height: '100vh',
+        background: C.bg,
+        color: C.ink,
+        fontFamily: G_FONT,
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       <GAppHeader
@@ -61,9 +71,14 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
       <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
         <div
           style={{
-            width: 80, height: 80, borderRadius: 18,
-            background: C.surface, border: `2px solid ${C.ink}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 80,
+            height: 80,
+            borderRadius: 18,
+            background: C.surface,
+            border: `2px solid ${C.ink}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             margin: '0 auto 14px',
           }}
         >
@@ -71,22 +86,34 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
         </div>
         <div
           style={{
-            textAlign: 'center', fontSize: 11, letterSpacing: 1.5,
-            textTransform: 'uppercase', color: C.faint, fontWeight: 700,
+            textAlign: 'center',
+            fontSize: 11,
+            letterSpacing: 1.5,
+            textTransform: 'uppercase',
+            color: C.faint,
+            fontWeight: 700,
           }}
         >
           {sector} · {capacity} {capacity === 1 ? 'lugar' : 'lugares'}
         </div>
         <div
           style={{
-            textAlign: 'center', fontSize: 22, fontWeight: 800, marginTop: 14, letterSpacing: -0.5,
+            textAlign: 'center',
+            fontSize: 22,
+            fontWeight: 800,
+            marginTop: 14,
+            letterSpacing: -0.5,
           }}
         >
           Liberar pra novo grupo?
         </div>
         <div
           style={{
-            textAlign: 'center', fontSize: 13, color: C.mute, marginTop: 8, lineHeight: 1.5,
+            textAlign: 'center',
+            fontSize: 13,
+            color: C.mute,
+            marginTop: 8,
+            lineHeight: 1.5,
           }}
         >
           A mesa volta pra status <b>liberada</b>. O cliente pode escanear o QR e abrir comanda.
@@ -97,17 +124,25 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
           <div
             style={{
               fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
-              fontSize: 9.5, fontWeight: 800, letterSpacing: 1.2,
-              textTransform: 'uppercase', color: C.faint, marginBottom: 8,
+              fontSize: 9.5,
+              fontWeight: 800,
+              letterSpacing: 1.2,
+              textTransform: 'uppercase',
+              color: C.faint,
+              marginBottom: 8,
             }}
           >
             QUANTAS PESSOAS?
           </div>
           <div
             style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              border: `1.5px solid ${C.ink}`, borderRadius: 14,
-              padding: '6px 8px', background: C.bg,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              border: `1.5px solid ${C.ink}`,
+              borderRadius: 14,
+              padding: '6px 8px',
+              background: C.bg,
             }}
           >
             <button
@@ -115,18 +150,29 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
               aria-label="Diminuir"
               onClick={() => setPartySize((n) => Math.max(1, n - 1))}
               style={{
-                all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
-                width: 44, height: 44, borderRadius: 10,
-                background: C.surface, color: C.ink,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                all: 'unset',
+                cursor: 'pointer',
+                boxSizing: 'border-box',
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                background: C.surface,
+                color: C.ink,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
               {Icon.minus(20)}
             </button>
             <div
               style={{
-                fontSize: 32, fontWeight: 800, color: C.ink, letterSpacing: -1,
-                fontVariantNumeric: 'tabular-nums', lineHeight: 1,
+                fontSize: 32,
+                fontWeight: 800,
+                color: C.ink,
+                letterSpacing: -1,
+                fontVariantNumeric: 'tabular-nums',
+                lineHeight: 1,
               }}
             >
               {partySize}
@@ -136,10 +182,17 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
               aria-label="Aumentar"
               onClick={() => setPartySize((n) => Math.min(capacity * 2, n + 1))}
               style={{
-                all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
-                width: 44, height: 44, borderRadius: 10,
-                background: C.surface, color: C.ink,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                all: 'unset',
+                cursor: 'pointer',
+                boxSizing: 'border-box',
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                background: C.surface,
+                color: C.ink,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
               {Icon.plus(20)}
@@ -151,8 +204,13 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
           <div
             role="alert"
             style={{
-              marginTop: 14, padding: '10px 12px', borderRadius: 10,
-              background: C.dangerBg, color: C.danger, fontSize: 13, fontWeight: 600,
+              marginTop: 14,
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: C.dangerBg,
+              color: C.danger,
+              fontSize: 13,
+              fontWeight: 600,
             }}
           >
             {error}
@@ -163,7 +221,8 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
       <div
         style={{
           padding: '12px 16px 18px',
-          borderTop: `1px solid ${C.borderFaint}`, background: C.bg,
+          borderTop: `1px solid ${C.borderFaint}`,
+          background: C.bg,
         }}
       >
         <GButton kind="primary" full dark={dark} onClick={liberate} disabled={submitting}>

@@ -39,10 +39,7 @@ import {
   GIconBtn,
   Icon,
 } from '../../components/manager';
-import {
-  manager,
-  type ShiftMemberEntry,
-} from '../../lib/api/manager';
+import { manager, type ShiftMemberEntry } from '../../lib/api/manager';
 import { staffGet } from '../../lib/api';
 
 // ─────────────────────────────────────────────────────────────
@@ -68,8 +65,16 @@ interface Shift {
 
 // Stable color per staffId (canvas usa cor fixa por funcionário).
 const STAFF_COLORS = [
-  '#4F6BFF', '#E37D2F', '#7A4FBE', '#C43A3A', '#0B7A8B',
-  '#5B7CD9', '#D9595B', '#3E8C72', '#9A4FBE', '#1E8C5A',
+  '#4F6BFF',
+  '#E37D2F',
+  '#7A4FBE',
+  '#C43A3A',
+  '#0B7A8B',
+  '#5B7CD9',
+  '#D9595B',
+  '#3E8C72',
+  '#9A4FBE',
+  '#1E8C5A',
 ];
 function staffColor(id: string): string {
   let h = 0;
@@ -94,7 +99,7 @@ function roleBucket(role: string): 'Garçom' | 'Cozinha' | 'Bartender' | 'Caixa'
   return 'Outros';
 }
 function shiftRoleCount(members: ShiftMember[]): string {
-  const buckets = { 'Garçom': 0, 'Cozinha': 0, 'Bartender': 0, 'Caixa': 0, 'Outros': 0 };
+  const buckets = { Garçom: 0, Cozinha: 0, Bartender: 0, Caixa: 0, Outros: 0 };
   for (const m of members) buckets[roleBucket(m.role)] += 1;
   const order: [number, [string, string]][] = [
     [buckets['Garçom'], ['GARÇOM', 'GARÇONS']],
@@ -168,7 +173,7 @@ export function ScreenManagerShiftEditor({
   const slug =
     tenantSlug ??
     (typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('slug') ?? undefined
+      ? (new URLSearchParams(window.location.search).get('slug') ?? undefined)
       : undefined) ??
     process.env.NEXT_PUBLIC_TENANT_SLUG ??
     'demo';
@@ -227,8 +232,7 @@ export function ScreenManagerShiftEditor({
       .catch(() => setStaffRoster([]));
   }, [refresh, slug]);
 
-  const toggle = (id: string) =>
-    setOpen((prev) => ({ ...prev, [id]: !prev[id] }));
+  const toggle = (id: string) => setOpen((prev) => ({ ...prev, [id]: !prev[id] }));
 
   // ─── Mutations ─────────────────────────────────────────────
   const onMoveTo = async (toShiftId: string) => {
@@ -773,9 +777,17 @@ function MoreSheet({
   const [step, setStep] = useState<'list' | 'move' | 'overtime'>('list');
 
   if (step === 'move') {
-    const otherShifts = shifts.filter((s) => !s.members.some((m) => m.assignmentId === member.assignmentId));
+    const otherShifts = shifts.filter(
+      (s) => !s.members.some((m) => m.assignmentId === member.assignmentId),
+    );
     return (
-      <SheetBase C={C} dark={dark} onClose={onClose} title={`Mover ${member.name} para…`} subtitle="Escolha o turno destino">
+      <SheetBase
+        C={C}
+        dark={dark}
+        onClose={onClose}
+        title={`Mover ${member.name} para…`}
+        subtitle="Escolha o turno destino"
+      >
         {otherShifts.map((sh) => (
           <button
             key={sh.id}
@@ -797,7 +809,15 @@ function MoreSheet({
               opacity: busy ? 0.5 : 1,
             }}
           >
-            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', fontFamily: MONO_FONT }}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 800,
+                letterSpacing: 0.6,
+                textTransform: 'uppercase',
+                fontFamily: MONO_FONT,
+              }}
+            >
               {sh.label} · {sh.range}
             </div>
             <div style={{ fontSize: 12, color: C.mute, marginTop: 2 }}>
@@ -812,7 +832,13 @@ function MoreSheet({
   if (step === 'overtime') {
     const presets = [30, 60, 120];
     return (
-      <SheetBase C={C} dark={dark} onClose={onClose} title="Autorizar hora extra" subtitle={`${member.name} · turno termina conforme escalado`}>
+      <SheetBase
+        C={C}
+        dark={dark}
+        onClose={onClose}
+        title="Autorizar hora extra"
+        subtitle={`${member.name} · turno termina conforme escalado`}
+      >
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {presets.map((min) => (
             <button
@@ -836,8 +862,11 @@ function MoreSheet({
             </button>
           ))}
         </div>
-        <div style={{ fontSize: 11.5, color: C.mute, fontWeight: 500, marginTop: 14, lineHeight: 1.5 }}>
-          Termo de hora extra fica gravado no histórico. Cliente paga ou abate na escala da semana seguinte.
+        <div
+          style={{ fontSize: 11.5, color: C.mute, fontWeight: 500, marginTop: 14, lineHeight: 1.5 }}
+        >
+          Termo de hora extra fica gravado no histórico. Cliente paga ou abate na escala da semana
+          seguinte.
         </div>
       </SheetBase>
     );

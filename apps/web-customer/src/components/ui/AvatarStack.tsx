@@ -18,7 +18,11 @@ interface AvatarStackProps {
  * cada re-render do parent quando o array `people` nao mudou por referencia —
  * o polling de participantes preserva a mesma ref quando nada mudou.
  */
-export const AvatarStack = memo(function AvatarStack({ people, size = 30, max = 4 }: AvatarStackProps) {
+export const AvatarStack = memo(function AvatarStack({
+  people,
+  size = 30,
+  max = 4,
+}: AvatarStackProps) {
   const show = people.slice(0, max);
   const overflow = people.length - show.length;
   return (

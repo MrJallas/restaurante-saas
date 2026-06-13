@@ -59,9 +59,7 @@ function statusClass(courtesy: CustomerCourtesyHistoryDto): string {
   return 'border-border-soft bg-bg text-faint';
 }
 
-export function ScreenCustomerCourtesyHistory({
-  slug,
-}: ScreenCustomerCourtesyHistoryProps) {
+export function ScreenCustomerCourtesyHistory({ slug }: ScreenCustomerCourtesyHistoryProps) {
   const session = useSession();
   const router = useRouter();
   const ready = useRequireCustomerId(slug);
@@ -119,9 +117,7 @@ export function ScreenCustomerCourtesyHistory({
       onBack={() => router.back()}
     >
       <div className="flex flex-1 flex-col px-[22px] pb-10 pt-3">
-        <h1 className="mb-1 text-[22px] font-semibold tracking-[-0.02em] text-ink">
-          Cortesias
-        </h1>
+        <h1 className="mb-1 text-[22px] font-semibold tracking-[-0.02em] text-ink">Cortesias</h1>
         <p className="mb-5 text-[13px] leading-[1.5] text-mute">
           Histórico dos últimos 30 dias · válidas só na conta em que foram enviadas.
         </p>
@@ -143,9 +139,7 @@ export function ScreenCustomerCourtesyHistory({
           </div>
         )}
 
-        {loading && (
-          <div className="text-center text-[13px] text-mute">Carregando…</div>
-        )}
+        {loading && <div className="text-center text-[13px] text-mute">Carregando…</div>}
 
         {courtesies.length > 0 && (
           <div className="flex flex-col gap-5">

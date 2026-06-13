@@ -106,29 +106,15 @@ export function ScreenCustomerIdentifyBeforeJoin({
       }
       router.push(redirectTo ?? `/${slug}/waiting-approval`);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Erro ao validar seus dados. Tente novamente.',
-      );
+      setError(err instanceof Error ? err.message : 'Erro ao validar seus dados. Tente novamente.');
       setSubmitting(false);
     }
-  }, [
-    canSubmit,
-    slug,
-    name,
-    cleanedCpf,
-    sessionId,
-    setCustomer,
-    router,
-    redirectTo,
-  ]);
+  }, [canSubmit, slug, name, cleanedCpf, sessionId, setCustomer, router, redirectTo]);
 
   // capitalize on blur: roda a cada keystroke quebra autocorrect do iOS
   // (mesmo motivo do WelcomeModal). Mantemos a UX de Title-Case sem brigar
   // com o IME.
-  const capitalizeName = (value: string) =>
-    value.replace(/\b\w/g, (char) => char.toUpperCase());
+  const capitalizeName = (value: string) => value.replace(/\b\w/g, (char) => char.toUpperCase());
 
   const handleNameBlur = () => {
     setNameFocused(false);
@@ -150,13 +136,11 @@ export function ScreenCustomerIdentifyBeforeJoin({
           <p className="mt-[12px] max-w-[320px] text-[15px] font-medium leading-[1.5] tracking-[-0.005em] text-mute text-pretty">
             {hostName ? (
               <>
-                <b className="font-semibold text-ink">{hostName}</b> (host da
-                mesa) vai ver seu nome pra decidir se você pode entrar.
+                <b className="font-semibold text-ink">{hostName}</b> (host da mesa) vai ver seu nome
+                pra decidir se você pode entrar.
               </>
             ) : (
-              <>
-                O host da mesa vai ver seu nome pra decidir se você pode entrar.
-              </>
+              <>O host da mesa vai ver seu nome pra decidir se você pode entrar.</>
             )}
           </p>
 
@@ -179,17 +163,12 @@ export function ScreenCustomerIdentifyBeforeJoin({
             </FieldShell>
 
             <FieldShell label="Seu CPF" focused={cpfFocused} hint="cpf">
-              <CpfInput
-                value={cpf}
-                onChange={(raw) => setCpf(raw)}
-                onFocusChange={setCpfFocused}
-              />
+              <CpfInput value={cpf} onChange={(raw) => setCpf(raw)} onFocusChange={setCpfFocused} />
             </FieldShell>
           </div>
 
           <p className="mt-[14px] font-mono text-[10px] font-bold uppercase leading-[1.5] tracking-[0.8px] text-faint text-pretty">
-            Só pra mesa saber quem é · CPF nos ajuda a te reconhecer na próxima
-            visita
+            Só pra mesa saber quem é · CPF nos ajuda a te reconhecer na próxima visita
           </p>
 
           {error && (
@@ -203,8 +182,8 @@ export function ScreenCustomerIdentifyBeforeJoin({
 
           {returningName && (
             <div className="mt-3 rounded-[12px] border border-border-soft bg-surface px-3 py-2.5 text-[13px] leading-[1.5] text-ink">
-              Bem-vindo de volta, <b className="font-semibold">{returningName}</b>!
-              Já te conheço daqui.
+              Bem-vindo de volta, <b className="font-semibold">{returningName}</b>! Já te conheço
+              daqui.
             </div>
           )}
 

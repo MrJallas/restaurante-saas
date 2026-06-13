@@ -76,7 +76,8 @@ export class ZonePauseService {
     );
     if (activeRows.length) {
       throw new BadRequestException({
-        message_user: 'Esse garçom já tem uma pausa ativa. Encerre a pausa atual antes de iniciar outra.',
+        message_user:
+          'Esse garçom já tem uma pausa ativa. Encerre a pausa atual antes de iniciar outra.',
         code: 'ZONE_PAUSE_ALREADY_ACTIVE',
       });
     }
@@ -114,9 +115,7 @@ export class ZonePauseService {
   private async lookupStaffName(staffId: string): Promise<string> {
     try {
       const rows = unwrapRows<{ name: string }>(
-        await this.tenantConn.query(`SELECT name FROM staff WHERE id = $1`, [
-          staffId,
-        ]),
+        await this.tenantConn.query(`SELECT name FROM staff WHERE id = $1`, [staffId]),
       );
       return rows[0]?.name ?? '';
     } catch (error) {
@@ -128,11 +127,7 @@ export class ZonePauseService {
     }
   }
 
-  async end(
-    id: string,
-    by: { endedBy?: string; reason?: string },
-    slug?: string,
-  ) {
+  async end(id: string, by: { endedBy?: string; reason?: string }, slug?: string) {
     const updated = unwrapRows<Record<string, unknown>>(
       await this.tenantConn.query(
         `UPDATE zone_pauses
@@ -145,10 +140,7 @@ export class ZonePauseService {
       ),
     );
     if (!updated.length) {
-      throw new HttpException(
-        'Zone pause nao encontrada ou ja encerrada.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Zone pause nao encontrada ou ja encerrada.', HttpStatus.NOT_FOUND);
     }
     const result = this.mapRow(updated[0]);
 
@@ -169,11 +161,7 @@ export class ZonePauseService {
    * Alias for the wiring contract. Delegates to `end()` and forwards slug so
    * the WS event fires.
    */
-  async endEarly(
-    id: string,
-    by: { endedBy?: string; reason?: string },
-    slug?: string,
-  ) {
+  async endEarly(id: string, by: { endedBy?: string; reason?: string }, slug?: string) {
     return this.end(id, by, slug);
   }
 
@@ -200,17 +188,14 @@ export class ZonePauseService {
             LEFT JOIN staff starter ON starter.id = zone_pauses.started_by
                  ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
                  ORDER BY started_at DESC LIMIT 100`;
-    const rows = (await this.tenantConn.query(sql, params)) as Array<
-      Record<string, unknown>
-    >;
+    const rows = (await this.tenantConn.query(sql, params)) as Array<Record<string, unknown>>;
     return rows.map((r) => this.mapRow(r));
   }
 
   private mapRow(row: Record<string, unknown>) {
     const endedAt = (row.ended_at as string | null) ?? null;
     const endsAt = row.ends_at as string;
-    const active =
-      endedAt === null && (!endsAt || new Date(endsAt).getTime() > Date.now());
+    const active = endedAt === null && (!endsAt || new Date(endsAt).getTime() > Date.now());
     return {
       id: row.id as string,
       waiterId: row.waiter_id as string,

@@ -106,10 +106,7 @@ function formatMoney(cents?: number | null): string {
 
 function friendlyTimelineError(error: unknown): string {
   const raw = error instanceof Error ? error.message : '';
-  if (
-    !raw ||
-    /manager-only|x-staff-id|invalid uuid|invalid input syntax|SQL|syntax/i.test(raw)
-  ) {
+  if (!raw || /manager-only|x-staff-id|invalid uuid|invalid input syntax|SQL|syntax/i.test(raw)) {
     return 'Não foi possível carregar a timeline. Faça login como gerente e tente novamente.';
   }
   return raw;
@@ -153,9 +150,10 @@ function deriveSteps(timeline: OrderTimelineResponse | null): TimelineStep[] {
   const lastEventAt = timeline.events.at(-1)?.at ?? timeline.createdAt ?? null;
   const statusAge = minutesBetween(lastEventAt);
   const target = currentStatus ? TARGET_MINUTES[currentStatus] : undefined;
-  const delay = target && statusAge != null && !TERMINAL_STATUS.has(currentStatus ?? '')
-    ? Math.max(0, statusAge - target)
-    : 0;
+  const delay =
+    target && statusAge != null && !TERMINAL_STATUS.has(currentStatus ?? '')
+      ? Math.max(0, statusAge - target)
+      : 0;
 
   return timeline.events.map((event, index, events) => {
     const previousAt = index === 0 ? timeline.createdAt : events[index - 1]?.at;
@@ -228,9 +226,10 @@ export function ScreenManagerTableTimeline({
   const lastEventAt = timeline?.events.at(-1)?.at ?? timeline?.createdAt ?? null;
   const statusAge = minutesBetween(lastEventAt);
   const target = currentStatus ? TARGET_MINUTES[currentStatus] : undefined;
-  const delay = target && statusAge != null && !TERMINAL_STATUS.has(currentStatus ?? '')
-    ? Math.max(0, statusAge - target)
-    : 0;
+  const delay =
+    target && statusAge != null && !TERMINAL_STATUS.has(currentStatus ?? '')
+      ? Math.max(0, statusAge - target)
+      : 0;
   const totalAge = minutesBetween(timeline?.createdAt);
   const resolvedTableNumber = timeline?.tableNumber ?? tableNumber;
   const tableLabel =
@@ -240,7 +239,7 @@ export function ScreenManagerTableTimeline({
   const heroColor = delay > 0 ? '#C43A3A' : currentStatus === 'delivered' ? '#1E8C5A' : '#3B5FBE';
   const heroBorder = delay > 0 ? '#C43A3A' : C.borderSoft;
   const heroBg = delay > 0 ? '#FFF1F1' : C.bg;
-  const heroMetric = delay > 0 ? delay : statusAge ?? totalAge;
+  const heroMetric = delay > 0 ? delay : (statusAge ?? totalAge);
   const suggestions = actionSteps(currentStatus, delay);
 
   const dotColor = (s: StepStatus): string => {
@@ -377,10 +376,20 @@ export function ScreenManagerTableTimeline({
                   <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginTop: 6 }}>
                     {statusLabel(currentStatus)}
                     {statusAge != null ? ` há ${formatMinutes(statusAge)}` : ''}
-                    {delay > 0 && target ? ` · atraso de ${formatMinutes(delay)} sobre meta ${target} min` : ''}
+                    {delay > 0 && target
+                      ? ` · atraso de ${formatMinutes(delay)} sobre meta ${target} min`
+                      : ''}
                   </div>
-                  <div style={{ fontSize: 12, color: delay > 0 ? '#A12626' : C.faint, marginTop: 2, fontWeight: 600 }}>
-                    Responsável: {timeline.assignedStaffName ?? 'não atribuído'} · {formatMoney(timeline.totalCents)}
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: delay > 0 ? '#A12626' : C.faint,
+                      marginTop: 2,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Responsável: {timeline.assignedStaffName ?? 'não atribuído'} ·{' '}
+                    {formatMoney(timeline.totalCents)}
                   </div>
                 </div>
               </div>

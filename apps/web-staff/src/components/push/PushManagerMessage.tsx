@@ -15,7 +15,10 @@ interface PushManagerMessageProps {
 }
 
 export const PushManagerMessage: React.FC<PushManagerMessageProps> = ({
-  senderName, preview, time = 'agora', onTap,
+  senderName,
+  preview,
+  time = 'agora',
+  onTap,
 }) => (
   <PushCardIOS
     tone="info"

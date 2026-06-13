@@ -63,17 +63,15 @@ export function ScreenWaiterQuickOrder({
   }, [tenantSlug]);
 
   const draftLines = useMemo(() => Object.values(draft), [draft]);
-  const subtotalCents = draftLines.reduce(
-    (sum, line) => sum + line.priceCents * line.quantity,
-    0,
-  );
+  const subtotalCents = draftLines.reduce((sum, line) => sum + line.priceCents * line.quantity, 0);
 
   const filteredItems = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items.slice(0, 48);
     return items
       .filter((item) => {
-        const hay = `${item.name} ${item.short_description ?? ''} ${(item.tags ?? []).join(' ')}`.toLowerCase();
+        const hay =
+          `${item.name} ${item.short_description ?? ''} ${(item.tags ?? []).join(' ')}`.toLowerCase();
         return hay.includes(q);
       })
       .slice(0, 48);
@@ -149,7 +147,14 @@ export function ScreenWaiterQuickOrder({
     >
       <GAppHeader
         dark={dark}
-        left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.back()} ariaLabel="Voltar" />}
+        left={
+          <GIconBtn
+            dark={dark}
+            icon={Icon.back(20)}
+            onClick={() => router.back()}
+            ariaLabel="Voltar"
+          />
+        }
         title={mode === 'review' ? 'Revisar pedido' : 'Pedido direto'}
         sub={title}
         right={<GIconBtn dark={dark} icon={Icon.fork(20)} ariaLabel="Pedido direto" />}
@@ -225,7 +230,9 @@ export function ScreenWaiterQuickOrder({
                         <div style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: -0.1 }}>
                           {item.name}
                         </div>
-                        <div style={{ fontSize: 12, color: C.mute, marginTop: 2, lineHeight: 1.35 }}>
+                        <div
+                          style={{ fontSize: 12, color: C.mute, marginTop: 2, lineHeight: 1.35 }}
+                        >
                           {item.short_description || 'Cardápio'}
                         </div>
                         <div
@@ -302,7 +309,14 @@ export function ScreenWaiterQuickOrder({
             </div>
           </div>
           <div style={{ flex: 1, overflow: 'auto', padding: '18px 16px 100px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: 14,
+              }}
+            >
               <div>
                 <div
                   style={{

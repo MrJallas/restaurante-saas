@@ -34,8 +34,8 @@ export function ScreenCustomerPostMergeApproved({
         Agora vocês são uma mesa só
       </h2>
       <p className="mt-2 text-[13px] font-medium leading-[1.45] text-mute">
-        A junção foi confirmada pelas duas mesas. Daqui pra frente, vocês podem
-        acompanhar o pedido e chamar a equipe pela mesma conversa.
+        A junção foi confirmada pelas duas mesas. Daqui pra frente, vocês podem acompanhar o pedido
+        e chamar a equipe pela mesma conversa.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <PillButton variant="filled" onClick={onViewOrder}>

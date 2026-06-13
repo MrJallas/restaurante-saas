@@ -1,11 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'crypto';
 
-export type DailyAccessTokenRejectionReason =
-  | 'missing'
-  | 'malformed'
-  | 'expired'
-  | 'invalid';
+export type DailyAccessTokenRejectionReason = 'missing' | 'malformed' | 'expired' | 'invalid';
 
 export interface DailyAccessTokenValidationResult {
   valid: boolean;
@@ -19,11 +15,7 @@ export class QrCodeService {
     return createHmac('sha256', secret).update(data).digest('hex');
   }
 
-  generateDailyAccessToken(
-    tableCode: string,
-    secret: string,
-    date = new Date(),
-  ): string {
+  generateDailyAccessToken(tableCode: string, secret: string, date = new Date()): string {
     const day = this.dayKey(date);
     const signature = createHmac('sha256', secret)
       .update(`qr-access:${tableCode}:${day}`)
@@ -37,12 +29,7 @@ export class QrCodeService {
     secret: string,
     date = new Date(),
   ): boolean {
-    return this.validateDailyAccessTokenDetailed(
-      tableCode,
-      token,
-      secret,
-      date,
-    ).valid;
+    return this.validateDailyAccessTokenDetailed(tableCode, token, secret, date).valid;
   }
 
   validateDailyAccessTokenDetailed(
@@ -66,9 +53,7 @@ export class QrCodeService {
     const a = Buffer.from(expected, 'hex');
     const b = Buffer.from(signature, 'hex');
     if (a.length !== b.length) return { valid: false, reason: 'invalid' };
-    return timingSafeEqual(a, b)
-      ? { valid: true }
-      : { valid: false, reason: 'invalid' };
+    return timingSafeEqual(a, b) ? { valid: true } : { valid: false, reason: 'invalid' };
   }
 
   validateHmac(

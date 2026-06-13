@@ -90,8 +90,8 @@ export function PendingApprovalScreen({
             Entrada não autorizada
           </h1>
           <p className="text-[13px] text-mute">
-            O cliente que reservou a mesa não aprovou sua entrada. Você pode tentar
-            outra mesa ou pedir ao garçom.
+            O cliente que reservou a mesa não aprovou sua entrada. Você pode tentar outra mesa ou
+            pedir ao garçom.
           </p>
           <button
             type="button"

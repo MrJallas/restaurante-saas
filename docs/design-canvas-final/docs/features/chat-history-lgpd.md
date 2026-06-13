@@ -59,6 +59,7 @@ Detecção via classifier server-side · não regex · com fallback liberal
 round 9-bis pra refletir que a ação é imediata e não vai pra gerência.)
 
 **Apresentação visual** (frame v13.7 · `LGPDNoticeBubble`):
+
 - Container `#fafaf8` · border 1px borderSoft · border-left 3px ink · radius 10
 - Mono label "AVISO LGPD" no topo (caps tracking 1.2)
 - Texto Inter 15px line-height 1.5 ink · sem ornamentos
@@ -71,9 +72,10 @@ exceção explícita pra confirmações destrutivas e LGPD.
 
 ## `lgpd_data_request(type)` · server-side
 
-> **Escopo dessa tool: apenas `type='erasure'` das conversas (chat_threads
-> + chat_messages no NoSQL).** A ação é **imediata** · não tem prazo de
-> processamento.
+> \*\*Escopo dessa tool: apenas `type='erasure'` das conversas (chat_threads
+>
+> - chat_messages no NoSQL).** A ação é **imediata\*\* · não tem prazo de
+>   processamento.
 >
 > O prazo legal LGPD de 15 dias úteis aplica-se a pedidos de **PII completa**
 > (cadastro do cliente · CPF · histórico de pedidos · pagamentos) — esses
@@ -190,6 +192,7 @@ quiser comprovante:
 ## Auditoria
 
 Toda chamada de `show_lgpd_notice` e `lgpd_data_request` logada com:
+
 - `tenant_id`, `customer_id`, `tool_name`, `params`, `result`, `duration_ms`
 - timestamp UTC · imutável (append-only `audit_log`)
 - exportável via CSV pra ANPD se solicitado

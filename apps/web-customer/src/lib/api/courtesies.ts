@@ -26,8 +26,6 @@ export function respondCustomerCourtesy(
 export async function listCustomerCourtesyHistory(
   slug: string,
 ): Promise<CustomerCourtesyHistoryDto[]> {
-  const res = await apiGet<CustomerCourtesyHistoryResponse>(
-    `/${slug}/customer/courtesies/history`,
-  );
+  const res = await apiGet<CustomerCourtesyHistoryResponse>(`/${slug}/customer/courtesies/history`);
   return res.courtesies ?? [];
 }

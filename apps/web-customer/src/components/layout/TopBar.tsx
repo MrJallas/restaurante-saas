@@ -9,12 +9,7 @@ interface TopBarProps {
   showHamburger?: boolean;
 }
 
-export function TopBar({
-  restaurantName,
-  tableLabel,
-  onBack,
-  showHamburger = true,
-}: TopBarProps) {
+export function TopBar({ restaurantName, tableLabel, onBack, showHamburger = true }: TopBarProps) {
   const { openDrawer } = useUIState();
   return (
     // Padding superior maior pra que botoes "Voltar"/menu fiquem ABAIXO
@@ -48,12 +43,8 @@ export function TopBar({
           </button>
         )}
         <div>
-          <div className="text-[14px] font-semibold tracking-[-0.012em]">
-            {restaurantName}
-          </div>
-          <div className="mt-[1px] text-[11px] tracking-[0.5px] text-mute">
-            {tableLabel}
-          </div>
+          <div className="text-[14px] font-semibold tracking-[-0.012em]">{restaurantName}</div>
+          <div className="mt-[1px] text-[11px] tracking-[0.5px] text-mute">{tableLabel}</div>
         </div>
       </div>
       {showHamburger && (

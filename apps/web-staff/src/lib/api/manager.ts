@@ -119,9 +119,7 @@ export const staffMessagesApi = (slug: string) => ({
 
 export const customerInboxApi = (slug: string) => ({
   listThreads: () =>
-    staffGet<StaffInboundThreadDto[]>(
-      `/${slug}/customer-staff-messages/staff/threads`,
-    ),
+    staffGet<StaffInboundThreadDto[]>(`/${slug}/customer-staff-messages/staff/threads`),
   getThread: (threadId: string) =>
     staffGet<StaffMessageHistoryMessageDto[]>(
       `/${slug}/customer-staff-messages/staff/threads/${threadId}/messages`,
@@ -150,8 +148,7 @@ export const zonePauseApi = (slug: string) => ({
     const query = search.toString();
     return staffGet<ZonePauseDto[]>(`/${slug}/zone-pauses${query ? `?${query}` : ''}`);
   },
-  create: (body: ZonePauseCreateDto) =>
-    staffPost<ZonePauseDto>(`/${slug}/zone-pauses`, body),
+  create: (body: ZonePauseCreateDto) => staffPost<ZonePauseDto>(`/${slug}/zone-pauses`, body),
   end: (id: string, body?: ZonePauseEndDto) =>
     staffPost<ZonePauseDto>(`/${slug}/zone-pauses/${id}/end`, body ?? {}),
 });
@@ -167,9 +164,7 @@ export const sessionFlagsApi = (slug: string) => ({
       body,
     ),
   list: (tableSessionId: string) =>
-    staffGet<SessionFlagToggleResponseDto>(
-      `/${slug}/staff/sessions/${tableSessionId}/flags`,
-    ),
+    staffGet<SessionFlagToggleResponseDto>(`/${slug}/staff/sessions/${tableSessionId}/flags`),
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -239,8 +234,7 @@ export interface SmartSuggestionsResponse {
   poolExpiresAt: string;
 }
 
-const AI_BASE_URL =
-  process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'http://localhost:8000';
+const AI_BASE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'http://localhost:8000';
 
 /**
  * Fetch contextual chip suggestions for the manager `MContactClientSheet`.
@@ -278,7 +272,12 @@ export async function fetchSmartSuggestions(params: {
         { id: 's1', text: 'Já fui verificar seu pedido na cozinha', icon: 'history' },
         { id: 's2', text: 'Saindo da cozinha em uns 5 min', icon: 'clock' },
         { id: 's3', text: 'Estou indo aí em 2 min', icon: 'user' },
-        { id: 's4', text: 'Quer uma cortesia pela espera?', icon: 'gift', linksTo: 'mgr-compensate' },
+        {
+          id: 's4',
+          text: 'Quer uma cortesia pela espera?',
+          icon: 'gift',
+          linksTo: 'mgr-compensate',
+        },
       ],
       poolExpiresAt: new Date(Date.now() + 60_000).toISOString(),
     };
@@ -334,10 +333,7 @@ export interface AssistantStaffMessageResponseDto {
 
 export const assistantApi = (slug: string) => ({
   staffToCustomer: (body: AssistantStaffToCustomerDto) =>
-    staffPost<AssistantStaffMessageResponseDto>(
-      `/${slug}/assistant/staff-to-customer`,
-      body,
-    ),
+    staffPost<AssistantStaffMessageResponseDto>(`/${slug}/assistant/staff-to-customer`, body),
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -378,7 +374,9 @@ export interface AlertRow {
 }
 
 export const alertsApi = (slug: string) => ({
-  list: (params: { sev?: AlertSeverity | 'all'; status?: AlertStatus | 'all'; limit?: number } = {}) => {
+  list: (
+    params: { sev?: AlertSeverity | 'all'; status?: AlertStatus | 'all'; limit?: number } = {},
+  ) => {
     const search = new URLSearchParams();
     if (params.sev) search.set('sev', params.sev);
     if (params.status) search.set('status', params.status);
@@ -386,12 +384,10 @@ export const alertsApi = (slug: string) => ({
     const query = search.toString();
     return staffGet<{ alerts: AlertRow[] } | AlertRow[]>(
       `/${slug}/alerts${query ? `?${query}` : ''}`,
-    ).then((r) => (Array.isArray(r) ? r : r.alerts ?? []));
+    ).then((r) => (Array.isArray(r) ? r : (r.alerts ?? [])));
   },
-  dismiss: (id: string) =>
-    staffPost<AlertRow>(`/${slug}/alerts/${id}/dismiss`, {}),
-  resolve: (id: string) =>
-    staffPost<AlertRow>(`/${slug}/alerts/${id}/resolve`, {}),
+  dismiss: (id: string) => staffPost<AlertRow>(`/${slug}/alerts/${id}/dismiss`, {}),
+  resolve: (id: string) => staffPost<AlertRow>(`/${slug}/alerts/${id}/resolve`, {}),
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -438,14 +434,9 @@ export const managerAccountApi = (slug: string) => ({
       body: JSON.stringify(body),
     }),
   changePin: (body: { currentPin: string; nextPin: string }) =>
-    staffPost<{ message_user: string; code: string }>(
-      `/${slug}/manager/security/change-pin`,
-      body,
-    ),
+    staffPost<{ message_user: string; code: string }>(`/${slug}/manager/security/change-pin`, body),
   sessions: () =>
-    staffGet<{ sessions: ManagerSecuritySession[] }>(
-      `/${slug}/manager/security/sessions`,
-    ),
+    staffGet<{ sessions: ManagerSecuritySession[] }>(`/${slug}/manager/security/sessions`),
   revokeSession: (sessionId: string) =>
     staffDelete<{ ok: true }>(
       `/${slug}/manager/security/sessions/${encodeURIComponent(sessionId)}`,
@@ -519,9 +510,7 @@ export interface KitchenReorderRequest {
 
 export const kitchenApi = (slug: string) => ({
   queue: () =>
-    staffGet<{ orders: KitchenQueueOrder[] }>(`/${slug}/kitchen/queue`).then(
-      (r) => r.orders ?? [],
-    ),
+    staffGet<{ orders: KitchenQueueOrder[] }>(`/${slug}/kitchen/queue`).then((r) => r.orders ?? []),
   reorder: (body: { orderIds: string[]; reason?: string }) =>
     staffPost<{
       ok: true;
@@ -569,13 +558,8 @@ export interface OrderTimelineResponse {
   events: OrderTimelineEvent[];
 }
 
-export function getOrderTimeline(
-  slug: string,
-  orderId: string,
-): Promise<OrderTimelineResponse> {
-  return staffGet<OrderTimelineResponse>(
-    `/${slug}/orders/${encodeURIComponent(orderId)}/timeline`,
-  );
+export function getOrderTimeline(slug: string, orderId: string): Promise<OrderTimelineResponse> {
+  return staffGet<OrderTimelineResponse>(`/${slug}/orders/${encodeURIComponent(orderId)}/timeline`);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -651,8 +635,7 @@ export const staffRosterApi = (slug: string) => ({
     staffGet<StaffPerformance>(
       `/${slug}/staff/${id}/performance?period=${encodeURIComponent(period)}`,
     ),
-  create: (payload: CreateStaffPayload) =>
-    staffPost<StaffRosterEntry>(`/${slug}/staff`, payload),
+  create: (payload: CreateStaffPayload) => staffPost<StaffRosterEntry>(`/${slug}/staff`, payload),
   update: (id: string, payload: UpdateStaffPayload) =>
     staffApi<StaffRosterEntry>(`/${slug}/staff/${id}`, {
       method: 'PATCH',
@@ -663,8 +646,7 @@ export const staffRosterApi = (slug: string) => ({
       method: 'PATCH',
       body: JSON.stringify({ isActive: false }),
     }),
-  delete: (id: string) =>
-    staffDelete<{ deleted: true }>(`/${slug}/staff/${id}`),
+  delete: (id: string) => staffDelete<{ deleted: true }>(`/${slug}/staff/${id}`),
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -726,10 +708,7 @@ export const shiftsApi = (slug: string) => ({
     return staffGet<ShiftWithMembers[]>(`/${slug}/shifts${q}`);
   },
   addMember: (payload: { shiftId: string; staffId: string; workDate: string }) =>
-    staffPost<ShiftMemberEntry & { shift_id: string }>(
-      `/${slug}/shifts/assignments`,
-      payload,
-    ),
+    staffPost<ShiftMemberEntry & { shift_id: string }>(`/${slug}/shifts/assignments`, payload),
   moveMember: (assignmentId: string, toShiftId: string) =>
     staffApi<ShiftMemberEntry & { shift_id: string }>(
       `/${slug}/shifts/assignments/${assignmentId}/move`,
@@ -741,9 +720,7 @@ export const shiftsApi = (slug: string) => ({
       { method: 'PATCH', body: JSON.stringify({ minutes }) },
     ),
   removeMember: (assignmentId: string) =>
-    staffDelete<{ removed: true }>(
-      `/${slug}/shifts/assignments/${assignmentId}`,
-    ),
+    staffDelete<{ removed: true }>(`/${slug}/shifts/assignments/${assignmentId}`),
   duplicateWeek: (fromDate: string, toDate: string) =>
     staffPost<{ duplicated: number }>(`/${slug}/shifts/duplicate-week`, {
       fromDate,
@@ -761,7 +738,11 @@ export const shiftsApi = (slug: string) => ({
 });
 
 export const courtesiesApi = (slug: string) => ({
-  list: (params?: { today?: boolean; status?: 'pendente' | 'aceita' | 'recusada'; limit?: number }) => {
+  list: (params?: {
+    today?: boolean;
+    status?: 'pendente' | 'aceita' | 'recusada';
+    limit?: number;
+  }) => {
     const search = new URLSearchParams();
     if (params?.today) search.set('today', 'true');
     if (params?.status) search.set('status', params.status);

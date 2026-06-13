@@ -4,22 +4,29 @@
 
 import type { ReactNode } from 'react';
 
-const make = (path: ReactNode, baseProps: Partial<{ strokeWidth: number; strokeLinecap: 'round' | 'butt' | 'square'; strokeLinejoin: 'round' | 'miter' | 'bevel' }> = {}) => {
+const make = (
+  path: ReactNode,
+  baseProps: Partial<{
+    strokeWidth: number;
+    strokeLinecap: 'round' | 'butt' | 'square';
+    strokeLinejoin: 'round' | 'miter' | 'bevel';
+  }> = {},
+) => {
   function IconSvg(s = 22): ReactNode {
     return (
-    <svg
-      width={s}
-      height={s}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={baseProps.strokeWidth ?? 1.8}
-      strokeLinecap={baseProps.strokeLinecap ?? 'round'}
-      strokeLinejoin={baseProps.strokeLinejoin ?? 'round'}
-      aria-hidden="true"
-    >
-      {path}
-    </svg>
+      <svg
+        width={s}
+        height={s}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={baseProps.strokeWidth ?? 1.8}
+        strokeLinecap={baseProps.strokeLinecap ?? 'round'}
+        strokeLinejoin={baseProps.strokeLinejoin ?? 'round'}
+        aria-hidden="true"
+      >
+        {path}
+      </svg>
     );
   }
   return IconSvg;
@@ -118,16 +125,12 @@ export const Icon = {
     </>,
     { strokeWidth: 2 },
   ),
-  flame: make(
-    <path d="M12 2c0 4-4 5-4 9a4 4 0 008 0c0-2-1-3-2-4 0 2-1 3-2 3 1-3 0-7 0-8z" />,
-  ),
+  flame: make(<path d="M12 2c0 4-4 5-4 9a4 4 0 008 0c0-2-1-3-2-4 0 2-1 3-2 3 1-3 0-7 0-8z" />),
   shield: make(<path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z" />),
   phone: make(
     <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.37 1.9.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.33 1.85.57 2.81.7A2 2 0 0122 16.92z" />,
   ),
-  chat: make(
-    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />,
-  ),
+  chat: make(<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />),
   globe: make(
     <>
       <circle cx="12" cy="12" r="10" />

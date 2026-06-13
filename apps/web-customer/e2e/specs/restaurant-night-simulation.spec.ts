@@ -1,4 +1,11 @@
-import { devices, expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import {
+  devices,
+  expect,
+  test,
+  type Browser,
+  type BrowserContext,
+  type Page,
+} from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import {
   API_BASE_URL,
@@ -199,7 +206,10 @@ async function createAndConfirmOrder(input: {
   const created = (await create.json()) as Partial<OrderResponse> & { message?: string };
   expect(create.status, `create order failed: ${JSON.stringify(created)}`).toBe(201);
   const createdOrderId = created.id ?? created.orderId;
-  expect(createdOrderId, `create order did not return id/orderId: ${JSON.stringify(created)}`).toBeTruthy();
+  expect(
+    createdOrderId,
+    `create order did not return id/orderId: ${JSON.stringify(created)}`,
+  ).toBeTruthy();
 
   const confirm = await fetch(`${API_BASE_URL}/${DEFAULT_SLUG}/orders/${createdOrderId}/confirm`, {
     method: 'PATCH',
@@ -210,7 +220,9 @@ async function createAndConfirmOrder(input: {
     body: JSON.stringify({}),
   });
   const confirmed = (await confirm.json()) as Partial<OrderResponse> & { message?: string };
-  expect([200, 201], `confirm order failed: ${JSON.stringify(confirmed)}`).toContain(confirm.status);
+  expect([200, 201], `confirm order failed: ${JSON.stringify(confirmed)}`).toContain(
+    confirm.status,
+  );
   const resolvedOrderId = confirmed.id ?? confirmed.orderId ?? createdOrderId!;
   return {
     id: resolvedOrderId,
@@ -308,7 +320,9 @@ test('noite realista: 3 clientes iOS + recepcao + garcom + gerente + cozinha + h
     const approve = reception.page.getByRole('button', { name: /Aprovar entrada/i });
     await expect(approve).toBeEnabled();
     await approve.click();
-    await expect(customerA.page.getByRole('button', { name: /Chamar garçom|Chamar garcom/i })).toBeVisible({
+    await expect(
+      customerA.page.getByRole('button', { name: /Chamar garçom|Chamar garcom/i }),
+    ).toBeVisible({
       timeout: 20_000,
     });
 
@@ -327,10 +341,14 @@ test('noite realista: 3 clientes iOS + recepcao + garcom + gerente + cozinha + h
       timeout: 20_000,
     });
     await customerA.page.getByRole('button', { name: /Aprovar Noite Convidado Mesa 91/i }).click();
-    await expect(customerB.page.getByRole('button', { name: /Chamar garçom|Chamar garcom/i })).toBeVisible({
+    await expect(
+      customerB.page.getByRole('button', { name: /Chamar garçom|Chamar garcom/i }),
+    ).toBeVisible({
       timeout: 20_000,
     });
-    expect(scanRequests('QRTEST91').filter((request) => request.status === 'pending')).toHaveLength(0);
+    expect(scanRequests('QRTEST91').filter((request) => request.status === 'pending')).toHaveLength(
+      0,
+    );
 
     await reception.page.goto(
       `${STAFF_BASE_URL}/host?tenant=${DEFAULT_SLUG}&hostId=${hostStaff.id}`,
@@ -354,7 +372,9 @@ test('noite realista: 3 clientes iOS + recepcao + garcom + gerente + cozinha + h
     const approve92 = reception.page.getByRole('button', { name: /Aprovar entrada/i });
     await expect(approve92).toBeEnabled();
     await approve92.click();
-    await expect(customerC.page.getByRole('button', { name: /Chamar garçom|Chamar garcom/i })).toBeVisible({
+    await expect(
+      customerC.page.getByRole('button', { name: /Chamar garçom|Chamar garcom/i }),
+    ).toBeVisible({
       timeout: 20_000,
     });
 
@@ -436,10 +456,9 @@ test('noite realista: 3 clientes iOS + recepcao + garcom + gerente + cozinha + h
       timeout: 20_000,
     });
 
-    await tableHistory.page.goto(
-      `${STAFF_BASE_URL}/manager/mesa/91?slug=${DEFAULT_SLUG}`,
-      { waitUntil: 'domcontentloaded' },
-    );
+    await tableHistory.page.goto(`${STAFF_BASE_URL}/manager/mesa/91?slug=${DEFAULT_SLUG}`, {
+      waitUntil: 'domcontentloaded',
+    });
     await expect(tableHistory.page.getByText(/Mesa 91/i)).toBeVisible({
       timeout: 20_000,
     });

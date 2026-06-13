@@ -13,7 +13,11 @@ function WaiterScanQrPageInner() {
     <ScreenWaiterScanQr
       onClose={() => router.back()}
       onManualEntry={() => router.push(`/waiter/scan-qr/picker?tenant=${tenantSlug}`)}
-      onScanned={(code) => router.push(`/waiter/scan-qr/delivery-confirm?tenant=${tenantSlug}&table=${encodeURIComponent(code)}`)}
+      onScanned={(code) =>
+        router.push(
+          `/waiter/scan-qr/delivery-confirm?tenant=${tenantSlug}&table=${encodeURIComponent(code)}`,
+        )
+      }
     />
   );
 }

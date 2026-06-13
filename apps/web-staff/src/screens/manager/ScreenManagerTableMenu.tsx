@@ -234,7 +234,11 @@ export function ScreenManagerTableMenu({
     if (busy) return;
     setBusy(true);
     try {
-      await swapTable(tenantSlug, { fromTable: tableNumber, toTable: targetTable, sessionId: tableSessionId });
+      await swapTable(tenantSlug, {
+        fromTable: tableNumber,
+        toTable: targetTable,
+        sessionId: tableSessionId,
+      });
       flash(`Mesa transferida para ${targetTable}.`);
       setTransferOpen(false);
       setTimeout(() => {
@@ -254,7 +258,8 @@ export function ScreenManagerTableMenu({
     | 'danger'
     | 'info';
 
-  const ticketTxt = ticketCents != null ? `R$ ${(ticketCents / 100).toFixed(2).replace('.', ',')}` : null;
+  const ticketTxt =
+    ticketCents != null ? `R$ ${(ticketCents / 100).toFixed(2).replace('.', ',')}` : null;
 
   return (
     <div
@@ -273,7 +278,14 @@ export function ScreenManagerTableMenu({
           dark={dark}
           title={`Mesa ${tableNumber}`}
           left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={onClose} ariaLabel="Voltar" />}
-          right={<GIconBtn dark={dark} icon={Icon.more(20)} onClick={() => setMoreOpen(true)} ariaLabel="Mais ações" />}
+          right={
+            <GIconBtn
+              dark={dark}
+              icon={Icon.more(20)}
+              onClick={() => setMoreOpen(true)}
+              ariaLabel="Mais ações"
+            />
+          }
         />
 
         <div style={{ padding: '16px 16px 4px' }}>
@@ -321,7 +333,9 @@ export function ScreenManagerTableMenu({
                   {ticketTxt ? ` · total ${ticketTxt}` : ''}
                 </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+              <div
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}
+              >
                 <MPill tone={statusTone} dark={dark}>
                   {statusLabel}
                 </MPill>
@@ -357,7 +371,12 @@ export function ScreenManagerTableMenu({
               overflow: 'hidden',
             }}
           >
-            <AttrRow label="Pessoas na mesa" value={`${partyCount}`} sub={`Mesa comporta ${seats}`} dark={dark} />
+            <AttrRow
+              label="Pessoas na mesa"
+              value={`${partyCount}`}
+              sub={`Mesa comporta ${seats}`}
+              dark={dark}
+            />
             <Divider dark={dark} />
             <AttrRow label="Observação" value={note.trim() || '—'} dark={dark} />
             <Divider dark={dark} />
@@ -421,7 +440,11 @@ export function ScreenManagerTableMenu({
                 dark={dark}
                 icon={Icon.history(18)}
                 label="Ver timeline"
-                sub={timelineLoading ? 'Buscando pedido ativo desta mesa' : 'Histórico real do pedido ativo'}
+                sub={
+                  timelineLoading
+                    ? 'Buscando pedido ativo desta mesa'
+                    : 'Histórico real do pedido ativo'
+                }
                 onClick={goToTimeline}
                 disabled={timelineLoading || !timelineOrderId}
               />
@@ -454,9 +477,7 @@ export function ScreenManagerTableMenu({
             {
               icon: Icon.sparkle(18),
               label: isVip ? 'Remover VIP dessa sessão' : 'Marcar como VIP nessa sessão',
-              sub: isVip
-                ? 'Volta para prioridade normal'
-                : 'Puxa pra prioridade alta dos chamados',
+              sub: isVip ? 'Volta para prioridade normal' : 'Puxa pra prioridade alta dos chamados',
               onClick: toggleVip,
               tone: isVip ? 'danger' : 'default',
             },
@@ -565,7 +586,15 @@ function AttrRow({
 }) {
   const C = useG(!!dark);
   return (
-    <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, minHeight: 60 }}>
+    <div
+      style={{
+        padding: '12px 14px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        minHeight: 60,
+      }}
+    >
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
           style={{
@@ -667,7 +696,15 @@ function ActionRow({
         {icon}
       </span>
       <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-        <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: fg, letterSpacing: -0.1 }}>
+        <span
+          style={{
+            display: 'block',
+            fontSize: 14,
+            fontWeight: 700,
+            color: fg,
+            letterSpacing: -0.1,
+          }}
+        >
           {label}
         </span>
         {sub && (
@@ -736,9 +773,17 @@ function EditTableSheet({
       >
         <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>Editar mesa</div>
         <div style={{ marginTop: 14 }}>
-          <div style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}>Pessoas</div>
+          <div
+            style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}
+          >
+            Pessoas
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-            <button type="button" onClick={() => setParty(Math.max(1, party - 1))} style={stepBtnStyle(C)}>
+            <button
+              type="button"
+              onClick={() => setParty(Math.max(1, party - 1))}
+              style={stepBtnStyle(C)}
+            >
               -
             </button>
             <div
@@ -756,14 +801,24 @@ function EditTableSheet({
             >
               {party}
             </div>
-            <button type="button" onClick={() => setParty(Math.min(99, party + 1))} style={stepBtnStyle(C)}>
+            <button
+              type="button"
+              onClick={() => setParty(Math.min(99, party + 1))}
+              style={stepBtnStyle(C)}
+            >
               +
             </button>
           </div>
-          <div style={{ marginTop: 6, fontSize: 11, color: C.faint, fontWeight: 600 }}>Capacidade cadastrada: {seats}</div>
+          <div style={{ marginTop: 6, fontSize: 11, color: C.faint, fontWeight: 600 }}>
+            Capacidade cadastrada: {seats}
+          </div>
         </div>
         <label style={{ display: 'block', marginTop: 16 }}>
-          <span style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}>Observação</span>
+          <span
+            style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}
+          >
+            Observação
+          </span>
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
@@ -793,7 +848,11 @@ function EditTableSheet({
             type="button"
             disabled={busy}
             onClick={() => onSave(party, note)}
-            style={{ ...sheetPrimaryStyle(C), cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.62 : 1 }}
+            style={{
+              ...sheetPrimaryStyle(C),
+              cursor: busy ? 'wait' : 'pointer',
+              opacity: busy ? 0.62 : 1,
+            }}
           >
             {busy ? 'Salvando...' : 'Salvar'}
           </button>
@@ -845,7 +904,9 @@ function TransferSheet({
       >
         <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>Transferir mesa</div>
         <label style={{ display: 'block', marginTop: 14 }}>
-          <span style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}>
+          <span
+            style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}
+          >
             Mesa de destino
           </span>
           <input
@@ -876,7 +937,11 @@ function TransferSheet({
             type="button"
             onClick={() => valid && onTransfer(target)}
             disabled={!valid || busy}
-            style={{ ...sheetPrimaryStyle(C), opacity: valid && !busy ? 1 : 0.52, cursor: valid && !busy ? 'pointer' : 'not-allowed' }}
+            style={{
+              ...sheetPrimaryStyle(C),
+              opacity: valid && !busy ? 1 : 0.52,
+              cursor: valid && !busy ? 'pointer' : 'not-allowed',
+            }}
           >
             {busy ? 'Transferindo...' : 'Transferir'}
           </button>
@@ -930,7 +995,11 @@ function ConfirmSheet({
         }}
       >
         <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>{title}</div>
-        <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.45, color: C.mute, fontWeight: 500 }}>{body}</div>
+        <div
+          style={{ marginTop: 8, fontSize: 13, lineHeight: 1.45, color: C.mute, fontWeight: 500 }}
+        >
+          {body}
+        </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
           <button type="button" onClick={onCancel} disabled={busy} style={sheetSecondaryStyle(C)}>
             Cancelar
@@ -1008,7 +1077,13 @@ function MoreSheet({
 }: {
   dark?: boolean;
   title: string;
-  actions: Array<{ icon: React.ReactNode; label: string; sub?: string; onClick?: () => void; tone?: 'default' | 'danger' }>;
+  actions: Array<{
+    icon: React.ReactNode;
+    label: string;
+    sub?: string;
+    onClick?: () => void;
+    tone?: 'default' | 'danger';
+  }>;
   onClose: () => void;
 }) {
   const C = useG(!!dark);

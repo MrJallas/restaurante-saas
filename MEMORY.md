@@ -460,7 +460,7 @@ Bugs dos videos de 2026-06-10 corrigidos (assistente + juncao):
 - Migrations: 032 ganhou ADD COLUMN IF NOT EXISTS (021 ja criava ends_at
   — sequencia limpa 021→032 quebrava o boot fatal); 003 indexa
   session_token so se a coluna existe (pos-039). ensureOtherTenant (e2e)
-  cria o tenant de isolamento REAL: todas as migrations + __migrations__
+  cria o tenant de isolamento REAL: todas as migrations + **migrations**
   (o schema parcial via LIKE derrubava o boot fatal).
 
 Decisoes de Caleb em 2026-06-10 (rodada de perguntas abertas):
@@ -479,7 +479,7 @@ Decisoes de Caleb em 2026-06-10 (rodada de perguntas abertas):
 - Tempo de espera do cliente: configurado pela COZINHA em `/cozinha/eu`
   (card "Tempo de preparo · ETA do cliente") — migration 056
   (`settings.kitchen_eta_min/max_minutes`), `GET/PATCH
-  /:slug/settings/kitchen-eta` (PATCH so cook|manager), e o motor de ETA
+/:slug/settings/kitchen-eta` (PATCH so cook|manager), e o motor de ETA
   parte desse range, somando fila dinamica e encolhendo por estagio.
 - Roteamento garcom↔zona: NAO fazer — mostrar onde a mesa fica
   (varanda etc.) ja atende; mantém alvo = ultimo que atendeu → turno
@@ -525,8 +525,7 @@ prompts-codex/100-fable-contexto-assistente-chips-regex.md):
   clearDeliveredContinuationHint no FE).
 - TESTES OBRIGATORIOS dessa matriz de interacoes (continuation service +
   Playwright): cada acao do app → qual mensagem aparece, quantas vezes,
-  e o que a eyebrow mostra. Comportamentos esperados descritos no prompt
-  100.
+  e o que a eyebrow mostra. Comportamentos esperados descritos no prompt 100.
 - CHIPS DE SUGESTAO CONTEXTUAIS: auditar todos os chips genericos
   ("Sobremesa combina?", "Sugestao leve" etc.) que nao conversam com a
   mensagem atual da IA; chips devem ser coerentes com o estado/ultima
@@ -555,12 +554,12 @@ claude/compassionate-haslett-5b2f60 — regras novas que ficam):
   consome; clientKindHint nao fura consumo; evento novo (id novo)
   re-libera. A derivacao PULA consumidos e cai pro proximo da hierarquia.
 - Chips: mapa kind→chips vive no BACKEND (pools de continuation.py +
-  chips das tools). DEFAULT_SUGGESTIONS do FE são so fallback e todos os
+  chips das tools). DEFAULT*SUGGESTIONS do FE são so fallback e todos os
   payloads resolvem no rule-layer sem LLM. Cache do pool NAO fica stale
   (decisao Caleb 2026-06-12): a chave do Redis carrega fingerprint dos
   DEFAULTS (`continuation:<tenant>:<segment>:<sha>`; idem
   `smart-sug:...`) — mudou o codigo, re-seed na primeira leitura; chaves
-  antigas morrem pelo TTL de 1h. Seeds (scripts/seed_*.py) usam o mesmo
+  antigas morrem pelo TTL de 1h. Seeds (scripts/seed*\*.py) usam o mesmo
   `_key()`.
 - SEGURANCA ALIMENTAR (decisao Caleb 2026-06-12, validado com LLM local):
   recomendacao com restricao/alergia ("sem camarao", "sem lactose",
@@ -604,7 +603,7 @@ claude/compassionate-haslett-5b2f60 — regras novas que ficam):
   palavras, sem negacao) + a bateria
   services/ai-service/tests/test_rule_layer_phrases.py. TODA regra nova
   entra na bateria (positivas → rule, negativas → LLM). "falar com
-  gerente" responde texto que CASA com _MANAGER_MESSAGE_PROMPT_RE — e
+  gerente" responde texto que CASA com \_MANAGER_MESSAGE_PROMPT_RE — e
   assim que o turno seguinte vira send_message_to_manager sem LLM.
   mode=expand segue SO preenchendo o input.
 - Resposta do gerente: POST /assistant/staff-to-customer exige
@@ -655,8 +654,8 @@ claude/compassionate-haslett-5b2f60 — regras novas que ficam):
   'host' em ROLE_ALERT_PATTERNS).
 - E2E novo: e2e/specs/assistente-context.spec.ts (serial; matriz do
   prompt 100 §7 + rule-layer UX + privacidade). Higiene de beforeAll:
-  alem de throttle:*, limpar continuation_shown:*, customers:welcome:*,
-  customers:identify:* (locks de 15min de runs anteriores derrubam o
+  alem de throttle:_, limpar continuation_shown:_, customers:welcome:_,
+  customers:identify:_ (locks de 15min de runs anteriores derrubam o
   newSession). PATCH /orders/:id/status NAO aceita in_transit (so o
   fluxo de entrega do garcom) — ready→delivered direto e valido.
 

@@ -143,32 +143,31 @@ A "prioridade alta" não é fixa por tipo de chamado. Ela é **derivada da deman
 
 ### Estações monitoradas
 
-| Estação | O que conta como "demanda" |
-|---|---|
+| Estação     | O que conta como "demanda"                                                    |
+| ----------- | ----------------------------------------------------------------------------- |
 | **Cozinha** | nº de pedidos com `status = preparando` + nº de pedidos com `elapsedMin > 10` |
-| **Bar** | nº de drinks com `status = preparando` + nº de drinks com `elapsedMin > 5` |
-| **Salão** | nº de chamados ativos do tipo `chamou-garcom` + `pediu-conta` |
+| **Bar**     | nº de drinks com `status = preparando` + nº de drinks com `elapsedMin > 5`    |
+| **Salão**   | nº de chamados ativos do tipo `chamou-garcom` + `pediu-conta`                 |
 
 ### Regras de saturação (configuráveis por restaurante)
 
 ```ts
 type StationLoad = {
   station: 'cozinha' | 'bar' | 'salao';
-  queueDepth: number;     // quantos itens na fila
+  queueDepth: number; // quantos itens na fila
   oldestElapsedMin: number;
-  staffCount: number;     // garçons/cozinheiros logados
+  staffCount: number; // garçons/cozinheiros logados
 };
 
 // Saturação relativa = quão sobrecarregada está a estação
 function saturation(load: StationLoad): number {
   // ratio fila por funcionário, ponderado pelo item mais antigo
-  return (load.queueDepth / Math.max(load.staffCount, 1))
-       + (load.oldestElapsedMin / 10);
+  return load.queueDepth / Math.max(load.staffCount, 1) + load.oldestElapsedMin / 10;
 }
 
 // Limiar para virar 'high' (ajustar com base em dados reais)
 const HIGH_THRESHOLD = 3.0;
-const MED_THRESHOLD  = 1.5;
+const MED_THRESHOLD = 1.5;
 ```
 
 ### Como o backend deriva `priority` de cada chamado
@@ -185,7 +184,7 @@ function priorityOf(call: Call, loads: Record<Station, StationLoad>): Priority {
 
   // Caso geral: deriva da saturação da estação de origem
   if (sat >= HIGH_THRESHOLD) return 'high';
-  if (sat >= MED_THRESHOLD)  return 'medium';
+  if (sat >= MED_THRESHOLD) return 'medium';
   return 'low';
 }
 ```
@@ -198,11 +197,11 @@ function priorityOf(call: Call, loads: Record<Station, StationLoad>): Priority {
 
 ### O que o app do garçom mostra para cada nível
 
-| Priority | Visual no card de chamado | Visual no detalhe do chamado |
-|---|---|---|
-| `high` | borda vermelha + dot pulsando + posição topo | badge **"Prioridade alta"** branco/vermelho com dot pulsante no hero |
-| `medium` | borda âmbar | sem badge, hero normal |
-| `low` | borda neutra | sem badge, hero normal |
+| Priority | Visual no card de chamado                    | Visual no detalhe do chamado                                         |
+| -------- | -------------------------------------------- | -------------------------------------------------------------------- |
+| `high`   | borda vermelha + dot pulsando + posição topo | badge **"Prioridade alta"** branco/vermelho com dot pulsante no hero |
+| `medium` | borda âmbar                                  | sem badge, hero normal                                               |
+| `low`    | borda neutra                                 | sem badge, hero normal                                               |
 
 > Quando vários chamados estão `high`, o backend ainda ordena por: 1) `vip` 2) `alergia` 3) `elapsedMin` desc 4) tipo (`pronto-cozinha` > `pediu-conta` > `chamou-garcom`).
 
@@ -237,17 +236,20 @@ Quando o garçom toca **"A caminho"**, o sistema marca `acceptedBy` e remove o c
 > → entregar → fechar turno.
 
 ### 1. Login (`ScreenLogin`) · seção `login`
+
 - Identificação por **CPF + senha**
 - "Manter conectado" + "Esqueci a senha"
 - 3 variantes no canvas: padrão, primeiro acesso (senha provisória do gerente), senha incorreta (erro inline + contador de tentativas)
 - Biometria opcional após o primeiro login (Face ID / impressão digital)
 
 ### 2. Recuperação de senha · seção `forgot`
+
 - `ScreenForgotPassword` — escolhe canal (SMS · e-mail · WhatsApp) com contatos mascarados
 - Código 6 dígitos com timer de reenvio (10 min)
 - `ScreenSetNewPassword` — nova senha com barra de força + checklist de requisitos + alerta de logout em outros dispositivos
 
 ### 3. Home / Minhas mesas · seção `home`
+
 **Variação única (Grade).** Lista por prioridade e Mapa do salão saíram no V3 (2026-05) — não pagaram a complexidade do toggle. `ScreenHomeGrid` é a entrada do garçom no turno.
 
 - Cards em 2 colunas com nº da mesa (grande), status (pill), tempo aberta, valor parcial.
@@ -258,6 +260,7 @@ Quando o garçom toca **"A caminho"**, o sistema marca `acceptedBy` e remove o c
 **Entradas pra mesa (3 portas):** ver fluxograma da seção "Fluxo do garçom" abaixo. Aba **Novo** da bottom nav é a entrada principal — V4 (2026-05): tap abre `ScreenWaiterNewEntry` (chooser de QR/número), não mais o scanner direto. `ScreenHomeGrid` aceita prop `fab` que liga um FAB flutuante (V4: também aponta pro chooser, mesma rota da aba Novo).
 
 ### 4. Nova interação (`ScreenWaiterNewEntry`) ★ V4 ★ · seção `garcom-flow`
+
 **Chooser de 2 caminhos · entrada da aba Novo.** Antes a aba ia direto pro scanner; agora abre essa tela intermediária pra que o garçom decida entre escanear ou pegar a mesa pelo número.
 
 - Header minimal: X discreto à esquerda + título mono caps tiny `NOVA INTERAÇÃO` no centro
@@ -269,6 +272,7 @@ Quando o garçom toca **"A caminho"**, o sistema marca `acceptedBy` e remove o c
 - Por que: pra mesas que o garçom JÁ atende, escanear é desnecessário (basta o número). O chooser custa 1s de cognição mas elimina ~30% das vezes que o garçom abria o scanner pra usar "Inserir manualmente"
 
 ### 5. Escanear QR da mesa (`ScreenWaiterScanQr`) · seção `garcom-flow`
+
 **1ª opção do chooser.** Toda nova ação (lançar pedido, abrir conta, conferir pagamento) que precisa do QR fixo gravado a laser na mesa cai aqui.
 
 - Câmera fullscreen (fundo preto · não respeita tema escuro/claro), viewfinder com 4 cantos brancos e linha de scan animada
@@ -276,6 +280,7 @@ Quando o garçom toca **"A caminho"**, o sistema marca `acceptedBy` e remove o c
 - V4 (2026-05): "Inserir manualmente" foi reduzido a TEXT LINK discreto sublinhado (não mais pill full-width) — quem chega aqui já fez a escolha de escanear no chooser; esse fallback é só pra emergência (QR ilegível, câmera com problema). Eyebrow mono caps tiny acima: "QR ILEGÍVEL?"
 
 ### 6. Escolher mesa manualmente (`ScreenWaiterTablePicker`) · seção `garcom-flow`
+
 **2ª opção do chooser** (V4) — antes só era acessível pelo "Inserir manualmente" do scanner. Mostra mesas que o garçom já atende em destaque (cards pretos), mesas livres logo abaixo (cards claros). Cada linha mostra capacidade.
 
 - Topbar: _Escolher mesa · CABRAL · TURNO 18H–02H_ + busca
@@ -284,6 +289,7 @@ Quando o garçom toca **"A caminho"**, o sistema marca `acceptedBy` e remove o c
 - Tap entra na mesa → abre `ScreenTableDetail`
 
 ### 7. Detalhe da mesa (`ScreenTableDetail`) · seção `mesa`
+
 - **Card preto** com total da conta, valor por pessoa, e barra de progresso de pagamento
 - Mostra quantas pessoas pagaram **via app mobile** (Pix · app, Crédito · app)
 - **Histórico unificado em timeline** com 3 tipos de evento:
@@ -295,13 +301,14 @@ Quando o garçom toca **"A caminho"**, o sistema marca `acceptedBy` e remove o c
 - Menu **3 pontinhos** (`MoreSheet`): Imprimir conta · Transferir mesa · Reportar problema
 
 ### 8. Detalhe do chamado (`ScreenCallDetail`) · seção `chamado`
+
 Tela única que se adapta ao tipo de chamado via prop `type`. Cor do hero comunica a tonalidade:
 
-| Tipo | Hero | Hint principal |
-|---|---|---|
-| `pediu-conta` | azul (info) | _"Lembre-se de levar a maquininha de cartão"_ (banner amarelo destacado) |
-| `chamou-garcom` | vermelho (danger) | "Cliente acionou o botão. Sem motivo informado." |
-| `pronto-cozinha` | verde (success) | "Bandeja na bancada de retirada." → CTA "Vou servir" abre `ScreenWaiterDeliveryConfirm` |
+| Tipo             | Hero              | Hint principal                                                                          |
+| ---------------- | ----------------- | --------------------------------------------------------------------------------------- |
+| `pediu-conta`    | azul (info)       | _"Lembre-se de levar a maquininha de cartão"_ (banner amarelo destacado)                |
+| `chamou-garcom`  | vermelho (danger) | "Cliente acionou o botão. Sem motivo informado."                                        |
+| `pronto-cozinha` | verde (success)   | "Bandeja na bancada de retirada." → CTA "Vou servir" abre `ScreenWaiterDeliveryConfirm` |
 
 - Badge **"Prioridade alta"** branco/vermelho com dot pulsante quando `priority === 'high'` (ver seção ⭐)
 - Botões: **A caminho** / **Vou servir** (primary) + **Voltar** (secondary)
@@ -309,6 +316,7 @@ Tela única que se adapta ao tipo de chamado via prop `type`. Cor do hero comuni
 - Menu **3 pontinhos** (`MoreSheet`): Repassar para colega · Avisar gerente · Resolver sem ir lá
 
 ### 9. Confirmar entrega (`ScreenWaiterDeliveryConfirm`) · seção `garcom-flow`
+
 **Handshake final do ciclo de pedido.** Garçom retira a bandeja pronta da cozinha (chamado `pronto-cozinha`), leva pra mesa e usa esta tela na presença do cliente para validar que veio tudo certo.
 
 - Hero verde grande: _"Pedido entregue · Mesa 12 · há 32 minutos"_
@@ -320,18 +328,22 @@ Tela única que se adapta ao tipo de chamado via prop `type`. Cor do hero comuni
   - **Confirmar entrega** (primário · 2/3 · preto) → marca pedido como `servido` no KDS + remove chamado da fila
 
 ### 10. Pedido manual — 3 abordagens · seção `pedido`
+
 - **Quick** (`ScreenOrderQuick`) — grade de chips do cardápio rápido + comanda em sheet (snap default ou full)
 - **Search** (`ScreenOrderSearch`) — busca + lista estilo POS
 - **Item detalhado** (`ScreenOrderItem`) — modificadores, observações livres
 
 ### 11. Histórico do turno (`ScreenShift`) · seção `extras`
+
 - Resumo do que aconteceu no turno: nº de mesas, valor médio, gorjetas, atendimentos
 - Botão de fechar turno (handoff para o gerente)
 
 ### 12. Perfil (`ScreenProfile`) · seção `extras`
+
 - Dados pessoais, troca de senha, configurações de notificação, sair
 
 ### 13. Push notifications · seção `push`
+
 - Lockscreen iOS + Android com 4 tipos: chamou garçom, pediu conta, pronto cozinha, pronto bar
 - 3 cenários: pilha completa (multi-stack), urgente isolado, único
 - Texto curto, ação rápida (deslizar para abrir)
@@ -348,34 +360,35 @@ Tela única que se adapta ao tipo de chamado via prop `type`. Cor do hero comuni
    ┌──────────────────────────┼──────────────────────────┐
    │ toque direto no card     │ aba "Novo" do bottom nav │
    │ (mesa que já atende)     │ (ou FAB opcional)         │
-   ▼                          ▼                          
-   detalhe da mesa     ScreenWaiterNewEntry ★ V4 ★      
-   (leitura)           (chooser de 2 caminhos)           
-                              ↓                          
-                    ┌─────────┴─────────┐                
-                    ▼                   ▼                
-              Escanear QR        Pegar mesa pelo nº     
-              (Card 1 ink)       (Card 2 outline)        
-                    ↓                   ↓                
-              ScanQr → mesa     TablePicker → mesa       
-                    ↘                  ↙                 
-                     detalhe da mesa                     
-                              ↓ (chamado entrou)         
-                       Detalhe do chamado                
-                              ↓                          
-   ┌──────────┬──────────────┬─────────────┬───────────┐ 
-   │          │              │             │           │ 
+   ▼                          ▼
+   detalhe da mesa     ScreenWaiterNewEntry ★ V4 ★
+   (leitura)           (chooser de 2 caminhos)
+                              ↓
+                    ┌─────────┴─────────┐
+                    ▼                   ▼
+              Escanear QR        Pegar mesa pelo nº
+              (Card 1 ink)       (Card 2 outline)
+                    ↓                   ↓
+              ScanQr → mesa     TablePicker → mesa
+                    ↘                  ↙
+                     detalhe da mesa
+                              ↓ (chamado entrou)
+                       Detalhe do chamado
+                              ↓
+   ┌──────────┬──────────────┬─────────────┬───────────┐
+   │          │              │             │           │
  chamou   pediu-conta   pronto-cozinha   pronto-bar    │
-   │          │              │             │           │ 
-   ▼          ▼              ▼             ▼           │ 
-ir na mesa  levar        Vou servir →   servir         │ 
-            maquininha        ↓                        │ 
-                       Confirmar entrega               │ 
-                              ↓                        │ 
-                          servido (KDS)                │ 
+   │          │              │             │           │
+   ▼          ▼              ▼             ▼           │
+ir na mesa  levar        Vou servir →   servir         │
+            maquininha        ↓                        │
+                       Confirmar entrega               │
+                              ↓                        │
+                          servido (KDS)                │
 ```
 
 **3 portas de entrada na mesa (V4):**
+
 1. **Toque direto no card da Home** — mesa que o garçom já atende (`ScreenHomeGrid`).
 2. **Aba Novo (bottom nav · ícone QR viewfinder)** — entrada principal · V4: tap abre `ScreenWaiterNewEntry` (chooser) em modal fullscreen sobre a aba ativa. De lá:
    - **Escanear QR** (1ª opção · primário ink filled) → abre `ScreenWaiterScanQr`
@@ -385,6 +398,7 @@ ir na mesa  levar        Vou servir →   servir         │
 Fallback raro: text link "Inserir número da mesa" no rodapé do scanner (V4 · reduzido a link sublinhado discreto · não mais pill full-width) — pra emergência quando o QR está ilegível ou a câmera tem problema. Quem chega no scanner já fez a escolha "Escanear QR" no chooser; esse fallback é só pra não travar o garçom em campo.
 
 **2 fluxos de saída do chamado pronto:**
+
 1. Servir comida → `ScreenWaiterDeliveryConfirm` → cliente valida → `servido`
 2. Bebida (sem hand-off de validação) → marca direto como `servido`
 
@@ -394,11 +408,11 @@ Fallback raro: text link "Inserir número da mesa" no rodapé do scanner (V4 · 
 
 ```ts
 type CallType =
-  | 'chamou-garcom'    // cliente pediu atendimento genérico
-  | 'pediu-conta'      // cliente quer fechar a conta
-  | 'pronto-cozinha'   // cozinha avisou que tem prato pronto
-  | 'pronto-bar'       // bar avisou que tem drink pronto
-  | 'mais-bebida';     // cliente pediu mais bebida pelo cardápio digital
+  | 'chamou-garcom' // cliente pediu atendimento genérico
+  | 'pediu-conta' // cliente quer fechar a conta
+  | 'pronto-cozinha' // cozinha avisou que tem prato pronto
+  | 'pronto-bar' // bar avisou que tem drink pronto
+  | 'mais-bebida'; // cliente pediu mais bebida pelo cardápio digital
 
 type Priority = 'high' | 'medium' | 'low';
 
@@ -407,16 +421,16 @@ type Call = {
   type: CallType;
   table: number;
   partySize: number;
-  createdAt: string;        // ISO
-  elapsedMin: number;       // calculado no backend
-  priority: Priority;       // ⭐ derivado da saturação — ver seção acima
+  createdAt: string; // ISO
+  elapsedMin: number; // calculado no backend
+  priority: Priority; // ⭐ derivado da saturação — ver seção acima
   sourceStation: 'cozinha' | 'bar' | 'salao';
   acceptedBy: string | null; // userId do garçom que tocou "A caminho"
   flags?: ('vip' | 'alergia' | 'reincidente')[];
   context?: {
-    billAmount?: number;     // para 'pediu-conta'
+    billAmount?: number; // para 'pediu-conta'
     items?: { n: string; q: number }[]; // para 'pronto-cozinha/bar'
-    note?: string;           // texto livre do cliente
+    note?: string; // texto livre do cliente
   };
 };
 ```
@@ -428,15 +442,15 @@ type Call = {
 ```ts
 type Payment = {
   id: string;
-  who: string;        // nome do cliente que pagou (do app mobile)
+  who: string; // nome do cliente que pagou (do app mobile)
   amount: number;
   method: 'pix-app' | 'credit-app' | 'debit-app' | 'cash' | 'card-pos';
-  when: string;       // ISO
+  when: string; // ISO
   status: 'pago' | 'processando' | 'falhou';
 };
 
 type Order = {
-  id: string;             // ex: '#0142'
+  id: string; // ex: '#0142'
   station: 'cozinha' | 'bar';
   status: 'novo' | 'preparando' | 'pronto' | 'servido' | 'atrasado';
   when: string;
@@ -447,20 +461,20 @@ type Table = {
   number: number;
   partySize: number;
   openedAt: string;
-  totalAmount: number;     // soma da comanda
-  paidAmount: number;      // soma de payments com status === 'pago'
-  payments: Payment[];     // todos, inclusive 'processando'
+  totalAmount: number; // soma da comanda
+  paidAmount: number; // soma de payments com status === 'pago'
+  payments: Payment[]; // todos, inclusive 'processando'
   orders: Order[];
-  calls: Call[];           // chamados gerados por essa mesa
+  calls: Call[]; // chamados gerados por essa mesa
   assignedWaiter?: string;
 };
 
 // Histórico unificado para a tela de detalhe da mesa
 function timelineFor(table: Table): TimelineEvent[] {
   return [
-    ...table.orders.map(o => ({ kind: 'order',   when: o.when,    ...o })),
-    ...table.calls.map(c  => ({ kind: 'call',    when: c.createdAt, ...c })),
-    ...table.payments.map(p => ({ kind: 'payment', when: p.when,  ...p })),
+    ...table.orders.map((o) => ({ kind: 'order', when: o.when, ...o })),
+    ...table.calls.map((c) => ({ kind: 'call', when: c.createdAt, ...c })),
+    ...table.payments.map((p) => ({ kind: 'payment', when: p.when, ...p })),
   ].sort((a, b) => b.when.localeCompare(a.when)); // mais recente primeiro
 }
 ```
@@ -475,23 +489,23 @@ const ws = new WebSocket(`wss://api.restaurante.com/waiter/${userId}`);
 ws.onmessage = (e) => {
   const ev = JSON.parse(e.data);
   switch (ev.type) {
-    case 'call_assigned':         // chamado direcionado a este garçom
+    case 'call_assigned': // chamado direcionado a este garçom
       showPushNotification(ev.call);
       addToCallList(ev.call);
       break;
     case 'call_priority_changed': // backend recalculou prioridade
       updateCallPriority(ev.callId, ev.priority);
       break;
-    case 'call_taken_by_other':   // outro garçom tocou "A caminho" antes
+    case 'call_taken_by_other': // outro garçom tocou "A caminho" antes
       removeCall(ev.callId);
       break;
-    case 'payment_received':      // cliente pagou pelo app
+    case 'payment_received': // cliente pagou pelo app
       updateTablePayments(ev.tableId, ev.payment);
       break;
-    case 'order_status_changed':  // KDS marcou pronto, etc
+    case 'order_status_changed': // KDS marcou pronto, etc
       updateOrder(ev.tableId, ev.order);
       break;
-    case 'table_assigned':        // gerente atribuiu nova mesa
+    case 'table_assigned': // gerente atribuiu nova mesa
       addTable(ev.table);
       break;
   }
@@ -548,16 +562,16 @@ O QR gravado a laser na mesa NÃO tem timestamp — é permanente e sua assinatu
 
 ```js
 const C = {
-  bg:         '#ffffff',  // fundo claro / dark: #0a0a0a
-  ink:        '#0a0a0a',  // texto principal
-  mute:       '#6b6b6b',  // texto secundário
-  borderSoft: '#e5e5e5',  // bordas
-  borderFaint:'#f0efeb',  // separadores
-  success:    '#2f7d4f',  // pago / pronto
-  successBg:  '#f0f7f2',
-  warn:       '#d4a017',  // processando / médio
-  danger:     '#c43a3a',  // prioridade alta / atrasado
-  info:       '#3a6ec4',  // bebida / aviso
+  bg: '#ffffff', // fundo claro / dark: #0a0a0a
+  ink: '#0a0a0a', // texto principal
+  mute: '#6b6b6b', // texto secundário
+  borderSoft: '#e5e5e5', // bordas
+  borderFaint: '#f0efeb', // separadores
+  success: '#2f7d4f', // pago / pronto
+  successBg: '#f0f7f2',
+  warn: '#d4a017', // processando / médio
+  danger: '#c43a3a', // prioridade alta / atrasado
+  info: '#3a6ec4', // bebida / aviso
 };
 ```
 
@@ -603,15 +617,16 @@ O gerente usa o **mesmo app** do garçom (mesmo binário mobile, iOS + Android),
 └─────────┴───────────┴─────────┴────────────┴─────┘
 ```
 
-| Aba | Abre | Sub-tabs / sub-telas |
-|---|---|---|
-| **Painel** | `ScreenManagerHomeA` | — (orientado a comando · V4: 6 blocos · Hero · 2 ferramentas · **Em curso ★ NOVO ★** · alertas · equipe · reservas) |
-| **Operação** | `ScreenManagerOps` | sub-tabs `alerts` (default) · `map` · `funnel` + barra "Agir agora" fixa |
-| **Equipe** ★ V6 ★ | `ScreenManagerStaff` (unificada) | sub-telas: StaffDetail · StaffForm · ShiftEditor (placeholder V6) |
-| **Financeiro** | `ScreenManagerFinance` | — (4 KPIs com help · top categorias · métodos · ranking) |
-| **Eu** | `ScreenManagerSettings` | — (perfil + turno + conta + estabelecimento + sair) |
+| Aba               | Abre                             | Sub-tabs / sub-telas                                                                                                |
+| ----------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Painel**        | `ScreenManagerHomeA`             | — (orientado a comando · V4: 6 blocos · Hero · 2 ferramentas · **Em curso ★ NOVO ★** · alertas · equipe · reservas) |
+| **Operação**      | `ScreenManagerOps`               | sub-tabs `alerts` (default) · `map` · `funnel` + barra "Agir agora" fixa                                            |
+| **Equipe** ★ V6 ★ | `ScreenManagerStaff` (unificada) | sub-telas: StaffDetail · StaffForm · ShiftEditor (placeholder V6)                                                   |
+| **Financeiro**    | `ScreenManagerFinance`           | — (4 KPIs com help · top categorias · métodos · ranking)                                                            |
+| **Eu**            | `ScreenManagerSettings`          | — (perfil + turno + conta + estabelecimento + sair)                                                                 |
 
 **Mudanças desde a refatoração 2026-05:**
+
 - "Eu" virou **5ª aba normal** (era sub-tela acessada tocando o nome no header).
 - "Salão" e "Gargalos" foram **fundidos em "Operação"** com 3 sub-tabs.
 - "Operação" carrega uma **barra "Agir agora"** fixa entre o conteúdo e a bottom nav, com **2 ferramentas-chave** (Cozinha · Pausa). Cortesia saiu da barra (decisão deliberada · não é mais "ferramenta rápida"). Acesso à cortesia: (1) MoreSheet do alerta · 3 pontinhos → "Mandar cortesia"; (2) chip "Quer uma cortesia pela espera?" dentro da sheet "Contactar cliente"; (3) `Eu › Cortesias` (histórico + criar manualmente).
@@ -712,27 +727,27 @@ A 5ª tela (Eu) tem header próprio focado no perfil — avatar 76px + nome + ro
 
 ## Tabela de telas do gerente
 
-| Tela | Componente | Tipo | ID seção (canvas) | Descrição funcional | Variantes |
-|---|---|---|---|---|---|
-| **Painel** ★ V4 ★ | `ScreenManagerHomeA` | 1ª aba | `mgr-home` | 6 blocos: Hero (saudação + AO VIVO) · 2 Ferramentas rápidas (Cozinha/Pausa · pausa ganha countdown inline) · **Em curso** (cards de ops async com border-left tematica · oculta quando 0) · Alertas (3 compactos) · Equipe em turno · Próximas reservas | `inProgress=[]` |
-| **Operação** | `ScreenManagerOps` | 2ª aba | `mgr-ops` | Sub-tabs Alertas (default · KPIs Críticos/Atenção + lista com ações inline) · Mapa (grid 4×N de mesas · ★ V5 ★ tap em qualquer mesa abre Menu da Mesa · não mais Timeline direto) · Funil (etapas com barras + sugestão IA) · Barra "Agir agora" fixa. V5 cleanup: comparativos ANTES/DEPOIS/VARIAÇÃO removidos (a versão canônica é o V3-bis) | `tab=alerts/map/funnel` |
-| **Equipe** ★ V6 ★ | `ScreenManagerStaff` | 3ª aba | `mgr-staff` | Tela unificada · 8 blocos: Hero (saudação + AO VIVO) · 3 KPIs ricos (Em campo · Sobrecarga · **Carga média ★ Q resolvido ★** com sub "média entre quem está em campo") · banner IA com personalidade ("Caleb está com 7 mesas...") oculto quando vazio · busca + 2 rows de chips (status + função) · lista de funcionários unificada (header simples + 3 métricas em mono + ações pills 36px contextuais ao status) · turnos do dia compactos com expand inline (★ S resolvido ★) · próximos eventos · CTA fixa "+ Adicionar". Funde o que era StaffList + ShiftBoard + ShiftSchedule | `bannerHidden`, `expandedShift`, `searchEmptyState` |
-| **Financeiro** | `ScreenManagerFinance` | 4ª aba | `mgr-finance` | Hero receita + tendência · mini-chart por hora · 4 KPIs com help · top 3 categorias com barras · métodos de pagamento (App vs Maquininha) · ranking 3 garçons · **sem exportar** | — |
-| **Eu** | `ScreenManagerSettings` | 5ª aba | `mgr-settings` | Hero (avatar + nome + turno) · KPI vendas no SEU turno · Operação (Encerrar turno destrutivo · Histórico · Equipe · ★ V5 ★ Cortesias) · Conta · Estabelecimento (só donos) · Sair | `role=manager/owner` |
-| Desempenho individual | `ScreenManagerStaffDetail` | sub (Equipe) | `mgr-perf` | Performance de 1 garçom · 4 KPIs com help · gráfico 7 dias · comparativo equipe | — |
-| **Editar turnos** ★ V8 ★ | `ScreenManagerShiftEditor` | sub (Equipe) | `mgr-shift-editor` | Tela funcional acessada por "Editar turnos →" da seção "Turnos de hoje" da Equipe. 3 cards expandíveis (Manhã · Tarde · Noite — atual default expandido) com header mono caps + sub de função-count. Cada membro tem 3-pontinhos → MoreSheet com 3 ações ("Mover para outro turno", "Autorizar hora extra", "Remover do turno" destrutiva). Linha "+ Adicionar funcionário" no fim do card. Topbar tem CTA "+ Novo turno". Footer fixo: "Duplicar pra próxima semana" outline + "Salvar alterações" filled (state-aware · só visível com mudanças pendentes). Auto-save indicator mostarda discreto no topbar. Substitui o placeholder V6/V7 | `defaultExpanded='manha'/'tarde'/'noite'/'all'`, `emptyShift`, `modal='more'/'move'/'overtime'/'remove'/'add'`, `hasChanges` |
-| **KPI detail** ★ V8+V9 ★ | `ScreenManagerStatDetail` | sub (Equipe + Operação) | `mgr-stat-detail` | Tela template aberta por tap curto nos `?` dos 7 KPIs (3 da Equipe + 4 da Operação) — long-press mantém o tooltip. Estrutura comum: Hero (valor grande + sub colorido + contexto + timestamp mono) · "Quem/Onde" · "O que fazer agora" (ações pills) · "Como esse número é calculado" (fórmula curta). **7 variantes** via prop `kpiKind`: **(Equipe · V8)** em-campo · sobrecarga · carga-media. **(Operação · V9)** criticos (lista de alertas críticos · 2 ações inline · macro "Resolver todos em sequência" + push genérico) · atencao (alertas a 80% da meta · estado vazio "ATÉ AGORA NADA EM ATENÇÃO" se 0) · mesas-ativas (mesas agrupadas por seção do salão · tap → Menu da Mesa · botão "Ver no Mapa") · em-alerta (mesas críticas/lentas · tap → Menu da Mesa · realocar críticas + mensagem direta multi-target). ★ V9 ★ — copy "Pausar pedidos novos da praça dele" reescrito como "Pausar mesas do Caleb por 5 min" + sub explicando · `pauseConfirm` mostra modal vaul de confirmação com chip-row de duração 5/10/15/30 min. Back preserva sub-tab origem (Equipe vs Operação). | `kpiKind='em-campo'/'sobrecarga'/'carga-media'/'criticos'/'atencao'/'mesas-ativas'/'em-alerta'`, `state='default'/'within-target'/'above-target'/'below-target'/'empty'`, `pauseConfirm` |
-| Form de funcionário | `ScreenManagerStaffForm` | sub (Equipe) | `mgr-staff` | Cadastro/edição · gera senha provisória por SMS · pode desativar (não exclui) | `mode=create/edit` |
-| **Menu da Mesa** ★ V5 ★ | `ScreenManagerTableMenu` | sub (Operação · Equipe · Painel) | `mgr-table-menu` | Tela cheia que abre ao tocar QUALQUER mesa específica. **Hero** (Mesa N + status pill + tagline mono caps) · **Atributos editáveis** (PESSOAS NA MESA com stepper + modal de capacidade excedida · OBSERVAÇÃO · CLIENTE) · **Ações** (6 linhas pra manager: Cortesia / Contactar / Timeline / Imprimir / Transferir / Fechar · 3 linhas pra host: Trocar / Avisar / Cancelar liberação) · MoreSheet (ações secundárias). Substitui o tap-direto-pra-Timeline | `role=manager/host`, `modal=capacity/observation/client/more/closeConfirm`, `state=normal/exceeded`, `partyOverride` |
-| Timeline da mesa | `ScreenManagerTableTimeline` | sub (ação do Menu da Mesa) | `mgr-table-timeline` | HERO com tempo parado · ação sugerida em 3 passos · timeline real do pedido · chamados. ★ V5 ★ Antes era a tela default ao tocar uma mesa lenta · agora é uma das ações dentro do Menu da Mesa | — |
-| Lista de alertas | `ScreenManagerAlertsAll` | sub (Operação) | `mgr-alerts-all` | KPIs Críticos/Atenção · 4 filtros chip · lista com 2 ações inline + dispensar · histórico do dia | — |
-| Reordenar cozinha | `ScreenManagerKitchenReorder` | ferramenta | `mgr-kitchen-reorder` | 3 estados: select (escolher pedidos) → sent (aguardando) → accepted (cozinha aceitou + garçons avisados) | `state=select/sent/accepted` |
-| Pausar pedidos | `ScreenManagerOrdersPause` | ferramenta | `mgr-orders-pause` | 2 estados: confirm (escolher 5/10/15/30 min) → active (countdown grande + stats em tempo real). V4: "Despausar agora" no footer dispara `resolved-summary` no Painel + abre `OrdersPauseSummary`. **Cliente não vê pausa** — ETA aumenta silenciosamente | `state=confirm/active` |
-| Resumo pós-pausa ★ V4 ★ | `ScreenManagerOrdersPauseSummary` (`MOpSummary` template) | post-mortem | `mgr-pause-summary` | Tela cheia aberta de "Ver detalhes" no card resolved-summary do Painel ou do push de retomada. Hero verde com janela (21:08-21:13) + 3 KPI tiles antes/depois (fila/saída/entraram) + timeline real dos eventos durante + sugestão IA de próximo passo + Voltar pro Painel. Template REUSÁVEL pra reorder/contact/courtesy em rounds futuros | — |
-| Cortesia | `ScreenManagerCompensateClient` | ferramenta | `mgr-compensate` | 3 estados: select (mesa + 4 tipos: dessert/drink/couvert/discount) → sent (aguardando cliente abrir no web-customer) → accepted (cliente aceitou · push pro garçom). ★ V5 ★ Aceita prop `preselectedTable={n}` quando vem do Menu da Mesa — mostra a mesa de origem com ring verde + badge "DO MENU" + hint banner. Migração de Cortesia consolidada: vive em (1) Menu da Mesa · ação primária; (2) MContactClientSheet · chip; (3) Eu > Cortesias · cold path | `state=select/sent/accepted`, `preselectedTable` |
-| **Cortesias** ★ V5 ★ | `ScreenManagerCourtesies` | sub (Eu > Operação) | `mgr-courtesies` | Tab segmentada: HISTÓRICO (3 mini-tiles Hoje/Aceitas/Pendentes + lista cronológica das cortesias enviadas com mesa/tipo/status pill aceita/pendente/recusada/gerente/timestamp/tempo de resposta) · NOVA CORTESIA (cold path: hero verde + 3 caminhos numerados + CTA "Abrir compositor de cortesia" → CompensateClient sem mesa pré-selecionada). Existe pra fechar a migração de Cortesia (saiu da MQuickActionsBar V3 e do Painel · Ferramentas rápidas V4) | `tab=history/new` |
-| Sheet Contactar cliente | `MContactClientSheet` | sheet (sobre Operação) | `mgr-contact-client` | 4 estados: idle (4 sugestões + textarea + CTA disabled) → selected (chip selected + textarea pré-preenchida + CTA enabled) → sent (sheet shrinka · "Aguardando leitura..." pulse · ações Voltar/Reenviar). Sugestões via `POST /smart-suggestions` (pool determinístico + LLM fallback). Chip "Quer uma cortesia pela espera?" continua sendo entrada legítima de Cortesia a partir desse fluxo | `state=idle/selected/sent`, `andro` |
-| **Sheet Mensagem direta pra staff** ★ V9 ★ | `MContactStaffSheet` | sheet (sobre StatDetail · cards Equipe · StaffDetail) | `mgr-contact-staff` | 2 estados: idle (4 sugestões staff-context "Como tá indo?" / "Vou te mandar reforço · 5 min" / "Pause os pedidos novos das suas mesas por 5 min" link pro zone-pause / "Foca nas mesas X e Y") + textarea · sent (preview ManagerBubble + "Aguardando leitura..." pulse mostarda · vira "Lido às 19:43" verde quando chega `manager.message.read` via WS). Round-trip espelhado: garçom recebe push manager-message → tap abre `ScreenStaffMessageDetail` → "Responder" volta como bubble invertido aqui | `state=idle/sent`, `andro`, `target` |
+| Tela                                       | Componente                                                | Tipo                                                  | ID seção (canvas)     | Descrição funcional                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Variantes                                                                                                                                                                                |
+| ------------------------------------------ | --------------------------------------------------------- | ----------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Painel** ★ V4 ★                          | `ScreenManagerHomeA`                                      | 1ª aba                                                | `mgr-home`            | 6 blocos: Hero (saudação + AO VIVO) · 2 Ferramentas rápidas (Cozinha/Pausa · pausa ganha countdown inline) · **Em curso** (cards de ops async com border-left tematica · oculta quando 0) · Alertas (3 compactos) · Equipe em turno · Próximas reservas                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `inProgress=[]`                                                                                                                                                                          |
+| **Operação**                               | `ScreenManagerOps`                                        | 2ª aba                                                | `mgr-ops`             | Sub-tabs Alertas (default · KPIs Críticos/Atenção + lista com ações inline) · Mapa (grid 4×N de mesas · ★ V5 ★ tap em qualquer mesa abre Menu da Mesa · não mais Timeline direto) · Funil (etapas com barras + sugestão IA) · Barra "Agir agora" fixa. V5 cleanup: comparativos ANTES/DEPOIS/VARIAÇÃO removidos (a versão canônica é o V3-bis)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `tab=alerts/map/funnel`                                                                                                                                                                  |
+| **Equipe** ★ V6 ★                          | `ScreenManagerStaff`                                      | 3ª aba                                                | `mgr-staff`           | Tela unificada · 8 blocos: Hero (saudação + AO VIVO) · 3 KPIs ricos (Em campo · Sobrecarga · **Carga média ★ Q resolvido ★** com sub "média entre quem está em campo") · banner IA com personalidade ("Caleb está com 7 mesas...") oculto quando vazio · busca + 2 rows de chips (status + função) · lista de funcionários unificada (header simples + 3 métricas em mono + ações pills 36px contextuais ao status) · turnos do dia compactos com expand inline (★ S resolvido ★) · próximos eventos · CTA fixa "+ Adicionar". Funde o que era StaffList + ShiftBoard + ShiftSchedule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `bannerHidden`, `expandedShift`, `searchEmptyState`                                                                                                                                      |
+| **Financeiro**                             | `ScreenManagerFinance`                                    | 4ª aba                                                | `mgr-finance`         | Hero receita + tendência · mini-chart por hora · 4 KPIs com help · top 3 categorias com barras · métodos de pagamento (App vs Maquininha) · ranking 3 garçons · **sem exportar**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | —                                                                                                                                                                                        |
+| **Eu**                                     | `ScreenManagerSettings`                                   | 5ª aba                                                | `mgr-settings`        | Hero (avatar + nome + turno) · KPI vendas no SEU turno · Operação (Encerrar turno destrutivo · Histórico · Equipe · ★ V5 ★ Cortesias) · Conta · Estabelecimento (só donos) · Sair                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `role=manager/owner`                                                                                                                                                                     |
+| Desempenho individual                      | `ScreenManagerStaffDetail`                                | sub (Equipe)                                          | `mgr-perf`            | Performance de 1 garçom · 4 KPIs com help · gráfico 7 dias · comparativo equipe                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | —                                                                                                                                                                                        |
+| **Editar turnos** ★ V8 ★                   | `ScreenManagerShiftEditor`                                | sub (Equipe)                                          | `mgr-shift-editor`    | Tela funcional acessada por "Editar turnos →" da seção "Turnos de hoje" da Equipe. 3 cards expandíveis (Manhã · Tarde · Noite — atual default expandido) com header mono caps + sub de função-count. Cada membro tem 3-pontinhos → MoreSheet com 3 ações ("Mover para outro turno", "Autorizar hora extra", "Remover do turno" destrutiva). Linha "+ Adicionar funcionário" no fim do card. Topbar tem CTA "+ Novo turno". Footer fixo: "Duplicar pra próxima semana" outline + "Salvar alterações" filled (state-aware · só visível com mudanças pendentes). Auto-save indicator mostarda discreto no topbar. Substitui o placeholder V6/V7                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `defaultExpanded='manha'/'tarde'/'noite'/'all'`, `emptyShift`, `modal='more'/'move'/'overtime'/'remove'/'add'`, `hasChanges`                                                             |
+| **KPI detail** ★ V8+V9 ★                   | `ScreenManagerStatDetail`                                 | sub (Equipe + Operação)                               | `mgr-stat-detail`     | Tela template aberta por tap curto nos `?` dos 7 KPIs (3 da Equipe + 4 da Operação) — long-press mantém o tooltip. Estrutura comum: Hero (valor grande + sub colorido + contexto + timestamp mono) · "Quem/Onde" · "O que fazer agora" (ações pills) · "Como esse número é calculado" (fórmula curta). **7 variantes** via prop `kpiKind`: **(Equipe · V8)** em-campo · sobrecarga · carga-media. **(Operação · V9)** criticos (lista de alertas críticos · 2 ações inline · macro "Resolver todos em sequência" + push genérico) · atencao (alertas a 80% da meta · estado vazio "ATÉ AGORA NADA EM ATENÇÃO" se 0) · mesas-ativas (mesas agrupadas por seção do salão · tap → Menu da Mesa · botão "Ver no Mapa") · em-alerta (mesas críticas/lentas · tap → Menu da Mesa · realocar críticas + mensagem direta multi-target). ★ V9 ★ — copy "Pausar pedidos novos da praça dele" reescrito como "Pausar mesas do Caleb por 5 min" + sub explicando · `pauseConfirm` mostra modal vaul de confirmação com chip-row de duração 5/10/15/30 min. Back preserva sub-tab origem (Equipe vs Operação). | `kpiKind='em-campo'/'sobrecarga'/'carga-media'/'criticos'/'atencao'/'mesas-ativas'/'em-alerta'`, `state='default'/'within-target'/'above-target'/'below-target'/'empty'`, `pauseConfirm` |
+| Form de funcionário                        | `ScreenManagerStaffForm`                                  | sub (Equipe)                                          | `mgr-staff`           | Cadastro/edição · gera senha provisória por SMS · pode desativar (não exclui)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `mode=create/edit`                                                                                                                                                                       |
+| **Menu da Mesa** ★ V5 ★                    | `ScreenManagerTableMenu`                                  | sub (Operação · Equipe · Painel)                      | `mgr-table-menu`      | Tela cheia que abre ao tocar QUALQUER mesa específica. **Hero** (Mesa N + status pill + tagline mono caps) · **Atributos editáveis** (PESSOAS NA MESA com stepper + modal de capacidade excedida · OBSERVAÇÃO · CLIENTE) · **Ações** (6 linhas pra manager: Cortesia / Contactar / Timeline / Imprimir / Transferir / Fechar · 3 linhas pra host: Trocar / Avisar / Cancelar liberação) · MoreSheet (ações secundárias). Substitui o tap-direto-pra-Timeline                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `role=manager/host`, `modal=capacity/observation/client/more/closeConfirm`, `state=normal/exceeded`, `partyOverride`                                                                     |
+| Timeline da mesa                           | `ScreenManagerTableTimeline`                              | sub (ação do Menu da Mesa)                            | `mgr-table-timeline`  | HERO com tempo parado · ação sugerida em 3 passos · timeline real do pedido · chamados. ★ V5 ★ Antes era a tela default ao tocar uma mesa lenta · agora é uma das ações dentro do Menu da Mesa                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | —                                                                                                                                                                                        |
+| Lista de alertas                           | `ScreenManagerAlertsAll`                                  | sub (Operação)                                        | `mgr-alerts-all`      | KPIs Críticos/Atenção · 4 filtros chip · lista com 2 ações inline + dispensar · histórico do dia                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | —                                                                                                                                                                                        |
+| Reordenar cozinha                          | `ScreenManagerKitchenReorder`                             | ferramenta                                            | `mgr-kitchen-reorder` | 3 estados: select (escolher pedidos) → sent (aguardando) → accepted (cozinha aceitou + garçons avisados)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `state=select/sent/accepted`                                                                                                                                                             |
+| Pausar pedidos                             | `ScreenManagerOrdersPause`                                | ferramenta                                            | `mgr-orders-pause`    | 2 estados: confirm (escolher 5/10/15/30 min) → active (countdown grande + stats em tempo real). V4: "Despausar agora" no footer dispara `resolved-summary` no Painel + abre `OrdersPauseSummary`. **Cliente não vê pausa** — ETA aumenta silenciosamente                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `state=confirm/active`                                                                                                                                                                   |
+| Resumo pós-pausa ★ V4 ★                    | `ScreenManagerOrdersPauseSummary` (`MOpSummary` template) | post-mortem                                           | `mgr-pause-summary`   | Tela cheia aberta de "Ver detalhes" no card resolved-summary do Painel ou do push de retomada. Hero verde com janela (21:08-21:13) + 3 KPI tiles antes/depois (fila/saída/entraram) + timeline real dos eventos durante + sugestão IA de próximo passo + Voltar pro Painel. Template REUSÁVEL pra reorder/contact/courtesy em rounds futuros                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | —                                                                                                                                                                                        |
+| Cortesia                                   | `ScreenManagerCompensateClient`                           | ferramenta                                            | `mgr-compensate`      | 3 estados: select (mesa + 4 tipos: dessert/drink/couvert/discount) → sent (aguardando cliente abrir no web-customer) → accepted (cliente aceitou · push pro garçom). ★ V5 ★ Aceita prop `preselectedTable={n}` quando vem do Menu da Mesa — mostra a mesa de origem com ring verde + badge "DO MENU" + hint banner. Migração de Cortesia consolidada: vive em (1) Menu da Mesa · ação primária; (2) MContactClientSheet · chip; (3) Eu > Cortesias · cold path                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `state=select/sent/accepted`, `preselectedTable`                                                                                                                                         |
+| **Cortesias** ★ V5 ★                       | `ScreenManagerCourtesies`                                 | sub (Eu > Operação)                                   | `mgr-courtesies`      | Tab segmentada: HISTÓRICO (3 mini-tiles Hoje/Aceitas/Pendentes + lista cronológica das cortesias enviadas com mesa/tipo/status pill aceita/pendente/recusada/gerente/timestamp/tempo de resposta) · NOVA CORTESIA (cold path: hero verde + 3 caminhos numerados + CTA "Abrir compositor de cortesia" → CompensateClient sem mesa pré-selecionada). Existe pra fechar a migração de Cortesia (saiu da MQuickActionsBar V3 e do Painel · Ferramentas rápidas V4)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `tab=history/new`                                                                                                                                                                        |
+| Sheet Contactar cliente                    | `MContactClientSheet`                                     | sheet (sobre Operação)                                | `mgr-contact-client`  | 4 estados: idle (4 sugestões + textarea + CTA disabled) → selected (chip selected + textarea pré-preenchida + CTA enabled) → sent (sheet shrinka · "Aguardando leitura..." pulse · ações Voltar/Reenviar). Sugestões via `POST /smart-suggestions` (pool determinístico + LLM fallback). Chip "Quer uma cortesia pela espera?" continua sendo entrada legítima de Cortesia a partir desse fluxo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `state=idle/selected/sent`, `andro`                                                                                                                                                      |
+| **Sheet Mensagem direta pra staff** ★ V9 ★ | `MContactStaffSheet`                                      | sheet (sobre StatDetail · cards Equipe · StaffDetail) | `mgr-contact-staff`   | 2 estados: idle (4 sugestões staff-context "Como tá indo?" / "Vou te mandar reforço · 5 min" / "Pause os pedidos novos das suas mesas por 5 min" link pro zone-pause / "Foca nas mesas X e Y") + textarea · sent (preview ManagerBubble + "Aguardando leitura..." pulse mostarda · vira "Lido às 19:43" verde quando chega `manager.message.read` via WS). Round-trip espelhado: garçom recebe push manager-message → tap abre `ScreenStaffMessageDetail` → "Responder" volta como bubble invertido aqui                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `state=idle/sent`, `andro`, `target`                                                                                                                                                     |
 
 **Removido na refatoração 2026-05:**
 
@@ -774,12 +789,12 @@ Resultado tangível: a partir do V5, **5 das 6 ações do gerente sobre uma mesa
 
 **`ScreenManagerTableMenu`** — tela cheia em `garcom-screens-d.jsx`.
 
-| Prop | Valores | Uso |
-|---|---|---|
-| `role` | `'manager'` (default) \| `'host'` | Define o conjunto de ações exibidas. Manager tem 6, host tem 3 (focado em estado da mesa, não financeiro). |
-| `state` | `'normal'` (default) \| `'exceeded'` | Visual da Linha 1 (PESSOAS NA MESA). Em `exceeded`, mostra "+1 EXCEDENTE" em mostarda no sub do label. |
-| `partyOverride` | `number \| null` | Sobrescreve o party de exemplo (5 quando vem com `state="exceeded"`, 4 default). |
-| `modal` | `null` (default) \| `'capacity'` \| `'observation'` \| `'client'` \| `'more'` \| `'closeConfirm'` | Renderiza um vaul-style sheet sobre a tela atual. Vaul = drag handle no topo + 22px corner radius + backdrop 42% preto + blur 2px. |
+| Prop            | Valores                                                                                           | Uso                                                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `role`          | `'manager'` (default) \| `'host'`                                                                 | Define o conjunto de ações exibidas. Manager tem 6, host tem 3 (focado em estado da mesa, não financeiro).                         |
+| `state`         | `'normal'` (default) \| `'exceeded'`                                                              | Visual da Linha 1 (PESSOAS NA MESA). Em `exceeded`, mostra "+1 EXCEDENTE" em mostarda no sub do label.                             |
+| `partyOverride` | `number \| null`                                                                                  | Sobrescreve o party de exemplo (5 quando vem com `state="exceeded"`, 4 default).                                                   |
+| `modal`         | `null` (default) \| `'capacity'` \| `'observation'` \| `'client'` \| `'more'` \| `'closeConfirm'` | Renderiza um vaul-style sheet sobre a tela atual. Vaul = drag handle no topo + 22px corner radius + backdrop 42% preto + blur 2px. |
 
 **Modais embutidos** (todos no mesmo arquivo):
 
@@ -792,6 +807,7 @@ Resultado tangível: a partir do V5, **5 das 6 ações do gerente sobre uma mesa
 Caso de uso real que motivou: **mesa de 4 lugares vira mesa de 6 quando os clientes juntam cadeiras de outra mesa próxima**. Sistema não pode bloquear — precisa aceitar a comanda dos 6 sem fricção, mas confirmar que a intenção é real (não tap acidental).
 
 Comportamento:
+
 - `−` desabilita em party = 1 (mesa precisa de pelo menos 1 pessoa pra existir).
 - `+` continua sempre habilitado, **incluindo quando excede capacidade**.
 - Na primeira vez que `+` faz `party > seats`, dispara o `CapacityExceededModal`. Confirma → atualiza party + sub muda pra "MESA COMPORTA X · +N EXCEDENTE" em mostarda. Cancela → mantém party em `seats` e fecha o modal.
@@ -805,7 +821,7 @@ Mensagem do modal — **copy revisada**:
 > Mesa 14 comporta **4 lugares** · você está marcando **5 pessoas**. Confirma que juntaram cadeiras ou expandiram a mesa?
 >
 > [Sim · 5 pessoas na mesa 14] (ink filled)
-> [Cancelar · manter em 4]    (outline)
+> [Cancelar · manter em 4] (outline)
 >
 > A COMANDA DA MESA ACEITA TODOS OS PEDIDOS DAS 5 PESSOAS NA MESMA CONTA.
 
@@ -814,11 +830,13 @@ A escolha de palavras "juntaram cadeiras ou expandiram a mesa" é deliberada —
 ### Regras de role · entradas e ações permitidas
 
 **Manager:**
+
 - Entradas: Operação · Mapa (qualquer mesa ocupada) · Equipe · "Ver mesas" do garçom · Painel · alertas que referenciam mesa
 - Ações primárias: Mandar cortesia · Contactar cliente · Ver timeline · Imprimir conta · Transferir mesa · Fechar mesa
 - MoreSheet (3 pontinhos): Reportar problema com a mesa · Marcar como VIP nessa sessão · Ver auditoria
 
 **Host (recepcionista):**
+
 - Entradas: ScreenHostHome · Mapa (mesas ocupada / liberada / em alerta — **não** as livres, que vão pelo fluxo de Liberar mesa)
 - Ações reduzidas: Trocar pra outra mesa · Avisar gerente · Cancelar liberação (mostarda)
 - **NÃO vê:** Mandar cortesia · Imprimir conta · Fechar mesa · Ver timeline (essas pertencem ao gerente/garçom).
@@ -837,6 +855,7 @@ GET    /tables/:n/audit                   → quem abriu/fechou/transferiu/marco
 ```
 
 Coluna nova:
+
 ```sql
 ALTER TABLE tables ADD COLUMN party_excedente INT DEFAULT 0;     -- registra "+ N excedente" pro relatório
 ALTER TABLE tables ADD COLUMN observation TEXT;                  -- texto livre · sessão atual
@@ -865,30 +884,32 @@ V4 resolve os 3 com um padrão único.
 
 ### Componentes
 
-| Componente | Tipo | Onde mora | Função |
-|---|---|---|---|
-| `MInProgressCard` | card | `garcom-screens-c.jsx` | Card persistente na seção "Em curso" do Painel. 4 kinds × 3 states. Tap abre tela cheia, ações inline cancelam/agem sem entrar |
-| `MOpSummary` | template | `garcom-screens-d.jsx` | Template REUSÁVEL de tela cheia post-mortem · topbar + hero + KPIs antes/depois + timeline + sugestão IA + voltar. Aceita props declarativos |
-| `ScreenManagerOrdersPauseSummary` | screen | `garcom-screens-d.jsx` | Concretização de `MOpSummary` pra pausa. Reusável depois pra reorder, contact, courtesy |
-| `M_INPROGRESS` | mock presets | `garcom-screens-c.jsx` | 5 presets pra demonstrar variantes no canvas: pauseActive, reorderWaiting, contactWaiting, courtesyWaiting, pauseSummary |
+| Componente                        | Tipo         | Onde mora              | Função                                                                                                                                       |
+| --------------------------------- | ------------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MInProgressCard`                 | card         | `garcom-screens-c.jsx` | Card persistente na seção "Em curso" do Painel. 4 kinds × 3 states. Tap abre tela cheia, ações inline cancelam/agem sem entrar               |
+| `MOpSummary`                      | template     | `garcom-screens-d.jsx` | Template REUSÁVEL de tela cheia post-mortem · topbar + hero + KPIs antes/depois + timeline + sugestão IA + voltar. Aceita props declarativos |
+| `ScreenManagerOrdersPauseSummary` | screen       | `garcom-screens-d.jsx` | Concretização de `MOpSummary` pra pausa. Reusável depois pra reorder, contact, courtesy                                                      |
+| `M_INPROGRESS`                    | mock presets | `garcom-screens-c.jsx` | 5 presets pra demonstrar variantes no canvas: pauseActive, reorderWaiting, contactWaiting, courtesyWaiting, pauseSummary                     |
 
 ### `MInProgressCard` · variantes
 
-| `kind` | `state` | Quando aparece | Conteúdo principal | Ações inline | Tap no corpo |
-|---|---|---|---|---|---|
-| `pause-orders` | `active` | `OrdersPause` ativa | Eyebrow `PAUSA · RETOMA SOZINHO` · countdown grande mono `04:23` · barra de progresso · sub `Pausada às 21:08 · termina 21:13` | `+5 min` (outline) · `Despausar agora` (filled ink) | abre `ScreenManagerOrdersPause` |
-| `kitchen-reorder` | `waiting` | `KitchenReorder` aguardando cozinha | Eyebrow `REORDENAR · AGUARDANDO COZINHA` · spinner azul + `Resposta esperada em ~30s` · sub mostra os pedidos a puxar | `Cancelar` (outline) | abre `ScreenManagerKitchenReorder` no estado atual |
-| `contact-client` | `waiting` | Mensagem enviada · aguardando leitura | Eyebrow `MENSAGEM · MESA 14 · AGUARDANDO LEITURA` · pulse mostarda · preview da mensagem em 1 linha truncada | `Reenviar` (outline) | abre `MContactClientSheet` no estado `sent` |
-| `courtesy` | `waiting` | `CompensateClient` enviada | Eyebrow `CORTESIA · MESA 14 · AGUARDANDO ACEITAR` · resumo do item em 1 linha · spinner azul | `Cancelar envio` (outline) | abre `ScreenManagerCompensateClient` no estado `sent` |
-| `pause-orders` | `resolved-summary` | Pausa terminou (auto ou manual) | Eyebrow `PAUSA TERMINOU · DURAÇÃO 5 MIN` verde · headline "Cozinha caiu de 11 pra 7 pedidos" · sub mono "Saída média era 22 min · agora 14 min" | `Ver detalhes` (outline · abre `OrdersPauseSummary`) · X dispense | mesmo de "Ver detalhes" |
+| `kind`            | `state`            | Quando aparece                        | Conteúdo principal                                                                                                                              | Ações inline                                                      | Tap no corpo                                          |
+| ----------------- | ------------------ | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------- |
+| `pause-orders`    | `active`           | `OrdersPause` ativa                   | Eyebrow `PAUSA · RETOMA SOZINHO` · countdown grande mono `04:23` · barra de progresso · sub `Pausada às 21:08 · termina 21:13`                  | `+5 min` (outline) · `Despausar agora` (filled ink)               | abre `ScreenManagerOrdersPause`                       |
+| `kitchen-reorder` | `waiting`          | `KitchenReorder` aguardando cozinha   | Eyebrow `REORDENAR · AGUARDANDO COZINHA` · spinner azul + `Resposta esperada em ~30s` · sub mostra os pedidos a puxar                           | `Cancelar` (outline)                                              | abre `ScreenManagerKitchenReorder` no estado atual    |
+| `contact-client`  | `waiting`          | Mensagem enviada · aguardando leitura | Eyebrow `MENSAGEM · MESA 14 · AGUARDANDO LEITURA` · pulse mostarda · preview da mensagem em 1 linha truncada                                    | `Reenviar` (outline)                                              | abre `MContactClientSheet` no estado `sent`           |
+| `courtesy`        | `waiting`          | `CompensateClient` enviada            | Eyebrow `CORTESIA · MESA 14 · AGUARDANDO ACEITAR` · resumo do item em 1 linha · spinner azul                                                    | `Cancelar envio` (outline)                                        | abre `ScreenManagerCompensateClient` no estado `sent` |
+| `pause-orders`    | `resolved-summary` | Pausa terminou (auto ou manual)       | Eyebrow `PAUSA TERMINOU · DURAÇÃO 5 MIN` verde · headline "Cozinha caiu de 11 pra 7 pedidos" · sub mono "Saída média era 22 min · agora 14 min" | `Ver detalhes` (outline · abre `OrdersPauseSummary`) · X dispense | mesmo de "Ver detalhes"                               |
 
 **Regras de visualização:**
+
 - Border-left 3px tematica: pause-active = mostarda `#9A7212` · waiting = azul `#3B5FBE` · resolved = verde `#1E8C5A`
 - Cards stackam verticalmente (não em scroll horizontal — é estado importante)
 - Quando `inProgress.length === 0`, a seção INTEIRA oculta (não mostrar empty state — não polui)
 - Card `resolved-summary` substitui o card ativo por ~30s antes de sumir; auto-some se nada acontecer
 
 **Indicador inline na ferramenta rápida.** Quando há `pause-orders.active` no `inProgress`, o card "Pausa" da `MQuickActionsBar` no Painel ganha:
+
 - Background mostarda claro (era surface)
 - Bolinha mostarda pulsando no canto sup direito
 - Sub muda de "Pedidos novos" pra "04:23 restantes" em mono tabular
@@ -918,6 +939,7 @@ API declarativa:
 ```
 
 Hoje `ScreenManagerOrdersPauseSummary` usa esse template com:
+
 - Hero: "Você pausou 5 min entre 21:08 e 21:13"
 - KPIs: Fila da cozinha (11→7) · Saída média (22min→14min) · Entraram na fila (3)
 - Timeline: 5 eventos entre 21:08 e 21:13
@@ -925,11 +947,11 @@ Hoje `ScreenManagerOrdersPauseSummary` usa esse template com:
 
 **Reuso futuro** (mapeado, não implementado):
 
-| Operação resolvida | Possível conteúdo |
-|---|---|
+| Operação resolvida       | Possível conteúdo                                                                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `kitchen-reorder` aceita | "Cozinha aceitou em 23s · 2 pedidos puxados pra frente · Garçons Olivia + Caleb avisados" + KPIs (tempo de espera mesa 14: 22→8 min) |
-| `contact-client` lida | "Cliente leu em 1m12s" + KPI (resposta do cliente, se houve) + timeline (enviado → entregue ao device → lido) |
-| `courtesy` aceita | "Cliente aceitou em 32s · Garçom Olivia avisada · entrega em ~5min" + frase do cliente + KPI (tempo de aceite) |
+| `contact-client` lida    | "Cliente leu em 1m12s" + KPI (resposta do cliente, se houve) + timeline (enviado → entregue ao device → lido)                        |
+| `courtesy` aceita        | "Cliente aceitou em 32s · Garçom Olivia avisada · entrega em ~5min" + frase do cliente + KPI (tempo de aceite)                       |
 
 Cada uma com seu próprio template; o componente `MOpSummary` aceita props para acomodar todas.
 
@@ -978,48 +1000,48 @@ Cada uma com seu próprio template; o componente `MOpSummary` aceita props para 
 
 #### Ciclo de vida do pedido (`orders` + `order_status_history`)
 
-| Etapa | Status | Timestamp |
-|---|---|---|
-| Cliente fez pedido | `pending_confirmation` | `orders.created_at` |
-| Auto-confirmação (15s) | `received` | `order_status_history.created_at` |
-| Cozinha começou | `in_progress` | `order_status_history.created_at` |
-| Prato pronto | `ready` | `order_status_history.created_at` |
-| Entregue na mesa | `delivered` | `order_status_history.created_at` |
-| Cancelado | `cancelled` | `order_status_history.created_at` |
+| Etapa                  | Status                 | Timestamp                         |
+| ---------------------- | ---------------------- | --------------------------------- |
+| Cliente fez pedido     | `pending_confirmation` | `orders.created_at`               |
+| Auto-confirmação (15s) | `received`             | `order_status_history.created_at` |
+| Cozinha começou        | `in_progress`          | `order_status_history.created_at` |
+| Prato pronto           | `ready`                | `order_status_history.created_at` |
+| Entregue na mesa       | `delivered`            | `order_status_history.created_at` |
+| Cancelado              | `cancelled`            | `order_status_history.created_at` |
 
 Cada transição grava `from_status`, `to_status`, `changed_by`, `created_at` em `order_status_history`.
 
 #### Chamados de garçom (`waiter_calls`)
 
-| Momento | Campo |
-|---|---|
-| Cliente chamou | `created_at` |
+| Momento                   | Campo             |
+| ------------------------- | ----------------- |
+| Cliente chamou            | `created_at`      |
 | Garçom acusou recebimento | `acknowledged_at` |
-| Resolvido | `resolved_at` |
-| Cancelado pelo cliente | `cancelled_at` |
+| Resolvido                 | `resolved_at`     |
+| Cancelado pelo cliente    | `cancelled_at`    |
 
 Campos extras: `reason`, `assigned_waiter_name`, `eta_minutes`.
 
 ### Métricas calculáveis (queries diretas no banco)
 
-| Gargalo | Cálculo |
-|---|---|
-| Tempo de aceite da cozinha | `in_progress.created_at − received.created_at` |
-| Tempo de preparo | `ready.created_at − in_progress.created_at` |
-| Tempo de entrega (pronto → mesa) | `delivered.created_at − ready.created_at` |
-| Tempo total do pedido | `delivered.created_at − orders.created_at` |
-| Tempo de resposta do garçom | `waiter_calls.acknowledged_at − waiter_calls.created_at` |
-| Tempo de resolução do chamado | `waiter_calls.resolved_at − waiter_calls.created_at` |
+| Gargalo                          | Cálculo                                                  |
+| -------------------------------- | -------------------------------------------------------- |
+| Tempo de aceite da cozinha       | `in_progress.created_at − received.created_at`           |
+| Tempo de preparo                 | `ready.created_at − in_progress.created_at`              |
+| Tempo de entrega (pronto → mesa) | `delivered.created_at − ready.created_at`                |
+| Tempo total do pedido            | `delivered.created_at − orders.created_at`               |
+| Tempo de resposta do garçom      | `waiter_calls.acknowledged_at − waiter_calls.created_at` |
+| Tempo de resolução do chamado    | `waiter_calls.resolved_at − waiter_calls.created_at`     |
 
 ### Funções a implementar no backend
 
 ```ts
 type FunnelStage = {
   stage: 'received' | 'in_progress' | 'ready' | 'delivered';
-  median: number;   // minutos
-  p95: number;      // minutos
-  count: number;    // nº de pedidos
-  ok: boolean;      // dentro da meta?
+  median: number; // minutos
+  p95: number; // minutos
+  count: number; // nº de pedidos
+  ok: boolean; // dentro da meta?
 };
 
 type Bottleneck = {
@@ -1053,12 +1075,12 @@ async function getAlerts(): Promise<Alert[]> {
 
 ```ts
 const TARGETS = {
-  receivedMaxMin:    1,    // confirmação automática
-  prepMaxMin:        12,   // tempo de preparo médio
-  passToTableMaxMin: 5,    // pronto → mesa
-  callAckMaxMin:     2,    // tempo de aceite do chamado
-  callResolveMaxMin: 6,    // tempo de resolução
-  kitchenCapacity:   8,    // pedidos em paralelo
+  receivedMaxMin: 1, // confirmação automática
+  prepMaxMin: 12, // tempo de preparo médio
+  passToTableMaxMin: 5, // pronto → mesa
+  callAckMaxMin: 2, // tempo de aceite do chamado
+  callResolveMaxMin: 6, // tempo de resolução
+  kitchenCapacity: 8, // pedidos em paralelo
 };
 ```
 
@@ -1107,12 +1129,12 @@ Componente em `garcom-screens-d.jsx::MQuickActionsBar`. Aparece em **todas as 3 
 
 #### Mapa de entrada das telas-ferramenta (resumo)
 
-| Tela | De onde abre |
-|---|---|
-| `ScreenManagerKitchenReorder` | (1) Painel · Ferramentas rápidas → Cozinha. (2) **Operação · Agir agora → Cozinha** (qualquer aba). (3) Timeline da mesa lenta → "Avisar cozinha" (vem com 1 pedido pré-selecionado). |
-| `ScreenManagerOrdersPause` | (1) Painel · Ferramentas rápidas → Pausa. (2) **Operação · Agir agora → Pausa**. (3) Sugestão automática do Funil "pause pedidos novos por 5 min" → tap abre. |
+| Tela                            | De onde abre                                                                                                                                                                                                                                                                                         |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ScreenManagerKitchenReorder`   | (1) Painel · Ferramentas rápidas → Cozinha. (2) **Operação · Agir agora → Cozinha** (qualquer aba). (3) Timeline da mesa lenta → "Avisar cozinha" (vem com 1 pedido pré-selecionado).                                                                                                                |
+| `ScreenManagerOrdersPause`      | (1) Painel · Ferramentas rápidas → Pausa. (2) **Operação · Agir agora → Pausa**. (3) Sugestão automática do Funil "pause pedidos novos por 5 min" → tap abre.                                                                                                                                        |
 | `ScreenManagerCompensateClient` | (1) Card de alerta · MoreSheet · "Mandar cortesia" (entrada terciária). (2) Sheet `MContactClientSheet` · chip "Quer uma cortesia pela espera?". (3) Eu › Cortesias (histórico + criar manualmente). **Cortesia NÃO é mais ferramenta rápida** — é decisão deliberada do gerente, contextual à mesa. |
-| `MContactClientSheet` | Card de alerta na Operação · ação default secundária "Contactar cliente" (substituiu o antigo "Cortesia mesa"). Bottom-sheet vaul-style sobreposto à Operação atual. |
+| `MContactClientSheet`           | Card de alerta na Operação · ação default secundária "Contactar cliente" (substituiu o antigo "Cortesia mesa"). Bottom-sheet vaul-style sobreposto à Operação atual.                                                                                                                                 |
 
 > **Decisão de UX.** A barra é **fixa nos Gargalos**, não nas outras telas top-level. Salão é mapa de mesas (já tem TableTimeline ao toque) · Equipe é foco em pessoas (não operação) · Financeiro é dashboard de leitura (não age). Painel tem as Ferramentas rápidas no topo. Gargalos é a tela de diagnóstico — onde o gerente DESCOBRE o problema; portanto onde precisa AGIR. Adicionar a barra em todas as telas vira ruído visual.
 
@@ -1154,11 +1176,11 @@ GET    /manager/staff/:id/performance?window=today|7d|30d
 type Role = 'waiter' | 'manager' | 'kitchen' | 'bartender' | 'host';
 
 const PERMISSIONS = {
-  manager: ['*'],                                       // acesso total
-  waiter:  ['tables:read', 'tables:write', 'calls:*'],  // só ver/agir nas próprias
-  kitchen: ['orders:read', 'orders:status'],            // só altera status do pedido
+  manager: ['*'], // acesso total
+  waiter: ['tables:read', 'tables:write', 'calls:*'], // só ver/agir nas próprias
+  kitchen: ['orders:read', 'orders:status'], // só altera status do pedido
   bartender: ['orders:read', 'orders:status'],
-  host:    ['tables:read', 'tables:release', 'reservations:*', 'alerts:host'],
+  host: ['tables:read', 'tables:release', 'reservations:*', 'alerts:host'],
 };
 ```
 
@@ -1172,28 +1194,28 @@ A recepcionista usa **o mesmo app** do garçom e do gerente — mesmo binário, 
 
 ## Telas exclusivas da recepcionista
 
-| Tela | Componente | Descrição |
-|---|---|---|
-| **Home / Mesas** | `ScreenHostHome` | Duas vistas controladas por segmented control: **Pra liberar** (default) e **Mapa**. Pensado pra usuário não-técnico: poucos elementos por tela, ações grandes, linguagem direta. <br/>**Pra liberar** mostra só o que precisa de ação: 3 contadores compactos (em uso / aguardando / espera) + (se houver) card vermelho de alerta com CTA "Ver mesa N" + lista de mesas livres **agrupadas por capacidade** (2 lugares · 4 lugares · 6 lugares…) com botão **Liberar** inline em cada linha — toque grande, sem precisar entrar no detalhe pra liberar mesa simples. Aguardando chegarem (mesas com QR liberado mas cliente ainda não chegou) fica em seção compacta no rodapé. <br/>**Mapa** mantém o grid 4 colunas com TODAS as mesas agrupadas por seção (Salão / Varanda / Mezanino) + filtro horizontal por seção. Aceita 32+ mesas com scroll vertical. Cada card mostra número, capacidade, estado e — se ocupada — o garçom atribuído. Inclui legenda discreta de cores. |
-| **Liberar mesa** | `ScreenHostTableLiberate` | 3 modos via prop `mode`: <br/>**`walkin`** (default) — recepcionista escolheu a mesa direto. Form pergunta party (chips 1–5+), nome, observação. Dica que **o QR fica ativo até a conta fechar**. <br/>**`reservation`** — vem de uma reserva (party já conhecido). Hero mostra card da reserva (nome, party, hora, observação). Mesa pré-atribuída aparece em **verde** com "Cabe os X convidados · setor Y". CTA grande direto "Liberar mesa N · X pessoas". Lista de "Trocar para outra mesa" abaixo (livres com cap >= party, mesmo setor primeiro) caso família peça outra. <br/>**`reservation-no-fit`** — quando a mesa pré-atribuída é menor que o party (ex: reserva de 5 pessoas atribuída na mesa 7 que tem só 4 lugares). Mesa em **vermelho** com "Não cabe os X convidados (cap Y)". Lista "Outras opções que cabem" em destaque (algoritmo determinístico — ver `findFitTable()` abaixo). CTA principal vira secundário "Liberar mesa N mesmo assim" (caso recepcionista insista). |
-| **Sucesso · QR ativo** | `ScreenHostTableLiberada` | Confirmação verde + status persistente (sem countdown). Lista do que acontece a seguir (cliente escaneia → vira ocupada → garçom é atribuído). Ação **Cancelar liberação** ou **Voltar ao salão**. |
-| **Menu da Mesa** ★ V5 ★ | `ScreenManagerTableMenu` (variante `role="host"`) | Mesma tela do gerente compartilhada com a recepcionista. Aberta ao tocar em qualquer mesa **ocupada/liberada/em alerta** no Mapa. Reusa o hero (Mesa N + status pill) e os 3 atributos editáveis (PESSOAS · OBSERVAÇÃO · CLIENTE) com a **mesma lógica de stepper +/- e modal vaul de capacidade excedida** — caso comum da recepção: família chegou em 5 mas a reserva era pra 4. As ações ficam reduzidas a 3 (estado da mesa, não financeiro): **Trocar pra outra mesa** (reusa `ScreenHostTableSwap`) · **Avisar gerente** · **Cancelar liberação** (mostarda · só se cliente não chegou). Recepção NÃO vê: Cortesia · Imprimir · Fechar mesa · Timeline. |
-| **Trocar mesa** | `ScreenHostTableSwap` | Move família de uma mesa ocupada para outra. 3 estados via prop `state`: **`select`** lista mesas livres que cabem no party (mesmo setor primeiro pra manter o garçom), cada linha mostra "mesmo garçom" (verde) ou "troca garçom" (laranja). **`confirm`** mostra diagrama visual da troca + checklist do que vai acontecer (pedidos migram, QR continua, garçom muda se mudou de zona). **`success`** confirma + mostra os 3 efeitos colaterais explicados em linguagem direta (sem jargão técnico). Backend faz transferência atômica em transaction — ver `POST /host/tables/:id/swap` abaixo. ★ V5 ★ Acessível também a partir do Menu da Mesa em ambos os roles. |
-| **Lista de espera** | `ScreenHostWaitlist` | Aba 'Espera' da bottom nav. Lista clientes aguardando mesa, cabeçalho com contagem total + maior tempo de espera, sugestão proativa em verde "Próxima mesa livre · X pessoas · Mesa N", filtros por tamanho do grupo (1 / 2 / 3-4 / 5+). Cada linha tem ação **Sentar agora** + ligar. Tempo colorido: verde até 10 min · amarelo 10-20 · vermelho 20+. |
-| **Adicionar à fila** | `ScreenHostWaitlistAdd` | Formulário para cadastrar novo cliente na espera: tamanho do grupo (chips 1-7+), nome (obrigatório), telefone (obrigatório), CPF (opcional, só pra fidelidade), observação livre + atalhos (Aniversário, Mesa interna, Cadeirinha…). Dados ficam guardados pra fidelidade e métricas; CPF criptografado e mascarado em listagens. |
-| **Reservas do dia** | `ScreenHostReservations` | Aba 'Reservas' da bottom nav. Lista reservas vindas do bot do WhatsApp em ordem cronológica, com horário grande à esquerda, filtros (Todas / Esperadas / Chegaram), badge de status, telefone e mesa atribuída. Ação **Marcar chegada** auto-libera o QR da mesa. Botão **+** no canto superior abre `ScreenHostReservationAdd`. |
-| **Cadastro manual de reserva** | `ScreenHostReservationAdd` | Form para cadastrar reserva que veio FORA do bot — ligação direta, cliente presencial, WhatsApp pessoal da gerência. Respeita a mesma lógica do bot: chips do tamanho do grupo (1-7+), data (Hoje / Amanhã / outro dia / outra), backend devolve **horários disponíveis** em chips numerados (mesma `findAvailableSlots(date, party)` que o bot usa — recepcionista não digita horário livre), nome + telefone, observação com 5 atalhos (Aniversário, Mesa discreta, Vegetariano, Cadeirinha, Varanda). Campo obrigatório **Como chegou** (4 chips: Telefone, Presencial, WhatsApp pessoal, Outro) — alimenta a métrica de canais "fora do bot" no painel do gerente. CTA "Reservar · X pessoas · Hoje 20:30". |
-| **Avisos · inbox** | `ScreenHostInbox` | Lista de alertas: cliente sentou sem liberação (cascata), reserva chegou, fila de espera. Cada item indica se vai escalar e em quanto tempo. |
-| **Detalhe do alerta** | `ScreenHostAlertDetail` | Hero vermelho com timeline da ocorrência, dados da mesa, **2 ações** (liberar / é erro). O mesmo componente é reusado nos 3 papéis com `role="host" \| "manager" \| "waiter"` — copy e timeline mudam. |
+| Tela                           | Componente                                        | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Home / Mesas**               | `ScreenHostHome`                                  | Duas vistas controladas por segmented control: **Pra liberar** (default) e **Mapa**. Pensado pra usuário não-técnico: poucos elementos por tela, ações grandes, linguagem direta. <br/>**Pra liberar** mostra só o que precisa de ação: 3 contadores compactos (em uso / aguardando / espera) + (se houver) card vermelho de alerta com CTA "Ver mesa N" + lista de mesas livres **agrupadas por capacidade** (2 lugares · 4 lugares · 6 lugares…) com botão **Liberar** inline em cada linha — toque grande, sem precisar entrar no detalhe pra liberar mesa simples. Aguardando chegarem (mesas com QR liberado mas cliente ainda não chegou) fica em seção compacta no rodapé. <br/>**Mapa** mantém o grid 4 colunas com TODAS as mesas agrupadas por seção (Salão / Varanda / Mezanino) + filtro horizontal por seção. Aceita 32+ mesas com scroll vertical. Cada card mostra número, capacidade, estado e — se ocupada — o garçom atribuído. Inclui legenda discreta de cores.               |
+| **Liberar mesa**               | `ScreenHostTableLiberate`                         | 3 modos via prop `mode`: <br/>**`walkin`** (default) — recepcionista escolheu a mesa direto. Form pergunta party (chips 1–5+), nome, observação. Dica que **o QR fica ativo até a conta fechar**. <br/>**`reservation`** — vem de uma reserva (party já conhecido). Hero mostra card da reserva (nome, party, hora, observação). Mesa pré-atribuída aparece em **verde** com "Cabe os X convidados · setor Y". CTA grande direto "Liberar mesa N · X pessoas". Lista de "Trocar para outra mesa" abaixo (livres com cap >= party, mesmo setor primeiro) caso família peça outra. <br/>**`reservation-no-fit`** — quando a mesa pré-atribuída é menor que o party (ex: reserva de 5 pessoas atribuída na mesa 7 que tem só 4 lugares). Mesa em **vermelho** com "Não cabe os X convidados (cap Y)". Lista "Outras opções que cabem" em destaque (algoritmo determinístico — ver `findFitTable()` abaixo). CTA principal vira secundário "Liberar mesa N mesmo assim" (caso recepcionista insista). |
+| **Sucesso · QR ativo**         | `ScreenHostTableLiberada`                         | Confirmação verde + status persistente (sem countdown). Lista do que acontece a seguir (cliente escaneia → vira ocupada → garçom é atribuído). Ação **Cancelar liberação** ou **Voltar ao salão**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **Menu da Mesa** ★ V5 ★        | `ScreenManagerTableMenu` (variante `role="host"`) | Mesma tela do gerente compartilhada com a recepcionista. Aberta ao tocar em qualquer mesa **ocupada/liberada/em alerta** no Mapa. Reusa o hero (Mesa N + status pill) e os 3 atributos editáveis (PESSOAS · OBSERVAÇÃO · CLIENTE) com a **mesma lógica de stepper +/- e modal vaul de capacidade excedida** — caso comum da recepção: família chegou em 5 mas a reserva era pra 4. As ações ficam reduzidas a 3 (estado da mesa, não financeiro): **Trocar pra outra mesa** (reusa `ScreenHostTableSwap`) · **Avisar gerente** · **Cancelar liberação** (mostarda · só se cliente não chegou). Recepção NÃO vê: Cortesia · Imprimir · Fechar mesa · Timeline.                                                                                                                                                                                                                                                                                                                                     |
+| **Trocar mesa**                | `ScreenHostTableSwap`                             | Move família de uma mesa ocupada para outra. 3 estados via prop `state`: **`select`** lista mesas livres que cabem no party (mesmo setor primeiro pra manter o garçom), cada linha mostra "mesmo garçom" (verde) ou "troca garçom" (laranja). **`confirm`** mostra diagrama visual da troca + checklist do que vai acontecer (pedidos migram, QR continua, garçom muda se mudou de zona). **`success`** confirma + mostra os 3 efeitos colaterais explicados em linguagem direta (sem jargão técnico). Backend faz transferência atômica em transaction — ver `POST /host/tables/:id/swap` abaixo. ★ V5 ★ Acessível também a partir do Menu da Mesa em ambos os roles.                                                                                                                                                                                                                                                                                                                            |
+| **Lista de espera**            | `ScreenHostWaitlist`                              | Aba 'Espera' da bottom nav. Lista clientes aguardando mesa, cabeçalho com contagem total + maior tempo de espera, sugestão proativa em verde "Próxima mesa livre · X pessoas · Mesa N", filtros por tamanho do grupo (1 / 2 / 3-4 / 5+). Cada linha tem ação **Sentar agora** + ligar. Tempo colorido: verde até 10 min · amarelo 10-20 · vermelho 20+.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **Adicionar à fila**           | `ScreenHostWaitlistAdd`                           | Formulário para cadastrar novo cliente na espera: tamanho do grupo (chips 1-7+), nome (obrigatório), telefone (obrigatório), CPF (opcional, só pra fidelidade), observação livre + atalhos (Aniversário, Mesa interna, Cadeirinha…). Dados ficam guardados pra fidelidade e métricas; CPF criptografado e mascarado em listagens.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **Reservas do dia**            | `ScreenHostReservations`                          | Aba 'Reservas' da bottom nav. Lista reservas vindas do bot do WhatsApp em ordem cronológica, com horário grande à esquerda, filtros (Todas / Esperadas / Chegaram), badge de status, telefone e mesa atribuída. Ação **Marcar chegada** auto-libera o QR da mesa. Botão **+** no canto superior abre `ScreenHostReservationAdd`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Cadastro manual de reserva** | `ScreenHostReservationAdd`                        | Form para cadastrar reserva que veio FORA do bot — ligação direta, cliente presencial, WhatsApp pessoal da gerência. Respeita a mesma lógica do bot: chips do tamanho do grupo (1-7+), data (Hoje / Amanhã / outro dia / outra), backend devolve **horários disponíveis** em chips numerados (mesma `findAvailableSlots(date, party)` que o bot usa — recepcionista não digita horário livre), nome + telefone, observação com 5 atalhos (Aniversário, Mesa discreta, Vegetariano, Cadeirinha, Varanda). Campo obrigatório **Como chegou** (4 chips: Telefone, Presencial, WhatsApp pessoal, Outro) — alimenta a métrica de canais "fora do bot" no painel do gerente. CTA "Reservar · X pessoas · Hoje 20:30".                                                                                                                                                                                                                                                                                   |
+| **Avisos · inbox**             | `ScreenHostInbox`                                 | Lista de alertas: cliente sentou sem liberação (cascata), reserva chegou, fila de espera. Cada item indica se vai escalar e em quanto tempo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Detalhe do alerta**          | `ScreenHostAlertDetail`                           | Hero vermelho com timeline da ocorrência, dados da mesa, **2 ações** (liberar / é erro). O mesmo componente é reusado nos 3 papéis com `role="host" \| "manager" \| "waiter"` — copy e timeline mudam.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ## Estados da mesa (do ponto de vista da recepção)
 
 ```ts
 type HostTableStatus =
-  | 'livre'      // ninguém atribuído, sem QR liberado
-  | 'liberada'   // recepção liberou; QR ativo até a conta fechar (sem prazo)
-  | 'ocupada'    // cliente escaneou, virou mesa ativa do app do garçom
-  | 'alerta';    // cliente escaneou SEM liberação prévia → cascata disparada
+  | 'livre' // ninguém atribuído, sem QR liberado
+  | 'liberada' // recepção liberou; QR ativo até a conta fechar (sem prazo)
+  | 'ocupada' // cliente escaneou, virou mesa ativa do app do garçom
+  | 'alerta'; // cliente escaneou SEM liberação prévia → cascata disparada
 ```
 
 `liberada` → `ocupada` quando o cliente escaneia o QR. **Não há expiração** — uma vez liberada, a mesa fica disponível para escaneamento até `closeBill()` ser chamado (que reverte a `livre`). A recepcionista pode cancelar manualmente via `DELETE /host/tables/:n/release` se errou.
@@ -1245,7 +1267,7 @@ function findFitTable(
   anchorFits: boolean;
 } {
   const livres = db.tables.findAll({ where: { st: 'livre' } });
-  const fits   = livres.filter(t => t.cap >= party);
+  const fits = livres.filter((t) => t.cap >= party);
 
   // Ordena: mesmo setor primeiro, capacidade mais próxima depois
   const sorted = fits.sort((a, b) => {
@@ -1257,12 +1279,12 @@ function findFitTable(
     return a.cap - b.cap; // não desperdiça mesa de 8 com grupo de 2
   });
 
-  const anchorTable = anchor ? livres.find(t => t.n === anchor.n) : null;
-  const anchorFits  = anchorTable ? anchorTable.cap >= party : false;
+  const anchorTable = anchor ? livres.find((t) => t.n === anchor.n) : null;
+  const anchorFits = anchorTable ? anchorTable.cap >= party : false;
 
   return {
-    bestMatch:    anchorFits ? anchorTable : (sorted[0] || null),
-    alternatives: sorted.filter(t => !anchorFits || t.n !== anchor!.n).slice(0, 3),
+    bestMatch: anchorFits ? anchorTable : sorted[0] || null,
+    alternatives: sorted.filter((t) => !anchorFits || t.n !== anchor!.n).slice(0, 3),
     anchorFits,
   };
 }
@@ -1273,7 +1295,7 @@ function findFitTable(
 ```ts
 // quando recepcionista clica "Liberar mesa N" da reserva:
 const reservation = await api.get(`/host/reservations/${id}`);
-const result      = findFitTable(reservation.party, { sector: anchor.sector, n: reservation.table });
+const result = findFitTable(reservation.party, { sector: anchor.sector, n: reservation.table });
 
 if (result.anchorFits) {
   // mesa cabe — modo `reservation`
@@ -1363,7 +1385,7 @@ COMMIT;
 #### Reatribuição do garçom
 
 ```ts
-function reassignWaiter(fromSector, toSector, fromWaiter): { newWaiter, changed } {
+function reassignWaiter(fromSector, toSector, fromWaiter): { newWaiter; changed } {
   if (fromSector === toSector) return { newWaiter: fromWaiter, changed: false };
 
   // mesma lógica de balanceamento da seção "Distribuição entre garçons" no topo:
@@ -1376,12 +1398,12 @@ function reassignWaiter(fromSector, toSector, fromWaiter): { newWaiter, changed 
 
 #### Notificações disparadas
 
-| Evento | Destinatário | Conteúdo |
-|---|---|---|
-| `table:swapped` (WS) | recepção, gerente, **ambos garçons** | `{ from, to, customer, sessionId }` |
-| Push pro garçom **antigo** | só se mudou de setor | "Mesa 9 esvaziou — família foi pra mesa 20" |
-| Push pro garçom **novo** | só se mudou de setor | "Família Carvalho agora é sua — mesa 20 · 6 pessoas · 2 pedidos abertos" |
-| Push pra cozinha | sempre | "Pedidos da mesa 9 → agora mesa 20" (atualiza ticket impresso/KDS) |
+| Evento                     | Destinatário                         | Conteúdo                                                                 |
+| -------------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
+| `table:swapped` (WS)       | recepção, gerente, **ambos garçons** | `{ from, to, customer, sessionId }`                                      |
+| Push pro garçom **antigo** | só se mudou de setor                 | "Mesa 9 esvaziou — família foi pra mesa 20"                              |
+| Push pro garçom **novo**   | só se mudou de setor                 | "Família Carvalho agora é sua — mesa 20 · 6 pessoas · 2 pedidos abertos" |
+| Push pra cozinha           | sempre                               | "Pedidos da mesa 9 → agora mesa 20" (atualiza ticket impresso/KDS)       |
 
 #### Tabela nova · `table_swap_logs`
 
@@ -1406,18 +1428,18 @@ CREATE INDEX idx_swap_host    ON table_swap_logs(hostId, createdAt DESC);
 
 ### Casos extremos
 
-| Caso | Comportamento |
-|---|---|
-| Cliente quer mesa que **NÃO está livre** | Backend retorna 409 Conflict. Front mostra "Mesa N está ocupada por outra família" (não revela quem). |
-| Cliente quer mesa **menor que o party** | Backend retorna 422 Validation. Front bloqueia e mostra mesas que cabem. |
-| 2 famílias querem trocar **entre si** | Endpoint não suporta swap-cruzado direto. Recepcionista move 1 pra mesa neutra livre, depois move a outra. (Caso real raro — não vale complexidade do swap-bidirecional.) |
-| Cliente já pagou parte da conta | Bloqueia swap. "Conta parcial paga · feche antes de mover" — UX explica direto, recepcionista chama gerente se precisa exceção. |
-| Garçom novo ofline | Backend pula `least` ofline e pega o próximo. Se nenhum disponível na nova zona → mantém o antigo até próximo turno. |
+| Caso                                     | Comportamento                                                                                                                                                             |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cliente quer mesa que **NÃO está livre** | Backend retorna 409 Conflict. Front mostra "Mesa N está ocupada por outra família" (não revela quem).                                                                     |
+| Cliente quer mesa **menor que o party**  | Backend retorna 422 Validation. Front bloqueia e mostra mesas que cabem.                                                                                                  |
+| 2 famílias querem trocar **entre si**    | Endpoint não suporta swap-cruzado direto. Recepcionista move 1 pra mesa neutra livre, depois move a outra. (Caso real raro — não vale complexidade do swap-bidirecional.) |
+| Cliente já pagou parte da conta          | Bloqueia swap. "Conta parcial paga · feche antes de mover" — UX explica direto, recepcionista chama gerente se precisa exceção.                                           |
+| Garçom novo ofline                       | Backend pula `least` ofline e pega o próximo. Se nenhum disponível na nova zona → mantém o antigo até próximo turno.                                                      |
 
 ### Permissão
 
 ```ts
-SWAP_TABLE: ['host', 'manager', 'owner']
+SWAP_TABLE: ['host', 'manager', 'owner'];
 // garçom NÃO pode mover famílias — não é responsabilidade dele
 ```
 
@@ -1433,17 +1455,17 @@ SWAP_TABLE: ['host', 'manager', 'owner']
 interface WaitlistEntry {
   id: string;
   tenantId: string;
-  name: string;                       // obrigatório
-  phone: string;                      // obrigatório (E.164: +5511987654321)
-  party: number;                      // tamanho do grupo
-  cpf?: string;                       // opcional, encriptado em repouso, mascarado em listagens
-  note?: string;                      // observação livre
-  tags?: string[];                    // ex: ['aniversario', 'mesa-janela']
+  name: string; // obrigatório
+  phone: string; // obrigatório (E.164: +5511987654321)
+  party: number; // tamanho do grupo
+  cpf?: string; // opcional, encriptado em repouso, mascarado em listagens
+  note?: string; // observação livre
+  tags?: string[]; // ex: ['aniversario', 'mesa-janela']
   status: 'waiting' | 'seated' | 'gave_up' | 'no_show';
-  addedAt: string;                    // ISO timestamp
+  addedAt: string; // ISO timestamp
   seatedAt?: string;
   seatedAtTable?: number;
-  addedByStaffId: string;             // recepcionista que cadastrou
+  addedByStaffId: string; // recepcionista que cadastrou
 }
 ```
 
@@ -1481,13 +1503,13 @@ interface Reservation {
   id: string;
   tenantId: string;
   name: string;
-  phone: string;                      // E.164: +5562982372308
-  party: number;                      // 1–20
-  scheduledAt: string;                // ISO timestamp do horário marcado
-  tableNumber?: number;               // mesa pré-atribuída (opcional)
+  phone: string; // E.164: +5562982372308
+  party: number; // 1–20
+  scheduledAt: string; // ISO timestamp do horário marcado
+  tableNumber?: number; // mesa pré-atribuída (opcional)
   status: 'awaited' | 'arrived' | 'noshow' | 'cancelled';
-  note?: string;                      // observação livre — ver seção abaixo
-  whatsappConversationId: string;     // FK pra conversa que originou
+  note?: string; // observação livre — ver seção abaixo
+  whatsappConversationId: string; // FK pra conversa que originou
   arrivedAt?: string;
   seatedAtTable?: number;
   createdAt: string;
@@ -1518,6 +1540,7 @@ interface Reservation {
 ### Bot do WhatsApp · fluxo conversacional
 
 A regra é **state machine simples + parser leve**, NUNCA LLM puro:
+
 - **Custo previsível.** Cada conversa é deterministicamente curta.
 - **Sem alucinação.** Cliente "Quero pra umas 8 ou 10 pessoas" não vira reserva fantasma.
 - **Latência baixa.** Resposta em <1s, sem chamada externa.
@@ -1566,20 +1589,21 @@ awaiting_intent → awaiting_date → awaiting_party → picking_slot
 ```
 
 Note que `awaiting_time` foi substituído por `picking_slot`. A diferença é fundamental:
+
 - **Antes** (`awaiting_time`): cliente digitava texto livre ("20h", "umas 8") → bot tentava parsear → se não cabia, sugeria alternativas. Mais turnos, mais ambiguidade.
 - **Agora** (`picking_slot`): bot consulta a agenda e mostra a **lista de slots reais que cabem**, numerados. Cliente responde só `1`, `2`, `3` ou `4`. Sem ambiguidade, sem negociação.
 
 Cada estado tem regras de parse:
 
-| Estado | O que aceita | Exemplos válidos | Como falha |
-|---|---|---|---|
-| `awaiting_intent` | Frase com verbo de reserva | "quero reservar", "tem mesa pra hoje", "reserva" | Mensagens sem intent → bot responde menu rápido com 4 ações: *Reservar · Cancelar reserva · Cardápio · Falar com atendente* |
-| `awaiting_date` | Data parseada por `chrono-node` (pt-BR) | "hoje", "sábado", "10/05", "amanhã" | Ambíguo → bot lista 3 opções: *hoje · amanhã · este sábado* |
-| `awaiting_party` | Número 1–20 | "8", "4 pessoas", "duas" (`numerizer` pt-BR) | "umas 8 ou 10" → bot pede número exato |
-| `picking_slot` | Número exato do slot apresentado (`1`–`N` onde N = slots oferecidos) | `"3"`, `"2"`, `"1 por favor"` | Resposta fora do intervalo → bot repete a lista numerada. Se cliente digita horário livre ("21:30") → bot responde "Por favor, escolha um dos números acima." |
-| `awaiting_name` | Texto livre 2–60 chars | "Família Tanaka", "André" | Vazio → repete pergunta |
-| `awaiting_note` | Texto livre OU "NÃO"/"NAO"/"-" | "aniversário", "vegetariano", "cadeirinha", "—" | Vazio → assume sem observação |
-| `awaiting_confirm` | "SIM"/"S"/"OK"/"CONFIRMA" → done | / | "NÃO" volta pra `awaiting_intent` |
+| Estado             | O que aceita                                                         | Exemplos válidos                                 | Como falha                                                                                                                                                    |
+| ------------------ | -------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `awaiting_intent`  | Frase com verbo de reserva                                           | "quero reservar", "tem mesa pra hoje", "reserva" | Mensagens sem intent → bot responde menu rápido com 4 ações: _Reservar · Cancelar reserva · Cardápio · Falar com atendente_                                   |
+| `awaiting_date`    | Data parseada por `chrono-node` (pt-BR)                              | "hoje", "sábado", "10/05", "amanhã"              | Ambíguo → bot lista 3 opções: _hoje · amanhã · este sábado_                                                                                                   |
+| `awaiting_party`   | Número 1–20                                                          | "8", "4 pessoas", "duas" (`numerizer` pt-BR)     | "umas 8 ou 10" → bot pede número exato                                                                                                                        |
+| `picking_slot`     | Número exato do slot apresentado (`1`–`N` onde N = slots oferecidos) | `"3"`, `"2"`, `"1 por favor"`                    | Resposta fora do intervalo → bot repete a lista numerada. Se cliente digita horário livre ("21:30") → bot responde "Por favor, escolha um dos números acima." |
+| `awaiting_name`    | Texto livre 2–60 chars                                               | "Família Tanaka", "André"                        | Vazio → repete pergunta                                                                                                                                       |
+| `awaiting_note`    | Texto livre OU "NÃO"/"NAO"/"-"                                       | "aniversário", "vegetariano", "cadeirinha", "—"  | Vazio → assume sem observação                                                                                                                                 |
+| `awaiting_confirm` | "SIM"/"S"/"OK"/"CONFIRMA" → done                                     | /                                                | "NÃO" volta pra `awaiting_intent`                                                                                                                             |
 
 ### Slot availability query · como o bot decide o que oferecer
 
@@ -1631,14 +1655,17 @@ async findAvailableSlots(date: Date, party: number): Promise<Slot[]> {
     "wed": [{ "open": "18:00", "close": "23:30" }],
     // ...
     "sat": [{ "open": "18:00", "close": "23:30" }],
-    "sun": [{ "open": "12:00", "close": "16:00" }, { "open": "18:00", "close": "23:00" }],
-    "mon": null  // fechado
+    "sun": [
+      { "open": "12:00", "close": "16:00" },
+      { "open": "18:00", "close": "23:00" },
+    ],
+    "mon": null, // fechado
   },
-  "reservationDurationMin": 120,        // bloqueia mesa por 2h depois do horário
-  "allowMergedTables": true,            // pode juntar mesas adjacentes pra grupo grande
-  "slotStepMin": 15,                    // candidatos a cada 15min
-  "lastSlotOffsetMin": 90,              // não oferece slot a menos de 1.5h do fechamento
-  "maxSlotsToOffer": 4                  // tamanho da lista mostrada ao cliente
+  "reservationDurationMin": 120, // bloqueia mesa por 2h depois do horário
+  "allowMergedTables": true, // pode juntar mesas adjacentes pra grupo grande
+  "slotStepMin": 15, // candidatos a cada 15min
+  "lastSlotOffsetMin": 90, // não oferece slot a menos de 1.5h do fechamento
+  "maxSlotsToOffer": 4, // tamanho da lista mostrada ao cliente
 }
 ```
 
@@ -1739,7 +1766,7 @@ Cliente confirma SIM → cria reservation_drafts (status='pending')
 Recepcionista revisa → aprova OU rejeita OU edita
    ├── Aprovar:  draft.status='approved' → cria Reservation oficial
    │             → manda template `reservation_confirmed` pro cliente
-   ├── Rejeitar: draft.status='rejected' (com reason) 
+   ├── Rejeitar: draft.status='rejected' (com reason)
    │             → manda mensagem livre pro cliente explicando ("Desculpa,
    │               nesse horário só temos mesa pra 4. Quer 19:00 ou 21:00?")
    └── Editar:   ajusta party/horário/mesa → aprova com mudanças
@@ -1757,10 +1784,14 @@ function computeConfidence(fields: CollectedFields): 'high' | 'med' | 'low' {
   let missing = [];
 
   // 1) Cada campo obrigatório completo vale +20
-  if (fields.name && fields.name.length >= 2)         score += 20; else missing.push('name');
-  if (fields.phone && /^\+?\d{10,}$/.test(fields.phone)) score += 20; else missing.push('phone');
-  if (fields.party && fields.party >= 1 && fields.party <= 50) score += 20; else missing.push('party');
-  if (fields.scheduledAt && !isNaN(fields.scheduledAt.getTime())) score += 20; else missing.push('scheduledAt');
+  if (fields.name && fields.name.length >= 2) score += 20;
+  else missing.push('name');
+  if (fields.phone && /^\+?\d{10,}$/.test(fields.phone)) score += 20;
+  else missing.push('phone');
+  if (fields.party && fields.party >= 1 && fields.party <= 50) score += 20;
+  else missing.push('party');
+  if (fields.scheduledAt && !isNaN(fields.scheduledAt.getTime())) score += 20;
+  else missing.push('scheduledAt');
 
   // 2) Confirmação explícita do cliente vale +15
   if (fields.userConfirmed === true) score += 15;
@@ -1768,7 +1799,7 @@ function computeConfidence(fields: CollectedFields): 'high' | 'med' | 'low' {
   // 3) Penalidades por sinais de ambiguidade no texto bruto
   const ambiguousTime = /\b(umas?|talvez|por volta|aí pelas?|ou)\b/i.test(fields.rawTime || '');
   const ambiguousParty = /\b(umas?|talvez|ou)\b/i.test(fields.rawParty || '');
-  if (ambiguousTime)  score -= 15;
+  if (ambiguousTime) score -= 15;
   if (ambiguousParty) score -= 15;
 
   // 4) Conversa muito curta (cliente sumiu) é red flag
@@ -1782,11 +1813,11 @@ function computeConfidence(fields: CollectedFields): 'high' | 'med' | 'low' {
 
 **Como a UI usa:**
 
-| Confiança | Hero | CTA primária | Quando | Ação esperada |
-|---|---|---|---|---|
-| `high` | verde | "Aprovar e criar reserva" | Todos os 4 campos completos + confirmação explícita + sem ambiguidade | Recepcionista lê e aprova com 1 toque (≤5 s) |
-| `med` | amarelo | "Definir hora e aprovar" | Falta 1 campo OU tempo ambíguo ("8 ou 9 da noite") | Edita o campo destacado em vermelho, depois aprova |
-| `low` | vermelho | "Continuar no WhatsApp" | Faltam 2+ campos OU bot deu handoff (cliente abandonou ou pediu humano) | Recepcionista entra na conversa do WhatsApp e fecha manualmente — depois cria a reserva no app |
+| Confiança | Hero     | CTA primária              | Quando                                                                  | Ação esperada                                                                                  |
+| --------- | -------- | ------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `high`    | verde    | "Aprovar e criar reserva" | Todos os 4 campos completos + confirmação explícita + sem ambiguidade   | Recepcionista lê e aprova com 1 toque (≤5 s)                                                   |
+| `med`     | amarelo  | "Definir hora e aprovar"  | Falta 1 campo OU tempo ambíguo ("8 ou 9 da noite")                      | Edita o campo destacado em vermelho, depois aprova                                             |
+| `low`     | vermelho | "Continuar no WhatsApp"   | Faltam 2+ campos OU bot deu handoff (cliente abandonou ou pediu humano) | Recepcionista entra na conversa do WhatsApp e fecha manualmente — depois cria a reserva no app |
 
 **Por que não LLM:** o classificador roda em <1 ms, custa 0, e os sinais que importam (campos vazios, "umas X ou Y", conversa curta) são triviais de detectar com regex e contagem. Reserva fantasma criada por LLM alucinando hora errada custa muito mais que o ganho de "talvez classificar melhor".
 
@@ -1858,15 +1889,15 @@ A observação é o ponto mais importante da reserva pra cozinha e atendimento. 
 ```ts
 // apps/api/src/modules/whatsapp/note-classifier.ts
 const NOTE_TAGS = {
-  birthday:   /\b(aniversári[oa]|niver|bolo)\b/i,
+  birthday: /\b(aniversári[oa]|niver|bolo)\b/i,
   vegetarian: /\b(vegetarian[oa]|sem\s+carne|veg)\b/i,
-  vegan:      /\b(vegan|sem\s+(animal|leite|ovo))\b/i,
-  baby:       /\b(cadeirinha|bebê|crianças?)\b/i,
-  quiet:      /\b(reservad[oa]|silencios[oa]|tranquila|discret[oa])\b/i,
-  outdoor:    /\b(varanda|fora|ar\s+livre|terraço)\b/i,
-  allergy:    /\b(alerg|intoler|glúten|lactose|amend|frutos\s+do\s+mar)\b/i,
-  business:   /\b(reuni[ãa]o|negóci|empresa|corporativ)\b/i,
-  vip:        /\b(VIP|gerente|dono)\b/i,
+  vegan: /\b(vegan|sem\s+(animal|leite|ovo))\b/i,
+  baby: /\b(cadeirinha|bebê|crianças?)\b/i,
+  quiet: /\b(reservad[oa]|silencios[oa]|tranquila|discret[oa])\b/i,
+  outdoor: /\b(varanda|fora|ar\s+livre|terraço)\b/i,
+  allergy: /\b(alerg|intoler|glúten|lactose|amend|frutos\s+do\s+mar)\b/i,
+  business: /\b(reuni[ãa]o|negóci|empresa|corporativ)\b/i,
+  vip: /\b(VIP|gerente|dono)\b/i,
 };
 
 function classifyNote(note: string): string[] {
@@ -1879,12 +1910,12 @@ function classifyNote(note: string): string[] {
 
 **Como aparece na UI** — sempre o texto livre, com chips opcionais POR CIMA dele quando bate alguma regex:
 
-| Cenário | Como aparece |
-|---|---|
-| Cliente: *"comemoração de 15 anos da minha filha, mesa fora"* | Chips `🎂 aniversário` `🌳 varanda` no topo + texto livre completo logo abaixo. |
-| Cliente: *"a minha esposa não come glúten"* | Chip `⚠️ alergia` no topo + texto livre completo. |
-| Cliente: *"vamos passar antes do show no Bolshoi"* | **Sem chip nenhum** — texto livre completo aparece igual. Recepcionista lê e entende o contexto. |
-| Cliente: *"sem observações"* / vazio | Linha "—" discreta. |
+| Cenário                                                       | Como aparece                                                                                     |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Cliente: _"comemoração de 15 anos da minha filha, mesa fora"_ | Chips `🎂 aniversário` `🌳 varanda` no topo + texto livre completo logo abaixo.                  |
+| Cliente: _"a minha esposa não come glúten"_                   | Chip `⚠️ alergia` no topo + texto livre completo.                                                |
+| Cliente: _"vamos passar antes do show no Bolshoi"_            | **Sem chip nenhum** — texto livre completo aparece igual. Recepcionista lê e entende o contexto. |
+| Cliente: _"sem observações"_ / vazio                          | Linha "—" discreta.                                                                              |
 
 A regex existe SÓ pra cozinha enxergar rápido as 9 categorias mais comuns sem ler 4 linhas. Mas o texto livre **nunca é escondido** — chips e texto convivem.
 
@@ -1893,7 +1924,7 @@ A regex existe SÓ pra cozinha enxergar rápido as 9 categorias mais comuns sem 
 ### Anti-abuso (camada barata)
 
 - **Idempotência.** `meta_message_id` UNIQUE evita reprocessar webhook duplicado.
-- **Rate limit por telefone.** 1 reserva ativa por telefone por dia. 2ª tentativa: bot responde "Você já tem uma reserva pra hoje 20:30. Pra alterar, responda *ALTERAR*."
+- **Rate limit por telefone.** 1 reserva ativa por telefone por dia. 2ª tentativa: bot responde "Você já tem uma reserva pra hoje 20:30. Pra alterar, responda _ALTERAR_."
 - **Block list.** Tabela `whatsapp_blocked_numbers` com telefones bloqueados (no-show repetido, abuso). Recepcionista pode adicionar via app.
 - **Anti-spam.** Mensagens com URLs ou emojis em excesso (>5) caem em `awaiting_intent` com resposta padrão de menu, não engatam o flow.
 - **Janela de funcionamento.** Reserva fora do `settings.openingHours` → bot recusa: "Não fazemos atendimento nesse horário. Operamos terça a domingo, 18h–23h."
@@ -1902,12 +1933,14 @@ A regex existe SÓ pra cozinha enxergar rápido as 9 categorias mais comuns sem 
 ### Fallback humano (handoff)
 
 Se o cliente:
+
 - Escreve algo que NÃO encaixa em nenhum estado por 2 turnos consecutivos
 - OU pede explicitamente "falar com atendente" / "pessoa real" / "humano"
 - OU envia áudio/imagem (bot não processa)
 
 → Bot responde:
-> *"Vou pedir pra alguém da equipe te responder por aqui. Em alguns minutos uma pessoa vai entrar na conversa. 🙏"*
+
+> _"Vou pedir pra alguém da equipe te responder por aqui. Em alguns minutos uma pessoa vai entrar na conversa. 🙏"_
 
 → `POST /host/whatsapp/handoff { conversationId }` marca `handed_off_at` e empurra a conversa pra aba **Avisos** do app da recepcionista. Ela toca, vê o histórico inteiro e responde manualmente — backend manda via Cloud API com `sent_by_staff_id` preenchido. Bot fica desativado nessa conversa por 1 hora; depois disso, se cliente mandar nova mensagem, volta pro state machine.
 
@@ -1942,7 +1975,7 @@ async createDraftFromConversation(conv: WhatsappConversation) {
 async approve(draftId: string, staffId: string, edits?: Partial<Reservation>) {
   const draft = await this.repo.findOneOrFail({ where: { id: draftId } });
   const fields = { ...draft.collectedFields, ...edits };
-  
+
   const reservation = await this.reservationsRepo.save({
     tenantId: draft.tenantId,
     ...fields,
@@ -1973,10 +2006,10 @@ async approve(draftId: string, staffId: string, edits?: Partial<Reservation>) {
 1. **Início do turno** (09:00) → app puxa `GET /host/reservations/today` ordenado por `scheduledAt`.
 2. **Cliente manda mensagem no zap** → state machine conduz a conversa exigindo **nome, telefone, CPF, data, hora** (todos obrigatórios; observação opcional). Sem campos faltantes, bot insere direto em `reservations` com status `confirmed`. **Não há fluxo de revisão de draft** — recepcionista vê a reserva pronta na lista.
 3. **Reservas com horário 30 min antes do agora** aparecem em destaque na aba Reservas (badge "Esperada agora").
-5. **Cliente chega** → recepcionista toca **Marcar chegada** → `PATCH /host/reservations/:id { status:'arrived' }`.
-6. Se a reserva tem `tableNumber` atribuída e a mesa está `livre`, backend chama `POST /host/tables/:n/release { partySize, reservationId }` automaticamente. Se a mesa não está livre, app emite alerta "Mesa N ocupada — atribuir outra?".
-7. WebSocket `host:reservation:arrived` atualiza todos os devices.
-8. Cron às 22:00 marca `noshow` automático em reservas com `scheduledAt < now() - 60 min` e `status='awaited'` — dispara template `reservation_no_show` pro cliente: *"Sentimos muito, perdemos sua reserva de hoje. Esperamos te ver em breve!"*
+4. **Cliente chega** → recepcionista toca **Marcar chegada** → `PATCH /host/reservations/:id { status:'arrived' }`.
+5. Se a reserva tem `tableNumber` atribuída e a mesa está `livre`, backend chama `POST /host/tables/:n/release { partySize, reservationId }` automaticamente. Se a mesa não está livre, app emite alerta "Mesa N ocupada — atribuir outra?".
+6. WebSocket `host:reservation:arrived` atualiza todos os devices.
+7. Cron às 22:00 marca `noshow` automático em reservas com `scheduledAt < now() - 60 min` e `status='awaited'` — dispara template `reservation_no_show` pro cliente: _"Sentimos muito, perdemos sua reserva de hoje. Esperamos te ver em breve!"_
 
 ### Endpoints (consolidados)
 
@@ -2060,12 +2093,12 @@ function onQrScan(tableNumber: number, deviceId: string) {
 
 ### Etapas da cascata
 
-| Etapa | Atraso | Quem é avisado | Como |
-|---|---|---|---|
-| **T+0 s** | imediato | recepcionista de plantão | push + lock screen + banner in-app |
-| **T+30 s** | só se T+0 não respondeu | gerente de plantão | push + lock screen + banner in-app |
-| **T+60 s** | só se T+30 não respondeu | garçom da praça da mesa | push + lock screen + banner in-app |
-| **T+90 s** | só se ninguém respondeu | broadcast a todos os garçons + alerta sonoro no KDS | push + alarme |
+| Etapa      | Atraso                   | Quem é avisado                                      | Como                               |
+| ---------- | ------------------------ | --------------------------------------------------- | ---------------------------------- |
+| **T+0 s**  | imediato                 | recepcionista de plantão                            | push + lock screen + banner in-app |
+| **T+30 s** | só se T+0 não respondeu  | gerente de plantão                                  | push + lock screen + banner in-app |
+| **T+60 s** | só se T+30 não respondeu | garçom da praça da mesa                             | push + lock screen + banner in-app |
+| **T+90 s** | só se ninguém respondeu  | broadcast a todos os garçons + alerta sonoro no KDS | push + alarme                      |
 
 Quem agir primeiro **encerra a cascata**. Os outros recebem um banner _"Resolvido por X às HH:MM"_ e o item some do inbox.
 
@@ -2074,7 +2107,7 @@ Quem agir primeiro **encerra a cascata**. Os outros recebem um banner _"Resolvid
 ```ts
 type CascadeStep = {
   level: 'host' | 'manager' | 'waiter' | 'broadcast';
-  notifiedAt: string;              // ISO
+  notifiedAt: string; // ISO
   notifiedUserIds: string[];
   acknowledgedAt: string | null;
   acknowledgedBy: string | null;
@@ -2083,7 +2116,7 @@ type CascadeStep = {
 type Cascade = {
   id: string;
   tableNumber: number;
-  partySize: number;               // estimado pelo nº de devices conectados ao QR
+  partySize: number; // estimado pelo nº de devices conectados ao QR
   startedAt: string;
   resolvedAt: string | null;
   resolution: 'liberated' | 'rejected' | 'expired' | null;
@@ -2096,10 +2129,10 @@ async function tickCascades() {
   for (const c of active) {
     const lastStep = c.steps[c.steps.length - 1];
     const elapsed = (Date.now() - new Date(lastStep.notifiedAt).getTime()) / 1000;
-    if (lastStep.acknowledgedAt) continue;       // alguém pegou, fim
-    if (lastStep.level === 'host'      && elapsed >= 30) escalateTo('manager',   c);
-    if (lastStep.level === 'manager'   && elapsed >= 30) escalateTo('waiter',    c);
-    if (lastStep.level === 'waiter'    && elapsed >= 30) escalateTo('broadcast', c);
+    if (lastStep.acknowledgedAt) continue; // alguém pegou, fim
+    if (lastStep.level === 'host' && elapsed >= 30) escalateTo('manager', c);
+    if (lastStep.level === 'manager' && elapsed >= 30) escalateTo('waiter', c);
+    if (lastStep.level === 'waiter' && elapsed >= 30) escalateTo('broadcast', c);
   }
 }
 ```
@@ -2127,14 +2160,14 @@ type CascadePush = {
   tableNumber: number;
   partySize: number;
   // copy adaptado por papel — gerado no backend
-  title: string;     // ex: "Mesa 14 · sentou sem liberação"  (host)
-                     //     "Recepção não atendeu mesa 14"   (manager)
-                     //     "Sua mesa 14 está sem garçom"    (waiter)
+  title: string; // ex: "Mesa 14 · sentou sem liberação"  (host)
+  //     "Recepção não atendeu mesa 14"   (manager)
+  //     "Sua mesa 14 está sem garçom"    (waiter)
   body: string;
-  sound: 'urgent';   // toca som diferente da notificação normal
+  sound: 'urgent'; // toca som diferente da notificação normal
   actions: [
-    { label: 'Liberar agora', deepLink: 'app://cascade/{id}/liberate' },
-    { label: 'Recusar',        deepLink: 'app://cascade/{id}/reject'   },
+    { label: 'Liberar agora'; deepLink: 'app://cascade/{id}/liberate' },
+    { label: 'Recusar'; deepLink: 'app://cascade/{id}/reject' },
   ];
 };
 ```
@@ -2169,12 +2202,14 @@ Componente: `ScreenManagerKitchenReorder` (em `garcom-screens-d.jsx`). Tem 3 est
 **`state="accepted"` (resposta da cozinha)** — Hero verde "Cozinha aceitou · 2 pedidos foram puxados pra frente". Lista os garçons que foram avisados (avatar + nome + mesa + ETA). Card resumo "O que aconteceu" com 3 passos (cozinha repriorizou / pushes enviados / outros pedidos empurrados pra trás). CTA **Voltar pro painel**.
 
 **No KDS / tv-cozinha-bar.html** (canvas separado, horizontal) — chega um banner urgente no topo da tela da cozinha:
+
 - _"Gerente pediu pra puxar pra frente · mesa 14 + mesa 7"_
 - Lista os pedidos com novo ordering proposto + motivo
 - 2 botões: **Aceitar** (move ao topo da fila) · **Recusar** (texto livre obrigatório)
 - 30 s sem resposta = mantém fila como está, dispara push pro gerente "cozinha não respondeu"
 
 **O que o software faz no Aceitar:**
+
 1. Reordena `kitchen_queue.priority` dos pedidos selecionados
 2. Push pro **garçom de cada mesa afetada** (`kitchen-reorder-waiter`): _"Risoto da mesa 14 vai sair primeiro · sai em ~5 min"_
 3. Push pro **gerente** (`kitchen-reorder-manager`): _"Cozinha aceitou alteração · Olivia e Caleb foram avisados"_
@@ -2246,26 +2281,27 @@ A Opção 1 do Painel do gerente tem 2 atalhos secundários e 3 ferramentas ráp
 
 ### Atalhos secundários (links em seções)
 
-| Atalho | Deep link | Tela destino |
-|---|---|---|
-| **Atenção · agora · Ver tudo** | `app://manager/alerts/all` | `ScreenManagerAlertsAll` (lista completa de alertas filtráveis) |
-| **Equipe · Ver mais** ★ V6 ★ | `app://manager/staff?filter=in-field` | `ScreenManagerStaff` (mesma aba Equipe · filtro inicial em "Em turno") |
+| Atalho                         | Deep link                             | Tela destino                                                           |
+| ------------------------------ | ------------------------------------- | ---------------------------------------------------------------------- |
+| **Atenção · agora · Ver tudo** | `app://manager/alerts/all`            | `ScreenManagerAlertsAll` (lista completa de alertas filtráveis)        |
+| **Equipe · Ver mais** ★ V6 ★   | `app://manager/staff?filter=in-field` | `ScreenManagerStaff` (mesma aba Equipe · filtro inicial em "Em turno") |
 
 A navegação volta pro Painel pelo back nativo do bottom nav.
 
 ### Ferramentas rápidas (substituem o antigo bloco "Ações rápidas")
 
 O bloco anterior se chamava "Ações rápidas" e era 3 cards menores em grid 1/3 — visualmente parecia info estática (sem chevron, sem afford­ância de toque), e o gerente não percebia que eram botões. **Renomeado pra "Ferramentas rápidas" e refeito como 3 linhas grandes**, cada uma com:
+
 - Ícone tinted à esquerda (40px) em cor da ferramenta
 - Título em destaque + sub-label explicativa em uma linha
 - **Chevron `›` à direita** (afford­ância clara de tap-to-open)
 - Hint sublinhado em cima do bloco: _"Toque pra abrir. Cada uma age direto na operação ao vivo."_
 
-| Ferramenta | Cor / ícone | Sub-label | Deep link | Tela destino |
-|---|---|---|---|---|
-| **Alterar ordem da cozinha** | laranja · `flame` | "Puxar 1 ou + pedidos pra frente da fila" | `app://manager/kitchen/reorder` | `ScreenManagerKitchenReorder` |
-| **Pausar pedidos novos** | amarelo · `pause` | "Cliente não vê · só aumenta tempo de preparo" | `app://manager/orders/pause` | `ScreenManagerOrdersPause` |
-| **Cortesia para a mesa** | verde · `gift` | "Mandar item de cortesia · zero atrito" | `app://manager/courtesy` | `ScreenManagerCompensateClient` |
+| Ferramenta                   | Cor / ícone       | Sub-label                                      | Deep link                       | Tela destino                    |
+| ---------------------------- | ----------------- | ---------------------------------------------- | ------------------------------- | ------------------------------- |
+| **Alterar ordem da cozinha** | laranja · `flame` | "Puxar 1 ou + pedidos pra frente da fila"      | `app://manager/kitchen/reorder` | `ScreenManagerKitchenReorder`   |
+| **Pausar pedidos novos**     | amarelo · `pause` | "Cliente não vê · só aumenta tempo de preparo" | `app://manager/orders/pause`    | `ScreenManagerOrdersPause`      |
+| **Cortesia para a mesa**     | verde · `gift`    | "Mandar item de cortesia · zero atrito"        | `app://manager/courtesy`        | `ScreenManagerCompensateClient` |
 
 Essas 3 são telas modais (não páginas). Voltam pro Painel via X / back. Gerente NUNCA fica preso nelas — sempre é uma ida e volta. No canvas você vê todas as 5 deep-links (2 atalhos secundários + 3 ferramentas rápidas) na seção **"Painel · telas que abrem dos atalhos e ferramentas rápidas"**.
 
@@ -2285,19 +2321,22 @@ Essas 3 são telas modais (não páginas). Voltam pro Painel via X / back. Geren
 ### Composição (estados do `ScreenManagerCompensateClient`)
 
 `state="select"` (entrada):
-- **Mesa** — chips horizontais com mesas ativas (status=active_verified). Cada chip mostra `Mesa N · party · tempo decorrido`. Mesas com `status=slow` (>1.5× meta) ficam destacadas em laranja com aviso _"está esperando há 1h — mande antes que reclame"_
+
+- **Mesa** — chips horizontais com mesas ativas (status=active*verified). Cada chip mostra `Mesa N · party · tempo decorrido`. Mesas com `status=slow` (>1.5× meta) ficam destacadas em laranja com aviso *"está esperando há 1h — mande antes que reclame"\_
 - **Tipo** — grid 2-col com 5 opções: Sobremesa / Drink / Couvert / Desconto % / Mensagem só
 - **Item específico** — varia por tipo (e.g., Sobremesa → fondant 2 porções; Drink → caipirinha 2 doses; Couvert → R$ 18 sai da conta; Desconto → 15% no total; Mensagem → sem brinde físico)
 - **Mensagem opcional** — textarea + 4 sugestões rápidas ("Pelos 1h de espera", "Aniversário", "Volte sempre", "Em branco")
 - Sticky bottom: resumo (`Mesa 14 · sobremesa`) + CTA **Enviar cortesia → mesa N**
 
 `state="sent"`:
+
 - Hero azul "Aguardando cliente abrir · ~10 s"
 - Card resumo do que foi enviado (item + mensagem em itálico)
 - Timeline "O que acontece a seguir" (4 passos: cliente recebe pop-up · aceita ou recusa · garçom recebe push · vira pedido na cozinha)
 - CTA **Cancelar cortesia** (revoga antes do cliente aceitar)
 
 `state="accepted"`:
+
 - Hero verde "Cliente aceitou · 'Muito obrigado, vocês são incríveis!'"
 - Bloco de resposta do cliente (a mensagem que ele digitou ao aceitar — opcional)
 - Lista "Próximos passos": garçom avisado (Olivia recebeu push) + cozinha (#167, prioridade alta, sem cobrança)
@@ -2386,6 +2425,7 @@ Apenas `role IN ('owner', 'manager')` pode chamar `POST /manager/courtesy`. **Ga
 ### Métrica para o dono
 
 A tela `ScreenManagerFinance` deve ter uma linha discreta:
+
 - **Cortesias do mês** · R$ 450 (1.2% do faturamento) · _"Cliente que recebeu cortesia voltou em 73% das vezes vs 41% no controle. ROI ~5×."_
 
 Cortesia bem usada é a melhor ferramenta de retenção do gerente — então ela deve aparecer mensurada, não escondida.
@@ -2428,6 +2468,7 @@ CREATE INDEX ON session_audit_logs (decision, created_at DESC);
 ```
 
 Rate limit (interceptor NestJS, Redis quando disponível, in-memory em dev):
+
 - 5 inits/min/IP
 - 30 inits/hora/IP
 - Resposta 429 com `Retry-After`. Decision = `'rate_limited'` no log.
@@ -2438,14 +2479,14 @@ Cleanup diário às 03:00 BRT: `DELETE FROM session_audit_logs WHERE created_at 
 
 Toda abertura de sessão entra em `pending_review` por padrão e aparece na inbox da recepcionista. O risco é calculado por sinais somados:
 
-| Sinal | Peso |
-|---|---|
-| IP em datacenter ASN (AWS, GCP, Azure) | 40 |
-| User-Agent sem 'Mobile' / 'Android' / 'iPhone' | 30 |
-| 3+ inits/min na mesma mesa, mesmo IP | 25 |
-| Init fora do horário do restaurante (settings.openingHours vs now()) | 35 |
-| Geo-IP fora da cidade do restaurante | 10 |
-| Mesa marcada inativa (`tables.is_active=false`) | 50 |
+| Sinal                                                                | Peso |
+| -------------------------------------------------------------------- | ---- |
+| IP em datacenter ASN (AWS, GCP, Azure)                               | 40   |
+| User-Agent sem 'Mobile' / 'Android' / 'iPhone'                       | 30   |
+| 3+ inits/min na mesma mesa, mesmo IP                                 | 25   |
+| Init fora do horário do restaurante (settings.openingHours vs now()) | 35   |
+| Geo-IP fora da cidade do restaurante                                 | 10   |
+| Mesa marcada inativa (`tables.is_active=false`)                      | 50   |
 
 **Threshold:** score ≥ 50 = ALTO RISCO. Aparece em vermelho na inbox da recepcionista.
 
@@ -2462,11 +2503,11 @@ Se a recepcionista não responder em **30 s**:
 
 ```ts
 type TableSessionStatus =
-  | 'pending_review'      // recém-criada, aguardando recepcionista
-  | 'active_unverified'   // promovida automaticamente, esperando confirmação do garçom no 1º pedido
-  | 'active_verified'     // 100% verificada, pode pedir livremente
-  | 'rejected'            // recepcionista ou garçom rejeitou — bloqueio total
-  | 'closed';             // conta fechada
+  | 'pending_review' // recém-criada, aguardando recepcionista
+  | 'active_unverified' // promovida automaticamente, esperando confirmação do garçom no 1º pedido
+  | 'active_verified' // 100% verificada, pode pedir livremente
+  | 'rejected' // recepcionista ou garçom rejeitou — bloqueio total
+  | 'closed'; // conta fechada
 ```
 
 ### HMAC sem timestamp (QR fixo)
@@ -2536,18 +2577,18 @@ MAXMIND_ASN_DB_PATH=  # caminho pro GeoLite2-ASN.mmdb (opcional em dev)
 
 ```ts
 interface WatcherConfig {
-  windowMinutes: number;        // 15 min default
+  windowMinutes: number; // 15 min default
   rules: WatcherRule[];
 }
 
 type WatcherRule =
-  | { kind: 'too_many_pending_review';      threshold: 5;  severity: 'med'; }
-  | { kind: 'too_many_rejections';          threshold: 3;  severity: 'high'; }
-  | { kind: 'rate_limited_ip';              threshold: 10; severity: 'high'; }
-  | { kind: 'init_from_inactive_table';     threshold: 1;  severity: 'high'; }
-  | { kind: 'init_outside_hours';           threshold: 2;  severity: 'med'; }
-  | { kind: 'datacenter_ip_burst';          threshold: 5;  severity: 'high'; }
-  | { kind: 'auto_approval_drift';          threshold: 0.7; severity: 'low'; };  // % auto-aprovados sobe muito
+  | { kind: 'too_many_pending_review'; threshold: 5; severity: 'med' }
+  | { kind: 'too_many_rejections'; threshold: 3; severity: 'high' }
+  | { kind: 'rate_limited_ip'; threshold: 10; severity: 'high' }
+  | { kind: 'init_from_inactive_table'; threshold: 1; severity: 'high' }
+  | { kind: 'init_outside_hours'; threshold: 2; severity: 'med' }
+  | { kind: 'datacenter_ip_burst'; threshold: 5; severity: 'high' }
+  | { kind: 'auto_approval_drift'; threshold: 0.7; severity: 'low' }; // % auto-aprovados sobe muito
 ```
 
 ### Job
@@ -2557,11 +2598,14 @@ Cron `*/2 * * * *` (a cada 2 min) roda em cada tenant:
 ```ts
 async function runWatcher(tenantId: string) {
   const now = Date.now();
-  const window = await db.select<AuditLog>(`
+  const window = await db.select<AuditLog>(
+    `
     SELECT * FROM session_audit_logs
     WHERE created_at > now() - interval '15 minutes'
       AND table_id IN (SELECT id FROM tables WHERE tenant_id = $1)
-  `, [tenantId]);
+  `,
+    [tenantId],
+  );
 
   for (const rule of config.rules) {
     const triggered = applyRule(rule, window);
@@ -2572,7 +2616,12 @@ async function runWatcher(tenantId: string) {
         data: { deepLink: `app://manager/security/audit?rule=${rule.kind}` },
         priority: rule.severity === 'high' ? 'high' : 'normal',
       });
-      await db.insert('watcher_events', { tenantId, rule: rule.kind, snapshot: triggered, at: now });
+      await db.insert('watcher_events', {
+        tenantId,
+        rule: rule.kind,
+        snapshot: triggered,
+        at: now,
+      });
     }
   }
 }

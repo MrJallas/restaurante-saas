@@ -10,10 +10,7 @@ import type {
  * Lists the customer's chat threads (NoSQL-backed). Sorted by `lastMessageAt`
  * descending — same shape exposed by `ChatHistoryService.listThreads`.
  */
-export function listThreads(
-  slug: string,
-  customerId: string,
-): Promise<ChatThreadDto[]> {
+export function listThreads(slug: string, customerId: string): Promise<ChatThreadDto[]> {
   return apiGet<ChatThreadDto[]>(
     `/${slug}/chat-history/threads?customerId=${encodeURIComponent(customerId)}`,
   );
@@ -23,10 +20,7 @@ export function listThreads(
  * Returns the messages belonging to a single thread, in chronological order.
  * Read-only — there's no edit or append endpoint by design.
  */
-export function listMessages(
-  slug: string,
-  threadId: string,
-): Promise<ChatMessageDto[]> {
+export function listMessages(slug: string, threadId: string): Promise<ChatMessageDto[]> {
   return apiGet<ChatMessageDto[]>(
     `/${slug}/chat-history/threads/${encodeURIComponent(threadId)}/messages`,
   );

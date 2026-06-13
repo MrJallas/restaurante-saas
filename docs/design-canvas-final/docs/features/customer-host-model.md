@@ -24,8 +24,8 @@ tava chegando atrasado).
 
 Pedir aprovação social pra um `?` anônimo é ruim de validar. O host olha o
 push, não reconhece nada, e fica em dúvida se aceita ou recusa. Com nome real
-("Marina"), o host decide informado: *"ah, é a Maria, irmã do João"* ou
-*"não conheço, era engano"*. **Pergunta social só funciona com nome.**
+("Marina"), o host decide informado: _"ah, é a Maria, irmã do João"_ ou
+_"não conheço, era engano"_. **Pergunta social só funciona com nome.**
 
 CPF entra como **chave de auto-reconhecimento entre visitas**: na próxima vez
 que escanear, o backend reconhece o cliente sem ele precisar redigitar nome ou
@@ -40,12 +40,12 @@ sessão (anti-fraude leve · não é o objetivo principal).
    não passou por recognize/welcome):
    - App cliente B mostra **bloqueio obrigatório**
      `ScreenCustomerIdentifyBeforeJoin` ANTES de chamar a API de late-arrival.
-   - Title: *"Quem é você?"* · Sub: *"[Host] vai ver seu nome pra decidir se
-     você pode entrar"*.
-   - Inputs: *"Seu primeiro nome"* (não-vazio) **+** *"Seu CPF"* (mask
+   - Title: _"Quem é você?"_ · Sub: _"[Host] vai ver seu nome pra decidir se
+     você pode entrar"_.
+   - Inputs: _"Seu primeiro nome"_ (não-vazio) **+** _"Seu CPF"_ (mask
      `000.000.000-00` · dígitos verificadores validados no front).
-   - Mono caps: *"SÓ PRA MESA SABER QUEM É · CPF NOS AJUDA A TE RECONHECER NA
-     PRÓXIMA VISITA"*.
+   - Mono caps: _"SÓ PRA MESA SABER QUEM É · CPF NOS AJUDA A TE RECONHECER NA
+     PRÓXIMA VISITA"_.
    - CTA filled `Continuar` (disabled até ambos campos válidos).
 4. **Se** `customers.name IS NOT NULL` na sessão (returning · sessão já
    identificada num welcome anterior) · pula o bloqueio · vai direto pro
@@ -63,10 +63,16 @@ POST /api/v1/customers/identify
 Backend faz lookup por `cpf_hash`:
 
 - **CPF existe** (returning customer noutro device · ou re-identificando):
+
   ```json
-  { "isReturning": true, "customerId": "cus_…",
-    "canonicalName": "Marina S.", "lastVisitAt": "2026-04-12T20:30:00Z" }
+  {
+    "isReturning": true,
+    "customerId": "cus_…",
+    "canonicalName": "Marina S.",
+    "lastVisitAt": "2026-04-12T20:30:00Z"
+  }
   ```
+
   App faz **merge** da sessão atual com o customer existente · auto-login ·
   próxima tela (waiting / chat) saúda com `canonicalName`. Se `canonicalName`
   difere do nome digitado, o welcome usa `"Bem-vindo de volta, ${canonicalName}"`
@@ -74,8 +80,7 @@ Backend faz lookup por `cpf_hash`:
 
 - **CPF novo** (1ª visita do CPF na rede):
   ```json
-  { "isReturning": false, "customerId": "cus_…",
-    "canonicalName": "Marina" }
+  { "isReturning": false, "customerId": "cus_…", "canonicalName": "Marina" }
   ```
   Backend cria `customers` row com `name + cpf_hash` salvos · request
   prossegue normal.
@@ -93,8 +98,8 @@ intermediário "validating" — transição happy-path direto pro waiting.
 - **Expurgo:** `lgpd_data_request` (já existente) inclui `cpf_hash` no escopo
   de delete · cliente pode pedir esquecimento normalmente.
 - **Cliente recusa CPF:** sem CPF, late-arrival bloqueia (CTA disabled). Copy
-  amigável: *"Pra entrar na mesa, precisamos do nome e CPF · ou chama a
-  recepcionista"* (escape valve via waiter-call existente).
+  amigável: _"Pra entrar na mesa, precisamos do nome e CPF · ou chama a
+  recepcionista"_ (escape valve via waiter-call existente).
 
 ### Backend enforcement
 
@@ -103,8 +108,10 @@ intermediário "validating" — transição happy-path direto pro waiting.
 - Se app cliente bypassar o bloqueio (raro · só dev / cliente quebrado),
   backend rejeita **400** com mensagem amigável:
   ```json
-  { "error": "identify_before_join_required",
-    "message": "Pra entrar numa mesa ocupada precisamos do seu primeiro nome e CPF." }
+  {
+    "error": "identify_before_join_required",
+    "message": "Pra entrar numa mesa ocupada precisamos do seu primeiro nome e CPF."
+  }
   ```
 - App cliente trata esse 400 mostrando a mesma `ScreenCustomerIdentifyBeforeJoin`
   como recovery.
@@ -125,7 +132,7 @@ Tudo agora usa o nome real do solicitante.
 - Se `host_customer_id IS NULL` (walk-in sem app · raro) **OU** TTL de 60 s
   expira sem resposta **OU** host clica "Não, era engano":
   → cliente B vê escape-valve **"Chamar recepcionista"** que cai no waiter-call
-    existente (humano resolve com humano · sem cascata automática pro staff).
+  existente (humano resolve com humano · sem cascata automática pro staff).
 - Staff recebe **notificação passiva** (não-bloqueante) só depois que host
   aprovou · ver canvas garçom V16 seção `staff-late-arrival-info`.
 

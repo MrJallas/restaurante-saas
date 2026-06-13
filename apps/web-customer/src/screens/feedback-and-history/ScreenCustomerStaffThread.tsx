@@ -1,12 +1,6 @@
 'use client';
 
-import {
-  FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiRequestError } from '../../lib/api';
 import {
@@ -76,10 +70,7 @@ function roleLabelDisplay(label: StaffMessageHistoryRoleLabel | null): string {
  * Opening the thread marks every staff-authored unread message as read
  * (POST /threads/:id/read) once on mount.
  */
-export function ScreenCustomerStaffThread({
-  slug,
-  threadId,
-}: ScreenCustomerStaffThreadProps) {
+export function ScreenCustomerStaffThread({ slug, threadId }: ScreenCustomerStaffThreadProps) {
   const session = useSession();
   const router = useRouter();
   const ready = useRequireCustomerId(slug);
@@ -103,9 +94,7 @@ export function ScreenCustomerStaffThread({
         return;
       }
       const message =
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Não consegui carregar essa conversa agora.';
+        err instanceof ApiRequestError ? err.message : 'Não consegui carregar essa conversa agora.';
       setError(message);
     } finally {
       setLoading(false);
@@ -136,9 +125,7 @@ export function ScreenCustomerStaffThread({
       router.replace(`/${slug}/staff-messages`);
     } catch (err) {
       const message =
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Não consegui apagar essa conversa agora.';
+        err instanceof ApiRequestError ? err.message : 'Não consegui apagar essa conversa agora.';
       setError(message);
       setDeleting(false);
     }
@@ -178,10 +165,7 @@ export function ScreenCustomerStaffThread({
   };
 
   const headerDate = useMemo(
-    () =>
-      messages.length > 0
-        ? formatThreadHeaderDate(messages[0].createdAt)
-        : '',
+    () => (messages.length > 0 ? formatThreadHeaderDate(messages[0].createdAt) : ''),
     [messages],
   );
 
@@ -221,9 +205,7 @@ export function ScreenCustomerStaffThread({
           </div>
         )}
 
-        {loading && (
-          <div className="text-center text-[13px] text-mute">Carregando…</div>
-        )}
+        {loading && <div className="text-center text-[13px] text-mute">Carregando…</div>}
 
         {!loading && missingThread && (
           <div className="rounded-[14px] border border-border-soft bg-surface px-4 py-10 text-center">
@@ -231,8 +213,7 @@ export function ScreenCustomerStaffThread({
               Essa conversa não está mais disponível
             </div>
             <div className="mb-5 text-[13px] leading-[1.5] text-mute">
-              Ela pode ter sido apagada ou removida automaticamente depois de
-              30 dias.
+              Ela pode ter sido apagada ou removida automaticamente depois de 30 dias.
             </div>
             <PillButton
               variant="filled"
@@ -245,32 +226,30 @@ export function ScreenCustomerStaffThread({
         )}
 
         <div className="flex flex-col gap-3.5">
-          {!missingThread && messages.map((m) => (
-            <StaffThreadMessage key={m.messageId} msg={m} />
-          ))}
+          {!missingThread && messages.map((m) => <StaffThreadMessage key={m.messageId} msg={m} />)}
         </div>
 
         {/* Composer pra resposta do customer pra equipe. Persiste no Mongo
             e emite WS pra inbox futura do staff. */}
         {!missingThread && (
-        <form onSubmit={handleSubmit} className="mt-6 flex items-center gap-2">
-          <input
-            type="text"
-            value={composerText}
-            onChange={(e) => setComposerText(e.target.value)}
-            placeholder="Escreva uma resposta…"
-            maxLength={2000}
-            disabled={sending}
-            className="flex-1 rounded-full border border-border-soft bg-bg px-4 py-3 text-[14px] text-ink placeholder:text-faint focus:border-ink focus:outline-none"
-          />
-          <button
-            type="submit"
-            disabled={!composerText.trim() || sending}
-            className="rounded-full border border-ink bg-ink px-5 py-3 text-[13px] font-semibold text-bg disabled:opacity-40"
-          >
-            {sending ? 'Enviando…' : 'Enviar'}
-          </button>
-        </form>
+          <form onSubmit={handleSubmit} className="mt-6 flex items-center gap-2">
+            <input
+              type="text"
+              value={composerText}
+              onChange={(e) => setComposerText(e.target.value)}
+              placeholder="Escreva uma resposta…"
+              maxLength={2000}
+              disabled={sending}
+              className="flex-1 rounded-full border border-border-soft bg-bg px-4 py-3 text-[14px] text-ink placeholder:text-faint focus:border-ink focus:outline-none"
+            />
+            <button
+              type="submit"
+              disabled={!composerText.trim() || sending}
+              className="rounded-full border border-ink bg-ink px-5 py-3 text-[13px] font-semibold text-bg disabled:opacity-40"
+            >
+              {sending ? 'Enviando…' : 'Enviar'}
+            </button>
+          </form>
         )}
       </div>
 
@@ -283,8 +262,8 @@ export function ScreenCustomerStaffThread({
           Apagar essa conversa?
         </h2>
         <p className="mb-6 text-[14px] leading-[1.5] text-mute">
-          Vai sumir {messages.length}{' '}
-          {messages.length === 1 ? 'mensagem' : 'mensagens'} · não tem volta.
+          Vai sumir {messages.length} {messages.length === 1 ? 'mensagem' : 'mensagens'} · não tem
+          volta.
         </p>
         <div className="flex flex-col gap-2.5">
           <PillButton

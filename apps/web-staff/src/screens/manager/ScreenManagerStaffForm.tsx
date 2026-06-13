@@ -87,11 +87,11 @@ export interface ScreenManagerStaffFormProps {
 // backend roles (DB). Cobre todos os 6 roles do canvas; backend foi
 // expandido na migration 041 + DTO update pra aceitar bartender/cashier.
 const ROLE_MAP: Record<StaffRole, CreateStaffPayload['role']> = {
-  'Garçom': 'waiter',
-  'Cozinheiro': 'cook',
-  'Bartender': 'bartender',
-  'Caixa': 'cashier',
-  'Gerente': 'manager',
+  Garçom: 'waiter',
+  Cozinheiro: 'cook',
+  Bartender: 'bartender',
+  Caixa: 'cashier',
+  Gerente: 'manager',
 };
 
 function generateProvisionalPin(): string {
@@ -140,7 +140,7 @@ export function ScreenManagerStaffForm({
   const slug =
     tenantSlug ??
     (typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('slug') ?? undefined
+      ? (new URLSearchParams(window.location.search).get('slug') ?? undefined)
       : undefined) ??
     process.env.NEXT_PUBLIC_TENANT_SLUG ??
     'demo';
@@ -233,14 +233,7 @@ export function ScreenManagerStaffForm({
       <MTopBar
         dark={dark}
         title={isEdit ? 'Editar funcionário' : 'Novo funcionário'}
-        left={
-          <GIconBtn
-            dark={dark}
-            icon={Icon.x(20)}
-            onClick={close}
-            ariaLabel="Fechar"
-          />
-        }
+        left={<GIconBtn dark={dark} icon={Icon.x(20)} onClick={close} ariaLabel="Fechar" />}
       />
 
       {isEdit && (
@@ -254,16 +247,9 @@ export function ScreenManagerStaffForm({
             background: C.bg,
           }}
         >
-          <MAvatar
-            name={init.name}
-            init={init.avatarInit}
-            color={init.avatarColor}
-            size={56}
-          />
+          <MAvatar name={init.name} init={init.avatarInit} color={init.avatarColor} size={56} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: -0.2 }}>
-              {init.name}
-            </div>
+            <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: -0.2 }}>{init.name}</div>
             <div
               style={{
                 fontSize: 12,
@@ -276,9 +262,13 @@ export function ScreenManagerStaffForm({
             </div>
           </div>
           {init.active ? (
-            <MPill tone="success" dot dark={dark}>Ativo</MPill>
+            <MPill tone="success" dot dark={dark}>
+              Ativo
+            </MPill>
           ) : (
-            <MPill tone="warn" dark={dark}>Inativo</MPill>
+            <MPill tone="warn" dark={dark}>
+              Inativo
+            </MPill>
           )}
         </div>
       )}
@@ -422,10 +412,10 @@ export function ScreenManagerStaffForm({
             {submitting
               ? 'Salvando…'
               : savedPin
-              ? 'Redirecionando…'
-              : isEdit
-              ? 'Salvar alterações'
-              : 'Cadastrar e enviar acesso'}
+                ? 'Redirecionando…'
+                : isEdit
+                  ? 'Salvar alterações'
+                  : 'Cadastrar e enviar acesso'}
           </GButton>
           {isEdit && (
             <GButton dark={dark} full kind="ghost" onClick={onDeactivate} disabled={submitting}>

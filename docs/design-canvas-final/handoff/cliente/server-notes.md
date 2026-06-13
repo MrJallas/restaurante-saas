@@ -21,13 +21,13 @@ REFILL: cron a cada 1h se LLEN < 3 OU on-demand quando LLEN === 0
 
 Categorias (mínimo 8 templates cada — drafts em `cliente-tokens.jsx → CONTINUATION_POOL`):
 
-| Kind | Trigger (último evento ordenado por timestamp) |
-|---|---|
-| `viu_cardapio` | `assistant_messages.action='menu_viewed'` |
-| `chamou_garcom` | `waiter_calls.created_at` |
-| `abriu_pedido` | `orders.created_at` |
-| `pagou` | `payments.captured_at` |
-| `voltou_sem_acao` | última ação > 8 min · fallback |
+| Kind              | Trigger (último evento ordenado por timestamp) |
+| ----------------- | ---------------------------------------------- |
+| `viu_cardapio`    | `assistant_messages.action='menu_viewed'`      |
+| `chamou_garcom`   | `waiter_calls.created_at`                      |
+| `abriu_pedido`    | `orders.created_at`                            |
+| `pagou`           | `payments.captured_at`                         |
+| `voltou_sem_acao` | última ação > 8 min · fallback                 |
 
 `renderTemplate()` aceita `{nome}`, `{restaurante}`, `{ultimo_prato}` — mesma assinatura do `home.service.ts`.
 
@@ -36,13 +36,17 @@ Categorias (mínimo 8 templates cada — drafts em `cliente-tokens.jsx → CONTI
 ```ts
 // packages/database (drizzle/prisma) — sem migration: campo derivado
 export interface HomeData {
-  heroMessage: string;          // welcome (existente)
+  heroMessage: string; // welcome (existente)
   lastVisitSummary: { last_items: string[] };
   isReturning: boolean;
   // novo:
   continuationMessage?: string; // se != null, sobrepõe heroMessage no UI
-  continuationKind?: 'viu_cardapio' | 'chamou_garcom'
-                  | 'abriu_pedido' | 'pagou' | 'voltou_sem_acao';
+  continuationKind?:
+    | 'viu_cardapio'
+    | 'chamou_garcom'
+    | 'abriu_pedido'
+    | 'pagou'
+    | 'voltou_sem_acao';
 }
 ```
 
@@ -294,11 +298,11 @@ Reusa o guardrail de 3 camadas existente do `/classify` — greeting detector ig
 
 ## Sumário · novas dependências
 
-| Pacote | Uso |
-|---|---|
-| `vaul` (web-customer) | Bottom sheet 4.3 |
-| (nada novo no api) | endpoints adicionados em controllers existentes |
-| (nada novo no ai-service) | `/smart-suggestions` adicionado em `app.py` |
+| Pacote                    | Uso                                             |
+| ------------------------- | ----------------------------------------------- |
+| `vaul` (web-customer)     | Bottom sheet 4.3                                |
+| (nada novo no api)        | endpoints adicionados em controllers existentes |
+| (nada novo no ai-service) | `/smart-suggestions` adicionado em `app.py`     |
 
 ## Migrations a criar
 
@@ -308,9 +312,9 @@ Reusa o guardrail de 3 camadas existente do `/classify` — greeting detector ig
 
 ## Eventos WS resumidos
 
-| Evento | Direção | Payload |
-|---|---|---|
-| `courtesy.offered` | staff → customer | `CourtesyDto` |
-| `courtesy.responded` | customer → staff | `{ id, status }` |
-| `staff.message` | staff → customer | `MessageDto` (from_role='staff') |
-| `customer.reply` | customer → staff | `MessageDto` (reply_to_role='staff') |
+| Evento               | Direção          | Payload                              |
+| -------------------- | ---------------- | ------------------------------------ |
+| `courtesy.offered`   | staff → customer | `CourtesyDto`                        |
+| `courtesy.responded` | customer → staff | `{ id, status }`                     |
+| `staff.message`      | staff → customer | `MessageDto` (from_role='staff')     |
+| `customer.reply`     | customer → staff | `MessageDto` (reply_to_role='staff') |

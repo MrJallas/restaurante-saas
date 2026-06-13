@@ -140,13 +140,9 @@ export default function PedidoMesaPage() {
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-[1.5px] text-mute">
                 Comanda compartilhada
               </div>
-              <h1 className="text-[26px] font-semibold tracking-[-0.02em]">
-                Pedido da mesa
-              </h1>
+              <h1 className="text-[26px] font-semibold tracking-[-0.02em]">Pedido da mesa</h1>
             </div>
-            {participants.length > 0 && (
-              <AvatarStack people={participants} size={30} max={4} />
-            )}
+            {participants.length > 0 && <AvatarStack people={participants} size={30} max={4} />}
           </div>
           <div className="mt-1.5 text-[12px] text-mute">
             {participants.length || 0} {participants.length === 1 ? 'pessoa' : 'pessoas'} ·{' '}
@@ -240,10 +236,7 @@ export default function PedidoMesaPage() {
         </div>
 
         <div className="flex shrink-0 gap-2.5 px-[22px] pb-safe pb-6 pt-2.5">
-          <PillButton
-            onClick={() => push(`/${slug}/pagamento/dividir`)}
-            className="flex-1"
-          >
+          <PillButton onClick={() => push(`/${slug}/pagamento/dividir`)} className="flex-1">
             Dividir conta
           </PillButton>
           <PillButton

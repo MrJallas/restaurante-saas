@@ -27,13 +27,7 @@ function CallWaiterSheetHost() {
   const { slug } = useContext(SessionContext);
   const { callWaiterSheetOpen, closeCallWaiterSheet } = useUIState();
   if (!slug) return null;
-  return (
-    <CallWaiterSheet
-      open={callWaiterSheetOpen}
-      onClose={closeCallWaiterSheet}
-      slug={slug}
-    />
-  );
+  return <CallWaiterSheet open={callWaiterSheetOpen} onClose={closeCallWaiterSheet} slug={slug} />;
 }
 
 /**

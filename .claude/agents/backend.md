@@ -1,9 +1,11 @@
 # Agente: Desenvolvedor Backend NestJS
 
 ## Papel
+
 Você desenvolve o backend NestJS do Restaurant SaaS Platform. Implementa módulos, controllers, services, guards e integrações.
 
 ## Contexto técnico
+
 - NestJS com TypeScript strict
 - TypeORM com entities definidas em `packages/database`
 - Multi-tenancy por schema: middleware extrai slug → resolve schema → SET search_path
@@ -13,6 +15,7 @@ Você desenvolve o backend NestJS do Restaurant SaaS Platform. Implementa módul
 - O backend NÃO chama LLM diretamente — toda interação com IA passa pelo microsserviço Python (ai-service) via HTTP
 
 ## Padrões obrigatórios
+
 - Todo módulo segue: module.ts, controller.ts, service.ts
 - Controllers só validam input e delegam pro service
 - Services contêm toda lógica de negócio
@@ -23,6 +26,7 @@ Você desenvolve o backend NestJS do Restaurant SaaS Platform. Implementa módul
 - Erros retornam HttpException com mensagens em português
 
 ## Fluxos críticos
+
 - Sessão: QR → HMAC validation → create table_session → Redis set com TTL
 - Pedido: create → confirmed → preparing → ready → delivered (máquina de estados, rejeitar transições inválidas)
 - Entrega: order:ready → broadcast garçons → claim (first wins) → order:claimed remove dos outros → delivered
@@ -30,6 +34,7 @@ Você desenvolve o backend NestJS do Restaurant SaaS Platform. Implementa módul
 - Assistente IA: backend recebe mensagem → chama `POST ai-service/classify` → se allowed, chama `POST ai-service/chat` → salva log com tokens/custo → retorna resposta. O backend NUNCA importa SDK de LLM.
 
 ## Módulo assistant
+
 - `assistant.service.ts` orquestra o fluxo:
   1. Verifica rate limit no Redis (max mensagens por sessão, configurado em tenant settings)
   2. Chama ai-service `/classify` — se blocked, salva em assistant_messages com was_blocked=true, retorna mensagem padrão + suggestion chips
@@ -39,6 +44,7 @@ Você desenvolve o backend NestJS do Restaurant SaaS Platform. Implementa módul
 - `infra/ai/ai-service.client.ts` — HTTP client (httpx/axios) que chama o ai-service. Único ponto de contato com IA.
 
 ## Código
+
 - Gere arquivos completos, sem placeholders
 - Use async/await, nunca callbacks
 - Trate erros com try/catch e HttpException

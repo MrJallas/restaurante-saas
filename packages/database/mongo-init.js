@@ -50,11 +50,7 @@ print('mongo-init.js: restaurant_chat TTL + lookup + shift_logs indexes ensured.
 
 db = db.getSiblingDB('restaurant_security');
 
-for (const collection of [
-  'qr_scan_events',
-  'scan_verification_events',
-  'security_audit_events',
-]) {
+for (const collection of ['qr_scan_events', 'scan_verification_events', 'security_audit_events']) {
   db[collection].createIndex({ tenantId: 1, createdAt: -1 });
   db[collection].createIndex({ tenantId: 1, tableId: 1, createdAt: -1 });
   db[collection].createIndex({ tenantId: 1, customerId: 1, createdAt: -1 });

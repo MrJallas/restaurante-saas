@@ -1,10 +1,4 @@
-import {
-  ArgumentsHost,
-  Catch,
-  ExceptionFilter,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
 import type { Response } from 'express';
 
 const DEFAULT_CODES: Record<number, string> = {
@@ -52,7 +46,7 @@ function responseBody(exception: HttpException, status: number) {
       ? record.code
       : typeof record.error_code === 'string'
         ? record.error_code
-        : DEFAULT_CODES[status] ?? 'REQUEST_FAILED';
+        : (DEFAULT_CODES[status] ?? 'REQUEST_FAILED');
 
   const messageUser = normalizeMessage(
     record.message_user ?? record.message,

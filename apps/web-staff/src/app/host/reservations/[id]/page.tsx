@@ -18,13 +18,17 @@ function HostReservationDetailPageInner() {
       reservationId={reservationId}
       onBack={() => router.back()}
       onLiberate={(tableNumber) =>
-        router.push(`/host/liberate/${tableNumber}?tenant=${tenantSlug}&hostId=${hostId}&reservationId=${reservationId}`)
+        router.push(
+          `/host/liberate/${tableNumber}?tenant=${tenantSlug}&hostId=${hostId}&reservationId=${reservationId}`,
+        )
       }
       onTabChange={(tab) => {
         if (tab === 'tables') router.push(`/host?tenant=${tenantSlug}&hostId=${hostId}`);
         if (tab === 'waitlist') router.push(`/host/waitlist?tenant=${tenantSlug}&hostId=${hostId}`);
-        if (tab === 'reserva') router.push(`/host/reservations?tenant=${tenantSlug}&hostId=${hostId}`);
-        if (tab === 'inbox') router.push(`/host/notifications?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'reserva')
+          router.push(`/host/reservations?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'inbox')
+          router.push(`/host/notifications?tenant=${tenantSlug}&hostId=${hostId}`);
         if (tab === 'me') router.push(`/host/profile?tenant=${tenantSlug}&hostId=${hostId}`);
       }}
     />

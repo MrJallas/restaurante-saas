@@ -123,7 +123,14 @@ export const ScreenHostReservationDetail: React.FC<ScreenHostReservationDetailPr
         ) : (
           <>
             <section style={{ marginBottom: 18 }}>
-              <div style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: C.faint,
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                }}
+              >
                 Reserva
               </div>
               <div
@@ -150,10 +157,19 @@ export const ScreenHostReservationDetail: React.FC<ScreenHostReservationDetailPr
                     flexShrink: 0,
                   }}
                 >
-                  <div style={{ fontSize: 18, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                  <div
+                    style={{ fontSize: 18, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}
+                  >
                     {reservation.when}
                   </div>
-                  <div style={{ fontSize: 9, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}>
+                  <div
+                    style={{
+                      fontSize: 9,
+                      color: C.faint,
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                    }}
+                  >
                     hoje
                   </div>
                 </div>
@@ -187,7 +203,14 @@ export const ScreenHostReservationDetail: React.FC<ScreenHostReservationDetailPr
             </section>
 
             <section>
-              <div style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: C.faint,
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                }}
+              >
                 Mesa para liberar
               </div>
               {reservation.table != null ? (
@@ -333,11 +356,22 @@ export const ScreenHostReservationDetail: React.FC<ScreenHostReservationDetailPr
         >
           {reservation.status === 'awaited' ? (
             <>
-              <GButton kind="secondary" dark={dark} onClick={() => setStatus('cancelled')} disabled={submitting}>
+              <GButton
+                kind="secondary"
+                dark={dark}
+                onClick={() => setStatus('cancelled')}
+                disabled={submitting}
+              >
                 Cancelar
               </GButton>
               <div style={{ flex: 1 }}>
-                <GButton kind="success" full dark={dark} onClick={() => setStatus('arrived')} disabled={submitting}>
+                <GButton
+                  kind="success"
+                  full
+                  dark={dark}
+                  onClick={() => setStatus('arrived')}
+                  disabled={submitting}
+                >
                   Marcar chegada
                 </GButton>
               </div>
@@ -366,7 +400,10 @@ export const ScreenHostReservationDetail: React.FC<ScreenHostReservationDetailPr
 
 function StatusBadge({ status, dark }: { status: ReservationEntry['status']; dark: boolean }) {
   const C = useG(dark);
-  const map: Record<ReservationEntry['status'], { label: string; bg: string; fg: string; bd: string }> = {
+  const map: Record<
+    ReservationEntry['status'],
+    { label: string; bg: string; fg: string; bd: string }
+  > = {
     awaited: { label: 'Aguardada', bg: '#FFF7E8', fg: '#7A4D10', bd: '#F0DCB6' },
     arrived: { label: 'Chegou', bg: '#E9F4ED', fg: '#1E8C5A', bd: '#C9E2D2' },
     cancelled: { label: 'Cancelada', bg: C.surface, fg: C.faint, bd: C.borderSoft },

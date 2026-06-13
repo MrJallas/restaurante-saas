@@ -41,9 +41,7 @@ export class StaffOrSessionGuard implements CanActivate {
   constructor(private readonly redis: RedisService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<
-      SessionRequest & { actorType?: ActorType }
-    >();
+    const request = context.switchToHttp().getRequest<SessionRequest & { actorType?: ActorType }>();
 
     const staffKeyHeader = request.headers['x-staff-key'];
     const expected = process.env.STAFF_API_KEY;
@@ -56,8 +54,7 @@ export class StaffOrSessionGuard implements CanActivate {
       }
     }
 
-    const token =
-      request.cookies?.session_token || request.headers['x-session-token'];
+    const token = request.cookies?.session_token || request.headers['x-session-token'];
 
     if (!token) {
       throw new HttpException(

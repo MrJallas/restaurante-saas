@@ -29,16 +29,116 @@ interface ShiftEntry {
 
 // Mock 10 turnos (D-1 ate D-10). Padroniza turno noite (17h-23h).
 const MOCK_SHIFTS: ShiftEntry[] = [
-  { id: 's-1', date: '2026-05-09', weekday: 'Sex', startedAt: '17:00', endedAt: '23:14', tablesReleased: 28, reservations: 14, walkins: 6, avgWaitMin: 8 },
-  { id: 's-2', date: '2026-05-08', weekday: 'Qui', startedAt: '17:02', endedAt: '22:51', tablesReleased: 22, reservations: 11, walkins: 4, avgWaitMin: 6 },
-  { id: 's-3', date: '2026-05-07', weekday: 'Qua', startedAt: '17:00', endedAt: '22:34', tablesReleased: 19, reservations: 9, walkins: 3, avgWaitMin: 5 },
-  { id: 's-4', date: '2026-05-06', weekday: 'Ter', startedAt: '17:05', endedAt: '22:20', tablesReleased: 17, reservations: 8, walkins: 3, avgWaitMin: 4 },
-  { id: 's-5', date: '2026-05-05', weekday: 'Seg', startedAt: '17:01', endedAt: '22:10', tablesReleased: 15, reservations: 6, walkins: 2, avgWaitMin: 4 },
-  { id: 's-6', date: '2026-05-04', weekday: 'Dom', startedAt: '11:30', endedAt: '16:45', tablesReleased: 24, reservations: 12, walkins: 9, avgWaitMin: 12 },
-  { id: 's-7', date: '2026-05-03', weekday: 'Sáb', startedAt: '17:00', endedAt: '23:38', tablesReleased: 32, reservations: 18, walkins: 8, avgWaitMin: 14 },
-  { id: 's-8', date: '2026-05-02', weekday: 'Sex', startedAt: '17:00', endedAt: '23:05', tablesReleased: 27, reservations: 13, walkins: 7, avgWaitMin: 9 },
-  { id: 's-9', date: '2026-05-01', weekday: 'Qui', startedAt: '17:00', endedAt: '23:18', tablesReleased: 30, reservations: 15, walkins: 8, avgWaitMin: 11 },
-  { id: 's-10', date: '2026-04-30', weekday: 'Qua', startedAt: '17:02', endedAt: '22:40', tablesReleased: 21, reservations: 10, walkins: 4, avgWaitMin: 7 },
+  {
+    id: 's-1',
+    date: '2026-05-09',
+    weekday: 'Sex',
+    startedAt: '17:00',
+    endedAt: '23:14',
+    tablesReleased: 28,
+    reservations: 14,
+    walkins: 6,
+    avgWaitMin: 8,
+  },
+  {
+    id: 's-2',
+    date: '2026-05-08',
+    weekday: 'Qui',
+    startedAt: '17:02',
+    endedAt: '22:51',
+    tablesReleased: 22,
+    reservations: 11,
+    walkins: 4,
+    avgWaitMin: 6,
+  },
+  {
+    id: 's-3',
+    date: '2026-05-07',
+    weekday: 'Qua',
+    startedAt: '17:00',
+    endedAt: '22:34',
+    tablesReleased: 19,
+    reservations: 9,
+    walkins: 3,
+    avgWaitMin: 5,
+  },
+  {
+    id: 's-4',
+    date: '2026-05-06',
+    weekday: 'Ter',
+    startedAt: '17:05',
+    endedAt: '22:20',
+    tablesReleased: 17,
+    reservations: 8,
+    walkins: 3,
+    avgWaitMin: 4,
+  },
+  {
+    id: 's-5',
+    date: '2026-05-05',
+    weekday: 'Seg',
+    startedAt: '17:01',
+    endedAt: '22:10',
+    tablesReleased: 15,
+    reservations: 6,
+    walkins: 2,
+    avgWaitMin: 4,
+  },
+  {
+    id: 's-6',
+    date: '2026-05-04',
+    weekday: 'Dom',
+    startedAt: '11:30',
+    endedAt: '16:45',
+    tablesReleased: 24,
+    reservations: 12,
+    walkins: 9,
+    avgWaitMin: 12,
+  },
+  {
+    id: 's-7',
+    date: '2026-05-03',
+    weekday: 'Sáb',
+    startedAt: '17:00',
+    endedAt: '23:38',
+    tablesReleased: 32,
+    reservations: 18,
+    walkins: 8,
+    avgWaitMin: 14,
+  },
+  {
+    id: 's-8',
+    date: '2026-05-02',
+    weekday: 'Sex',
+    startedAt: '17:00',
+    endedAt: '23:05',
+    tablesReleased: 27,
+    reservations: 13,
+    walkins: 7,
+    avgWaitMin: 9,
+  },
+  {
+    id: 's-9',
+    date: '2026-05-01',
+    weekday: 'Qui',
+    startedAt: '17:00',
+    endedAt: '23:18',
+    tablesReleased: 30,
+    reservations: 15,
+    walkins: 8,
+    avgWaitMin: 11,
+  },
+  {
+    id: 's-10',
+    date: '2026-04-30',
+    weekday: 'Qua',
+    startedAt: '17:02',
+    endedAt: '22:40',
+    tablesReleased: 21,
+    reservations: 10,
+    walkins: 4,
+    avgWaitMin: 7,
+  },
 ];
 
 interface ScreenHostTurnosHistoricoProps {
@@ -62,10 +162,7 @@ export const ScreenHostTurnosHistorico: React.FC<ScreenHostTurnosHistoricoProps>
   const C = useG(dark);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const sorted = useMemo(
-    () => [...shifts].sort((a, b) => b.date.localeCompare(a.date)),
-    [shifts],
-  );
+  const sorted = useMemo(() => [...shifts].sort((a, b) => b.date.localeCompare(a.date)), [shifts]);
 
   return (
     <div
@@ -90,7 +187,16 @@ export const ScreenHostTurnosHistorico: React.FC<ScreenHostTurnosHistoricoProps>
         }}
       >
         <GIconBtn dark={dark} icon={Icon.back(20)} onClick={onBack} ariaLabel="Voltar" />
-        <h1 style={{ flex: 1, margin: 0, fontSize: 18, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>
+        <h1
+          style={{
+            flex: 1,
+            margin: 0,
+            fontSize: 18,
+            fontWeight: 700,
+            color: C.ink,
+            letterSpacing: -0.2,
+          }}
+        >
           Histórico de turnos
         </h1>
         <div style={{ width: 40 }} />
@@ -133,9 +239,17 @@ export const ScreenHostTurnosHistorico: React.FC<ScreenHostTurnosHistoricoProps>
                 {sorted.length === 1 ? 'turno' : 'turnos'}
               </span>
             </div>
-            <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6, fontWeight: 400, lineHeight: 1.4 }}>
-              Toque num turno pra ver detalhes. Os números refletem só as suas
-              ações como recepcionista — não o salão inteiro.
+            <div
+              style={{
+                fontSize: 10.5,
+                color: C.faint,
+                marginTop: 6,
+                fontWeight: 400,
+                lineHeight: 1.4,
+              }}
+            >
+              Toque num turno pra ver detalhes. Os números refletem só as suas ações como
+              recepcionista — não o salão inteiro.
             </div>
           </div>
         </div>
@@ -183,19 +297,40 @@ export const ScreenHostTurnosHistorico: React.FC<ScreenHostTurnosHistoricoProps>
                       flexShrink: 0,
                     }}
                   >
-                    <span style={{ fontSize: 10, fontWeight: 700, color: C.faint, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: C.faint,
+                        letterSpacing: 0.4,
+                        textTransform: 'uppercase',
+                      }}
+                    >
                       {shift.weekday}
                     </span>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: C.ink, letterSpacing: -0.3 }}>
+                    <span
+                      style={{ fontSize: 14, fontWeight: 800, color: C.ink, letterSpacing: -0.3 }}
+                    >
                       {shift.date.slice(8, 10)}
                     </span>
                   </div>
                   <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, letterSpacing: -0.1 }}>
+                    <div
+                      style={{ fontSize: 14, fontWeight: 700, color: C.ink, letterSpacing: -0.1 }}
+                    >
                       {formatDateBr(shift.date)} · {shift.startedAt}–{shift.endedAt}
                     </div>
-                    <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, fontWeight: 500, lineHeight: 1.3 }}>
-                      {shift.tablesReleased} liberações · {shift.reservations} reservas · espera ~{shift.avgWaitMin} min
+                    <div
+                      style={{
+                        fontSize: 11.5,
+                        color: C.faint,
+                        marginTop: 2,
+                        fontWeight: 500,
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      {shift.tablesReleased} liberações · {shift.reservations} reservas · espera ~
+                      {shift.avgWaitMin} min
                     </div>
                   </div>
                   <div
@@ -238,8 +373,7 @@ export const ScreenHostTurnosHistorico: React.FC<ScreenHostTurnosHistoricoProps>
                 fontWeight: 500,
               }}
             >
-              Nenhum turno fechado ainda. Volte aqui no fim do primeiro
-              expediente.
+              Nenhum turno fechado ainda. Volte aqui no fim do primeiro expediente.
             </div>
           )}
         </div>
@@ -251,7 +385,15 @@ export const ScreenHostTurnosHistorico: React.FC<ScreenHostTurnosHistoricoProps>
 };
 
 // ─── KpiTile — caixa minimalista pra KPIs no expand ───────────────
-function KpiTile({ label, value, dark }: { label: string; value: number | string; dark?: boolean }) {
+function KpiTile({
+  label,
+  value,
+  dark,
+}: {
+  label: string;
+  value: number | string;
+  dark?: boolean;
+}) {
   const C = useG(!!dark);
   return (
     <div

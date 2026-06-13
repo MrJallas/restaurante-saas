@@ -187,11 +187,7 @@ export function AppShell({
           showHamburger={showHamburger}
         />
       )}
-      <main
-        className={`flex min-h-0 flex-1 flex-col ${
-          noMainPadding ? '' : 'px-0 pb-safe pt-0'
-        }`}
-      >
+      <main className={`flex min-h-0 flex-1 flex-col ${noMainPadding ? '' : 'px-0 pb-safe pt-0'}`}>
         {children}
       </main>
       {sessionId && (

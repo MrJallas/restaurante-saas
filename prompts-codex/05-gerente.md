@@ -42,16 +42,19 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Cenário**: `/manager/chamado/{id}?kind=complaint` — tela de reclamação.
 
 **Atual**:
+
 - Cards de Resposta Padrão como pílulas: `Estou indo`, `Vou ver na cozinha`, `Cortesia`, `Texto livre`
 - Mesmo com "Estou indo" selecionada (visível highlight preto), botão "Enviar resposta" continua **desabilitado**
 - "Texto livre" como pílula é confuso — não é uma resposta, é um modo de input
 
 **Esperado**:
+
 - Selecionar uma resposta padrão habilita "Enviar resposta"
 - "Texto livre" não deve ser pílula — deve ser o **default** (input de texto sempre visível); pílulas são atalhos pra preencher o input
 - Repensar UX: quando clicar numa pílula (ex.: "Estou indo"), o input se preenche com o texto correspondente, cliente pode editar antes de enviar
 
 **Critério de aceitação**:
+
 - [ ] Selecionar pílula habilita o botão de envio
 - [ ] "Texto livre" removido como opção (input já existe)
 - [ ] Pílulas pré-preenchem o input
@@ -61,11 +64,13 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 ### 28. Tela "Reclamação" inteira é redundante — usar overlay + persistir draft
 
 **Atual**:
+
 - No painel do gerente, cards de reclamação têm botões `Encaminhar / Responder`
 - Clicar em "Responder" abre uma tela inteira em `/manager/chamado/{id}?kind=complaint`
 - Mas o **overlay "Mensagem para Mesa X"** (modal bottom-sheet com sugestões + texto livre + Enviar como Gerência) que aparece em outras telas é **muito melhor** apresentacionalmente
 
 **Esperado**:
+
 - Descartar a tela `/manager/chamado/{id}?kind=complaint`
 - Clicar em "Responder" do card **abre o overlay** diretamente
 - **Persistência de draft**:
@@ -75,11 +80,13 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 - Cortesias relacionadas ao "Cortesia" pill: ver `v5-mgr-compensate-prefilled.png`
 
 **Refs canvas**:
+
 - `docs/design-canvas/docs/features/complaint-flow-v12.md`
 - `docs/design-canvas/v12g-detail-chips-fix.png`
 - `docs/design-canvas/v9-modal-zoom.png`
 
 **Critério de aceitação**:
+
 - [ ] Tela cheia de reclamação removida (ou redireciona pra painel + abre overlay)
 - [ ] "Responder" abre o overlay direto
 - [ ] Draft persiste se fechar sem enviar
@@ -94,10 +101,12 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Atual**: "Encaminhar" não faz nada — não existe fluxo de encaminhar pra ninguém.
 
 **Esperado**:
+
 - **Remover** o botão "Encaminhar"
 - Card fica só com "Responder" — pode ocupar mais espaço, ficar mais bonito visualmente
 
 **Critério de aceitação**:
+
 - [ ] Botão "Encaminhar" removido dos cards
 - [ ] Layout do card melhorado (responder ocupa mais espaço)
 
@@ -108,11 +117,13 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Cenário**: Junção de mesas — Pedro Test M03 quer juntar Mesa 3 com M04 Host.
 
 **Atual**:
+
 - Solicitação tem `EXPIRA EM: 08/05/2026, 21:40:24`
 - Hoje é **25/05/2026** (17 dias depois)
 - Ainda aparece como pendente no painel, com botões Rejeitar / Aprovar
 
 **Esperado**:
+
 - Job/scheduled task que **auto-expira** solicitações antigas de junção de mesas
 - Quando expirada, sai do painel (ou fica em histórico marcada como "expirada")
 - Botões Aprovar/Rejeitar não disponíveis em solicitações expiradas
@@ -120,6 +131,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Componente API**: ver `06-api-transversais.md` bug 30 — cron/worker pra cleanup.
 
 **Critério de aceitação**:
+
 - [ ] Solicitação expirada não aparece como pendente
 - [ ] Histórico (opcional) com status "expirada"
 - [ ] Cron testado
@@ -143,6 +155,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Diretriz geral**: refazer apresentação das ações do gerente pra que **façam sentido prático**. Cada botão tem que ter ação determinística e útil — não apenas "fazer algo vago".
 
 **Critério de aceitação**:
+
 - [ ] "Notificar todos os garçons" dispara chamado real pros garçons da mesa (não broadcast geral)
 - [ ] "Resolver todos de uma vez" tem fluxo claro definido OU removido
 - [ ] "Adiantar todos" tem ação determinística OU removido
@@ -153,6 +166,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 ### 33. Múltiplas funcionalidades só com toast "em desenvolvimento" — esconder ou implementar
 
 **Toasts encontrados na auditoria**:
+
 - `Histórico de turnos · em desenvolvimento (Onda 3 backend)`
 - `Resolver todos em sequência · em desenvolvimento (Onda 5 backend)`
 - `Realocar mesas críticas · em desenvolvimento (Onda 4 backend)`
@@ -167,6 +181,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Diretriz**: ou implementa real, ou **esconde o botão** até estar pronto. Não vazar toasts cinza pro gerente em produção. Se precisar manter pra dev/staging, usa feature flag.
 
 **Decisão por item** — sugestão (negociar com PM/owner antes):
+
 - "Realocar mesas" individual / críticas: implementar (alto valor)
 - "Aplicar sugestão" auto: implementar (alto valor)
 - "Ver mesas" / "Mover mesa": implementar (essencial)
@@ -185,6 +200,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Atual**: Não abre o overlay. Erro técnico **"xstaff id incorreto"** vaza pra UI (ou simplesmente não acontece nada).
 
 **Esperado**:
+
 - Mesmo overlay de "Mensagem para Mesa X" (sugestões + texto livre + Enviar como Gerência)
 - Adaptado pra "Mensagem para [Funcionário]"
 - Endpoint correto (não retornar `xstaff id incorreto`)
@@ -192,6 +208,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Componente API**: ver `06-api-transversais.md` bug 34 — auth header `x-staff-id` precisa estar sendo enviado em **todas** as requests do gerente.
 
 **Critério de aceitação**:
+
 - [ ] Mensagem direta abre overlay
 - [ ] Funcionário recebe a mensagem
 - [ ] Sem erro `xstaff id` vazando
@@ -201,6 +218,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 ### 35. Voltar do gerente sempre vai pro Painel em vez de respeitar histórico
 
 **Cenário reproduzido**:
+
 1. Estava em "Equipe"
 2. Entrei numa sub-tela (ex.: Sobrecarga)
 3. Apertei voltar
@@ -212,6 +230,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Solução**: usar `router.back()` do Next.js ou similar; não fazer `router.push('/manager/painel')` no botão de voltar.
 
 **Critério de aceitação**:
+
 - [ ] Voltar de qualquer sub-tela respeita aba de origem (Painel / Operação / Equipe / Financeiro / Eu)
 
 ---
@@ -223,6 +242,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Atual**: Tentei pausar — toast vermelho `"1 erro"` no rodapé sem detalhe nenhum.
 
 **Esperado**:
+
 - Mostrar causa real do erro (validação, conflito, permissão, etc.)
 - Mensagem amigável pro usuário (ex.: "Praça já pausada por outro gerente")
 
@@ -231,6 +251,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Refs canvas**: `docs/design-canvas/docs/features/zone-pause.md`
 
 **Critério de aceitação**:
+
 - [ ] Erros de pausar zona retornam mensagem específica
 - [ ] UI mostra a mensagem amigavelmente (sem genérico "1 erro")
 
@@ -239,6 +260,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 ### 37. Financeiro — cards não interativos + sem seletor de período
 
 **Cenário**: `/manager/financeiro`. Cards:
+
 - RESUMO DE HOJE: Faturamento R$ 95, Pedidos 1, Clientes 1, Pendentes 14
 - ÚLTIMOS 7 DIAS: Receita R$ 1.862, Ticket médio R$ 62
 - Mais vendidos: Picanha na Brasa (23 pedidos), Bruschetta de Tomate (14)
@@ -247,6 +269,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Atual**: Nenhum card é clicável. Não há seletor de período.
 
 **Esperado**:
+
 - Cada card abre tela de detalhe:
   - **Pedidos** → lista de pedidos do dia com ranking (valor, garçom, hora, mesa)
   - **Clientes** → lista de clientes únicos
@@ -258,6 +281,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Refs canvas**: procurar telas de Financeiro em `docs/design-canvas/screens.jsx`, `screens-extra.jsx`, `design-canvas.jsx`. Os screenshots em `slide-*.png` podem mostrar variantes.
 
 **Critério de aceitação**:
+
 - [ ] Cards clicáveis → abrem detalhe
 - [ ] Seletor de período funcional
 - [ ] Layout bate com canvas
@@ -273,6 +297,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Esperado**: Clicar abre detalhe da mesa (mesmo que `46/47` cobre).
 
 **Critério de aceitação**:
+
 - [ ] Item clicável → abre detalhe (resolução do bug 46/47)
 
 ---
@@ -280,6 +305,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 ### 39. "Chamar funcionário da folga" não faz sentido
 
 **Cenário**: `/manager/equipe/carga-media`, na seção "O QUE FAZER AGORA":
+
 - Realocar mesas
 - Pausar pedidos novos por 5 min
 - **Chamar funcionário da folga** ← refazer
@@ -287,6 +313,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 **Atual**: O botão "Chamar funcionário da folga" não faz sentido — funcionário **não está no restaurante** se está de folga.
 
 **Esperado**: Repensar lista de ações pra que tenham utilidade prática quando há sobrecarga. Sugestões:
+
 - "Convocar reforço back-office" (gente do administrativo que pode ajudar)
 - "Redistribuir mesas entre garçons em turno"
 - "Abrir uma praça extra"
@@ -295,6 +322,7 @@ Muitas funcionalidades mostram toasts cinza tipo `"em desenvolvimento (Onda X ba
 Discutir com PM antes de implementar lista final.
 
 **Critério de aceitação**:
+
 - [ ] "Chamar funcionário da folga" removido
 - [ ] Ações alternativas implementadas (ou ao menos lista refeita)
 
@@ -307,6 +335,7 @@ Discutir com PM antes de implementar lista final.
 **Atual**: Toast `Encerrar turno · em desenvolvimento (Onda 3 backend)`.
 
 **Esperado**: Implementar fluxo real:
+
 1. Confirmar (modal "Tem certeza? Vai gerar resumo do turno e deslogar")
 2. Gerar resumo do turno (vendas, mesas atendidas, alertas críticos, etc.)
 3. Salvar resumo no MongoDB (logs de turnos — ver bug 42)
@@ -318,6 +347,7 @@ Discutir com PM antes de implementar lista final.
 **Refs canvas**: `docs/design-canvas/v4-pause-summary.png` (talvez referência)
 
 **Critério de aceitação**:
+
 - [ ] Encerrar turno gera resumo real
 - [ ] Salva log do turno no Mongo
 - [ ] Desloga
@@ -338,6 +368,7 @@ Discutir com PM antes de implementar lista final.
 Procurar telas relacionadas em `screens.jsx`, `screens-extra.jsx`.
 
 **Critério de aceitação**:
+
 - [ ] "Editar turnos" abre tela de gerenciamento de turnos
 - [ ] Layout bate com canvas
 
@@ -350,6 +381,7 @@ Procurar telas relacionadas em `screens.jsx`, `screens-extra.jsx`.
 **Atual**: Toast `Histórico de turnos · em desenvolvimento (Onda 3 backend)`.
 
 **Esperado**:
+
 - Implementar tela com lista de turnos passados
 - Cada item: data, garçons no turno, vendas, mesas atendidas, pedidos, ticket médio, alertas críticos
 - Permitir filtrar por data/garçom/turno
@@ -359,6 +391,7 @@ Procurar telas relacionadas em `screens.jsx`, `screens-extra.jsx`.
 **Componente API**: ver `06-api-transversais.md` bug 42.
 
 **Critério de aceitação**:
+
 - [ ] Tela "Histórico de turnos" lista turnos do Mongo
 - [ ] Filtros funcionais
 - [ ] Detalhe do turno mostra resumo completo
@@ -378,6 +411,7 @@ Procurar telas relacionadas em `screens.jsx`, `screens-extra.jsx`.
 **Refs canvas**: `docs/design-canvas/v5-mgr-courtesies.png`, `v5-mgr-settings-cortesias.png`, `v5-mgr-compensate-prefilled.png`, `v7-courtesies-new.png`.
 
 **Critério de aceitação**:
+
 - [ ] Cortesias carrega sem erro
 - [ ] Listagem + criação manual funcionam (canvas tem fluxo)
 
@@ -392,6 +426,7 @@ Procurar telas relacionadas em `screens.jsx`, `screens-extra.jsx`.
 - **Aparência** (Modo claro · escuro · automático): não aplica de verdade
 
 **Esperado**:
+
 - **Notificações**: tela com toggles de avisos do turno + push + sons + lock screen
 - **Segurança e senha**: trocar senha, ativar 2FA, ver sessões ativas (lista com device + IP + revogar)
 - **Aparência**: aplica tema global no app do gerente (ver host bug 11 + cozinha bug 25 — fazer junto numa lib `@/lib/theme`)
@@ -399,6 +434,7 @@ Procurar telas relacionadas em `screens.jsx`, `screens-extra.jsx`.
 **Componente API**: ver `06-api-transversais.md` bug 44.
 
 **Critério de aceitação**:
+
 - [ ] 3 telas implementadas
 - [ ] Aparência aplica global (claro/escuro/auto)
 - [ ] Segurança: trocar senha + 2FA + listar/revogar sessões
@@ -415,6 +451,7 @@ Procurar telas relacionadas em `screens.jsx`, `screens-extra.jsx`.
 **Esperado**: Implementar "Mais ações" ou esconder. Discutir com PM o que deveria estar nessas ações.
 
 Sugestões prováveis:
+
 - Realocar mesas desse funcionário
 - Mensagem direta
 - Marcar folga
@@ -422,6 +459,7 @@ Sugestões prováveis:
 - Ver histórico de turnos desse funcionário
 
 **Critério de aceitação**:
+
 - [ ] "Mais ações" implementado OU escondido
 - [ ] Stats reais quando há atividade
 
@@ -432,6 +470,7 @@ Sugestões prováveis:
 **Cenário**: Gerente em Operação → Mapa, clica numa mesa (qualquer uma — Mesa 1, Mesa 6 confirmadas).
 
 **Atual**: Tela de erro:
+
 - "ERRO · CONSULTA"
 - "Não consegui carregar"
 - "host- or manager-only endpoint"
@@ -442,6 +481,7 @@ Sugestões prováveis:
 **Componente API**: ver `06-api-transversais.md` bug 46 — auditoria de permissions middlewares.
 
 **Critério de aceitação**:
+
 - [ ] Gerente consegue clicar em qualquer mesa sem erro
 - [ ] Endpoint correto pra ambos host e manager (compartilhado ou role-agnostic na maior parte)
 
@@ -450,18 +490,21 @@ Sugestões prováveis:
 ### 47. Tela de detalhe/edição de mesa não existe — canvas tem
 
 **Esperado**: Clicar numa mesa do mapa abre tela com:
+
 - Adicionar mais pessoas na mesa
 - Editar mesa (capacidade, nome, observação)
 - Encerrar mesa (fechar conta + liberar)
 - Outras ações de gestão
 
 **Refs canvas**:
+
 - `docs/design-canvas/v5-mgr-tablemenu.png` (table menu do gerente — **principal referência**)
 - `docs/design-canvas/v5-mgr-tablemenu-modals.png`
 - `docs/design-canvas/v5-host-tablemenu.png` (versão host pra comparar)
 - `docs/design-canvas/v5-canvas-tablemenu-overview.png`
 
 **Critério de aceitação**:
+
 - [ ] Clicar numa mesa abre table menu do gerente
 - [ ] Ações implementadas: adicionar pessoas, editar mesa, encerrar mesa
 - [ ] Layout bate 100% com canvas v5-mgr-tablemenu.png

@@ -88,11 +88,7 @@ export const ToolCallIndicator = memo(function ToolCallIndicator({
             className={`block h-[3px] w-[3px] rounded-full bg-current ${
               reducedMotion ? 'opacity-60' : animationClass.dotPulse
             }`}
-            style={
-              reducedMotion
-                ? undefined
-                : { animationDelay: `${i * DOT_PULSE_STAGGER_MS}ms` }
-            }
+            style={reducedMotion ? undefined : { animationDelay: `${i * DOT_PULSE_STAGGER_MS}ms` }}
           />
         ))}
       </span>

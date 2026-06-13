@@ -15,7 +15,10 @@ interface PushChamouGarcomProps {
 }
 
 export const PushChamouGarcom: React.FC<PushChamouGarcomProps> = ({
-  tableLabel, time = 'agora', onTap, urgent = true,
+  tableLabel,
+  time = 'agora',
+  onTap,
+  urgent = true,
 }) => (
   <PushCardIOS
     tone="danger"

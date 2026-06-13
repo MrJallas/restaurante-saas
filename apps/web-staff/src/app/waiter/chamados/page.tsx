@@ -20,9 +20,7 @@ function CallsInner() {
 export default function WaiterCallsPage() {
   return (
     <Suspense
-      fallback={
-        <div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>
-      }
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}
     >
       <CallsInner />
     </Suspense>

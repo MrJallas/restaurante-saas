@@ -51,8 +51,14 @@ interface ScreenHostHomeProps {
 }
 
 export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
-  tenantSlug, hostId, hostInitials = 'EU',
-  onLiberate, onOpenTableStatus, onOpenLateArrival, onOpenScanVerification, onTabChange,
+  tenantSlug,
+  hostId,
+  hostInitials = 'EU',
+  onLiberate,
+  onOpenTableStatus,
+  onOpenLateArrival,
+  onOpenScanVerification,
+  onTabChange,
 }) => {
   const { dark } = useStaffTheme();
   const C = useG(dark);
@@ -90,13 +96,20 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
   useEffect(() => {
     const off = on((event: WsEvent) => {
       if (event.event === 'late_arrival.created') {
-        listPendingLateArrivals(tenantSlug).then(setLateArrivals).catch(() => undefined);
-      } else if (event.event === 'scan_verification.created' || event.event === 'scan_verification.escalated') {
-        listPendingScanVerifications(tenantSlug).then(setScanVerifications).catch(() => undefined);
+        listPendingLateArrivals(tenantSlug)
+          .then(setLateArrivals)
+          .catch(() => undefined);
       } else if (
-        event.event === 'late_arrival.approved'
-        || event.event === 'late_arrival.rejected'
-        || event.event === 'late_arrival.expired'
+        event.event === 'scan_verification.created' ||
+        event.event === 'scan_verification.escalated'
+      ) {
+        listPendingScanVerifications(tenantSlug)
+          .then(setScanVerifications)
+          .catch(() => undefined);
+      } else if (
+        event.event === 'late_arrival.approved' ||
+        event.event === 'late_arrival.rejected' ||
+        event.event === 'late_arrival.expired'
       ) {
         setLateArrivals((prev) => prev.filter((la) => la.id !== event.payload.requestId));
       } else if (event.event === 'scan_verification.resolved') {
@@ -116,13 +129,20 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
   const ocupadas = counts.ocupada ?? 0;
   const liberadas = counts.liberada ?? 0;
   const alerta = counts.alerta ?? 0;
-  const livresList = tables.filter((t) => t.status === 'livre').sort((a, b) => a.capacity - b.capacity);
+  const livresList = tables
+    .filter((t) => t.status === 'livre')
+    .sort((a, b) => a.capacity - b.capacity);
 
   return (
     <div
       style={{
-        width: '100%', height: '100vh', background: C.surface, color: C.ink,
-        fontFamily: G_FONT, display: 'flex', flexDirection: 'column',
+        width: '100%',
+        height: '100vh',
+        background: C.surface,
+        color: C.ink,
+        fontFamily: G_FONT,
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       <GAppHeader
@@ -130,9 +150,16 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
         left={
           <div
             style={{
-              width: 36, height: 36, borderRadius: 10, background: '#7A4FBE', color: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontWeight: 700, fontSize: 13,
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              background: '#7A4FBE',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 700,
+              fontSize: 13,
             }}
           >
             {hostInitials}
@@ -153,15 +180,20 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
 
       <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px 80px' }}>
         {/* Sumário · 4 contadores */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
-          {(
-            [
-              { label: 'Atenção', count: alerta, st: 'alerta' as const },
-              { label: 'Liberadas', count: liberadas, st: 'liberada' as const },
-              { label: 'Em uso', count: ocupadas, st: 'ocupada' as const },
-              { label: 'Livres', count: livres, st: 'livre' as const },
-            ]
-          ).map((s) => {
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: 8,
+            marginBottom: 14,
+          }}
+        >
+          {[
+            { label: 'Atenção', count: alerta, st: 'alerta' as const },
+            { label: 'Liberadas', count: liberadas, st: 'liberada' as const },
+            { label: 'Em uso', count: ocupadas, st: 'ocupada' as const },
+            { label: 'Livres', count: livres, st: 'livre' as const },
+          ].map((s) => {
             const t = HSt[s.st];
             return (
               <button
@@ -169,23 +201,37 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
                 type="button"
                 onClick={() => onOpenTableStatus?.(s.st)}
                 style={{
-                  all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
+                  all: 'unset',
+                  cursor: 'pointer',
+                  boxSizing: 'border-box',
                   background: t.bg,
                   border: `${t.dashed ? '1.5px dashed' : '1.5px solid'} ${t.bd}`,
-                  borderRadius: 12, padding: '10px 8px',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                  borderRadius: 12,
+                  padding: '10px 8px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 2,
                 }}
               >
                 <span
                   style={{
-                    width: 8, height: 8, borderRadius: '50%', background: t.dot,
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: t.dot,
                     animation: t.pulse ? 'gPulse 1.4s infinite' : 'none',
                   }}
                 />
-                <span style={{ fontSize: 22, fontWeight: 800, color: t.fg, lineHeight: 1 }}>{s.count}</span>
+                <span style={{ fontSize: 22, fontWeight: 800, color: t.fg, lineHeight: 1 }}>
+                  {s.count}
+                </span>
                 <span
                   style={{
-                    fontSize: 9, fontWeight: 700, color: t.fg, letterSpacing: 0.5,
+                    fontSize: 9,
+                    fontWeight: 700,
+                    color: t.fg,
+                    letterSpacing: 0.5,
                     textTransform: 'uppercase',
                   }}
                 >
@@ -201,8 +247,12 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
           <div style={{ marginBottom: 18 }}>
             <div
               style={{
-                fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase',
-                color: C.ink, fontWeight: 700, marginBottom: 8,
+                fontSize: 11,
+                letterSpacing: 1.5,
+                textTransform: 'uppercase',
+                color: C.ink,
+                fontWeight: 700,
+                marginBottom: 8,
               }}
             >
               Verificar mesa escaneada ({scanVerifications.length})
@@ -214,17 +264,28 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
                   type="button"
                   onClick={() => onOpenScanVerification?.(sv.id)}
                   style={{
-                    all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
-                    display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '12px 14px', borderRadius: 14,
-                    background: '#F3FBF6', border: '1px solid #CBE8D8',
+                    all: 'unset',
+                    cursor: 'pointer',
+                    boxSizing: 'border-box',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '12px 14px',
+                    borderRadius: 14,
+                    background: '#F3FBF6',
+                    border: '1px solid #CBE8D8',
                   }}
                 >
                   <div
                     style={{
-                      width: 40, height: 40, borderRadius: 10,
-                      background: '#1E8C5A', color: '#fff',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: 40,
+                      height: 40,
+                      borderRadius: 10,
+                      background: '#1E8C5A',
+                      color: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                       flexShrink: 0,
                     }}
                   >
@@ -233,8 +294,11 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        fontSize: 9.5, fontWeight: 800, color: '#176C45',
-                        letterSpacing: 0.7, textTransform: 'uppercase',
+                        fontSize: 9.5,
+                        fontWeight: 800,
+                        color: '#176C45',
+                        letterSpacing: 0.7,
+                        textTransform: 'uppercase',
                         fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
                       }}
                     >
@@ -245,18 +309,29 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
                     </div>
                     <div
                       style={{
-                        fontSize: 12, color: '#176C45', fontWeight: 500, marginTop: 2,
-                        display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center',
+                        fontSize: 12,
+                        color: '#176C45',
+                        fontWeight: 500,
+                        marginTop: 2,
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 6,
+                        alignItems: 'center',
                       }}
                     >
-                      <span>{formatScanDistance(sv)} · CPF {sv.cpfMasked ?? '—'}</span>
+                      <span>
+                        {formatScanDistance(sv)} · CPF {sv.cpfMasked ?? '—'}
+                      </span>
                       {(sv.locationWithinRestaurant ?? sv.insideRadius) === true && (
                         <span
                           style={{
-                            padding: '2px 7px', borderRadius: 100,
-                            background: '#E2F2E8', color: '#176C45',
+                            padding: '2px 7px',
+                            borderRadius: 100,
+                            background: '#E2F2E8',
+                            color: '#176C45',
                             border: '1px solid #BFE0CA',
-                            fontSize: 10, fontWeight: 800,
+                            fontSize: 10,
+                            fontWeight: 800,
                             textTransform: 'uppercase',
                           }}
                         >
@@ -276,8 +351,12 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
           <div style={{ marginBottom: 18 }}>
             <div
               style={{
-                fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase',
-                color: C.ink, fontWeight: 700, marginBottom: 8,
+                fontSize: 11,
+                letterSpacing: 1.5,
+                textTransform: 'uppercase',
+                color: C.ink,
+                fontWeight: 700,
+                marginBottom: 8,
               }}
             >
               Aprovar chegada tardia ({lateArrivals.length})
@@ -289,17 +368,28 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
                   type="button"
                   onClick={() => onOpenLateArrival?.(la.id)}
                   style={{
-                    all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
-                    display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '12px 14px', borderRadius: 14,
-                    background: '#FFF7E6', border: '1px solid #F0DCB6',
+                    all: 'unset',
+                    cursor: 'pointer',
+                    boxSizing: 'border-box',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '12px 14px',
+                    borderRadius: 14,
+                    background: '#FFF7E6',
+                    border: '1px solid #F0DCB6',
                   }}
                 >
                   <div
                     style={{
-                      width: 40, height: 40, borderRadius: 10,
-                      background: '#9A7212', color: '#fff',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: 40,
+                      height: 40,
+                      borderRadius: 10,
+                      background: '#9A7212',
+                      color: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                       flexShrink: 0,
                     }}
                   >
@@ -308,8 +398,11 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        fontSize: 9.5, fontWeight: 800, color: '#7A4D10',
-                        letterSpacing: 0.7, textTransform: 'uppercase',
+                        fontSize: 9.5,
+                        fontWeight: 800,
+                        color: '#7A4D10',
+                        letterSpacing: 0.7,
+                        textTransform: 'uppercase',
                         fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
                       }}
                     >
@@ -332,8 +425,12 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
         {/* Mesas livres pra liberar */}
         <div
           style={{
-            fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase',
-            color: C.ink, fontWeight: 700, marginBottom: 8,
+            fontSize: 11,
+            letterSpacing: 1.5,
+            textTransform: 'uppercase',
+            color: C.ink,
+            fontWeight: 700,
+            marginBottom: 8,
           }}
         >
           Pra liberar ({livresList.length})
@@ -348,20 +445,32 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
               <div
                 key={t.number}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
                   padding: '12px 14px',
-                  background: C.bg, border: `1.5px solid ${C.borderSoft}`, borderRadius: 14,
+                  background: C.bg,
+                  border: `1.5px solid ${C.borderSoft}`,
+                  borderRadius: 14,
                 }}
               >
                 <div
                   style={{
-                    width: 50, height: 50, borderRadius: 12,
-                    background: C.surface, border: `1.5px solid ${C.borderSoft}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    flexShrink: 0, color: C.ink,
+                    width: 50,
+                    height: 50,
+                    borderRadius: 12,
+                    background: C.surface,
+                    border: `1.5px solid ${C.borderSoft}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    color: C.ink,
                   }}
                 >
-                  <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5 }}>{t.number}</span>
+                  <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5 }}>
+                    {t.number}
+                  </span>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>Mesa {t.number}</div>
@@ -373,10 +482,18 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
                   type="button"
                   onClick={() => onLiberate?.(t.number)}
                   style={{
-                    all: 'unset', cursor: 'pointer',
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '11px 16px', background: '#1E8C5A', color: '#fff',
-                    borderRadius: 10, fontSize: 13, fontWeight: 700, letterSpacing: -0.1,
+                    all: 'unset',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '11px 16px',
+                    background: '#1E8C5A',
+                    color: '#fff',
+                    borderRadius: 10,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    letterSpacing: -0.1,
                     flexShrink: 0,
                   }}
                 >

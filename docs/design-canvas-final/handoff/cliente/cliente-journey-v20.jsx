@@ -32,22 +32,46 @@ const fJ = ({ label, screen, note, tag }) => {
   const noteLines = (note || '').length;
   const captionH = note ? 24 + Math.ceil(noteLines / 56) * 18 + 60 : 0;
   return (
-    <DCArtboard key={'v20-journey-' + label} id={'v20-journey-' + label}
+    <DCArtboard
+      key={'v20-journey-' + label}
+      id={'v20-journey-' + label}
       label={`${label} · iOS`}
-      width={414} height={844 + captionH + 24}
-      style={{ background: '#f0eee9', borderRadius: 4 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 12px', gap: 18 }}>
+      width={414}
+      height={844 + captionH + 24}
+      style={{ background: '#f0eee9', borderRadius: 4 }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          padding: '0 12px',
+          gap: 18,
+        }}
+      >
         {screen}
         {note && (
-          <div style={{
-            marginTop: 14, maxWidth: 420,
-            display: 'flex', flexDirection: 'column', gap: 8,
-          }}>
+          <div
+            style={{
+              marginTop: 14,
+              maxWidth: 420,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}
+          >
             {tag && <JourneyTag tag={tag} />}
-            <div style={{
-              fontSize: 12, color: C.mute, lineHeight: 1.5,
-              fontFamily: FONT, letterSpacing: -0.05,
-            }}>{note}</div>
+            <div
+              style={{
+                fontSize: 12,
+                color: C.mute,
+                lineHeight: 1.5,
+                fontFamily: FONT,
+                letterSpacing: -0.05,
+              }}
+            >
+              {note}
+            </div>
           </div>
         )}
       </div>
@@ -58,21 +82,30 @@ const fJ = ({ label, screen, note, tag }) => {
 // tag colorida em mono caps
 const JourneyTag = ({ tag }) => {
   const styles = {
-    aligned:   { color: C.success, background: C.successWash, label: 'aligned · prod = canvas' },
-    soProd:    { color: C.mute,    background: C.surface,     label: 'só prod · sem frame canvas' },
-    soCanvas:  { color: C.mute,    background: C.surface,     label: 'só canvas · feature pendente' },
-    diverge:   { color: C.warning, background: C.warningWash, label: 'diverge · decisão pendente' },
-    pendente:  { color: C.danger,  background: C.dangerWash,  label: 'pendente · cabear em prod' },
+    aligned: { color: C.success, background: C.successWash, label: 'aligned · prod = canvas' },
+    soProd: { color: C.mute, background: C.surface, label: 'só prod · sem frame canvas' },
+    soCanvas: { color: C.mute, background: C.surface, label: 'só canvas · feature pendente' },
+    diverge: { color: C.warning, background: C.warningWash, label: 'diverge · decisão pendente' },
+    pendente: { color: C.danger, background: C.dangerWash, label: 'pendente · cabear em prod' },
   };
   const s = styles[tag] || styles.aligned;
   return (
-    <span style={{
-      alignSelf: 'flex-start',
-      padding: '4px 8px', borderRadius: 4,
-      background: s.background, color: s.color,
-      fontFamily: FONT, fontSize: 9.5, fontWeight: 600,
-      letterSpacing: 1.2, textTransform: 'uppercase',
-    }}>{s.label}</span>
+    <span
+      style={{
+        alignSelf: 'flex-start',
+        padding: '4px 8px',
+        borderRadius: 4,
+        background: s.background,
+        color: s.color,
+        fontFamily: FONT,
+        fontSize: 9.5,
+        fontWeight: 600,
+        letterSpacing: 1.2,
+        textTransform: 'uppercase',
+      }}
+    >
+      {s.label}
+    </span>
   );
 };
 
@@ -84,31 +117,57 @@ const JourneyTag = ({ tag }) => {
 // ─────────────────────────────────────────────────────────────
 const F01_Splash = () => (
   <IOSFrame>
-    <div style={{
-      flex: 1, display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', gap: 38,
-      paddingBottom: 40,
-    }}>
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 38,
+        paddingBottom: 40,
+      }}
+    >
       {/* Monograma TL · alinha brand de Trattoria Luna */}
-      <div style={{
-        width: 96, height: 96, borderRadius: 24,
-        background: C.ink, color: '#fff',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: FONT, fontSize: 36, fontWeight: 700, letterSpacing: -1.5,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
-      }}>TL</div>
+      <div
+        style={{
+          width: 96,
+          height: 96,
+          borderRadius: 24,
+          background: C.ink,
+          color: '#fff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: FONT,
+          fontSize: 36,
+          fontWeight: 700,
+          letterSpacing: -1.5,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+        }}
+      >
+        TL
+      </div>
 
       {/* 3 bouncing dots · animação cap 1.5s */}
       <div style={{ display: 'flex', gap: 8 }}>
-        {[0, 1, 2].map(i => (
-          <span key={i} style={{
-            width: 8, height: 8, borderRadius: 4, background: C.ink,
-            animation: `cBounce 1.4s ${i * 0.18}s ease-in-out infinite`,
-          }} />
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 4,
+              background: C.ink,
+              animation: `cBounce 1.4s ${i * 0.18}s ease-in-out infinite`,
+            }}
+          />
         ))}
       </div>
 
-      <MonoLabel size={10} color={C.faint}>Conectando à mesa 14</MonoLabel>
+      <MonoLabel size={10} color={C.faint}>
+        Conectando à mesa 14
+      </MonoLabel>
 
       <style>{`
         @keyframes cBounce {
@@ -129,7 +188,11 @@ const F01_Splash = () => (
 // ─────────────────────────────────────────────────────────────
 const F02_Identify = () => {
   const Comp = window.ScreenCustomerIdentifyBeforeJoin;
-  return Comp ? <Comp filled={false} /> : <PlaceholderFrame label="ScreenCustomerIdentifyBeforeJoin" />;
+  return Comp ? (
+    <Comp filled={false} />
+  ) : (
+    <PlaceholderFrame label="ScreenCustomerIdentifyBeforeJoin" />
+  );
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -141,22 +204,24 @@ const F02_Identify = () => {
 const F03_Home = () => (
   <IOSFrame>
     <TopBar table="Mesa 14" restaurant="Trattoria Luna" />
-    <div style={{
-      flex: 1, padding: '8px 24px 24px',
-      display: 'flex', flexDirection: 'column',
-    }}>
+    <div
+      style={{
+        flex: 1,
+        padding: '8px 24px 24px',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
       <div style={{ marginTop: 24 }}>
         <AssistantBlock label="Assistente">
-          Olá Caleb · vocês querem que eu sugira pratos pra começar
-          ou preferem ver o cardápio?
+          Olá Caleb · vocês querem que eu sugira pratos pra começar ou preferem ver o cardápio?
         </AssistantBlock>
       </div>
 
       <div style={{ marginTop: 22 }}>
-        <ContextualChips chips={[
-          { label: 'Sugere você', primary: true },
-          { label: 'Ver cardápio' },
-        ]} />
+        <ContextualChips
+          chips={[{ label: 'Sugere você', primary: true }, { label: 'Ver cardápio' }]}
+        />
       </div>
 
       <div style={{ flex: 1 }} />
@@ -175,29 +240,50 @@ const F03_Home = () => (
 const F04_Chat = () => (
   <IOSFrame>
     <TopBar table="Mesa 14" restaurant="Trattoria Luna" />
-    <div style={{
-      flex: 1, padding: '8px 24px 24px',
-      display: 'flex', flexDirection: 'column', gap: 16, overflow: 'hidden',
-    }}>
+    <div
+      style={{
+        flex: 1,
+        padding: '8px 24px 24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        overflow: 'hidden',
+      }}
+    >
       <CustomerBubble when="agora">queria 1 vinho tinto pra acompanhar</CustomerBubble>
       <div>
-        <div style={{
-          fontFamily: FONT, fontSize: 11, fontWeight: 500,
-          letterSpacing: 1, textTransform: 'uppercase',
-          color: C.mute, marginBottom: 8,
-        }}>Assistente · agora</div>
+        <div
+          style={{
+            fontFamily: FONT,
+            fontSize: 11,
+            fontWeight: 500,
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+            color: C.mute,
+            marginBottom: 8,
+          }}
+        >
+          Assistente · agora
+        </div>
         <ToolCallIndicator name="add_to_order" category="menu" />
-        <div style={{
-          marginTop: 10,
-          fontSize: 15.5, lineHeight: 1.45, letterSpacing: -0.2, color: C.ink,
-        }}>
+        <div
+          style={{
+            marginTop: 10,
+            fontSize: 15.5,
+            lineHeight: 1.45,
+            letterSpacing: -0.2,
+            color: C.ink,
+          }}
+        >
           Adicionei o <b>Malbec da casa</b> · R$ 64 · serve em 6 min.
         </div>
-        <ContextualChips chips={[
-          { label: 'Ver pedido' },
-          { label: 'Pedir mais alguma coisa' },
-          { label: 'Pedir a conta' },
-        ]} />
+        <ContextualChips
+          chips={[
+            { label: 'Ver pedido' },
+            { label: 'Pedir mais alguma coisa' },
+            { label: 'Pedir a conta' },
+          ]}
+        />
       </div>
 
       <div style={{ flex: 1 }} />
@@ -217,58 +303,104 @@ const F05_Menu = () => (
   <IOSFrame>
     <TopBar table="Mesa 14" restaurant="Trattoria Luna" />
     {/* Chat por baixo · blur leve */}
-    <div style={{
-      flex: 1, position: 'relative',
-      padding: '8px 24px 24px',
-      filter: 'blur(.5px)', opacity: 0.5,
-      overflow: 'hidden',
-    }}>
+    <div
+      style={{
+        flex: 1,
+        position: 'relative',
+        padding: '8px 24px 24px',
+        filter: 'blur(.5px)',
+        opacity: 0.5,
+        overflow: 'hidden',
+      }}
+    >
       <CustomerBubble when="agora">abrir cardápio</CustomerBubble>
     </div>
 
     {/* Overlay sheet sobe · ~68% da altura */}
-    <div style={{
-      position: 'absolute', left: 0, right: 0, bottom: 0, top: '32%',
-      background: '#fff',
-      borderTopLeftRadius: 24, borderTopRightRadius: 24,
-      border: `1.5px solid ${C.ink}`, borderBottom: 'none',
-      padding: '12px 22px 22px',
-      boxShadow: '0 -8px 32px rgba(0,0,0,0.10)',
-    }}>
-      <div style={{
-        width: 40, height: 4, borderRadius: 2, background: C.faint,
-        margin: '0 auto 14px', opacity: 0.6,
-      }} />
-      <MonoLabel size={10} color={C.mute}>Cardápio · Trattoria Luna</MonoLabel>
-      <div style={{
-        fontSize: 22, fontWeight: 600, letterSpacing: -0.4,
-        marginTop: 4, color: C.ink,
-      }}>47 itens · 6 categorias</div>
+    <div
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        top: '32%',
+        background: '#fff',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        border: `1.5px solid ${C.ink}`,
+        borderBottom: 'none',
+        padding: '12px 22px 22px',
+        boxShadow: '0 -8px 32px rgba(0,0,0,0.10)',
+      }}
+    >
+      <div
+        style={{
+          width: 40,
+          height: 4,
+          borderRadius: 2,
+          background: C.faint,
+          margin: '0 auto 14px',
+          opacity: 0.6,
+        }}
+      />
+      <MonoLabel size={10} color={C.mute}>
+        Cardápio · Trattoria Luna
+      </MonoLabel>
+      <div
+        style={{
+          fontSize: 22,
+          fontWeight: 600,
+          letterSpacing: -0.4,
+          marginTop: 4,
+          color: C.ink,
+        }}
+      >
+        47 itens · 6 categorias
+      </div>
 
       {/* Search pill */}
-      <div style={{
-        marginTop: 14, padding: '11px 16px', borderRadius: 999,
-        border: `1px solid ${C.borderSoft}`, background: C.surface,
-        display: 'flex', alignItems: 'center', gap: 10,
-        fontSize: 14, color: C.faint,
-      }}>
+      <div
+        style={{
+          marginTop: 14,
+          padding: '11px 16px',
+          borderRadius: 999,
+          border: `1px solid ${C.borderSoft}`,
+          background: C.surface,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          fontSize: 14,
+          color: C.faint,
+        }}
+      >
         <svg width="14" height="14" viewBox="0 0 14 14">
-          <circle cx="6" cy="6" r="4" stroke={C.faint} strokeWidth="1.4" fill="none"/>
-          <path d="M9 9l3 3" stroke={C.faint} strokeWidth="1.4" strokeLinecap="round"/>
+          <circle cx="6" cy="6" r="4" stroke={C.faint} strokeWidth="1.4" fill="none" />
+          <path d="M9 9l3 3" stroke={C.faint} strokeWidth="1.4" strokeLinecap="round" />
         </svg>
         Buscar prato
       </div>
 
       {/* Categories */}
-      <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'nowrap', overflow: 'hidden' }}>
+      <div
+        style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'nowrap', overflow: 'hidden' }}
+      >
         {['Pratos do dia', 'Entradas', 'Massas', 'Carnes'].map((cat, i) => (
-          <span key={cat} style={{
-            padding: '6px 12px', borderRadius: 999,
-            border: `1px solid ${i === 0 ? C.ink : C.borderSoft}`,
-            background: i === 0 ? C.ink : '#fff',
-            color: i === 0 ? '#fff' : C.ink,
-            fontSize: 12, fontWeight: i === 0 ? 500 : 400, whiteSpace: 'nowrap', flexShrink: 0,
-          }}>{cat}</span>
+          <span
+            key={cat}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 999,
+              border: `1px solid ${i === 0 ? C.ink : C.borderSoft}`,
+              background: i === 0 ? C.ink : '#fff',
+              color: i === 0 ? '#fff' : C.ink,
+              fontSize: 12,
+              fontWeight: i === 0 ? 500 : 400,
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            {cat}
+          </span>
         ))}
       </div>
 
@@ -276,16 +408,25 @@ const F05_Menu = () => (
       <div style={{ marginTop: 14 }}>
         {[
           { name: 'Risoto cogumelos · ao vinho', price: 'R$ 64' },
-          { name: 'Tagliatelle al ragù',         price: 'R$ 58' },
-          { name: 'Polpettine della casa',       price: 'R$ 48' },
+          { name: 'Tagliatelle al ragù', price: 'R$ 58' },
+          { name: 'Polpettine della casa', price: 'R$ 48' },
         ].map((d, i) => (
-          <div key={d.name} style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: '12px 0',
-            borderBottom: i < 2 ? `1px solid ${C.borderSoft}` : 'none',
-          }}>
-            <span style={{ fontSize: 14.5, color: C.ink, fontWeight: 500, letterSpacing: -0.1 }}>{d.name}</span>
-            <span style={{ fontFamily: MONO, fontSize: 13, color: C.ink, fontWeight: 500 }}>{d.price}</span>
+          <div
+            key={d.name}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '12px 0',
+              borderBottom: i < 2 ? `1px solid ${C.borderSoft}` : 'none',
+            }}
+          >
+            <span style={{ fontSize: 14.5, color: C.ink, fontWeight: 500, letterSpacing: -0.1 }}>
+              {d.name}
+            </span>
+            <span style={{ fontFamily: MONO, fontSize: 13, color: C.ink, fontWeight: 500 }}>
+              {d.price}
+            </span>
           </div>
         ))}
       </div>
@@ -302,28 +443,49 @@ const F05_Menu = () => (
 const F06_AddToOrder = () => (
   <IOSFrame>
     <TopBar table="Mesa 14" restaurant="Trattoria Luna" />
-    <div style={{
-      flex: 1, padding: '8px 24px 24px',
-      display: 'flex', flexDirection: 'column', gap: 16, overflow: 'hidden',
-    }}>
+    <div
+      style={{
+        flex: 1,
+        padding: '8px 24px 24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        overflow: 'hidden',
+      }}
+    >
       <CustomerBubble when="há 30 s">[ tap "Vinho" ]</CustomerBubble>
       <div>
-        <div style={{
-          fontFamily: FONT, fontSize: 11, fontWeight: 500,
-          letterSpacing: 1, textTransform: 'uppercase',
-          color: C.mute, marginBottom: 8,
-        }}>Assistente · agora</div>
-        <div style={{
-          fontSize: 15.5, lineHeight: 1.45, letterSpacing: -0.2, color: C.ink,
-        }}>
+        <div
+          style={{
+            fontFamily: FONT,
+            fontSize: 11,
+            fontWeight: 500,
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+            color: C.mute,
+            marginBottom: 8,
+          }}
+        >
+          Assistente · agora
+        </div>
+        <div
+          style={{
+            fontSize: 15.5,
+            lineHeight: 1.45,
+            letterSpacing: -0.2,
+            color: C.ink,
+          }}
+        >
           Tinto, branco ou rosé? A carta de hoje tem 12 rótulos.
         </div>
-        <ContextualChips chips={[
-          { label: 'Tinto' },
-          { label: 'Branco' },
-          { label: 'Rosé' },
-          { label: 'Recomende você' },
-        ]} />
+        <ContextualChips
+          chips={[
+            { label: 'Tinto' },
+            { label: 'Branco' },
+            { label: 'Rosé' },
+            { label: 'Recomende você' },
+          ]}
+        />
       </div>
 
       <div style={{ flex: 1 }} />
@@ -342,33 +504,64 @@ const F07_CallWaiter = () => (
   <IOSFrame>
     <TopBar table="Mesa 14" restaurant="Trattoria Luna" />
     {/* chat por baixo · blur */}
-    <div style={{
-      flex: 1, position: 'relative', padding: '8px 24px 24px',
-      filter: 'blur(.5px)', opacity: 0.5, overflow: 'hidden',
-    }}>
+    <div
+      style={{
+        flex: 1,
+        position: 'relative',
+        padding: '8px 24px 24px',
+        filter: 'blur(.5px)',
+        opacity: 0.5,
+        overflow: 'hidden',
+      }}
+    >
       <CustomerBubble when="agora">chamar garçom</CustomerBubble>
     </div>
 
     {/* sheet · ~52% altura */}
-    <div style={{
-      position: 'absolute', left: 0, right: 0, bottom: 0, top: '48%',
-      background: '#fff',
-      borderTopLeftRadius: 22, borderTopRightRadius: 22,
-      border: `1.5px solid ${C.ink}`, borderBottom: 'none',
-      padding: '14px 22px 28px',
-      boxShadow: '0 -8px 32px rgba(0,0,0,0.10)',
-      display: 'flex', flexDirection: 'column', gap: 14,
-    }}>
-      <div style={{
-        width: 40, height: 4, borderRadius: 2, background: C.faint,
-        margin: '0 auto', opacity: 0.6,
-      }} />
+    <div
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        top: '48%',
+        background: '#fff',
+        borderTopLeftRadius: 22,
+        borderTopRightRadius: 22,
+        border: `1.5px solid ${C.ink}`,
+        borderBottom: 'none',
+        padding: '14px 22px 28px',
+        boxShadow: '0 -8px 32px rgba(0,0,0,0.10)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14,
+      }}
+    >
+      <div
+        style={{
+          width: 40,
+          height: 4,
+          borderRadius: 2,
+          background: C.faint,
+          margin: '0 auto',
+          opacity: 0.6,
+        }}
+      />
       <div>
-        <MonoLabel size={10} color={C.mute}>Chamar garçom</MonoLabel>
-        <div style={{
-          fontSize: 22, fontWeight: 600, letterSpacing: -0.4,
-          marginTop: 4, color: C.ink,
-        }}>Por que você precisa do garçom?</div>
+        <MonoLabel size={10} color={C.mute}>
+          Chamar garçom
+        </MonoLabel>
+        <div
+          style={{
+            fontSize: 22,
+            fontWeight: 600,
+            letterSpacing: -0.4,
+            marginTop: 4,
+            color: C.ink,
+          }}
+        >
+          Por que você precisa do garçom?
+        </div>
       </div>
 
       {[
@@ -377,14 +570,22 @@ const F07_CallWaiter = () => (
         { label: 'Água', sub: 'Com ou sem gás' },
         { label: 'Outro motivo', sub: 'Conta o que precisa' },
       ].map((r, i) => (
-        <div key={r.label} style={{
-          padding: '12px 14px', borderRadius: 12,
-          border: `1px solid ${i === 0 ? C.ink : C.borderSoft}`,
-          background: i === 0 ? C.surface : '#fff',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        }}>
+        <div
+          key={r.label}
+          style={{
+            padding: '12px 14px',
+            borderRadius: 12,
+            border: `1px solid ${i === 0 ? C.ink : C.borderSoft}`,
+            background: i === 0 ? C.surface : '#fff',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
           <div>
-            <div style={{ fontSize: 14.5, fontWeight: 500, color: C.ink, letterSpacing: -0.1 }}>{r.label}</div>
+            <div style={{ fontSize: 14.5, fontWeight: 500, color: C.ink, letterSpacing: -0.1 }}>
+              {r.label}
+            </div>
             <div style={{ fontSize: 12, color: C.mute, marginTop: 1 }}>{r.sub}</div>
           </div>
           <span style={{ fontSize: 14, color: C.faint }}>›</span>
@@ -403,29 +604,50 @@ const F07_CallWaiter = () => (
 const F08_RequestBill = () => (
   <IOSFrame>
     <TopBar table="Mesa 14" restaurant="Trattoria Luna" />
-    <div style={{
-      flex: 1, padding: '8px 24px 24px',
-      display: 'flex', flexDirection: 'column', gap: 16, overflow: 'hidden',
-    }}>
+    <div
+      style={{
+        flex: 1,
+        padding: '8px 24px 24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        overflow: 'hidden',
+      }}
+    >
       <CustomerBubble when="agora">pede a conta</CustomerBubble>
       <div>
-        <div style={{
-          fontFamily: FONT, fontSize: 11, fontWeight: 500,
-          letterSpacing: 1, textTransform: 'uppercase',
-          color: C.mute, marginBottom: 8,
-        }}>Assistente · agora</div>
+        <div
+          style={{
+            fontFamily: FONT,
+            fontSize: 11,
+            fontWeight: 500,
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+            color: C.mute,
+            marginBottom: 8,
+          }}
+        >
+          Assistente · agora
+        </div>
         <ToolCallIndicator name="request_bill" category="payment" />
-        <div style={{
-          marginTop: 10,
-          fontSize: 15.5, lineHeight: 1.45, letterSpacing: -0.2, color: C.ink,
-        }}>
+        <div
+          style={{
+            marginTop: 10,
+            fontSize: 15.5,
+            lineHeight: 1.45,
+            letterSpacing: -0.2,
+            color: C.ink,
+          }}
+        >
           Você prefere pagar pelo app ou que o garçom traga a maquininha?
         </div>
-        <ContextualChips chips={[
-          { label: 'Pagar pelo app', primary: true },
-          { label: 'Chamar garçom' },
-          { label: 'Voltar' },
-        ]} />
+        <ContextualChips
+          chips={[
+            { label: 'Pagar pelo app', primary: true },
+            { label: 'Chamar garçom' },
+            { label: 'Voltar' },
+          ]}
+        />
       </div>
 
       <div style={{ flex: 1 }} />
@@ -465,13 +687,19 @@ const F10_Merge = () => {
 const F11_Manager = () => (
   <IOSFrame>
     <TopBar table="Mesa 14" restaurant="Trattoria Luna" />
-    <div style={{
-      flex: 1, padding: '8px 24px 24px',
-      display: 'flex', flexDirection: 'column', gap: 16, overflow: 'hidden',
-    }}>
+    <div
+      style={{
+        flex: 1,
+        padding: '8px 24px 24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        overflow: 'hidden',
+      }}
+    >
       <ManagerBubble name="Renata" role="Gerente" when="há 1 min">
-        Acabei de ver o problema com o seu risoto · já tô com a cozinha
-        e te aviso aqui em 2 min, tá?
+        Acabei de ver o problema com o seu risoto · já tô com a cozinha e te aviso aqui em 2 min,
+        tá?
       </ManagerBubble>
       <CustomerBubble when="agora">obrigado · vou esperar</CustomerBubble>
 
@@ -491,24 +719,44 @@ const F11_Manager = () => (
 const F12_CourtesyRating = () => (
   <IOSFrame>
     <TopBar table="Mesa 14" restaurant="Trattoria Luna" />
-    <div style={{
-      flex: 1, padding: '8px 24px 24px',
-      display: 'flex', flexDirection: 'column', gap: 16, overflow: 'hidden',
-    }}>
+    <div
+      style={{
+        flex: 1,
+        padding: '8px 24px 24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        overflow: 'hidden',
+      }}
+    >
       {/* CourtesyArrival · gift bubble */}
-      <div style={{
-        background: '#fafaf8', border: `1px solid ${C.borderSoft}`,
-        borderLeft: `3px solid ${C.warning}`,
-        borderRadius: 12,
-        padding: '14px 16px',
-      }}>
+      <div
+        style={{
+          background: '#fafaf8',
+          border: `1px solid ${C.borderSoft}`,
+          borderLeft: `3px solid ${C.warning}`,
+          borderRadius: 12,
+          padding: '14px 16px',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 16,
-            background: C.warning, color: '#fff',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>{Ico.giftSeal(20, '#fff')}</div>
-          <MonoLabel size={10} color={C.warning}>Cortesia da casa</MonoLabel>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 16,
+              background: C.warning,
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {Ico.giftSeal(20, '#fff')}
+          </div>
+          <MonoLabel size={10} color={C.warning}>
+            Cortesia da casa
+          </MonoLabel>
         </div>
         <div style={{ fontSize: 15, lineHeight: 1.5, color: C.ink, letterSpacing: -0.05 }}>
           Renata mandou uma <b>taça de espumante</b> pela demora · já vai na mesa.
@@ -516,18 +764,27 @@ const F12_CourtesyRating = () => (
       </div>
 
       {/* Rating · 5 stars */}
-      <div style={{
-        background: '#fff', border: `1.4px solid ${C.ink}`,
-        borderRadius: 14, padding: '16px 18px', textAlign: 'center',
-      }}>
-        <MonoLabel size={10} color={C.mute}>Como foi a experiência?</MonoLabel>
+      <div
+        style={{
+          background: '#fff',
+          border: `1.4px solid ${C.ink}`,
+          borderRadius: 14,
+          padding: '16px 18px',
+          textAlign: 'center',
+        }}
+      >
+        <MonoLabel size={10} color={C.mute}>
+          Como foi a experiência?
+        </MonoLabel>
         <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 14 }}>
-          {[1, 2, 3, 4, 5].map(n => (
+          {[1, 2, 3, 4, 5].map((n) => (
             <svg key={n} width="32" height="32" viewBox="0 0 32 32">
               <path
                 d="M16 4l3.5 8.5L28 14l-6.5 5.5 2 8.5L16 23l-7.5 5 2-8.5L4 14l8.5-1.5z"
                 fill={n <= 4 ? C.ink : 'none'}
-                stroke={C.ink} strokeWidth="1.5" strokeLinejoin="round"
+                stroke={C.ink}
+                strokeWidth="1.5"
+                strokeLinejoin="round"
               />
             </svg>
           ))}
@@ -551,37 +808,56 @@ const F12_CourtesyRating = () => (
 const F13_LGPD = () => (
   <IOSFrame>
     <TopBar table="Mesa 14" restaurant="Trattoria Luna" />
-    <div style={{
-      flex: 1, padding: '8px 24px 24px',
-      display: 'flex', flexDirection: 'column', gap: 16, overflow: 'hidden',
-    }}>
+    <div
+      style={{
+        flex: 1,
+        padding: '8px 24px 24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        overflow: 'hidden',
+      }}
+    >
       <CustomerBubble when="agora">quero apagar meus dados</CustomerBubble>
       <div>
-        <div style={{
-          fontFamily: FONT, fontSize: 11, fontWeight: 500,
-          letterSpacing: 1, textTransform: 'uppercase',
-          color: C.mute, marginBottom: 8,
-        }}>Assistente · agora</div>
+        <div
+          style={{
+            fontFamily: FONT,
+            fontSize: 11,
+            fontWeight: 500,
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+            color: C.mute,
+            marginBottom: 8,
+          }}
+        >
+          Assistente · agora
+        </div>
         <ToolCallIndicator name="show_lgpd_notice" category="lgpd" />
-        <div style={{
-          marginTop: 10,
-          background: '#fafaf8', border: `1px solid ${C.borderSoft}`,
-          borderLeft: `3px solid ${C.ink}`, borderRadius: 10,
-          padding: '14px 16px',
-        }}>
+        <div
+          style={{
+            marginTop: 10,
+            background: '#fafaf8',
+            border: `1px solid ${C.borderSoft}`,
+            borderLeft: `3px solid ${C.ink}`,
+            borderRadius: 10,
+            padding: '14px 16px',
+          }}
+        >
           <MonoLabel size={9.5} color={C.ink} style={{ display: 'block', marginBottom: 8 }}>
             Aviso LGPD
           </MonoLabel>
           <div style={{ fontSize: 15, lineHeight: 1.5, letterSpacing: -0.15, color: C.ink }}>
-            Você, como consumidor, tem direito por lei (LGPD) de pedir a
-            exclusão dos seus dados a qualquer momento. Posso apagar suas
-            conversas agora?
+            Você, como consumidor, tem direito por lei (LGPD) de pedir a exclusão dos seus dados a
+            qualquer momento. Posso apagar suas conversas agora?
           </div>
         </div>
-        <ContextualChips chips={[
-          { label: 'Sim, quero excluir', destructive: true },
-          { label: 'Não, não quero excluir' },
-        ]} />
+        <ContextualChips
+          chips={[
+            { label: 'Sim, quero excluir', destructive: true },
+            { label: 'Não, não quero excluir' },
+          ]}
+        />
       </div>
 
       <div style={{ flex: 1 }} />
@@ -593,14 +869,30 @@ const F13_LGPD = () => (
 // fallback usado se algum window.* não estiver carregado (debug)
 const PlaceholderFrame = ({ label }) => (
   <IOSFrame>
-    <div style={{
-      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexDirection: 'column', gap: 16, padding: 40,
-    }}>
-      <MonoLabel size={11} color={C.danger}>frame não carregado</MonoLabel>
-      <div style={{
-        fontFamily: MONO, fontSize: 12, color: C.mute, textAlign: 'center',
-      }}>{label}</div>
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'column',
+        gap: 16,
+        padding: 40,
+      }}
+    >
+      <MonoLabel size={11} color={C.danger}>
+        frame não carregado
+      </MonoLabel>
+      <div
+        style={{
+          fontFamily: MONO,
+          fontSize: 12,
+          color: C.mute,
+          textAlign: 'center',
+        }}
+      >
+        {label}
+      </div>
     </div>
   </IOSFrame>
 );
@@ -751,7 +1043,17 @@ window.CLIENTE_JOURNEY_V20_SECTIONS = [
 ];
 
 Object.assign(window, {
-  F01_Splash, F02_Identify, F03_Home, F04_Chat, F05_Menu,
-  F06_AddToOrder, F07_CallWaiter, F08_RequestBill,
-  F09_LateArrival, F10_Merge, F11_Manager, F12_CourtesyRating, F13_LGPD,
+  F01_Splash,
+  F02_Identify,
+  F03_Home,
+  F04_Chat,
+  F05_Menu,
+  F06_AddToOrder,
+  F07_CallWaiter,
+  F08_RequestBill,
+  F09_LateArrival,
+  F10_Merge,
+  F11_Manager,
+  F12_CourtesyRating,
+  F13_LGPD,
 });

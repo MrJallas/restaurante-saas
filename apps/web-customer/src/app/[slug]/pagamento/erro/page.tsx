@@ -9,32 +9,34 @@ import { AppShell } from '../../../../components/layout/AppShell';
 import { PillButton } from '../../../../components/ui/PillButton';
 import { Row } from '../../../../components/ui/Row';
 
-const REASON_CODES: Record<string, { code: string; title: string; body: string; motive: string }> = {
-  expired: {
-    code: 'E-104',
-    title: 'Algo deu errado com seu Pix',
-    body: 'Seu banco não respondeu a tempo. Sua conta não foi debitada — você pode tentar novamente agora.',
-    motive: 'tempo de expiração do QR Code. Gere um novo código ou tente outra forma de pagamento.',
-  },
-  failed: {
-    code: 'E-102',
-    title: 'Transação recusada',
-    body: 'Seu banco recusou a transação. Sua conta não foi debitada — você pode tentar novamente agora.',
-    motive: 'recusa do banco emissor. Confira o saldo ou tente outra forma de pagamento.',
-  },
-  method_unavailable: {
-    code: 'E-210',
-    title: 'Forma de pagamento indisponível',
-    body: 'Esta forma de pagamento ainda não está ativa no restaurante. Use o Pix ou chame o garçom.',
-    motive: 'integração pendente. Pague via Pix ou chame o garçom para pagamento presencial.',
-  },
-  gateway: {
-    code: 'E-500',
-    title: 'Problema na comunicação',
-    body: 'Não conseguimos falar com a maquininha agora. Sua conta não foi debitada.',
-    motive: 'falha temporária no gateway. Tente novamente em alguns segundos.',
-  },
-};
+const REASON_CODES: Record<string, { code: string; title: string; body: string; motive: string }> =
+  {
+    expired: {
+      code: 'E-104',
+      title: 'Algo deu errado com seu Pix',
+      body: 'Seu banco não respondeu a tempo. Sua conta não foi debitada — você pode tentar novamente agora.',
+      motive:
+        'tempo de expiração do QR Code. Gere um novo código ou tente outra forma de pagamento.',
+    },
+    failed: {
+      code: 'E-102',
+      title: 'Transação recusada',
+      body: 'Seu banco recusou a transação. Sua conta não foi debitada — você pode tentar novamente agora.',
+      motive: 'recusa do banco emissor. Confira o saldo ou tente outra forma de pagamento.',
+    },
+    method_unavailable: {
+      code: 'E-210',
+      title: 'Forma de pagamento indisponível',
+      body: 'Esta forma de pagamento ainda não está ativa no restaurante. Use o Pix ou chame o garçom.',
+      motive: 'integração pendente. Pague via Pix ou chame o garçom para pagamento presencial.',
+    },
+    gateway: {
+      code: 'E-500',
+      title: 'Problema na comunicação',
+      body: 'Não conseguimos falar com a maquininha agora. Sua conta não foi debitada.',
+      motive: 'falha temporária no gateway. Tente novamente em alguns segundos.',
+    },
+  };
 
 interface AltOption {
   label: string;
@@ -60,7 +62,9 @@ export default function PagamentoErroPage() {
     const d = new Date();
     return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
   }, []);
-  const amount = amountParam ? `R$ ${(Number(amountParam) / 100).toFixed(2).replace('.', ',')}` : '—';
+  const amount = amountParam
+    ? `R$ ${(Number(amountParam) / 100).toFixed(2).replace('.', ',')}`
+    : '—';
 
   const alternatives: AltOption[] = [
     { label: 'Cartão de crédito', sub: 'Visa, Master, Elo' },

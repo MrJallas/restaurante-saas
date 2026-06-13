@@ -48,9 +48,7 @@ export const AssistantBlock = memo(function AssistantBlock({
 
   return (
     <div className={`flex flex-col gap-2 ${animClass}`} role="group" aria-label={kicker}>
-      <div className="text-[11px] font-medium uppercase tracking-[1px] text-mute">
-        {kicker}
-      </div>
+      <div className="text-[11px] font-medium uppercase tracking-[1px] text-mute">{kicker}</div>
       {children}
     </div>
   );

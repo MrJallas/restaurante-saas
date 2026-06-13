@@ -69,10 +69,7 @@ export default function HostApproveMergePage() {
           createdAt: new Date().toISOString(),
         };
         try {
-          window.sessionStorage.setItem(
-            `table-merge:${dto.id}`,
-            JSON.stringify(dto),
-          );
+          window.sessionStorage.setItem(`table-merge:${dto.id}`, JSON.stringify(dto));
         } catch {
           /* ignore */
         }

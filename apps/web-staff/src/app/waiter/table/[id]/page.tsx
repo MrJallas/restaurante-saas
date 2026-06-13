@@ -10,8 +10,7 @@ function TableDetailInner() {
   const route = useParams<{ id: string }>();
   const params = useSearchParams();
   const dark = params.get('dark') === '1';
-  const tenantSlug =
-    params.get('tenant') ?? process.env.NEXT_PUBLIC_DEFAULT_TENANT ?? 'demo';
+  const tenantSlug = params.get('tenant') ?? process.env.NEXT_PUBLIC_DEFAULT_TENANT ?? 'demo';
   const numRaw = params.get('tableNumber');
   const tableNumber = numRaw ? parseInt(numRaw, 10) : undefined;
   return (
@@ -27,9 +26,7 @@ function TableDetailInner() {
 export default function WaiterTablePage() {
   return (
     <Suspense
-      fallback={
-        <div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>
-      }
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}
     >
       <TableDetailInner />
     </Suspense>

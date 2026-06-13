@@ -7,10 +7,7 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import type {
-  CustomerCourtesyDto,
-  CustomerCourtesyHistoryDto,
-} from '@restaurant/shared-types';
+import type { CustomerCourtesyDto, CustomerCourtesyHistoryDto } from '@restaurant/shared-types';
 import { MongoService } from '../../infra/mongo/mongo.service';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
@@ -445,10 +442,7 @@ export class CourtesiesService {
       const collection = db.collection<CourtesyHistoryDoc>(HISTORY_COLLECTION);
       await collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
       await collection.createIndex({ tenantId: 1, customerId: 1, createdAt: -1 });
-      await collection.createIndex(
-        { tenantId: 1, customerId: 1, courtesyId: 1 },
-        { unique: true },
-      );
+      await collection.createIndex({ tenantId: 1, customerId: 1, courtesyId: 1 }, { unique: true });
       await collection.createIndex({ tenantId: 1, courtesyId: 1 });
       this.historyIndexesEnsured = true;
     } catch (err) {
@@ -477,9 +471,7 @@ export class CourtesiesService {
     for (const row of rows) {
       if (!row.table_session_id) continue;
       const createdAt = this.toDate(row.created_at, now);
-      const expiresAt = new Date(
-        createdAt.getTime() + HISTORY_TTL_DAYS * 24 * 60 * 60 * 1000,
-      );
+      const expiresAt = new Date(createdAt.getTime() + HISTORY_TTL_DAYS * 24 * 60 * 60 * 1000);
       try {
         await collection.updateOne(
           { tenantId, customerId, courtesyId: row.id },
@@ -535,9 +527,7 @@ export class CourtesiesService {
         },
       );
     } catch (err) {
-      this.logger.warn(
-        `Falha ao atualizar courtesy history ${row.id}: ${(err as Error).message}`,
-      );
+      this.logger.warn(`Falha ao atualizar courtesy history ${row.id}: ${(err as Error).message}`);
     }
   }
 

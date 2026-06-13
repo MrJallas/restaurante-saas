@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  OnModuleDestroy,
-  OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Db, MongoClient } from 'mongodb';
 import { recordMongoOperation } from '../../common/performance/request-timing';
 
@@ -32,12 +27,8 @@ export class MongoService implements OnModuleInit, OnModuleDestroy {
   private readonly mongoProxies = new WeakMap<object, object>();
 
   async onModuleInit() {
-    const url =
-      process.env.MONGODB_URI ??
-      process.env.MONGO_URL ??
-      'mongodb://localhost:27017';
-    const dbName =
-      process.env.MONGODB_DB ?? process.env.MONGO_DB ?? 'restaurant_chat';
+    const url = process.env.MONGODB_URI ?? process.env.MONGO_URL ?? 'mongodb://localhost:27017';
+    const dbName = process.env.MONGODB_DB ?? process.env.MONGO_DB ?? 'restaurant_chat';
     this.defaultDbName = dbName;
     try {
       this.client = new MongoClient(url, {

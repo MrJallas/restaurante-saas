@@ -57,6 +57,7 @@ CREATE INDEX idx_sessions_host
 ### `host_customer_id = NULL` (walkin sem app)
 
 Se a sessão foi aberta diretamente pelo staff (cliente sem app):
+
 - **Late-arrival:** backend recusa automaticamente (sem host pra aprovar) · cliente B vê "Mesa não tá aceitando entrada via app · chamar a recepcionista?"
 - **Junção de mesas:** bloqueia o pedido (não pode juntar com mesa sem host customer-app) · LLM responde: "A Mesa X não tá no app · pede pra recepcionista juntar manualmente"
 
@@ -106,7 +107,7 @@ Quando cliente B escaneia QR de mesa ocupada, antes da `late_arrival_request` se
 POST /customers/identify
   body: { name: string, cpf: string, currentSessionId: uuid }
   → 200 { customerId, isReturning: bool, canonicalName: string }
-  
+
   Lógica:
     1. Normaliza CPF (remove ./- · valida dígitos)
     2. Busca customer existente por CPF
@@ -203,8 +204,8 @@ Quando o host da M15 está com o app aberto e a notificação chega, **a IA escr
 
 ```
 [Bubble assistente · animação typewriter]
-"Caleb da Mesa 14 quer juntar a mesa contigo. 
- Eles são 4 pessoas, vocês são 2 · viraria 
+"Caleb da Mesa 14 quer juntar a mesa contigo.
+ Eles são 4 pessoas, vocês são 2 · viraria
  uma mesa só com 6, uma comanda, uma conta."
 
 [Chips contextuais · aparecem após o texto completar]
@@ -233,6 +234,7 @@ Se o app está fechado: chega só o push lockscreen · ao abrir, a bubble com an
 > Pra evitar que um cliente fique pedindo junção com a mesma mesa toda hora depois de receber não.
 
 #### Regra
+
 - Quando uma junção entre `(table_origin, table_target)` é **recusada** OU dá **timeout**, o backend grava em `merge_cooldowns`
 - Por **20 minutos**, novas tentativas de **`request_table_merge` partindo de `table_origin` apontando pra `table_target`** são **bloqueadas no backend** (retorna 429 com mensagem amigável)
 - LLM, ao tentar chamar a tool, recebe o erro e responde:
@@ -253,11 +255,12 @@ CREATE TABLE merge_cooldowns (
 );
 
 CREATE INDEX idx_merge_cooldowns_active
-  ON merge_cooldowns(origin_table, target_table) 
+  ON merge_cooldowns(origin_table, target_table)
   WHERE expires_at > now();
 ```
 
 #### Escape valves
+
 1. **Caminho reverso continua aberto** · se a M15 quiser pedir junção pra M14 antes dos 20 min, **funciona** (cooldown é unidirecional `origin→target`). Razão: a M15 mudou de ideia, é decisão delas.
 2. **Recepcionista pode override** · cliente A pode chamar a recepcionista, ela vai na mesa, conversa pessoalmente, e via `ScreenManagerTableMenu` (V5) força a junção (com confirmação verbal dos 2 hosts presencialmente). Endpoint do staff bypassa o cooldown.
 3. **Cooldown auto-expira** em 20 min · TTL natural · sem intervenção
@@ -266,6 +269,7 @@ CREATE INDEX idx_merge_cooldowns_active
 #### UI no app do cliente A (quem foi recusado)
 
 Após receber o "preferiu não juntar":
+
 - Bubble da IA com a recusa
 - Sub mono caps tiny mute: `· VOCÊ PODE TENTAR DE NOVO EM 20 MIN`
 - Chips: `Chamar recepcionista` · `Pedir pra outra mesa`
@@ -296,6 +300,7 @@ Depois que customer-host aprova, staff é **avisado** mas não consultado. Notif
 ### 1 · Painel · seção "Em curso" · novo card
 
 Para late-arrival aprovado:
+
 ```
 [INFO] MESA 14 EXPANDIU
        3 → 4 pessoas · host aprovou
@@ -304,6 +309,7 @@ Para late-arrival aprovado:
 ```
 
 Para junção aprovada:
+
 ```
 [INFO] MESAS JUNTADAS
        M14 (4) + M15 (2) = 6 pessoas
@@ -316,6 +322,7 @@ Auto-some em 60s · ou via Dispensar · ou após staff agir em recomendação.
 ### 2 · Mapa do salão · novo ícone de mesa juntada
 
 Em `ScreenManagerOps · sub-tab Mapa` (V3):
+
 - Mesas juntadas aparecem como **2 cards conectados visualmente** (linha pontilhada entre eles · ícone unificador no canto)
 - Label dupla: `M14+M15`
 - Capacidade total mostrada: `6/6` (somando)
@@ -342,13 +349,14 @@ Quando junção ou expansion eleva carga acima do limiar do garçom da mesa, IA 
 ```
 
 Critérios pra IA gerar essa recomendação:
+
 - Junção que leva carga total do garçom acima do limiar de sobrecarga
 - Late-arrival que faz mesa exceder 6 pessoas (mais difícil pra 1 garçom só)
 - Pode ser silenciada pelo gerente em settings
 
 ## Edge cases
 
-- **Customer-host sai do app no meio da decisão** → permanece como host até timer expirar · 60s · escala. Se voltar antes, vê notification "Decisão escalou pra recepcionista · você pode confirmar via push se quiser ainda" 
+- **Customer-host sai do app no meio da decisão** → permanece como host até timer expirar · 60s · escala. Se voltar antes, vê notification "Decisão escalou pra recepcionista · você pode confirmar via push se quiser ainda"
 - **Múltiplos late-arrivals simultâneos** (raro) → fila por timestamp · processa um de cada vez (host vê 1 popup por vez · não vários sobrepostos)
 - **Customer-host sai fisicamente do restaurante mas mantém sessão aberta** → continua sendo host · pode aprovar via app remoto. Se ele recusar todas as junções, restaurante perde comanda + cliente novo · improvável mas possível.
 - **Mesa sem customer-host** (`host_customer_id = NULL`) → cascata cai direto na recepcionista (skip step 1)

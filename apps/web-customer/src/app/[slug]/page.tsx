@@ -78,31 +78,27 @@ export default function SlugIndex() {
 
   // Pega kind via query param (apps/api home.service decide)
   const kindFromUrl =
-    typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('cont')
-      : null;
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('cont') : null;
 
   useEffect(() => {
     if (!session.customerId || !session.sessionId) return;
     (async () => {
       try {
-        const res = await apiPost<ContinuationPostResponse>(
-          `/${params?.slug}/continuation`,
-          {
-            tableSessionId: session.sessionId,
-            customerId: session.customerId ?? undefined,
-            clientKindHint: kindFromUrl ?? undefined,
-            hasDraftOrder: draftItems.length > 0,
-            isReturning: session.isReturning ?? false,
-          },
-        );
-        if (res?.text) setCont({
-          message: { kind: res.kind },
-          rendered: res.text,
-          chips: res.chips ?? [],
-          subtitle: typeof res.meta?.subtitle === 'string' ? res.meta.subtitle : null,
-          primary_cta: primaryCta(res.meta?.primary_cta),
+        const res = await apiPost<ContinuationPostResponse>(`/${params?.slug}/continuation`, {
+          tableSessionId: session.sessionId,
+          customerId: session.customerId ?? undefined,
+          clientKindHint: kindFromUrl ?? undefined,
+          hasDraftOrder: draftItems.length > 0,
+          isReturning: session.isReturning ?? false,
         });
+        if (res?.text)
+          setCont({
+            message: { kind: res.kind },
+            rendered: res.text,
+            chips: res.chips ?? [],
+            subtitle: typeof res.meta?.subtitle === 'string' ? res.meta.subtitle : null,
+            primary_cta: primaryCta(res.meta?.primary_cta),
+          });
         clearDeliveredContinuationHint(res?.kind);
       } catch {
         /* silently fail — continuation é progressive enhancement */
@@ -123,15 +119,11 @@ export default function SlugIndex() {
       <div className="min-h-dvh flex items-center justify-center p-6 bg-bg">
         <div className="max-w-sm text-center space-y-4">
           <div className="text-6xl">📱</div>
-          <h1 className="text-xl font-semibold text-ink">
-            Escaneie o QR da mesa
-          </h1>
+          <h1 className="text-xl font-semibold text-ink">Escaneie o QR da mesa</h1>
           <p className="text-sm text-ink/70">
             Para fazer seu pedido, escaneie o QR Code que está na sua mesa.
           </p>
-          <p className="text-xs text-ink/50 pt-4">
-            Restaurante: {params?.slug}
-          </p>
+          <p className="text-xs text-ink/50 pt-4">Restaurante: {params?.slug}</p>
         </div>
       </div>
     );
@@ -145,7 +137,9 @@ export default function SlugIndex() {
         </span>
       )}
       <ContinuationHome
-        resolvedText={cont?.rendered ?? `Olá${session.customerName ? `, ${session.customerName}` : ''}!`}
+        resolvedText={
+          cont?.rendered ?? `Olá${session.customerName ? `, ${session.customerName}` : ''}!`
+        }
         kicker="Assistente"
       >
         {cont?.chips && cont.chips.length > 0 && (
@@ -161,9 +155,7 @@ export default function SlugIndex() {
                     router.push(dest);
                   } else {
                     // send / expand → vai pro chat com prefill
-                    router.push(
-                      `/${params?.slug}/assistente?prefill=${encodeURIComponent(txt)}`,
-                    );
+                    router.push(`/${params?.slug}/assistente?prefill=${encodeURIComponent(txt)}`);
                   }
                 }}
               />

@@ -155,7 +155,9 @@ function pickAccent(kind: InProgressKind, state: InProgressState) {
 
 function fmtMmSs(seconds: number) {
   const r = Math.max(0, seconds);
-  return `${Math.floor(r / 60).toString().padStart(2, '0')}:${(r % 60).toString().padStart(2, '0')}`;
+  return `${Math.floor(r / 60)
+    .toString()
+    .padStart(2, '0')}:${(r % 60).toString().padStart(2, '0')}`;
 }
 
 export function MInProgressCard(props: MInProgressCardProps) {
@@ -263,7 +265,9 @@ export function MInProgressCard(props: MInProgressCardProps) {
       </>
     );
   } else if (kind === 'pause-orders' && state === 'active' && ttl) {
-    const mm = Math.floor(ttl.remaining / 60).toString().padStart(2, '0');
+    const mm = Math.floor(ttl.remaining / 60)
+      .toString()
+      .padStart(2, '0');
     const ss = (ttl.remaining % 60).toString().padStart(2, '0');
     const pct = Math.max(0, Math.min(100, ((ttl.total - ttl.remaining) / ttl.total) * 100));
     body = (
@@ -312,7 +316,15 @@ export function MInProgressCard(props: MInProgressCardProps) {
           </div>
         </div>
         {reorderItems && (
-          <div style={{ fontSize: 11.5, color: C.mute, fontWeight: 500, marginTop: 4, lineHeight: 1.4 }}>
+          <div
+            style={{
+              fontSize: 11.5,
+              color: C.mute,
+              fontWeight: 500,
+              marginTop: 4,
+              lineHeight: 1.4,
+            }}
+          >
             {reorderItems}
           </div>
         )}
@@ -372,7 +384,15 @@ export function MInProgressCard(props: MInProgressCardProps) {
   } else if (kind === 'complaint') {
     body = (
       <>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginTop: 6, letterSpacing: -0.15 }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: C.ink,
+            marginTop: 6,
+            letterSpacing: -0.15,
+          }}
+        >
           {complaintCustomer ?? 'Cliente'} · Mesa {complaintTable ?? '?'}
         </div>
         {complaintSummary && (
@@ -398,7 +418,15 @@ export function MInProgressCard(props: MInProgressCardProps) {
   } else if (kind === 'late-arrival' || kind === 'table-merge') {
     body = (
       <>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginTop: 6, letterSpacing: -0.15 }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: C.ink,
+            marginTop: 6,
+            letterSpacing: -0.15,
+          }}
+        >
           {requesterName ?? 'Cliente'} · Mesa {requestedTable ?? '?'}
         </div>
         <div
@@ -419,7 +447,16 @@ export function MInProgressCard(props: MInProgressCardProps) {
   } else if (kind === 'escalation') {
     body = (
       <>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginTop: 6, letterSpacing: -0.15, lineHeight: 1.35 }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: C.ink,
+            marginTop: 6,
+            letterSpacing: -0.15,
+            lineHeight: 1.35,
+          }}
+        >
           {escalationHeadline ?? 'Escalação aberta'}
         </div>
         {escalationDeadline && (
@@ -472,10 +509,20 @@ export function MInProgressCard(props: MInProgressCardProps) {
   } else if (kind === 'lgpd-request-pending') {
     body = (
       <>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginTop: 6, letterSpacing: -0.15 }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: C.ink,
+            marginTop: 6,
+            letterSpacing: -0.15,
+          }}
+        >
           Solicitação LGPD pendente
         </div>
-        <div style={{ fontSize: 11.5, color: C.mute, fontWeight: 500, marginTop: 3, lineHeight: 1.4 }}>
+        <div
+          style={{ fontSize: 11.5, color: C.mute, fontWeight: 500, marginTop: 3, lineHeight: 1.4 }}
+        >
           Protocolo {lgpdRequestNumber ?? '—'} · {lgpdType ?? 'erasure'}
         </div>
       </>
@@ -483,7 +530,15 @@ export function MInProgressCard(props: MInProgressCardProps) {
   } else if (kind === 'staff-message-unread') {
     body = (
       <>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginTop: 6, letterSpacing: -0.15 }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: C.ink,
+            marginTop: 6,
+            letterSpacing: -0.15,
+          }}
+        >
           {staffMessageFromName ?? 'Staff'}
           {staffMessageCount && staffMessageCount > 1 ? ` · ${staffMessageCount} novas` : ''}
         </div>
@@ -571,8 +626,8 @@ export function MInProgressCard(props: MInProgressCardProps) {
             kind === 'kitchen-reorder'
               ? 'Cancelar'
               : kind === 'contact-client'
-              ? 'Reenviar'
-              : 'Cancelar envio'
+                ? 'Reenviar'
+                : 'Cancelar envio'
           }
           onClick={onSecondary}
           dark={dark}

@@ -38,9 +38,7 @@ export class DashboardController {
 
   @Get('top-items')
   async getTopItems(@Query('limit') limit?: string) {
-    const items = await this.dashboardService.getTopItems(
-      this.safePositiveInt(limit, 10, 100),
-    );
+    const items = await this.dashboardService.getTopItems(this.safePositiveInt(limit, 10, 100));
     return { items };
   }
 

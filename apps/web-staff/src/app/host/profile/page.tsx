@@ -25,8 +25,10 @@ function HostProfilePageInner() {
       onTabChange={(tab) => {
         if (tab === 'tables') router.push(`/host?tenant=${tenantSlug}&hostId=${hostId}`);
         if (tab === 'waitlist') router.push(`/host/waitlist?tenant=${tenantSlug}&hostId=${hostId}`);
-        if (tab === 'reserva') router.push(`/host/reservations?tenant=${tenantSlug}&hostId=${hostId}`);
-        if (tab === 'inbox') router.push(`/host/notifications?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'reserva')
+          router.push(`/host/reservations?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'inbox')
+          router.push(`/host/notifications?tenant=${tenantSlug}&hostId=${hostId}`);
       }}
       onOpenMessages={() => router.push(`/host/mensagens?tenant=${tenantSlug}&hostId=${hostId}`)}
     />

@@ -147,9 +147,7 @@ export default function GarcomChamandoPage() {
                 {waiterName}
               </div>
               {eta != null && (
-                <div className="mt-0.5 text-[11px] text-mute">
-                  Tempo estimado: {eta} min
-                </div>
+                <div className="mt-0.5 text-[11px] text-mute">Tempo estimado: {eta} min</div>
               )}
             </div>
           </div>
@@ -171,11 +169,7 @@ export default function GarcomChamandoPage() {
         <PillButton onClick={handleCancel} disabled={cancelling} className="flex-1">
           Cancelar chamado
         </PillButton>
-        <PillButton
-          variant="filled"
-          onClick={() => push(`/${slug}/cardapio`)}
-          className="flex-1"
-        >
+        <PillButton variant="filled" onClick={() => push(`/${slug}/cardapio`)} className="flex-1">
           Ver cardápio
         </PillButton>
       </div>

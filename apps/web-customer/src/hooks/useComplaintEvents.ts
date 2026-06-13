@@ -1,19 +1,14 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type {
-  WsComplaintResponded,
-  WsComplaintResolved,
-} from '@restaurant/shared-types';
+import type { WsComplaintResponded, WsComplaintResolved } from '@restaurant/shared-types';
 import {
   acquireCustomerSocket,
   joinSessionRoom,
   releaseCustomerSocket,
 } from '../lib/customerSocket';
 
-export type ComplaintEvent =
-  | WsComplaintResponded
-  | WsComplaintResolved;
+export type ComplaintEvent = WsComplaintResponded | WsComplaintResolved;
 
 /**
  * Subscribes to complaint lifecycle events for the current customer/session

@@ -14,10 +14,7 @@ import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import type { Request } from 'express';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ScanVerificationService } from './scan-verification.service';
-import type {
-  ScanVerificationRequestDto,
-  ScanVerificationStatus,
-} from '@restaurant/shared-types';
+import type { ScanVerificationRequestDto, ScanVerificationStatus } from '@restaurant/shared-types';
 
 class ListScanVerificationQuery {
   @IsOptional()
@@ -38,9 +35,7 @@ export class ScanVerificationController {
   constructor(private readonly service: ScanVerificationService) {}
 
   @Get()
-  async list(
-    @Query() q: ListScanVerificationQuery,
-  ): Promise<ScanVerificationRequestDto[]> {
+  async list(@Query() q: ListScanVerificationQuery): Promise<ScanVerificationRequestDto[]> {
     return this.service.list({ status: q.status });
   }
 
@@ -73,9 +68,7 @@ export class ScanVerificationController {
     const staffId = Array.isArray(raw) ? raw[0] : raw;
     if (
       !staffId ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        staffId,
-      )
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(staffId)
     ) {
       throw new HttpException(
         { message_user: 'Sessão expirada. Faça login novamente.', code: 'AUTH_INVALID' },

@@ -110,10 +110,7 @@ export function TypewriterBubble({
       </p>
 
       {completed && children && (
-        <div
-          className="mt-3"
-          style={{ animation: 'cChipsFade 220ms ease-out 80ms both' }}
-        >
+        <div className="mt-3" style={{ animation: 'cChipsFade 220ms ease-out 80ms both' }}>
           {children}
         </div>
       )}

@@ -10,23 +10,14 @@ function StaffDetailInner() {
   const route = useParams<{ id: string }>();
   const params = useSearchParams();
   const dark = params.get('dark') === '1';
-  const slug =
-    params.get('slug') || process.env.NEXT_PUBLIC_TENANT_SLUG || 'demo';
-  return (
-    <ScreenManagerStaffDetail
-      dark={dark}
-      staffId={route?.id ?? ''}
-      tenantSlug={slug}
-    />
-  );
+  const slug = params.get('slug') || process.env.NEXT_PUBLIC_TENANT_SLUG || 'demo';
+  return <ScreenManagerStaffDetail dark={dark} staffId={route?.id ?? ''} tenantSlug={slug} />;
 }
 
 export default function ManagerStaffDetailPage() {
   return (
     <Suspense
-      fallback={
-        <div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>
-      }
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}
     >
       <StaffDetailInner />
     </Suspense>

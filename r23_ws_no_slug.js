@@ -9,10 +9,15 @@ const sock = io('http://localhost:3001', {
     staffKey: 'dev-staff-api-key-change-in-prod',
     staffId: '8bd06156-1fe5-4c18-a82d-43d38287ed4a',
     // missing tenantSlug
-  }
+  },
 });
-sock.on('connect', () => console.log(JSON.stringify({step:'connect', sid:sock.id})));
-sock.on('error', e => console.log(JSON.stringify({step:'error_emit', e})));
-sock.on('connect_error', e => console.log(JSON.stringify({step:'connect_error', msg: e.message})));
-sock.on('disconnect', r => console.log(JSON.stringify({step:'disconnect', reason: r})));
-setTimeout(() => { console.log(JSON.stringify({step:'exit'})); process.exit(0); }, 5000);
+sock.on('connect', () => console.log(JSON.stringify({ step: 'connect', sid: sock.id })));
+sock.on('error', (e) => console.log(JSON.stringify({ step: 'error_emit', e })));
+sock.on('connect_error', (e) =>
+  console.log(JSON.stringify({ step: 'connect_error', msg: e.message })),
+);
+sock.on('disconnect', (r) => console.log(JSON.stringify({ step: 'disconnect', reason: r })));
+setTimeout(() => {
+  console.log(JSON.stringify({ step: 'exit' }));
+  process.exit(0);
+}, 5000);

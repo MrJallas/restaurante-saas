@@ -9,10 +9,7 @@ import {
   evaluateCustomerGeofence,
   type GeofenceConfig,
 } from '../../common/utils/geofence';
-import type {
-  CustomerLocationCheck,
-  CustomerLocationSignal,
-} from '@restaurant/shared-types';
+import type { CustomerLocationCheck, CustomerLocationSignal } from '@restaurant/shared-types';
 
 export interface CustomerWelcomeResult {
   customerId: string;
@@ -71,7 +68,10 @@ export class CustomersService {
     const cleanCpf = cpf.replace(/\D/g, '');
 
     if (!validateCpf(cleanCpf)) {
-      throw new HttpException('CPF invalido. Verifique os numeros digitados.', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'CPF invalido. Verifique os numeros digitados.',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     const locationCheck = await this.validateCustomerLocation(location);
@@ -95,8 +95,7 @@ export class CustomersService {
       const storedToken = customer.recognition_token as string;
       isReturning = true;
 
-      const tokenMatches =
-        callerRecognitionToken != null && callerRecognitionToken === storedToken;
+      const tokenMatches = callerRecognitionToken != null && callerRecognitionToken === storedToken;
 
       if (tokenMatches) {
         recognitionToken = storedToken;
@@ -273,10 +272,7 @@ export class CustomersService {
     // CPF new → create on the fly. `name` becomes mandatory in this branch.
     const trimmedName = (nameInput ?? '').trim();
     if (!trimmedName) {
-      throw new HttpException(
-        'Nome obrigatorio para CPF novo.',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException('Nome obrigatorio para CPF novo.', HttpStatus.BAD_REQUEST);
     }
 
     const recognitionToken = uuidv4();
@@ -315,10 +311,7 @@ export class CustomersService {
       ),
     );
     if (!updated.length) {
-      throw new HttpException(
-        'Cliente nao encontrado.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Cliente nao encontrado.', HttpStatus.NOT_FOUND);
     }
     return {
       customerId: updated[0].id as string,
@@ -549,8 +542,7 @@ export class CustomersService {
       return {
         latitude: envLat ?? this.finiteNumber(row?.geofence_latitude),
         longitude: envLon ?? this.finiteNumber(row?.geofence_longitude),
-        radiusMeters:
-          envRadius ?? this.finiteNumber(row?.geofence_radius_meters) ?? 3,
+        radiusMeters: envRadius ?? this.finiteNumber(row?.geofence_radius_meters) ?? 3,
       };
     } catch (err: unknown) {
       const pgErr = err as { code?: string };

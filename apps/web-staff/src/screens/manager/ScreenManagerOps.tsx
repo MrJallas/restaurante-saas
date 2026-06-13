@@ -76,9 +76,23 @@ const FALLBACK_ALERTS = [
 const FALLBACK_FUNNEL = [
   { stage: 'Pedido lançado', median: 0.3, p95: 0.8, count: 142, ok: true, note: '' },
   { stage: 'Confirmado', median: 0.2, p95: 0.5, count: 142, ok: true, note: '' },
-  { stage: 'Em preparo', median: 14, p95: 28, count: 138, ok: false, note: 'Cozinha sobrecarregada às 19h' },
+  {
+    stage: 'Em preparo',
+    median: 14,
+    p95: 28,
+    count: 138,
+    ok: false,
+    note: 'Cozinha sobrecarregada às 19h',
+  },
   { stage: 'Pronto', median: 0.5, p95: 1.2, count: 134, ok: true, note: '' },
-  { stage: 'Entregue na mesa', median: 6, p95: 14, count: 130, ok: false, note: 'Pratos esfriando na pass' },
+  {
+    stage: 'Entregue na mesa',
+    median: 6,
+    p95: 14,
+    count: 130,
+    ok: false,
+    note: 'Pratos esfriando na pass',
+  },
 ];
 
 interface MapTable {
@@ -197,7 +211,12 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
             background: C.bg,
           }}
         >
-          <MTab dark={dark} active={active === 'alerts'} count={high + med} onClick={() => setActive('alerts')}>
+          <MTab
+            dark={dark}
+            active={active === 'alerts'}
+            count={high + med}
+            onClick={() => setActive('alerts')}
+          >
             Alertas
           </MTab>
           <MTab dark={dark} active={active === 'map'} onClick={() => setActive('map')}>
@@ -240,7 +259,6 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
         pauseActive={pauseRemaining != null ? { remaining: pauseRemaining } : null}
       />
       <MBottomNav active="ops" dark={dark} onTo={(r) => router.push(r)} alerts={alerts.length} />
-
     </div>
   );
 }
@@ -480,7 +498,10 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
   const critical = tables.filter((t) => t.st === 'crit').length;
   const warn = tables.filter((t) => t.st === 'warn').length;
 
-  const stColors: Record<MapTable['st'], { bg: string; border: string; fg: string; dot: string | null }> = {
+  const stColors: Record<
+    MapTable['st'],
+    { bg: string; border: string; fg: string; dot: string | null }
+  > = {
     ok: { bg: C.bg, border: C.borderSoft, fg: C.ink, dot: '#1E8C5A' },
     warn: { bg: '#FFF7EC', border: '#F0DCB6', fg: '#7a4d10', dot: '#D98E2B' },
     crit: { bg: '#FFF1F1', border: '#F4C7C7', fg: '#A12626', dot: '#C43A3A' },
@@ -542,7 +563,15 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
         </ChipButton>
       </div>
 
-      <div style={{ padding: '12px 16px 6px', fontSize: 11.5, color: C.faint, fontWeight: 500, lineHeight: 1.5 }}>
+      <div
+        style={{
+          padding: '12px 16px 6px',
+          fontSize: 11.5,
+          color: C.faint,
+          fontWeight: 500,
+          lineHeight: 1.5,
+        }}
+      >
         Toque numa mesa pra ver detalhes.{' '}
         <span style={{ color: '#1E8C5A', fontWeight: 700 }}>Verde</span> = ok ·{' '}
         <span style={{ color: '#D98E2B', fontWeight: 700 }}>amarelo</span> = lenta ·{' '}
@@ -600,7 +629,13 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
                 position: 'relative',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                }}
+              >
                 <div
                   style={{
                     fontSize: 16,
@@ -613,7 +648,15 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
                   {t.n}
                 </div>
                 {c.dot && (
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: c.dot, marginTop: 2 }} />
+                  <div
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: c.dot,
+                      marginTop: 2,
+                    }}
+                  />
                 )}
               </div>
               <div>
@@ -731,7 +774,9 @@ function OpsFunnel({ dark, stages }: { dark?: boolean; stages: typeof FALLBACK_F
   const max = Math.max(...stages.map((s) => s.median), 1);
   return (
     <div style={{ padding: 16 }}>
-      <div style={{ fontSize: 12, color: C.faint, fontWeight: 500, marginBottom: 14, lineHeight: 1.5 }}>
+      <div
+        style={{ fontSize: 12, color: C.faint, fontWeight: 500, marginBottom: 14, lineHeight: 1.5 }}
+      >
         Tempo médio em cada etapa do pedido.{' '}
         <span style={{ color: '#C43A3A', fontWeight: 700 }}>Vermelho</span> = passou da meta ·{' '}
         <span style={{ color: C.ink, fontWeight: 700 }}>preto</span> = no ritmo.
@@ -741,7 +786,14 @@ function OpsFunnel({ dark, stages }: { dark?: boolean; stages: typeof FALLBACK_F
         const pct = (s.median / max) * 100;
         return (
           <div key={i} style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                marginBottom: 6,
+              }}
+            >
               <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, letterSpacing: -0.1 }}>
                 {i + 1}. {s.stage}
               </div>
@@ -769,7 +821,9 @@ function OpsFunnel({ dark, stages }: { dark?: boolean; stages: typeof FALLBACK_F
                 </div>
               </div>
             </div>
-            <div style={{ height: 8, borderRadius: 4, background: C.borderSoft, overflow: 'hidden' }}>
+            <div
+              style={{ height: 8, borderRadius: 4, background: C.borderSoft, overflow: 'hidden' }}
+            >
               <div
                 style={{
                   width: `${pct}%`,
@@ -781,7 +835,9 @@ function OpsFunnel({ dark, stages }: { dark?: boolean; stages: typeof FALLBACK_F
             </div>
             <div style={{ fontSize: 10.5, color: C.faint, marginTop: 4, fontWeight: 500 }}>
               {s.count} pedidos
-              {!s.ok && s.note && <span style={{ color: '#C43A3A', fontWeight: 700 }}> · {s.note}</span>}
+              {!s.ok && s.note && (
+                <span style={{ color: '#C43A3A', fontWeight: 700 }}> · {s.note}</span>
+              )}
             </div>
           </div>
         );
@@ -808,9 +864,15 @@ function OpsFunnel({ dark, stages }: { dark?: boolean; stages: typeof FALLBACK_F
         >
           O que fazer agora
         </div>
-        <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, lineHeight: 1.6, fontWeight: 500 }}>
-          <li style={{ marginBottom: 6 }}>Verifique a cozinha — pratos quentes estão 17% acima da meta.</li>
-          <li style={{ marginBottom: 6 }}>Coloque mais garçons levando pedidos prontos pras mesas.</li>
+        <ol
+          style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, lineHeight: 1.6, fontWeight: 500 }}
+        >
+          <li style={{ marginBottom: 6 }}>
+            Verifique a cozinha — pratos quentes estão 17% acima da meta.
+          </li>
+          <li style={{ marginBottom: 6 }}>
+            Coloque mais garçons levando pedidos prontos pras mesas.
+          </li>
           <li>Se piorar, pause pedidos novos por 5 min até a fila baixar.</li>
         </ol>
       </div>

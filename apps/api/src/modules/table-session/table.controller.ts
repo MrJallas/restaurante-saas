@@ -38,9 +38,7 @@ export class TableController {
   @Get('participants')
   @UseGuards(SessionGuard)
   async getParticipants(@Session() session: SessionData) {
-    const participants = await this.tableSessionService.getParticipants(
-      session.sessionId,
-    );
+    const participants = await this.tableSessionService.getParticipants(session.sessionId);
     return { participants };
   }
 

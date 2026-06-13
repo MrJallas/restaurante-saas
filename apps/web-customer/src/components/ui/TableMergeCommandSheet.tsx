@@ -12,11 +12,7 @@ interface TableMergeCommandSheetProps {
   onClose: () => void;
 }
 
-export function TableMergeCommandSheet({
-  open,
-  onChoose,
-  onClose,
-}: TableMergeCommandSheetProps) {
+export function TableMergeCommandSheet({ open, onChoose, onClose }: TableMergeCommandSheetProps) {
   const reducedMotion = useReducedMotion();
 
   useEffect(() => {

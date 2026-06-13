@@ -30,8 +30,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const API_URL =
-  process.env.SMOKE_API_URL ?? 'http://localhost:3001/api/restaurant_dev/zone-pauses';
+const API_URL = process.env.SMOKE_API_URL ?? 'http://localhost:3001/api/restaurant_dev/zone-pauses';
 const STAFF_ORIGIN = 'http://localhost:3002';
 
 async function apiReachable(): Promise<boolean> {

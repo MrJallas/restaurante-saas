@@ -51,14 +51,10 @@ export function listHostTables(tenantSlug: string): Promise<HostTableEntry[]> {
   return staffGet<HostTableEntry[]>(`/${tenantSlug}/host/tables`);
 }
 
-export function liberateTable(
-  tenantSlug: string,
-  tableNumber: number,
-): Promise<{ ok: true }> {
-  return staffPost<{ ok: true }>(
-    `/${tenantSlug}/host/tables/${tableNumber}/liberate`,
-    { mode: 'auto' },
-  );
+export function liberateTable(tenantSlug: string, tableNumber: number): Promise<{ ok: true }> {
+  return staffPost<{ ok: true }>(`/${tenantSlug}/host/tables/${tableNumber}/liberate`, {
+    mode: 'auto',
+  });
 }
 
 export function swapTable(
@@ -73,10 +69,7 @@ export function updateHostTableSession(
   tableNumber: number,
   body: { sessionId?: string; party?: number; note?: string },
 ): Promise<HostTableEntry> {
-  return staffPatch<HostTableEntry>(
-    `/${tenantSlug}/host/tables/${tableNumber}/session`,
-    body,
-  );
+  return staffPatch<HostTableEntry>(`/${tenantSlug}/host/tables/${tableNumber}/session`, body);
 }
 
 // ─── Host inbox / avisos ───
@@ -101,9 +94,7 @@ export function removeFromWaitlist(
   id: string,
   transition: 'seated' | 'left',
 ): Promise<{ ok: true }> {
-  return staffDelete<{ ok: true }>(
-    `/${tenantSlug}/host/waitlist/${id}?transition=${transition}`,
-  );
+  return staffDelete<{ ok: true }>(`/${tenantSlug}/host/waitlist/${id}?transition=${transition}`);
 }
 
 // ─── Reservations ───
@@ -143,15 +134,10 @@ export function updateReservation(
 // 'expired']. The old `staff_pending` value silently filtered to nothing.
 // `pending` matches the actual DB enum on `late_arrival_requests.status`.
 export function listPendingLateArrivals(tenantSlug: string): Promise<LateArrivalRequestDto[]> {
-  return staffGet<LateArrivalRequestDto[]>(
-    `/${tenantSlug}/late-arrival-requests?status=pending`,
-  );
+  return staffGet<LateArrivalRequestDto[]>(`/${tenantSlug}/late-arrival-requests?status=pending`);
 }
 
-export function getLateArrival(
-  tenantSlug: string,
-  id: string,
-): Promise<LateArrivalRequestDto> {
+export function getLateArrival(tenantSlug: string, id: string): Promise<LateArrivalRequestDto> {
   return staffGet<LateArrivalRequestDto>(`/${tenantSlug}/late-arrival-requests/${id}`);
 }
 
@@ -190,9 +176,7 @@ export function getScanVerification(
   tenantSlug: string,
   id: string,
 ): Promise<ScanVerificationRequestDto> {
-  return staffGet<ScanVerificationRequestDto>(
-    `/${tenantSlug}/scan-verification-requests/${id}`,
-  );
+  return staffGet<ScanVerificationRequestDto>(`/${tenantSlug}/scan-verification-requests/${id}`);
 }
 
 export function approveScanVerification(

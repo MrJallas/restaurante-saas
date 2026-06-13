@@ -4,16 +4,20 @@
 > Backend: a implementar.
 
 ## O que é
+
 Pausa de pedidos novos **só nas mesas atendidas por um funcionário específico**. Diferente da pausa global (Operação · Pausar pedidos novos · pausa todo o salão), essa é localizada — o resto do restaurante funciona normal enquanto o funcionário sobrecarregado se recupera.
 
 ## Por que existe
+
 Quando 1 garçom está sobrecarregado e o resto do salão tá tranquilo, pausar TUDO é overkill. Zone pause permite aliviar só ele, sem impactar a operação dos outros garçons. Ferramenta cirúrgica vs ferramenta de força bruta.
 
 ## Quem dispara
+
 - **Gerente:** `ScreenManagerStatDetail` (variante `sobrecarga`) · ação "Pausar mesas do Caleb por 5 min"
 - **Auto-trigger (futuro):** se saturação individual passa de 1.5x do limiar pessoal por mais de 3 min, sugere ao gerente
 
 ## Persistência
+
 Nova tabela `zone_pauses`:
 
 ```sql
@@ -48,6 +52,7 @@ CREATE INDEX idx_zone_pauses_active
 - **Pedidos JÁ confirmados continuam fluindo** (cozinha continua preparando)
 
 ### Pedido manual lançado pelo garçom durante a pausa
+
 > **Importante:** o garçom **não é barrado** de lançar pedidos manualmente durante a pausa das mesas dele. A pausa é sobre **fluxo**, não sobre **bloquear o garçom**.
 
 - Garçom abre o pedido manual pela aba "Novo" → escolhe a mesa → adiciona itens → confirma · funciona normal
@@ -81,6 +86,7 @@ GET /staff/zone-pauses
 - `zone_pause.ended` · payload `{ id, waiterId, endedAt, endedBy?, autoExpired: boolean }`
 
 Broadcast pra:
+
 - Garçom afetado (vê indicador no app dele · banner no header)
 - Customer já com sessão aberta nas mesas dele (front recebe e ajusta ETA silenciosamente)
 - Manager (atualiza Em Curso · Painel)

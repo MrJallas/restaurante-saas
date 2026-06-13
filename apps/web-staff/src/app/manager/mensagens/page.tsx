@@ -15,7 +15,9 @@ function MsgInner() {
 
 export default function ManagerMessagesPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}>
+    <Suspense
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}
+    >
       <MsgInner />
     </Suspense>
   );

@@ -77,7 +77,10 @@ export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, 
     const row = sessions.find((s) => s.id === id);
     if (!row) return;
     if (row.current) {
-      setToast({ kind: 'danger', text: 'Não é possível encerrar esta sessão por aqui — use Sair do app.' });
+      setToast({
+        kind: 'danger',
+        text: 'Não é possível encerrar esta sessão por aqui — use Sair do app.',
+      });
       return;
     }
     if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
@@ -111,7 +114,16 @@ export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, 
         }}
       >
         <GIconBtn dark={dark} icon={Icon.back(20)} onClick={onBack} ariaLabel="Voltar" />
-        <h1 style={{ flex: 1, margin: 0, fontSize: 18, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>
+        <h1
+          style={{
+            flex: 1,
+            margin: 0,
+            fontSize: 18,
+            fontWeight: 700,
+            color: C.ink,
+            letterSpacing: -0.2,
+          }}
+        >
           Segurança e senha
         </h1>
         <div style={{ width: 40 }} />
@@ -166,7 +178,15 @@ export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, 
               <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, letterSpacing: -0.1 }}>
                 Pedir código a cada login
               </div>
-              <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, fontWeight: 500, lineHeight: 1.3 }}>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: C.faint,
+                  marginTop: 2,
+                  fontWeight: 500,
+                  lineHeight: 1.3,
+                }}
+              >
                 Adiciona uma camada extra no login do app
               </div>
             </div>
@@ -418,7 +438,15 @@ function ActionRow({
           {lbl}
         </div>
         {sub && (
-          <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, fontWeight: 500, lineHeight: 1.3 }}>
+          <div
+            style={{
+              fontSize: 11.5,
+              color: C.faint,
+              marginTop: 2,
+              fontWeight: 500,
+              lineHeight: 1.3,
+            }}
+          >
             {sub}
           </div>
         )}
@@ -500,7 +528,9 @@ function ChangePasswordSheet({
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>
           Trocar senha
         </h2>
-        <div style={{ fontSize: 12.5, color: C.mute, marginTop: 4, fontWeight: 500, lineHeight: 1.4 }}>
+        <div
+          style={{ fontSize: 12.5, color: C.mute, marginTop: 4, fontWeight: 500, lineHeight: 1.4 }}
+        >
           Defina uma senha forte com pelo menos 8 caracteres.
         </div>
 

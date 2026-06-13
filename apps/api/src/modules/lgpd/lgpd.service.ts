@@ -58,9 +58,7 @@ export class LgpdService {
 
       // Erasure: fulfill immediately (delete chat history in Mongo).
       if (input.kind === 'erasure' && input.customerId) {
-        const result = await this.chatHistory.deleteAllForCustomer(
-          input.customerId,
-        );
+        const result = await this.chatHistory.deleteAllForCustomer(input.customerId);
         const assistantDelete = (await tx.query(
           `WITH deleted AS (
              DELETE FROM assistant_messages
@@ -84,10 +82,9 @@ export class LgpdService {
             row.id,
           ],
         );
-        const refreshed = (await tx.query(
-          `SELECT * FROM lgpd_requests WHERE id = $1`,
-          [row.id],
-        )) as Array<Record<string, unknown>>;
+        const refreshed = (await tx.query(`SELECT * FROM lgpd_requests WHERE id = $1`, [
+          row.id,
+        ])) as Array<Record<string, unknown>>;
         return {
           dto: this.toProtocolDto(refreshed[0]),
           row: refreshed[0],
@@ -102,12 +99,7 @@ export class LgpdService {
       };
     });
 
-    if (
-      fulfilled.wasFulfilled &&
-      slug &&
-      this.events &&
-      input.customerId
-    ) {
+    if (fulfilled.wasFulfilled && slug && this.events && input.customerId) {
       this.events.emitLgpdFulfilled(
         slug,
         input.customerId,
@@ -134,21 +126,16 @@ export class LgpdService {
     const sql = `SELECT * FROM lgpd_requests
                  ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
                  ORDER BY requested_at DESC LIMIT 100`;
-    const rows = (await this.tenantConn.query(sql, params)) as Array<
-      Record<string, unknown>
-    >;
+    const rows = (await this.tenantConn.query(sql, params)) as Array<Record<string, unknown>>;
     return rows.map((r) => this.toFullDto(r));
   }
 
   private toProtocolDto(row: Record<string, unknown>) {
-    const expires = new Date(
-      Date.now() + 90 * 24 * 60 * 60 * 1000,
-    ).toISOString();
+    const expires = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
     return {
       protocolNumber: row.protocol_number as string,
       status: row.status as string,
-      executedAt: ((row.fulfilled_at as string | null) ??
-        (row.requested_at as string)) as string,
+      executedAt: ((row.fulfilled_at as string | null) ?? (row.requested_at as string)) as string,
       expiresAt: expires,
     };
   }

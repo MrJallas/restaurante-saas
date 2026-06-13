@@ -1,21 +1,6 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Query,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
-import {
-  IsBoolean,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-} from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { StaffMessagesService } from './staff-messages.service';
@@ -84,11 +69,7 @@ export class StaffMessagesController {
    * arbitrário no x-staff-id passava como sender/listener.
    */
   @Post()
-  async send(
-    @Param('slug') slug: string,
-    @Body() dto: SendMessageDto,
-    @Req() req: Request,
-  ) {
+  async send(@Param('slug') slug: string, @Body() dto: SendMessageDto, @Req() req: Request) {
     const senderStaffId = await this.callerResolver.requireActiveStaffId(req);
     return this.service.send({ ...dto, senderStaffId }, slug);
   }
@@ -106,10 +87,7 @@ export class StaffMessagesController {
    * x-staff-key lia DMs alheias se vazasse o threadId).
    */
   @Get('threads/:threadId')
-  async listMessages(
-    @Param('threadId') threadId: string,
-    @Req() req: Request,
-  ) {
+  async listMessages(@Param('threadId') threadId: string, @Req() req: Request) {
     const staffId = await this.callerResolver.requireActiveStaffId(req);
     return this.service.listMessagesInThread(threadId, staffId);
   }

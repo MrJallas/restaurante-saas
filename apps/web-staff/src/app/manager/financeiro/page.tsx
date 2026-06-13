@@ -2,13 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import {
-  useG,
-  G_FONT,
-  MAppHeader,
-  MBottomNav,
-  MSection,
-} from '../../../components/manager';
+import { useG, G_FONT, MAppHeader, MBottomNav, MSection } from '../../../components/manager';
 import { staffGet } from '../../../lib/api';
 
 interface OverviewData {
@@ -183,23 +177,58 @@ function FinanceiroInner() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <MetricBox
                 label="Faturamento"
-                value={loading ? '...' : formatCurrency(period === 'today' ? overview?.today.revenueCents ?? 0 : totals.revenueCents)}
-                onClick={() => router.push(`/manager/financeiro/detalhe/faturamento?slug=${slug}&period=${period}`)}
+                value={
+                  loading
+                    ? '...'
+                    : formatCurrency(
+                        period === 'today'
+                          ? (overview?.today.revenueCents ?? 0)
+                          : totals.revenueCents,
+                      )
+                }
+                onClick={() =>
+                  router.push(
+                    `/manager/financeiro/detalhe/faturamento?slug=${slug}&period=${period}`,
+                  )
+                }
               />
               <MetricBox
                 label="Pedidos"
-                value={loading ? '...' : String(period === 'today' ? overview?.today.orders ?? 0 : totals.orders)}
-                onClick={() => router.push(`/manager/financeiro/detalhe/pedidos?slug=${slug}&period=${period}`)}
+                value={
+                  loading
+                    ? '...'
+                    : String(period === 'today' ? (overview?.today.orders ?? 0) : totals.orders)
+                }
+                onClick={() =>
+                  router.push(`/manager/financeiro/detalhe/pedidos?slug=${slug}&period=${period}`)
+                }
               />
               <MetricBox
                 label="Ticket médio"
-                value={loading ? '...' : formatCurrency(period === 'today' ? Math.round((overview?.today.revenueCents ?? 0) / Math.max(1, overview?.today.orders ?? 0)) : totals.avgTicketCents)}
-                onClick={() => router.push(`/manager/financeiro/detalhe/ticket-medio?slug=${slug}&period=${period}`)}
+                value={
+                  loading
+                    ? '...'
+                    : formatCurrency(
+                        period === 'today'
+                          ? Math.round(
+                              (overview?.today.revenueCents ?? 0) /
+                                Math.max(1, overview?.today.orders ?? 0),
+                            )
+                          : totals.avgTicketCents,
+                      )
+                }
+                onClick={() =>
+                  router.push(
+                    `/manager/financeiro/detalhe/ticket-medio?slug=${slug}&period=${period}`,
+                  )
+                }
               />
               <MetricBox
                 label="Pendentes hoje"
                 value={loading ? '...' : String(overview?.today.pendingOrders ?? 0)}
-                onClick={() => router.push(`/manager/financeiro/detalhe/pendentes?slug=${slug}&period=${period}`)}
+                onClick={() =>
+                  router.push(`/manager/financeiro/detalhe/pendentes?slug=${slug}&period=${period}`)
+                }
               />
             </div>
           </div>
@@ -207,16 +236,26 @@ function FinanceiroInner() {
 
         <MSection title={`Receita · ${periodCfg.label.toLowerCase()}`}>
           <div style={{ padding: '0 16px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+            <div
+              style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}
+            >
               <MetricBox
                 label="Receita"
                 value={formatCurrency(totals.revenueCents)}
-                onClick={() => router.push(`/manager/financeiro/detalhe/faturamento?slug=${slug}&period=${period}`)}
+                onClick={() =>
+                  router.push(
+                    `/manager/financeiro/detalhe/faturamento?slug=${slug}&period=${period}`,
+                  )
+                }
               />
               <MetricBox
                 label="Ticket médio"
                 value={formatCurrency(totals.avgTicketCents)}
-                onClick={() => router.push(`/manager/financeiro/detalhe/ticket-medio?slug=${slug}&period=${period}`)}
+                onClick={() =>
+                  router.push(
+                    `/manager/financeiro/detalhe/ticket-medio?slug=${slug}&period=${period}`,
+                  )
+                }
               />
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 7, height: 120 }}>
@@ -231,8 +270,18 @@ function FinanceiroInner() {
                       opacity: row.revenueCents > 0 ? 1 : 0.18,
                     }}
                   />
-                  <div style={{ marginTop: 6, fontSize: 10, color: C.faint, textAlign: 'center', fontWeight: 700 }}>
-                    {new Date(row.date).toLocaleDateString('pt-BR', { weekday: 'short' }).slice(0, 3)}
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: 10,
+                      color: C.faint,
+                      textAlign: 'center',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {new Date(row.date)
+                      .toLocaleDateString('pt-BR', { weekday: 'short' })
+                      .slice(0, 3)}
                   </div>
                 </div>
               ))}
@@ -243,7 +292,16 @@ function FinanceiroInner() {
         <MSection title="Mais vendidos">
           <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {topItems.length === 0 ? (
-              <div style={{ padding: 18, border: `1px dashed ${C.borderSoft}`, borderRadius: 10, color: C.faint, fontSize: 13, textAlign: 'center' }}>
+              <div
+                style={{
+                  padding: 18,
+                  border: `1px dashed ${C.borderSoft}`,
+                  borderRadius: 10,
+                  color: C.faint,
+                  fontSize: 13,
+                  textAlign: 'center',
+                }}
+              >
                 Sem vendas registradas.
               </div>
             ) : (
@@ -262,7 +320,9 @@ function FinanceiroInner() {
                 >
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>{item.name}</div>
-                    <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>{item.category_name}</div>
+                    <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>
+                      {item.category_name}
+                    </div>
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 800 }}>{item.total_orders}</div>
@@ -304,7 +364,15 @@ function FinanceiroInner() {
   );
 }
 
-function MetricBox({ label, value, onClick }: { label: string; value: string; onClick: () => void }) {
+function MetricBox({
+  label,
+  value,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  onClick: () => void;
+}) {
   const C = useG(false);
   return (
     <button
@@ -331,7 +399,9 @@ function MetricBox({ label, value, onClick }: { label: string; value: string; on
       >
         {label}
       </div>
-      <div style={{ fontSize: 24, fontWeight: 800, marginTop: 6, color: C.ink, letterSpacing: -0.5 }}>
+      <div
+        style={{ fontSize: 24, fontWeight: 800, marginTop: 6, color: C.ink, letterSpacing: -0.5 }}
+      >
         {value}
       </div>
     </button>
@@ -340,7 +410,9 @@ function MetricBox({ label, value, onClick }: { label: string; value: string; on
 
 export default function ManagerFinanceiroPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}>
+    <Suspense
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}
+    >
       <FinanceiroInner />
     </Suspense>
   );

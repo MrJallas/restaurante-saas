@@ -15,12 +15,7 @@ import { CallerResolverModule } from '../../common/services/caller-resolver.modu
   // OrdersService. Hoje o ciclo nao existe, mas o forwardRef e barato.
   // Round 17 (B-NEW-66): CallerResolverModule pra resolver customerId do
   // cookie em createOrder (closing IDOR via dto.customerId arbitrário).
-  imports: [
-    TenantModule,
-    RedisModule,
-    CallerResolverModule,
-    forwardRef(() => OrderRatingsModule),
-  ],
+  imports: [TenantModule, RedisModule, CallerResolverModule, forwardRef(() => OrderRatingsModule)],
   controllers: [OrdersController, KitchenController],
   providers: [OrdersService, StaffOrSessionGuard, ManagerOnlyGuard, RedisThrottleGuard],
   exports: [OrdersService],

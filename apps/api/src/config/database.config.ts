@@ -13,9 +13,7 @@ const poolSize = Number(process.env.DB_POOL_SIZE ?? 20);
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
-  url:
-    process.env.DATABASE_URL ||
-    'postgresql://postgres:postgres@localhost:5434/restaurant_saas',
+  url: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5434/restaurant_saas',
   synchronize: false,
   logging: process.env.DEBUG_DB === 'true',
   extra: {

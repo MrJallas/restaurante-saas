@@ -80,11 +80,7 @@ export interface HostLiberateDto {
 
 // ─── Swap ───
 
-export type HostSwapStatus =
-  | 'requested'
-  | 'in_progress'
-  | 'completed'
-  | 'cancelled';
+export type HostSwapStatus = 'requested' | 'in_progress' | 'completed' | 'cancelled';
 
 export interface HostSwapRequestDto {
   id: string;

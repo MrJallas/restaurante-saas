@@ -126,10 +126,7 @@ export class CustomerCourtesiesController {
   @UseGuards(SessionGuard)
   async history(@Session() session: SessionData): Promise<CustomerCourtesyHistoryResponse> {
     return {
-      courtesies: await this.service.listHistoryForCustomer(
-        session.customerId,
-        session.sessionId,
-      ),
+      courtesies: await this.service.listHistoryForCustomer(session.customerId, session.sessionId),
       retentionDays: 30,
     };
   }

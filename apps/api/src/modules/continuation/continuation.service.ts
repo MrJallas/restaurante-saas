@@ -105,11 +105,7 @@ export class ContinuationService {
     @Optional() private readonly redis?: RedisService,
   ) {}
 
-  private shownKey(
-    tableSessionId: string,
-    kind: ConsumableKind,
-    eventId: string,
-  ): string {
+  private shownKey(tableSessionId: string, kind: ConsumableKind, eventId: string): string {
     return `continuation_shown:${tableSessionId}:${kind}:${eventId}`;
   }
 
@@ -162,17 +158,10 @@ export class ContinuationService {
   ): Promise<ContinuationResponse> {
     let derived: DerivedContext;
     try {
-      derived = await this.deriveKindAndSlots(
-        tableSessionId,
-        customerId,
-        tenantSlug,
-        signals,
-      );
+      derived = await this.deriveKindAndSlots(tableSessionId, customerId, tenantSlug, signals);
     } catch (err) {
       this.logger.error(
-        `Failed to derive continuation context for ${tableSessionId}: ${
-          (err as Error).message
-        }`,
+        `Failed to derive continuation context for ${tableSessionId}: ${(err as Error).message}`,
       );
       return FALLBACK_RESPONSE;
     }
@@ -183,16 +172,8 @@ export class ContinuationService {
     // entregue pra superfície do assistente: a home não queima o 1x, e o
     // fallback genérico (AI service fora) não conta como exibição — o
     // cliente ainda não viu o contexto do evento.
-    if (
-      derived.consumable &&
-      signals.surface === 'assistente' &&
-      response.kind === derived.kind
-    ) {
-      await this.markShown(
-        tableSessionId,
-        derived.consumable.kind,
-        derived.consumable.eventId,
-      );
+    if (derived.consumable && signals.surface === 'assistente' && response.kind === derived.kind) {
+      await this.markShown(tableSessionId, derived.consumable.kind, derived.consumable.eventId);
     }
 
     return response;
@@ -295,11 +276,7 @@ export class ContinuationService {
     )) as { complaint_id: string; manager_name: string | null }[];
     if (
       complaintEnriched.length > 0 &&
-      !(await this.wasShown(
-        tableSessionId,
-        'pos_reclamacao',
-        complaintEnriched[0].complaint_id,
-      ))
+      !(await this.wasShown(tableSessionId, 'pos_reclamacao', complaintEnriched[0].complaint_id))
     ) {
       const managerName = complaintEnriched[0].manager_name;
       // Avg response time across all closed complaints for this manager.
@@ -435,10 +412,7 @@ export class ContinuationService {
       waiterRows.length > 0 &&
       !(await this.wasShown(tableSessionId, 'chamou_garcom', waiterRows[0].id))
     ) {
-      const waitMinutes = Math.max(
-        0,
-        Math.floor((waiterRows[0].age_sec ?? 0) / 60),
-      );
+      const waitMinutes = Math.max(0, Math.floor((waiterRows[0].age_sec ?? 0) / 60));
       return {
         kind: 'chamou_garcom',
         consumable: { kind: 'chamou_garcom', eventId: waiterRows[0].id },
@@ -516,9 +490,7 @@ export class ContinuationService {
         [tableSessionId],
       )) as { id: string }[];
       const summary =
-        lastOrderRows.length > 0
-          ? await this.summariseOrder(lastOrderRows[0].id)
-          : null;
+        lastOrderRows.length > 0 ? await this.summariseOrder(lastOrderRows[0].id) : null;
       return {
         kind: 'voltou_sem_acao',
         slots: {
@@ -536,9 +508,7 @@ export class ContinuationService {
     return { kind: 'first_time', slots: baseSlots };
   }
 
-  private normalizeClientKindHint(
-    value?: string | null,
-  ): ContinuationClientKindHint | null {
+  private normalizeClientKindHint(value?: string | null): ContinuationClientKindHint | null {
     if (!value) return null;
     const kind = value.trim();
     if (
@@ -584,9 +554,7 @@ export class ContinuationService {
     return summary || null;
   }
 
-  private coerceTableNumber(
-    label: string | null,
-  ): number | string | null {
+  private coerceTableNumber(label: string | null): number | string | null {
     if (!label) return null;
     const m = label.match(/\d+/);
     if (m) {
@@ -606,9 +574,7 @@ export class ContinuationService {
    * future shape may need to carry richer slots (image refs, big strings)
    * that don't fit cleanly in a query string.
    */
-  private async forwardToAi(
-    derived: DerivedContext,
-  ): Promise<ContinuationResponse> {
+  private async forwardToAi(derived: DerivedContext): Promise<ContinuationResponse> {
     const { kind, slots } = derived;
     // `first_time` doesn't have a dedicated pool — the AI service falls
     // back to `new:regular` segment when `kind` is unrecognised.
@@ -630,7 +596,7 @@ export class ContinuationService {
       tableLabel:
         typeof slots.table_number === 'number'
           ? `Mesa ${slots.table_number}`
-          : slots.table_number ?? null,
+          : (slots.table_number ?? null),
       lastItem: slots.last_item_seen ?? null,
       lastOrderSummary: slots.last_order_summary ?? null,
       lastOrderId: slots.last_order_id ?? null,
@@ -651,9 +617,7 @@ export class ContinuationService {
         signal: AbortSignal.timeout(AI_TIMEOUT_MS),
       });
       if (!res.ok) {
-        this.logger.warn(
-          `AI service /continuation returned ${res.status} for kind=${kind}`,
-        );
+        this.logger.warn(`AI service /continuation returned ${res.status} for kind=${kind}`);
         return FALLBACK_RESPONSE;
       }
       const payload = (await res.json()) as {
@@ -680,9 +644,7 @@ export class ContinuationService {
       };
     } catch (err) {
       this.logger.warn(
-        `AI service /continuation failed (${(err as Error).name}): ${
-          (err as Error).message
-        }`,
+        `AI service /continuation failed (${(err as Error).name}): ${(err as Error).message}`,
       );
       return FALLBACK_RESPONSE;
     }

@@ -10,12 +10,7 @@
  * already-occupied table and the host (customer A) must approve. Auto-times-out
  * 60s after creation if host doesn't respond.
  */
-export type LateArrivalStatus =
-  | 'pending'
-  | 'approved'
-  | 'rejected'
-  | 'timeout'
-  | 'cancelled';
+export type LateArrivalStatus = 'pending' | 'approved' | 'rejected' | 'timeout' | 'cancelled';
 
 /**
  * Domain entity mirroring `late_arrival_requests` table.
@@ -69,12 +64,7 @@ export interface LateArrivalApproveDto {
 // Table merge
 // ─────────────────────────────────────────────────────────────
 
-export type TableMergeStatus =
-  | 'pending'
-  | 'approved'
-  | 'rejected'
-  | 'timeout'
-  | 'cancelled';
+export type TableMergeStatus = 'pending' | 'approved' | 'rejected' | 'timeout' | 'cancelled';
 
 /**
  * Domain entity for the in-flight merge request (escalation_chains row).
@@ -212,17 +202,9 @@ export interface MergeCooldownDto {
 
 /** Kinds of escalation chains. Late-arrival/table-merge keep their own tables;
  *  the shared chain table is now used primarily for `qr-issue`. */
-export type EscalationKind =
-  | 'late_arrival'
-  | 'table_merge'
-  | 'qr_issue';
+export type EscalationKind = 'late_arrival' | 'table_merge' | 'qr_issue';
 
-export type EscalationStatus =
-  | 'pending'
-  | 'approved'
-  | 'rejected'
-  | 'timeout'
-  | 'cancelled';
+export type EscalationStatus = 'pending' | 'approved' | 'rejected' | 'timeout' | 'cancelled';
 
 /**
  * Single step in an escalation cascade. Roles include `customer-host` for

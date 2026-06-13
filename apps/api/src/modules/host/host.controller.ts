@@ -118,11 +118,7 @@ export class HostController {
   }
 
   @Post('swap-requests')
-  async createSwap(
-    @Param('slug') slug: string,
-    @Body() body: CreateSwapDto,
-    @Req() req: Request,
-  ) {
+  async createSwap(@Param('slug') slug: string, @Body() body: CreateSwapDto, @Req() req: Request) {
     const staffId = this.callerResolver.requireStaffId(req);
     return this.service.createSwapRequest({ ...body, staffId }, slug);
   }
@@ -146,18 +142,10 @@ export class HostController {
    * espera.
    */
   @Post('tables/swap')
-  async legacySwap(
-    @Param('slug') slug: string,
-    @Body() body: CreateSwapDto,
-    @Req() req: Request,
-  ) {
+  async legacySwap(@Param('slug') slug: string, @Body() body: CreateSwapDto, @Req() req: Request) {
     const staffId = this.callerResolver.requireStaffId(req);
     const created = await this.service.createSwapRequest({ ...body, staffId }, slug);
-    await this.service.updateSwapRequest(
-      created.id,
-      { status: 'in_progress', staffId },
-      slug,
-    );
+    await this.service.updateSwapRequest(created.id, { status: 'in_progress', staffId }, slug);
     const finalized = await this.service.updateSwapRequest(
       created.id,
       { status: 'completed', staffId },
@@ -178,10 +166,7 @@ export class HostController {
   }
 
   @Delete('waitlist/:id')
-  async removeFromWaitlist(
-    @Param('id') id: string,
-    @Query() q: WaitlistRemoveQueryDto,
-  ) {
+  async removeFromWaitlist(@Param('id') id: string, @Query() q: WaitlistRemoveQueryDto) {
     return this.service.removeFromWaitlist(id, q.transition ?? 'left');
   }
 
@@ -192,19 +177,13 @@ export class HostController {
   }
 
   @Post('reservations')
-  async createReservation(
-    @Body() body: CreateReservationDto,
-    @Req() req: Request,
-  ) {
+  async createReservation(@Body() body: CreateReservationDto, @Req() req: Request) {
     const staffId = this.callerResolver.requireStaffId(req);
     return this.service.createReservation({ ...body, staffId });
   }
 
   @Patch('reservations/:id')
-  async updateReservation(
-    @Param('id') id: string,
-    @Body() body: UpdateReservationDto,
-  ) {
+  async updateReservation(@Param('id') id: string, @Body() body: UpdateReservationDto) {
     return this.service.updateReservation(id, body);
   }
 }

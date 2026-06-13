@@ -12,11 +12,7 @@ export type LgpdRequestKind = 'erasure' | 'access' | 'portability';
  * Lifecycle status. Erasure goes straight to `fulfilled` because deletion of
  * NoSQL chat data is instantaneous; access/portability require manager action.
  */
-export type LgpdRequestStatus =
-  | 'pending'
-  | 'in_progress'
-  | 'fulfilled'
-  | 'rejected';
+export type LgpdRequestStatus = 'pending' | 'in_progress' | 'fulfilled' | 'rejected';
 
 /**
  * How the customer answered the consent capture (chip vs free text).

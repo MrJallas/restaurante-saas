@@ -24,21 +24,16 @@ export class ApiRequestError extends Error {
   }
 }
 
-export async function api<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
 
   // Em cross-origin (ex.: iPhone na LAN → api no Mac) o cookie httpOnly
   // SameSite=Lax nao e enviado pelo browser, entao mandamos o sessionId
   // tambem como header. O server aceita os dois via SessionGuard.
-  const sessionToken =
-    typeof window !== 'undefined' ? getSessionToken() : null;
+  const sessionToken = typeof window !== 'undefined' ? getSessionToken() : null;
 
   const signal = options.signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
-  const continuationHeaders =
-    typeof window !== 'undefined' ? continuationRequestHeaders(path) : {};
+  const continuationHeaders = typeof window !== 'undefined' ? continuationRequestHeaders(path) : {};
 
   let res: Response;
   try {

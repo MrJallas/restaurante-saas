@@ -1,18 +1,6 @@
-import {
-  Controller,
-  Post,
-  Body,
-  Param,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Post, Body, Param, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
-import {
-  IsString,
-  IsUUID,
-  MinLength,
-  MaxLength,
-} from 'class-validator';
+import { IsString, IsUUID, MinLength, MaxLength } from 'class-validator';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
@@ -60,11 +48,7 @@ export class StaffTableMergeController {
    * validou role+DB no header, aqui só usamos.
    */
   @Post('force')
-  async force(
-    @Param('slug') slug: string,
-    @Body() dto: StaffForceMergeDto,
-    @Req() req: Request,
-  ) {
+  async force(@Param('slug') slug: string, @Body() dto: StaffForceMergeDto, @Req() req: Request) {
     const staffId = this.callerResolver.requireStaffId(req);
     return this.service.forceMerge(
       {

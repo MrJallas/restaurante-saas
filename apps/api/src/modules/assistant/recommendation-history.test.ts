@@ -9,10 +9,7 @@
  * construção (um item com o alérgeno declarado nunca chega nos candidatos).
  */
 
-import {
-  rankCandidatesByHistory,
-  type ConsumptionHistoryItem,
-} from './assistant.service';
+import { rankCandidatesByHistory, type ConsumptionHistoryItem } from './assistant.service';
 
 interface FakeMenuItem {
   id: string;
@@ -26,7 +23,8 @@ function item(name: string, category_name: string): FakeMenuItem {
 }
 
 // O ranking só lê name + category_name; cast pra MenuItemRow via unknown.
-const asMenu = (xs: FakeMenuItem[]) => xs as unknown as Parameters<typeof rankCandidatesByHistory>[0];
+const asMenu = (xs: FakeMenuItem[]) =>
+  xs as unknown as Parameters<typeof rankCandidatesByHistory>[0];
 
 const PICANHA = item('Picanha na Brasa', 'Pratos Principais');
 const FILE = item('Filé Mignon ao Molho Madeira', 'Pratos Principais');

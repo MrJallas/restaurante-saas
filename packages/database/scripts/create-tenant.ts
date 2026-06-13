@@ -2,7 +2,8 @@ import { Client } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5434/restaurant_saas';
+const DATABASE_URL =
+  process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5434/restaurant_saas';
 
 async function createTenant(schemaName: string) {
   if (!schemaName) {
@@ -13,7 +14,9 @@ async function createTenant(schemaName: string) {
 
   const safeName = schemaName.replace(/[^a-z0-9_]/g, '');
   if (safeName !== schemaName) {
-    console.error(`Nome invalido. Use apenas letras minusculas, numeros e underscores. Sugestao: ${safeName}`);
+    console.error(
+      `Nome invalido. Use apenas letras minusculas, numeros e underscores. Sugestao: ${safeName}`,
+    );
     process.exit(1);
   }
 
@@ -28,7 +31,10 @@ async function createTenant(schemaName: string) {
 
     // 2. Rodar migrations do tenant-template
     const migrationsDir = path.join(__dirname, '..', 'migrations', 'tenant-template');
-    const migrationFiles = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
+    const migrationFiles = fs
+      .readdirSync(migrationsDir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
 
     // Round 4 §C-NEW-1: criar tabela `__migrations__` ANTES de rodar pra
     // que cada migration seja registrada. Sem isso, migrate-tenants.ts
@@ -53,7 +59,10 @@ async function createTenant(schemaName: string) {
 
     // 3. Rodar seeds
     const seedsDir = path.join(__dirname, '..', 'seeds', 'tenant-template');
-    const seedFiles = fs.readdirSync(seedsDir).filter((f) => f.endsWith('.sql')).sort();
+    const seedFiles = fs
+      .readdirSync(seedsDir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
 
     console.log(`Rodando ${seedFiles.length} seeds...`);
     for (const file of seedFiles) {

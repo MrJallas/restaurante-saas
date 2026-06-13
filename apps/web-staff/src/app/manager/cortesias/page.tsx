@@ -20,9 +20,7 @@ function CourtesiesInner() {
 export default function ManagerCourtesiesPage() {
   return (
     <Suspense
-      fallback={
-        <div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>
-      }
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}
     >
       <CourtesiesInner />
     </Suspense>

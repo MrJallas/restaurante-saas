@@ -24,9 +24,7 @@ export class QrResolverService {
     private readonly audit: SecurityAuditService,
   ) {}
 
-  async resolvePublicToken(
-    publicToken: string,
-  ): Promise<{
+  async resolvePublicToken(publicToken: string): Promise<{
     redirectUrl: string;
     tenantSlug: string;
     tableId: string;
@@ -54,13 +52,8 @@ export class QrResolverService {
     );
 
     const baseUrl =
-      process.env.CUSTOMER_APP_URL ??
-      process.env.WEB_CUSTOMER_URL ??
-      'http://localhost:3003';
-    const url = new URL(
-      `/${match.tenant.slug}/mesa/${match.table.code}`,
-      baseUrl,
-    );
+      process.env.CUSTOMER_APP_URL ?? process.env.WEB_CUSTOMER_URL ?? 'http://localhost:3003';
+    const url = new URL(`/${match.tenant.slug}/mesa/${match.table.code}`, baseUrl);
     url.searchParams.set('hmac', hmac);
     url.searchParams.set('ts', timestamp);
     url.searchParams.set('accessToken', accessToken);

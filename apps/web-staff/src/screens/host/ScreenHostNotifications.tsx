@@ -251,7 +251,9 @@ function NotificationRow({
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-          <div style={{ fontSize: 10, color: tone.dot, fontWeight: 800, textTransform: 'uppercase' }}>
+          <div
+            style={{ fontSize: 10, color: tone.dot, fontWeight: 800, textTransform: 'uppercase' }}
+          >
             {KIND_LABEL[item.kind]}
           </div>
           {isFreshAssist && (

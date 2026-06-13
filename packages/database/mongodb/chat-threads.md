@@ -93,8 +93,8 @@ Criados pelo `mongo-init.ts` (idempotente).
 ## LGPD erasure
 
 ```js
-db.chat_messages.deleteMany({ tenant_id, customer_id })
-db.chat_threads.deleteMany({ tenant_id, customer_id })
+db.chat_messages.deleteMany({ tenant_id, customer_id });
+db.chat_threads.deleteMany({ tenant_id, customer_id });
 ```
 
 Operacao indexada (`{ tenant_id, customer_id }`); typicamente <100ms ate

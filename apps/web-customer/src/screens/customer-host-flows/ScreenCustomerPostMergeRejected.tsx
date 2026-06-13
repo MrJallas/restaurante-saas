@@ -58,12 +58,8 @@ export function ScreenCustomerPostMergeRejected({
       <span className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-faint">
         {pair}
       </span>
-      <h2 className="mt-2 text-[20px] font-bold leading-[1.15] tracking-[-0.3px]">
-        {copy.title}
-      </h2>
-      <p className="mt-2 text-[13px] font-medium leading-[1.45] text-mute">
-        {copy.body}
-      </p>
+      <h2 className="mt-2 text-[20px] font-bold leading-[1.15] tracking-[-0.3px]">{copy.title}</h2>
+      <p className="mt-2 text-[13px] font-medium leading-[1.45] text-mute">{copy.body}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <PillButton variant="filled" onClick={onCallHost}>
           Chamar recepcionista

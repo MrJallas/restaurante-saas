@@ -93,7 +93,12 @@ export function ScreenManagerOrdersPause({
         const list = data.map((s, i) => ({
           id: s.id,
           name: s.name,
-          init: s.name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase(),
+          init: s.name
+            .split(' ')
+            .map((p) => p[0])
+            .slice(0, 2)
+            .join('')
+            .toUpperCase(),
           color: PAUSE_ROLE_PALETTE[i % PAUSE_ROLE_PALETTE.length],
         }));
         if (list.length) setWaiters(list);
@@ -119,9 +124,7 @@ export function ScreenManagerOrdersPause({
           kicker: 'PAUSA TERMINOU',
           title: 'Zona retomou normalmente',
         }}
-        kpis={[
-          { label: 'Duração', value: `${duration} min`, accent: 'success' },
-        ]}
+        kpis={[{ label: 'Duração', value: `${duration} min`, accent: 'success' }]}
         timeline={[]}
         primaryCta={{ label: 'Voltar pro Painel', onClick: () => router.push('/manager') }}
         onBack={() => router.back()}
@@ -162,7 +165,14 @@ export function ScreenManagerOrdersPause({
       <MTopBar
         dark={dark}
         title="Pausar zona"
-        left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.back()} ariaLabel="Voltar" />}
+        left={
+          <GIconBtn
+            dark={dark}
+            icon={Icon.back(20)}
+            onClick={() => router.back()}
+            ariaLabel="Voltar"
+          />
+        }
       />
 
       <div style={{ flex: 1, overflow: 'auto', padding: '14px 16px 24px' }}>
@@ -186,7 +196,9 @@ export function ScreenManagerOrdersPause({
                   0,
                   Math.floor((new Date(p.endsAt).getTime() - Date.now()) / 1000),
                 );
-                const mm = Math.floor(remaining / 60).toString().padStart(2, '0');
+                const mm = Math.floor(remaining / 60)
+                  .toString()
+                  .padStart(2, '0');
                 const ss = (remaining % 60).toString().padStart(2, '0');
                 return (
                   <div
@@ -199,7 +211,9 @@ export function ScreenManagerOrdersPause({
                       background: '#FFF7E6',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}
+                    >
                       <MPill tone="warn" dark={dark}>
                         Ativa
                       </MPill>
@@ -226,7 +240,9 @@ export function ScreenManagerOrdersPause({
                           api.zonePauses
                             .end(p.id)
                             .then(refresh)
-                            .catch((err: Error) => setErrorMsg(err.message || 'Não foi possível encerrar a pausa.'))
+                            .catch((err: Error) =>
+                              setErrorMsg(err.message || 'Não foi possível encerrar a pausa.'),
+                            )
                         }
                       >
                         Encerrar agora

@@ -71,7 +71,7 @@ export default function PedidoEnviadoPage() {
     };
   }, [orderId, slug]);
 
-  const currentIndex = order ? STATUS_INDEX[order.status] ?? 0 : 0;
+  const currentIndex = order ? (STATUS_INDEX[order.status] ?? 0) : 0;
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
   // ETA real do backend (fila + prioridade + estágio) — o fallback
   // hardcoded "22–28 minutos" saiu; antes do primeiro fetch mostra
@@ -87,9 +87,7 @@ export default function PedidoEnviadoPage() {
   const items = order?.items ?? [];
   const totalCents = order?.totalCents ?? 0;
 
-  const summaryLine = items
-    .map((it) => `${it.quantity}× ${it.name}`)
-    .join(' · ');
+  const summaryLine = items.map((it) => `${it.quantity}× ${it.name}`).join(' · ');
 
   return (
     <AppShell
@@ -146,8 +144,8 @@ export default function PedidoEnviadoPage() {
                       done
                         ? 'border-ink bg-ink'
                         : active
-                        ? 'animate-pulse-dot border-ink bg-bg'
-                        : 'border-border-soft bg-bg'
+                          ? 'animate-pulse-dot border-ink bg-bg'
+                          : 'border-border-soft bg-bg'
                     }`}
                   >
                     {done && '✓'}
@@ -166,8 +164,8 @@ export default function PedidoEnviadoPage() {
                       active
                         ? 'font-semibold text-ink'
                         : done
-                        ? 'font-medium text-ink'
-                        : 'font-medium text-faint'
+                          ? 'font-medium text-ink'
+                          : 'font-medium text-faint'
                     }`}
                   >
                     {s.label}
@@ -195,11 +193,7 @@ export default function PedidoEnviadoPage() {
         <PillButton onClick={() => push(`/${slug}/cardapio`)} className="flex-1">
           Ver cardápio
         </PillButton>
-        <PillButton
-          variant="filled"
-          onClick={() => push(`/${slug}/pedido`)}
-          className="flex-1"
-        >
+        <PillButton variant="filled" onClick={() => push(`/${slug}/pedido`)} className="flex-1">
           Acompanhar
         </PillButton>
       </div>

@@ -12,7 +12,9 @@ function Inner() {
 
 export default function ManagerAppearancePage() {
   return (
-    <Suspense fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}>
+    <Suspense
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}
+    >
       <Inner />
     </Suspense>
   );

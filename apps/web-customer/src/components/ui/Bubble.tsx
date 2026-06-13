@@ -25,9 +25,7 @@ export const Bubble = memo(function Bubble({ role, children }: BubbleProps) {
   return (
     <div
       className={`max-w-[86%] self-start rounded-[18px] rounded-bl-[4px] border px-4 py-3 text-[14px] leading-[1.5] shadow-[0_1px_2px_rgba(0,0,0,0.04)] ${
-        blocked
-          ? 'border-danger bg-[#fdf2f2] text-[#7a1f1f]'
-          : 'border-ink bg-bg text-ink'
+        blocked ? 'border-danger bg-[#fdf2f2] text-[#7a1f1f]' : 'border-ink bg-bg text-ink'
       }`}
       style={{ textWrap: 'pretty' as never }}
     >

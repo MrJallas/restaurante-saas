@@ -27,9 +27,7 @@ export default function PagamentoFeedbackPage() {
   }, []);
 
   const toggleTag = (t: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t],
-    );
+    setSelectedTags((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
   };
 
   const handleSubmit = async () => {
@@ -105,9 +103,7 @@ export default function PagamentoFeedbackPage() {
                 onClick={() => setRating(n)}
                 aria-label={`${n} estrela${n > 1 ? 's' : ''}`}
                 className={`flex h-[46px] w-[46px] items-center justify-center rounded-full border-[1.2px] text-[20px] transition-colors ${
-                  active
-                    ? 'border-ink bg-ink text-white'
-                    : 'border-border-soft bg-bg text-faint'
+                  active ? 'border-ink bg-ink text-white' : 'border-border-soft bg-bg text-faint'
                 }`}
               >
                 ★

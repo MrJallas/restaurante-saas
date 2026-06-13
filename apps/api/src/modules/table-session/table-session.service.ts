@@ -106,11 +106,7 @@ export class TableSessionService {
     );
 
     if (!isValid) {
-      await this.logQrInitRejected(
-        schemaName,
-        table,
-        'qr_hmac_invalid_or_expired',
-      );
+      await this.logQrInitRejected(schemaName, table, 'qr_hmac_invalid_or_expired');
       throw new HttpException('QR Code invalido ou expirado.', HttpStatus.UNAUTHORIZED);
     }
 
@@ -122,12 +118,11 @@ export class TableSessionService {
       );
     }
 
-    const accessTokenValidation =
-      this.qrCodeService.validateDailyAccessTokenDetailed(
-        tableCode,
-        accessToken,
-        table.qr_hmac_secret as string,
-      );
+    const accessTokenValidation = this.qrCodeService.validateDailyAccessTokenDetailed(
+      tableCode,
+      accessToken,
+      table.qr_hmac_secret as string,
+    );
     if (!accessTokenValidation.valid) {
       await this.logQrInitRejected(
         schemaName,
@@ -149,37 +144,33 @@ export class TableSessionService {
     // diferentes — nunca veriam o pedido um do outro. Comanda compartilhada
     // exige sessao por mesa, nao por scan. Multi-user e diferenciado via
     // `session_participants` (visit_id + customer_id).
-    const { sessionId, isNewSession } = await this.tenantConn.transaction(
-      async (tx) => {
-        await tx.query(`SELECT id FROM tables WHERE id = $1 FOR UPDATE`, [
-          table.id,
-        ]);
+    const { sessionId, isNewSession } = await this.tenantConn.transaction(async (tx) => {
+      await tx.query(`SELECT id FROM tables WHERE id = $1 FOR UPDATE`, [table.id]);
 
-        const activeRows = (await tx.query(
-          `SELECT id FROM table_sessions
+      const activeRows = (await tx.query(
+        `SELECT id FROM table_sessions
            WHERE table_id = $1
              AND status = 'active'
              AND created_at > NOW() - INTERVAL '4 hours'
            ORDER BY created_at DESC
            LIMIT 1`,
-          [table.id],
-        )) as { id: string }[];
+        [table.id],
+      )) as { id: string }[];
 
-        if (activeRows.length > 0) {
-          return { sessionId: activeRows[0].id, isNewSession: false };
-        }
+      if (activeRows.length > 0) {
+        return { sessionId: activeRows[0].id, isNewSession: false };
+      }
 
-        // Round 6 (B-NEW-18): session_token coluna dropped na migration
-        // 039 — nunca foi lida (cookie+header carregam table_sessions.id).
-        const result = (await tx.query(
-          `INSERT INTO table_sessions (table_id, status)
+      // Round 6 (B-NEW-18): session_token coluna dropped na migration
+      // 039 — nunca foi lida (cookie+header carregam table_sessions.id).
+      const result = (await tx.query(
+        `INSERT INTO table_sessions (table_id, status)
            VALUES ($1, 'active')
            RETURNING id`,
-          [table.id],
-        )) as { id: string }[];
-        return { sessionId: result[0].id, isNewSession: true };
-      },
-    );
+        [table.id],
+      )) as { id: string }[];
+      return { sessionId: result[0].id, isNewSession: true };
+    });
 
     // 4. Salva (ou refresca) no Redis usando o sessionId (DB id) — mesmo
     // valor que vai pro cookie e pro header x-session-token. SET com TTL
@@ -193,11 +184,7 @@ export class TableSessionService {
       schemaName,
     };
 
-    await this.redis.set(
-      `session:${sessionId}`,
-      JSON.stringify(sessionData),
-      SESSION_TTL_SECONDS,
-    );
+    await this.redis.set(`session:${sessionId}`, JSON.stringify(sessionData), SESSION_TTL_SECONDS);
 
     // 5. Welcome pool e por sessao — so gera no primeiro scan. Em scans
     // subsequentes mantemos o pool original pra que indices ja consumidos
@@ -208,10 +195,7 @@ export class TableSessionService {
         const j = Math.floor(Math.random() * (i + 1));
         [indices[i], indices[j]] = [indices[j], indices[i]];
       }
-      await this.redis.rpush(
-        `welcome_pool:${sessionId}`,
-        ...indices.map(String),
-      );
+      await this.redis.rpush(`welcome_pool:${sessionId}`, ...indices.map(String));
     }
     // Sempre refresca TTL do pool — sessao reusada pode estar com TTL
     // baixo se o ultimo scan foi 3h59 atras.
@@ -234,10 +218,7 @@ export class TableSessionService {
    * Caller customer-side `join:customer` valida via
    * `client.data.customerId === data.customerId` no WS gateway.
    */
-  async attachCustomerToSession(
-    sessionId: string,
-    customerId: string,
-  ): Promise<void> {
+  async attachCustomerToSession(sessionId: string, customerId: string): Promise<void> {
     const data = await this.redis.get(`session:${sessionId}`);
     if (!data) return; // sessão expirou — silenciosamente no-op
     const parsed = safeJsonParse<SessionData>(data);
@@ -307,9 +288,7 @@ export class TableSessionService {
       const insertedParticipant = await this.tenantConn.transaction(async (tx) => {
         // Lock held across release consumption, color assignment and host
         // update. This serializes concurrent first scans of the same table.
-        await tx.query(`SELECT id FROM table_sessions WHERE id = $1 FOR UPDATE`, [
-          tableSessionId,
-        ]);
+        await tx.query(`SELECT id FROM table_sessions WHERE id = $1 FOR UPDATE`, [tableSessionId]);
 
         const lockedSession = (await tx.query(
           `SELECT host_customer_id FROM table_sessions WHERE id = $1`,
@@ -338,7 +317,7 @@ export class TableSessionService {
 
         const isFirst = !lockedHostId;
         const consumedReleaseId = isFirst
-          ? unwrapRows<{ id: string }>(
+          ? (unwrapRows<{ id: string }>(
               await tx.query(
                 `UPDATE table_qr_releases
                     SET consumed_at = now(),
@@ -357,7 +336,7 @@ export class TableSessionService {
                   RETURNING id`,
                 [tableId, tableSessionId, customerId],
               ),
-            )[0]?.id ?? null
+            )[0]?.id ?? null)
           : null;
         const nextStatus: 'pending' | 'approved' =
           isFirst && consumedReleaseId ? 'approved' : 'pending';
@@ -375,13 +354,7 @@ export class TableSessionService {
                     CASE WHEN $4::varchar = 'approved' THEN $2::uuid ELSE NULL END
              ON CONFLICT (table_session_id, customer_id) WHERE left_at IS NULL DO NOTHING
              RETURNING color_index, status`,
-            [
-              tableSessionId,
-              customerId,
-              visitId ?? null,
-              nextStatus,
-              PARTICIPANT_COLORS.length,
-            ],
+            [tableSessionId, customerId, visitId ?? null, nextStatus, PARTICIPANT_COLORS.length],
           )) as { color_index: number; status: string }[];
         } catch (err: unknown) {
           const pgErr = err as { code?: string };
@@ -400,9 +373,7 @@ export class TableSessionService {
           )) as { color_index: number; status: string }[];
           return {
             colorIndex: refresh[0]?.color_index ?? 0,
-            status:
-              (refresh[0]?.status as 'pending' | 'approved' | 'rejected') ??
-              'pending',
+            status: (refresh[0]?.status as 'pending' | 'approved' | 'rejected') ?? 'pending',
             currentHostId: lockedHostId,
           };
         }
@@ -479,10 +450,9 @@ export class TableSessionService {
       });
     }
 
-    const customers = (await this.tenantConn.query(
-      `SELECT name FROM customers WHERE id = $1`,
-      [customerId],
-    )) as { name: string }[];
+    const customers = (await this.tenantConn.query(`SELECT name FROM customers WHERE id = $1`, [
+      customerId,
+    ])) as { name: string }[];
     const name = customers[0]?.name ?? '';
 
     return {
@@ -515,9 +485,7 @@ export class TableSessionService {
       throw new NotFoundException('Sessao nao encontrada.');
     }
     if (sessionRows[0].host_customer_id !== requesterCustomerId) {
-      throw new ForbiddenException(
-        'Apenas o host da mesa pode aprovar ou rejeitar entradas.',
-      );
+      throw new ForbiddenException('Apenas o host da mesa pode aprovar ou rejeitar entradas.');
     }
 
     const newStatus = decision === 'approve' ? 'approved' : 'rejected';
@@ -575,9 +543,7 @@ export class TableSessionService {
       customerId: r.customer_id,
       name: r.name,
       initial: (r.name.trim().charAt(0) || '?').toUpperCase(),
-      color:
-        PARTICIPANT_COLORS[r.color_index % PARTICIPANT_COLORS.length] ??
-        PARTICIPANT_COLORS[0],
+      color: PARTICIPANT_COLORS[r.color_index % PARTICIPANT_COLORS.length] ?? PARTICIPANT_COLORS[0],
       status: r.status as 'pending' | 'approved' | 'rejected',
       isHost: r.customer_id === r.host_customer_id,
       requestedAt: r.joined_at ? new Date(r.joined_at).toISOString() : null,
@@ -627,11 +593,8 @@ export class TableSessionService {
         tableLabel: table.label,
       },
     };
-    await Promise.all([
-      this.audit.log('qr_scan_events', event),
-      this.audit.logAudit(event),
-    ]).catch((err) =>
-      this.logger.warn(`QR init rejection log failed: ${(err as Error).message}`),
+    await Promise.all([this.audit.log('qr_scan_events', event), this.audit.logAudit(event)]).catch(
+      (err) => this.logger.warn(`QR init rejection log failed: ${(err as Error).message}`),
     );
   }
 }

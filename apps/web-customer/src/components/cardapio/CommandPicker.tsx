@@ -57,9 +57,7 @@ export function CommandPicker({ open, priceCents, onClose, onConfirm }: CommandP
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-[1.5px] text-mute">
           Onde lançar este item?
         </div>
-        <div className="mb-1 text-[22px] font-semibold tracking-[-0.02em]">
-          Escolha a comanda
-        </div>
+        <div className="mb-1 text-[22px] font-semibold tracking-[-0.02em]">Escolha a comanda</div>
         <p className="mb-5 text-[13px] leading-[1.5] text-mute text-pretty">
           Você pode pagar separado ou dividir com a mesa no final.
         </p>
@@ -76,9 +74,7 @@ export function CommandPicker({ open, priceCents, onClose, onConfirm }: CommandP
               selected === 'individual' ? 'border-ink bg-ink' : 'border-border-soft'
             }`}
           >
-            {selected === 'individual' && (
-              <span className="h-2 w-2 rounded-full bg-white" />
-            )}
+            {selected === 'individual' && <span className="h-2 w-2 rounded-full bg-white" />}
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-2">
@@ -89,7 +85,9 @@ export function CommandPicker({ open, priceCents, onClose, onConfirm }: CommandP
             </div>
             <div className="mt-1 text-[12px] text-mute">
               {individualCount > 0
-                ? `${individualCount} ${individualCount === 1 ? 'item' : 'itens'} · R$ ${(individualSub / 100)
+                ? `${individualCount} ${individualCount === 1 ? 'item' : 'itens'} · R$ ${(
+                    individualSub / 100
+                  )
                     .toFixed(2)
                     .replace('.', ',')}`
                 : 'Você paga só o que pediu'}

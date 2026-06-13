@@ -9,19 +9,14 @@ import { ScreenManagerNotifications } from '../../../screens/manager/ScreenManag
 
 function NotificationsInner() {
   const params = useSearchParams();
-  const slug =
-    params.get('slug') || process.env.NEXT_PUBLIC_TENANT_SLUG || 'demo';
+  const slug = params.get('slug') || process.env.NEXT_PUBLIC_TENANT_SLUG || 'demo';
   return <ScreenManagerNotifications tenantSlug={slug} persona="manager" />;
 }
 
 export default function ManagerNotificationsPage() {
   return (
     <Suspense
-      fallback={
-        <div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>
-          Carregando…
-        </div>
-      }
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}
     >
       <NotificationsInner />
     </Suspense>

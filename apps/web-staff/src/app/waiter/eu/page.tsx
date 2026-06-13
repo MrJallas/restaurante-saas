@@ -52,7 +52,9 @@ function WaiterProfilePageInner() {
         router.push(tabHref(tab));
       }}
       onNewEntry={() => router.push(`/waiter/new-entry?tenant=${tenantSlug}`)}
-      onOpenMessages={() => router.push(`/waiter/mensagens?tenant=${tenantSlug}&waiterId=${waiterId}`)}
+      onOpenMessages={() =>
+        router.push(`/waiter/mensagens?tenant=${tenantSlug}&waiterId=${waiterId}`)
+      }
       onEndShift={async () => {
         if (endingShift) return;
         setEndingShift(true);

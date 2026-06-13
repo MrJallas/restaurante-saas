@@ -43,7 +43,10 @@ interface OverloadedPerson {
   tables: number[];
 }
 
-export function ScreenManagerStaffSobrecarga({ dark, tenantSlug }: ScreenManagerStaffSobrecargaProps) {
+export function ScreenManagerStaffSobrecarga({
+  dark,
+  tenantSlug,
+}: ScreenManagerStaffSobrecargaProps) {
   const C = useG(!!dark);
   const router = useRouter();
   const params = useSearchParams();
@@ -167,7 +170,9 @@ export function ScreenManagerStaffSobrecarga({ dark, tenantSlug }: ScreenManager
           >
             {count > 0 ? '↓ REALOCAR MESAS' : 'TUDO CERTO'}
           </div>
-          <div style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}>
+          <div
+            style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}
+          >
             {count > 0
               ? `${count} ${count === 1 ? 'funcionário' : 'funcionários'} com carga acima do limiar (${OVERLOAD_THRESHOLD}+ mesas).`
               : 'Nenhum funcionário acima do limiar agora.'}
@@ -230,9 +235,18 @@ export function ScreenManagerStaffSobrecarga({ dark, tenantSlug }: ScreenManager
                   >
                     Sugestão
                   </div>
-                  <div style={{ fontSize: 13, color: '#1d1c19', lineHeight: 1.4, fontWeight: 500, marginTop: 4 }}>
-                    Mover <b style={{ fontWeight: 700 }}>1 mesa de {firstOverloaded?.name ?? 'Caleb'}</b> para outro
-                    garçom equilibra a praça em ~2 min.
+                  <div
+                    style={{
+                      fontSize: 13,
+                      color: '#1d1c19',
+                      lineHeight: 1.4,
+                      fontWeight: 500,
+                      marginTop: 4,
+                    }}
+                  >
+                    Mover{' '}
+                    <b style={{ fontWeight: 700 }}>1 mesa de {firstOverloaded?.name ?? 'Caleb'}</b>{' '}
+                    para outro garçom equilibra a praça em ~2 min.
                   </div>
                 </div>
               </div>
@@ -244,7 +258,13 @@ export function ScreenManagerStaffSobrecarga({ dark, tenantSlug }: ScreenManager
                 C={C}
                 filled
                 icon={Icon.table(13)}
-                onClick={() => router.push(slugQs ? `/manager/operacoes/mesas-ativas?slug=${slugQs}` : '/manager/operacoes/mesas-ativas')}
+                onClick={() =>
+                  router.push(
+                    slugQs
+                      ? `/manager/operacoes/mesas-ativas?slug=${slugQs}`
+                      : '/manager/operacoes/mesas-ativas',
+                  )
+                }
               >
                 Realocar mesas manualmente
               </ActionPill>
@@ -267,11 +287,23 @@ export function ScreenManagerStaffSobrecarga({ dark, tenantSlug }: ScreenManager
                 <ActionPill
                   C={C}
                   icon={Icon.pause(13)}
-                  onClick={() => router.push(slugQs ? `/manager/pausa-zona?slug=${slugQs}` : '/manager/pausa-zona')}
+                  onClick={() =>
+                    router.push(
+                      slugQs ? `/manager/pausa-zona?slug=${slugQs}` : '/manager/pausa-zona',
+                    )
+                  }
                 >
                   Pausar mesas do {firstOverloaded?.name.split(' ')[0] ?? 'garçom'} por 5 min
                 </ActionPill>
-                <div style={{ fontSize: 12, color: C.faint, fontWeight: 500, lineHeight: 1.45, padding: '6px 14px 0' }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: C.faint,
+                    fontWeight: 500,
+                    lineHeight: 1.45,
+                    padding: '6px 14px 0',
+                  }}
+                >
                   Só as mesas que ele atende · resto do salão funciona normal.
                 </div>
               </div>
@@ -281,8 +313,9 @@ export function ScreenManagerStaffSobrecarga({ dark, tenantSlug }: ScreenManager
 
         <div style={{ height: 18 }} />
         <Formula C={C}>
-          Funcionários com <b>{OVERLOAD_THRESHOLD}+ mesas</b> simultaneamente OU <b>3+ chamados sem resposta</b> há mais
-          de 2 min · ajuste limiares em <span style={{ color: C.ink, fontWeight: 700 }}>Operação</span>.
+          Funcionários com <b>{OVERLOAD_THRESHOLD}+ mesas</b> simultaneamente OU{' '}
+          <b>3+ chamados sem resposta</b> há mais de 2 min · ajuste limiares em{' '}
+          <span style={{ color: C.ink, fontWeight: 700 }}>Operação</span>.
         </Formula>
       </div>
 
@@ -518,7 +551,9 @@ function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.
       >
         Como esse número é calculado
       </div>
-      <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>{children}</div>
+      <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>
+        {children}
+      </div>
     </div>
   );
 }

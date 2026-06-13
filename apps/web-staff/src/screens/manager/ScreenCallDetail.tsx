@@ -50,7 +50,11 @@ export function ScreenCallDetail({
   const [chipAction, setChipAction] = useState<ComplaintChipAction>('on-the-way');
   const quickReplies: Array<{ id: ComplaintChipAction; label: string; text: string }> = [
     { id: 'on-the-way', label: 'Estou indo', text: 'Estou indo até a mesa agora.' },
-    { id: 'kitchen-check', label: 'Vou ver na cozinha', text: 'Vou verificar com a cozinha e já volto com uma resposta.' },
+    {
+      id: 'kitchen-check',
+      label: 'Vou ver na cozinha',
+      text: 'Vou verificar com a cozinha e já volto com uma resposta.',
+    },
     { id: 'courtesy', label: 'Cortesia', text: 'Vou registrar uma cortesia pela espera.' },
   ];
 
@@ -106,7 +110,14 @@ export function ScreenCallDetail({
       <MTopBar
         dark={dark}
         title={kind === 'complaint' ? 'Reclamação' : kind === 'qr-issue' ? 'QR' : 'Chamado'}
-        left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.back()} ariaLabel="Voltar" />}
+        left={
+          <GIconBtn
+            dark={dark}
+            icon={Icon.back(20)}
+            onClick={() => router.back()}
+            ariaLabel="Voltar"
+          />
+        }
       />
       <div style={{ flex: 1, overflow: 'auto', padding: '14px 16px 100px' }}>
         {kind === 'complaint' && complaint && (
@@ -119,9 +130,7 @@ export function ScreenCallDetail({
         {kind === 'complaint' && !complaint && (
           <div style={{ padding: 28, color: C.faint, textAlign: 'center' }}>Carregando…</div>
         )}
-        {kind === 'qr-issue' && (
-          <QrIssueDetail dark={dark} id={id} />
-        )}
+        {kind === 'qr-issue' && <QrIssueDetail dark={dark} id={id} />}
         {kind === 'generic' && (
           <div
             style={{
@@ -197,7 +206,13 @@ export function ScreenCallDetail({
               <GButton dark={dark} full kind="ghost" onClick={onResolve} disabled={busy}>
                 Marcar como resolvido
               </GButton>
-              <GButton dark={dark} full kind="primary" onClick={onRespond} disabled={!draft.trim() || busy}>
+              <GButton
+                dark={dark}
+                full
+                kind="primary"
+                onClick={onRespond}
+                disabled={!draft.trim() || busy}
+              >
                 Enviar resposta
               </GButton>
             </div>
@@ -326,9 +341,7 @@ function QrIssueDetail({ dark, id }: { dark?: boolean; id: string }) {
       >
         QR · ESCALAÇÃO
       </div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: C.ink }}>
-        Escalação #{id}
-      </div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: C.ink }}>Escalação #{id}</div>
       <div style={{ fontSize: 13, color: C.mute, fontWeight: 500, marginTop: 8 }}>
         Sem detalhes adicionais carregados. Use a aba Operação · Escalações pra ver a cadeia.
       </div>

@@ -40,9 +40,7 @@ export function HostJoinRequestBanner({ slug }: { slug: string }) {
   const refetch = useCallback(async () => {
     try {
       const res = await apiGet<ParticipantsResponse>(`/${slug}/table/participants`);
-      const pending = res.participants.filter(
-        (p) => p.status === 'pending' && !p.isHost,
-      );
+      const pending = res.participants.filter((p) => p.status === 'pending' && !p.isHost);
       setPendingCount(pending.length);
       setFirstName(pending[0]?.name ?? null);
     } catch {
@@ -91,12 +89,7 @@ export function HostJoinRequestBanner({ slug }: { slug: string }) {
         style={{ animation: 'cJoinPulse 1.6s ease-in-out infinite' }}
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <path
-            d="M8 3v10M3 8h10"
-            stroke="white"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          />
+          <path d="M8 3v10M3 8h10" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       </span>
       <div className="flex flex-1 flex-col gap-0.5">

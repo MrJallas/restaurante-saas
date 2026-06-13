@@ -14,7 +14,10 @@ interface PushProntoCozinhaProps {
 }
 
 export const PushProntoCozinha: React.FC<PushProntoCozinhaProps> = ({
-  tableLabel, items, time = 'agora', onTap,
+  tableLabel,
+  items,
+  time = 'agora',
+  onTap,
 }) => (
   <PushCardIOS
     tone="success"

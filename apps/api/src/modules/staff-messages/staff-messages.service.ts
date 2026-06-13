@@ -1,10 +1,4 @@
-import {
-  HttpException,
-  HttpStatus,
-  Injectable,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, Optional } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -119,9 +113,7 @@ export class StaffMessagesService {
         participantStaffIds = participantRows.map((r) => r.staff_id);
       }
 
-      const otherParticipantIds = participantStaffIds.filter(
-        (id) => id !== input.senderStaffId,
-      );
+      const otherParticipantIds = participantStaffIds.filter((id) => id !== input.senderStaffId);
       const recipientStaffId =
         input.recipientStaffId ??
         (otherParticipantIds.length === 1 ? otherParticipantIds[0] : null);
@@ -131,12 +123,7 @@ export class StaffMessagesService {
            (thread_id, sender_staff_id, recipient_staff_id, body)
          VALUES ($1, $2, $3, $4)
          RETURNING *`,
-        [
-          threadId,
-          input.senderStaffId,
-          recipientStaffId,
-          input.body,
-        ],
+        [threadId, input.senderStaffId, recipientStaffId, input.body],
       )) as Array<Record<string, unknown>>;
 
       await tx.query(
@@ -161,24 +148,20 @@ export class StaffMessagesService {
 
     if (slug && this.events) {
       const message = result.message;
-      this.events.emitStaffThreadMessageReceived(
-        slug,
-        result.participantStaffIds,
-        {
-          message: {
-            id: message.id,
-            threadId: message.threadId,
-            fromRole: 'staff',
-            staffId: message.senderStaffId,
-            staffName: message.staffName,
-            kind: 'direct_reply',
-            content: message.body,
-            metadata: {},
-            createdAt: message.sentAt,
-            readAt: message.readAt,
-          },
+      this.events.emitStaffThreadMessageReceived(slug, result.participantStaffIds, {
+        message: {
+          id: message.id,
+          threadId: message.threadId,
+          fromRole: 'staff',
+          staffId: message.senderStaffId,
+          staffName: message.staffName,
+          kind: 'direct_reply',
+          content: message.body,
+          metadata: {},
+          createdAt: message.sentAt,
+          readAt: message.readAt,
         },
-      );
+      });
     }
 
     return result.message;
@@ -234,10 +217,7 @@ export class StaffMessagesService {
       [threadId, callerStaffId],
     )) as unknown[];
     if (!memberRows.length) {
-      throw new HttpException(
-        'Conversa não encontrada ou acesso negado.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Conversa não encontrada ou acesso negado.', HttpStatus.NOT_FOUND);
     }
 
     const threadRows = (await this.tenantConn.query(
@@ -311,10 +291,7 @@ export class StaffMessagesService {
       ),
     );
     if (!updated.length) {
-      throw new HttpException(
-        'Mensagem nao encontrada ou ja lida.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Mensagem nao encontrada ou ja lida.', HttpStatus.NOT_FOUND);
     }
     const result = {
       messageId: updated[0].id as string,
@@ -442,7 +419,8 @@ export class StaffMessagesService {
     const storedSubject = (r.subject as string | null) ?? null;
     return {
       threadId: r.id as string,
-      subject: kind === 'direct' && !isBroadcast ? otherParticipant ?? storedSubject : storedSubject,
+      subject:
+        kind === 'direct' && !isBroadcast ? (otherParticipant ?? storedSubject) : storedSubject,
       isBroadcast,
       kind,
       shiftId: (r.shift_id as string | null) ?? null,

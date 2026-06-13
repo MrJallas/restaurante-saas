@@ -44,6 +44,7 @@ Depois: `http://localhost:8765/prototypes/seguranca-qr/index.html`.
 ## O que tem cada tela
 
 ### `ScreenManagerSecurity`
+
 - **Estado `overview`** (default):
   - Hero com 3 KPIs do dia (mesas abertas / aguardando você / bloqueadas auto)
   - Lista de **pending review** — sessões escaladas pela recepcionista
@@ -60,6 +61,7 @@ Depois: `http://localhost:8765/prototypes/seguranca-qr/index.html`.
   como inativa, Ver auditoria completa).
 
 ### `ScreenManagerSecurityAudit`
+
 - Lista paginada cursor-based de **TODAS** as aberturas dos últimos
   90 dias.
 - Filtros por decisão (Todas / Aprovadas / Rejeitadas / Bloqueadas /

@@ -29,7 +29,7 @@ vs SHA-256 legado e auto-migra em login OK).
 
 2. **`/repo/node_modules/bcrypt` (volume Docker do api)** — instalado.
    Hoisted pra raiz do workspace. Pra desinstalar: `docker exec -w
-   /repo/apps/api restaurant-api npm uninstall bcrypt @types/bcrypt`.
+/repo/apps/api restaurant-api npm uninstall bcrypt @types/bcrypt`.
 
 3. **DB `restaurant_dev.staff`** — fiz CRUD de teste e restaurei tudo:
    - `TEST-CURL-bcrypt` foi criado e deletado.
@@ -40,7 +40,7 @@ vs SHA-256 legado e auto-migra em login OK).
 4. **Redis `staff:pin_lock:*` / `staff:pin_attempts:*`** — Carlos
    ficou lockado durante teste de throttle (5 tentativas erradas).
    Limpei as chaves dele no fim (`redis-cli DEL staff:pin_lock:<id>
-   staff:pin_attempts:<id>`).
+staff:pin_attempts:<id>`).
 
 5. **Processos** — subi um nest temporario na porta 3099 a partir do
    worktree pra testar curls. Ja matei (`pkill -f 'ts-node.*main.ts'`).

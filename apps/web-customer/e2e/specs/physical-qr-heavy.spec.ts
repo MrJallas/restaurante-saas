@@ -63,9 +63,7 @@ async function prepareBrowser(page: import('@playwright/test').Page): Promise<vo
   await grantLocation(page);
 }
 
-async function routeStaffApiToLocalhost(
-  page: import('@playwright/test').Page,
-): Promise<void> {
+async function routeStaffApiToLocalhost(page: import('@playwright/test').Page): Promise<void> {
   await page.route('**/api/**', async (route) => {
     const requestUrl = new URL(route.request().url());
     if (
@@ -85,9 +83,7 @@ test.beforeEach(async ({ page }) => {
   await prepareBrowser(page);
 });
 
-test('E2E 1 + 13 + 14: bloqueia fluxo antigo, token cruzado e links vencidos', async ({
-  page,
-}) => {
+test('E2E 1 + 13 + 14: bloqueia fluxo antigo, token cruzado e links vencidos', async ({ page }) => {
   resetQrTables();
 
   const qr91 = await resolveQr('QRTEST91');
@@ -146,12 +142,14 @@ test('E2E 1 + 13 + 14: bloqueia fluxo antigo, token cruzado e links vencidos', a
     },
     20,
   ).map((e) => e.eventType);
-  expect(events).toEqual(expect.arrayContaining([
-    'qr_access_token_missing',
-    'qr_access_token_invalid',
-    'qr_access_token_expired',
-    'qr_hmac_invalid_or_expired',
-  ]));
+  expect(events).toEqual(
+    expect.arrayContaining([
+      'qr_access_token_missing',
+      'qr_access_token_invalid',
+      'qr_access_token_expired',
+      'qr_hmac_invalid_or_expired',
+    ]),
+  );
 
   const staleUrl = new URL(qr91.redirectUrl);
   staleUrl.searchParams.delete('accessToken');
@@ -161,9 +159,7 @@ test('E2E 1 + 13 + 14: bloqueia fluxo antigo, token cruzado e links vencidos', a
   });
 });
 
-test('E2E 2: primeiro scan sem pre-liberacao cria verificacao fisica', async ({
-  page,
-}) => {
+test('E2E 2: primeiro scan sem pre-liberacao cria verificacao fisica', async ({ page }) => {
   resetQrTables(['QRTEST91']);
 
   await openCustomerViaQr(page, 'QRTEST91');
@@ -202,9 +198,7 @@ test('E2E 2: primeiro scan sem pre-liberacao cria verificacao fisica', async ({
   expect(mongoEvents.length).toBeGreaterThan(0);
 });
 
-test('E2E 3: aprovacao fisica libera cliente, define host e sobrevive reload', async ({
-  page,
-}) => {
+test('E2E 3: aprovacao fisica libera cliente, define host e sobrevive reload', async ({ page }) => {
   resetQrTables(['QRTEST91']);
 
   await openCustomerViaQr(page, 'QRTEST91');
@@ -255,7 +249,9 @@ test('E2E 4: rejeicao fisica bloqueia cliente e audita motivo', async ({ page })
   const decision = await rejectScanRequest(request!.id, 'mesa vazia');
   expect([200, 201]).toContain(decision.status);
 
-  await expect(page.getByText(/não autorizou|nao autorizou|não autorizada|nao autorizada|recusada/i)).toBeVisible({
+  await expect(
+    page.getByText(/não autorizou|nao autorizou|não autorizada|nao autorizada|recusada/i),
+  ).toBeVisible({
     timeout: 15_000,
   });
 
@@ -339,7 +335,9 @@ test('E2E 7 + 8: segundo cliente aguarda host, nao staff; host aprova ou rejeita
     const hostPage = await hostContext.newPage();
     await openCustomerViaQr(hostPage, 'QRTEST91');
     await fillWelcome(hostPage, 'Host A Mesa', freshCpf());
-    await expect(hostPage.getByRole('button', { name: /Chamar garçom|Chamar garcom/i })).toBeVisible({
+    await expect(
+      hostPage.getByRole('button', { name: /Chamar garçom|Chamar garcom/i }),
+    ).toBeVisible({
       timeout: 20_000,
     });
 
@@ -353,7 +351,9 @@ test('E2E 7 + 8: segundo cliente aguarda host, nao staff; host aprova ou rejeita
       timeout: 15_000,
     });
     await hostPage.getByRole('button', { name: /Aprovar Cliente E Join/i }).click();
-    await expect(joinPage.getByRole('button', { name: /Chamar garçom|Chamar garcom/i })).toBeVisible({
+    await expect(
+      joinPage.getByRole('button', { name: /Chamar garçom|Chamar garcom/i }),
+    ).toBeVisible({
       timeout: 15_000,
     });
 
@@ -372,7 +372,9 @@ test('E2E 7 + 8: segundo cliente aguarda host, nao staff; host aprova ou rejeita
       timeout: 15_000,
     });
     await hostPage.getByRole('button', { name: /Rejeitar Cliente F Reject/i }).click();
-    await expect(rejectPage.getByText(/não autorizou|nao autorizou|não autorizada|nao autorizada/i)).toBeVisible({
+    await expect(
+      rejectPage.getByText(/não autorizou|nao autorizou|não autorizada|nao autorizada/i),
+    ).toBeVisible({
       timeout: 15_000,
     });
     expect(scanRequests('QRTEST91')).toHaveLength(0);
@@ -394,17 +396,29 @@ test('E2E 9: cascade staff completo sem resposta termina em timeout', async () =
   const hostSocket = await connectStaffSocket({
     staff: manager,
     role: 'host',
-    events: ['scan_verification.created', 'scan_verification.escalated', 'scan_verification.resolved'],
+    events: [
+      'scan_verification.created',
+      'scan_verification.escalated',
+      'scan_verification.resolved',
+    ],
   });
   const managerSocket = await connectStaffSocket({
     staff: manager,
     role: 'manager',
-    events: ['scan_verification.created', 'scan_verification.escalated', 'scan_verification.resolved'],
+    events: [
+      'scan_verification.created',
+      'scan_verification.escalated',
+      'scan_verification.resolved',
+    ],
   });
   const waiterSocket = await connectStaffSocket({
     staff: waiter,
     role: 'waiter',
-    events: ['scan_verification.created', 'scan_verification.escalated', 'scan_verification.resolved'],
+    events: [
+      'scan_verification.created',
+      'scan_verification.escalated',
+      'scan_verification.resolved',
+    ],
   });
 
   try {
@@ -456,11 +470,13 @@ test('E2E 9: cascade staff completo sem resposta termina em timeout', async () =
       { tenantId: DEFAULT_SLUG, 'metadata.requestId': request!.id },
       20,
     ).map((e) => e.eventType);
-    expect(mongoEvents).toEqual(expect.arrayContaining([
-      'scan_verification_created',
-      'scan_verification_escalated',
-      'scan_verification_timeout',
-    ]));
+    expect(mongoEvents).toEqual(
+      expect.arrayContaining([
+        'scan_verification_created',
+        'scan_verification_escalated',
+        'scan_verification_timeout',
+      ]),
+    );
   } finally {
     hostSocket.socket.disconnect();
     managerSocket.socket.disconnect();
@@ -578,7 +594,7 @@ test('E2E 15: Mongo fora do ar nao bloqueia operacao Postgres', async () => {
     await waitFor(
       () => {
         try {
-          return mongoEval("db.adminCommand({ ping: 1 }).ok");
+          return mongoEval('db.adminCommand({ ping: 1 }).ok');
         } catch {
           return '0';
         }
@@ -645,12 +661,14 @@ test('E2E 18: auditoria mensal por tenant tem indices e campos essenciais', asyn
   await rejectScanRequest(request.id, 'auditoria mensal');
 
   const indexNames = mongoIndexNames('scan_verification_events');
-  expect(indexNames).toEqual(expect.arrayContaining([
-    'tenantId_createdAt',
-    'tenantId_tableId_createdAt',
-    'tenantId_customerId_createdAt',
-    'eventType_createdAt',
-  ]));
+  expect(indexNames).toEqual(
+    expect.arrayContaining([
+      'tenantId_createdAt',
+      'tenantId_tableId_createdAt',
+      'tenantId_customerId_createdAt',
+      'eventType_createdAt',
+    ]),
+  );
 
   const events = mongoFind<{
     tenantId?: string;
@@ -658,11 +676,7 @@ test('E2E 18: auditoria mensal por tenant tem indices e campos essenciais', asyn
     tableSessionId?: string;
     customerId?: string;
     eventType?: string;
-  }>(
-    'scan_verification_events',
-    { tenantId: DEFAULT_SLUG, 'metadata.requestId': request.id },
-    10,
-  );
+  }>('scan_verification_events', { tenantId: DEFAULT_SLUG, 'metadata.requestId': request.id }, 10);
   expect(events.length).toBeGreaterThan(0);
   for (const event of events) {
     expect(event.tenantId).toBe(DEFAULT_SLUG);

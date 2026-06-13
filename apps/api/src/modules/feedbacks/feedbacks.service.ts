@@ -55,11 +55,7 @@ export class FeedbacksService {
         ],
       )) as { id: string; created_at: string }[];
     } catch (err) {
-      if (
-        err &&
-        typeof err === 'object' &&
-        (err as { code?: string }).code === '23505'
-      ) {
+      if (err && typeof err === 'object' && (err as { code?: string }).code === '23505') {
         throw new BadRequestException('Feedback ja enviado para esta visita.');
       }
       throw err;

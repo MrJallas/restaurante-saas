@@ -16,7 +16,9 @@ function WaiterMessagesPageInner() {
       role="waiter"
       userId={userId}
       onBack={() => router.back()}
-      onOpenThread={(threadId) => router.push(`/waiter/mensagens/${threadId}?tenant=${tenantSlug}&waiterId=${userId}`)}
+      onOpenThread={(threadId) =>
+        router.push(`/waiter/mensagens/${threadId}?tenant=${tenantSlug}&waiterId=${userId}`)
+      }
     />
   );
 }

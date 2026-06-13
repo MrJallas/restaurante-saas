@@ -16,7 +16,11 @@ interface PushQrIssueProps {
 }
 
 export const PushQrIssue: React.FC<PushQrIssueProps> = ({
-  tableLabel, reporter, description, time = 'agora', onTap,
+  tableLabel,
+  reporter,
+  description,
+  time = 'agora',
+  onTap,
 }) => (
   <PushCardIOS
     tone="warn"

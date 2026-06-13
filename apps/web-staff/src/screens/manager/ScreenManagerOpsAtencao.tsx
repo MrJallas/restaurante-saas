@@ -34,7 +34,10 @@ export interface ScreenManagerOpsAtencaoProps {
   tenantSlug: string;
 }
 
-export function ScreenManagerOpsAtencao({ dark, tenantSlug: _tenantSlug }: ScreenManagerOpsAtencaoProps) {
+export function ScreenManagerOpsAtencao({
+  dark,
+  tenantSlug: _tenantSlug,
+}: ScreenManagerOpsAtencaoProps) {
   const C = useG(!!dark);
   const router = useRouter();
   const params = useSearchParams();
@@ -121,7 +124,9 @@ export function ScreenManagerOpsAtencao({ dark, tenantSlug: _tenantSlug }: Scree
           >
             {empty ? '· NADA EM ATENÇÃO' : '· PRÓXIMOS 10 MIN'}
           </div>
-          <div style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}>
+          <div
+            style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}
+          >
             {empty
               ? 'Nenhum alerta em atenção. Volta aqui se algo se aproximar do limite.'
               : `${items.length} alertas vão virar críticos se não agir logo.`}
@@ -137,8 +142,12 @@ export function ScreenManagerOpsAtencao({ dark, tenantSlug: _tenantSlug }: Scree
                   key={a.id}
                   C={C}
                   alert={a}
-                  onAction0={() => router.push(slugQs ? `/manager/mensagens?slug=${slugQs}` : '/manager/mensagens')}
-                  onAction1={() => router.push(slugQs ? `/manager/operacoes?slug=${slugQs}` : '/manager/operacoes')}
+                  onAction0={() =>
+                    router.push(slugQs ? `/manager/mensagens?slug=${slugQs}` : '/manager/mensagens')
+                  }
+                  onAction1={() =>
+                    router.push(slugQs ? `/manager/operacoes?slug=${slugQs}` : '/manager/operacoes')
+                  }
                 />
               ))}
             </div>
@@ -147,12 +156,12 @@ export function ScreenManagerOpsAtencao({ dark, tenantSlug: _tenantSlug }: Scree
 
         <div style={{ height: 18 }} />
         <Formula C={C}>
-          Pedidos ou chamados a <b>80% da meta</b> de tempo · vai virar crítico em ~10 min se não agir.
+          Pedidos ou chamados a <b>80% da meta</b> de tempo · vai virar crítico em ~10 min se não
+          agir.
         </Formula>
       </div>
 
       <MBottomNav active="ops" dark={dark} onTo={(r) => router.push(r)} alerts={items.length} />
-
     </div>
   );
 }
@@ -303,7 +312,9 @@ function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.
       >
         Como esse número é calculado
       </div>
-      <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>{children}</div>
+      <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>
+        {children}
+      </div>
     </div>
   );
 }

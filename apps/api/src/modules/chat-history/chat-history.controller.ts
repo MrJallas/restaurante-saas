@@ -57,13 +57,9 @@ export class ChatHistoryController {
    * quando ausente/inválido — endpoints chat-history exigem identificação
    * persistente do customer (não basta session de mesa).
    */
-  private async resolveCallerCustomerId(
-    req: Request,
-    session?: SessionData,
-  ): Promise<string> {
+  private async resolveCallerCustomerId(req: Request, session?: SessionData): Promise<string> {
     const token =
-      (req as Request & { cookies?: Record<string, string> }).cookies
-        ?.recognition_token ?? null;
+      (req as Request & { cookies?: Record<string, string> }).cookies?.recognition_token ?? null;
     if (!token) {
       if (session?.customerId) return session.customerId;
       throw new HttpException(

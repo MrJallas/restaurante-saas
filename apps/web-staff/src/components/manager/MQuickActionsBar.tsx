@@ -31,8 +31,24 @@ const TOOLS: ReadonlyArray<{
   tintBg: string;
   iconKey: 'flame' | 'pause' | 'chat';
 }> = [
-  { id: 'pause', label: 'Pausar Zona', sub: 'Pausa de 1 garçom', to: '/manager/pausa-zona', tint: '#9A7212', tintBg: '#FFF7E6', iconKey: 'pause' },
-  { id: 'message', label: 'Mensagem Equipe', sub: 'Mandar pra alguém', to: '/manager/mensagens', tint: '#1F3784', tintBg: '#EFF3FA', iconKey: 'chat' },
+  {
+    id: 'pause',
+    label: 'Pausar Zona',
+    sub: 'Pausa de 1 garçom',
+    to: '/manager/pausa-zona',
+    tint: '#9A7212',
+    tintBg: '#FFF7E6',
+    iconKey: 'pause',
+  },
+  {
+    id: 'message',
+    label: 'Mensagem Equipe',
+    sub: 'Mandar pra alguém',
+    to: '/manager/mensagens',
+    tint: '#1F3784',
+    tintBg: '#EFF3FA',
+    iconKey: 'chat',
+  },
 ];
 
 const TOOLS_FULL: ReadonlyArray<{
@@ -44,8 +60,24 @@ const TOOLS_FULL: ReadonlyArray<{
   tintBg: string;
   iconKey: 'flame' | 'pause' | 'chat';
 }> = [
-  { id: 'reorder', label: 'Cozinha', sub: 'Reordenar fila', to: '/manager/kitchen-reorder', tint: '#C2401A', tintBg: '#FFF1EC', iconKey: 'flame' },
-  { id: 'pause', label: 'Pausa', sub: 'Pedidos novos', to: '/manager/pausa-zona', tint: '#9A7212', tintBg: '#FFF7E6', iconKey: 'pause' },
+  {
+    id: 'reorder',
+    label: 'Cozinha',
+    sub: 'Reordenar fila',
+    to: '/manager/kitchen-reorder',
+    tint: '#C2401A',
+    tintBg: '#FFF1EC',
+    iconKey: 'flame',
+  },
+  {
+    id: 'pause',
+    label: 'Pausa',
+    sub: 'Pedidos novos',
+    to: '/manager/pausa-zona',
+    tint: '#9A7212',
+    tintBg: '#FFF7E6',
+    iconKey: 'pause',
+  },
 ];
 
 const ICONS = { flame: Icon.flame, pause: Icon.pause, chat: Icon.chat } as const;
@@ -63,7 +95,9 @@ export function MQuickActionsBar({
   let pauseCountdown: string | null = null;
   if (pauseActive && typeof pauseActive.remaining === 'number') {
     const r = Math.max(0, pauseActive.remaining);
-    pauseCountdown = `${Math.floor(r / 60).toString().padStart(2, '0')}:${(r % 60).toString().padStart(2, '0')}`;
+    pauseCountdown = `${Math.floor(r / 60)
+      .toString()
+      .padStart(2, '0')}:${(r % 60).toString().padStart(2, '0')}`;
   }
 
   return (
@@ -172,7 +206,15 @@ export function MQuickActionsBar({
                     justifyContent: 'center',
                   }}
                 >
-                  <div style={{ fontSize: 14, fontWeight: 800, color: C.ink, letterSpacing: -0.1, lineHeight: 1.1 }}>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 800,
+                      color: C.ink,
+                      letterSpacing: -0.1,
+                      lineHeight: 1.1,
+                    }}
+                  >
                     {t.label}
                   </div>
                   <div

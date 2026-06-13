@@ -65,7 +65,11 @@ function messageContent(message: StaffMessageDto): string {
 }
 
 export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> = ({
-  tenantSlug, threadId, role = 'waiter', myUserId, onBack,
+  tenantSlug,
+  threadId,
+  role = 'waiter',
+  myUserId,
+  onBack,
 }) => {
   const dark = role === 'cook';
   const C = useG(dark);
@@ -74,12 +78,12 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
   const [pauses, setPauses] = useState<ZonePauseDto[]>([]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
-  const waiterEvents = useWaiterEvents(role === 'waiter' || role === 'cook'
-    ? { tenantSlug, waiterId: myUserId }
-    : { tenantSlug: '' });
-  const hostEvents = useHostEvents(role === 'host'
-    ? { tenantSlug, hostId: myUserId }
-    : { tenantSlug: '' });
+  const waiterEvents = useWaiterEvents(
+    role === 'waiter' || role === 'cook' ? { tenantSlug, waiterId: myUserId } : { tenantSlug: '' },
+  );
+  const hostEvents = useHostEvents(
+    role === 'host' ? { tenantSlug, hostId: myUserId } : { tenantSlug: '' },
+  );
 
   const loadThread = useCallback(async () => {
     try {
@@ -99,10 +103,7 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
   useEffect(() => {
     if (!myUserId) return;
     const handler = (event: WsEvent) => {
-      if (
-        event.event !== 'staff_message.received'
-        && event.event !== 'staff_message.read'
-      ) {
+      if (event.event !== 'staff_message.received' && event.event !== 'staff_message.read') {
         return;
       }
       if (getStaffEventThreadId(event.payload) === threadId) {
@@ -152,11 +153,15 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
     if (!content || !thread) return;
     setSending(true);
     try {
-      const msg = await sendStaffMessage(tenantSlug, {
-        recipientId: thread.threadId,
-        threadId: thread.threadId,
-        content,
-      }, myUserId);
+      const msg = await sendStaffMessage(
+        tenantSlug,
+        {
+          recipientId: thread.threadId,
+          threadId: thread.threadId,
+          content,
+        },
+        myUserId,
+      );
       setMessages((prev) => [...prev, msg]);
       setDraft('');
     } catch {
@@ -176,16 +181,24 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
     <div
       style={{
         height: '100vh',
-        display: 'flex', flexDirection: 'column',
-        background: C.bg, fontFamily: G_FONT, color: C.ink,
+        display: 'flex',
+        flexDirection: 'column',
+        background: C.bg,
+        fontFamily: G_FONT,
+        color: C.ink,
       }}
     >
       <div
         style={{
           padding: '10px',
-          borderBottom: `1px solid ${C.borderFaint}`, background: C.bg,
-          display: 'flex', alignItems: 'center', gap: 10,
-          position: 'sticky', top: 0, zIndex: 5,
+          borderBottom: `1px solid ${C.borderFaint}`,
+          background: C.bg,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          position: 'sticky',
+          top: 0,
+          zIndex: 5,
         }}
       >
         <button
@@ -193,10 +206,16 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
           onClick={onBack}
           aria-label="Voltar"
           style={{
-            all: 'unset', cursor: 'pointer',
-            width: 32, height: 32, borderRadius: 10,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: C.ink, flexShrink: 0,
+            all: 'unset',
+            cursor: 'pointer',
+            width: 32,
+            height: 32,
+            borderRadius: 10,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: C.ink,
+            flexShrink: 0,
           }}
         >
           {Icon.back(20)}
@@ -207,8 +226,12 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
           </div>
           <div
             style={{
-              fontSize: 9, fontWeight: 800, color: C.faint, letterSpacing: 0.6,
-              fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace', marginTop: 1,
+              fontSize: 9,
+              fontWeight: 800,
+              color: C.faint,
+              letterSpacing: 0.6,
+              fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
+              marginTop: 1,
             }}
           >
             CONVERSA
@@ -218,9 +241,14 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
           type="button"
           aria-label="Mais"
           style={{
-            all: 'unset', cursor: 'pointer',
-            width: 36, height: 36, borderRadius: 10,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            all: 'unset',
+            cursor: 'pointer',
+            width: 36,
+            height: 36,
+            borderRadius: 10,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             color: C.ink,
           }}
         >
@@ -232,22 +260,32 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
         <div
           role="alert"
           style={{
-            padding: '10px 14px', background: '#FFF7E6',
+            padding: '10px 14px',
+            background: '#FFF7E6',
             borderBottom: '1px solid #F0DCB6',
-            display: 'flex', alignItems: 'center', gap: 10,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
           }}
         >
           <span
             style={{
-              width: 8, height: 8, borderRadius: '50%', background: '#9A7212',
-              animation: 'gPulse 1.4s infinite', flexShrink: 0,
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: '#9A7212',
+              animation: 'gPulse 1.4s infinite',
+              flexShrink: 0,
             }}
           />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
-                fontSize: 9.5, fontWeight: 800, color: '#7A4D10',
-                letterSpacing: 0.7, textTransform: 'uppercase',
+                fontSize: 9.5,
+                fontWeight: 800,
+                color: '#7A4D10',
+                letterSpacing: 0.7,
+                textTransform: 'uppercase',
                 fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
               }}
             >
@@ -278,8 +316,11 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
 
       <div
         style={{
-          flex: 1, overflow: 'auto', padding: '6px 0 14px',
-          display: 'flex', flexDirection: 'column',
+          flex: 1,
+          overflow: 'auto',
+          padding: '6px 0 14px',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
         {messages.map((m) => {
@@ -290,7 +331,8 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
               <div
                 key={m.id}
                 style={{
-                  display: 'flex', justifyContent: 'flex-end',
+                  display: 'flex',
+                  justifyContent: 'flex-end',
                   padding: '8px 14px 0 60px',
                 }}
               >
@@ -299,19 +341,22 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
                     style={{
                       background: sentBubbleBg,
                       color: sentBubbleInk,
-                      padding: '10px 14px', borderRadius: 14,
+                      padding: '10px 14px',
+                      borderRadius: 14,
                       borderBottomRightRadius: 4,
                       fontSize: 14,
                       fontWeight: 600,
                       letterSpacing: 0,
-                      lineHeight: 1.45, whiteSpace: 'pre-wrap',
+                      lineHeight: 1.45,
+                      whiteSpace: 'pre-wrap',
                     }}
                   >
                     {visibleContent}
                   </div>
                   <div
                     style={{
-                      marginTop: 4, textAlign: 'right',
+                      marginTop: 4,
+                      textAlign: 'right',
                       fontSize: 9.5,
                       fontWeight: 700,
                       color: sentMetaInk,
@@ -329,19 +374,26 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
             <div
               key={m.id}
               style={{
-                display: 'flex', alignItems: 'flex-start', gap: 8,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 8,
                 padding: '8px 60px 0 14px',
               }}
             >
               <div style={{ minWidth: 0, maxWidth: '82%' }}>
                 <div
                   style={{
-                    background: C.surface, color: C.ink,
+                    background: C.surface,
+                    color: C.ink,
                     border: `1px solid ${C.borderSoft}`,
-                    padding: '10px 14px', borderRadius: 14,
+                    padding: '10px 14px',
+                    borderRadius: 14,
                     borderBottomLeftRadius: 4,
-                    fontSize: 14, fontWeight: 500, letterSpacing: 0,
-                    lineHeight: 1.45, whiteSpace: 'pre-wrap',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    letterSpacing: 0,
+                    lineHeight: 1.45,
+                    whiteSpace: 'pre-wrap',
                   }}
                 >
                   {visibleContent}
@@ -355,9 +407,12 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
       {/* Composer */}
       <div
         style={{
-          padding: '10px 12px 14px', background: C.bg,
+          padding: '10px 12px 14px',
+          background: C.bg,
           borderTop: `1px solid ${C.borderFaint}`,
-          display: 'flex', alignItems: 'flex-end', gap: 8,
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: 8,
         }}
       >
         <textarea
@@ -366,10 +421,17 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
           placeholder="Mensagem..."
           rows={1}
           style={{
-            flex: 1, fontFamily: G_FONT, fontSize: 14, color: C.ink,
-            minHeight: 44, padding: '12px 14px',
-            borderRadius: 14, border: `1px solid ${C.borderSoft}`,
-            background: C.surface, outline: 'none', resize: 'none',
+            flex: 1,
+            fontFamily: G_FONT,
+            fontSize: 14,
+            color: C.ink,
+            minHeight: 44,
+            padding: '12px 14px',
+            borderRadius: 14,
+            border: `1px solid ${C.borderSoft}`,
+            background: C.surface,
+            outline: 'none',
+            resize: 'none',
           }}
         />
         <button
@@ -380,10 +442,14 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
           style={{
             all: 'unset',
             cursor: !draft.trim() || sending ? 'not-allowed' : 'pointer',
-            width: 44, height: 44, borderRadius: '50%',
+            width: 44,
+            height: 44,
+            borderRadius: '50%',
             background: !draft.trim() ? C.borderSoft : C.ink,
             color: !draft.trim() ? C.faint : C.bg,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             flexShrink: 0,
           }}
         >

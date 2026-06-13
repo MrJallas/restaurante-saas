@@ -2,12 +2,7 @@ import { expect, test } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { newSession, openDrawer } from '../helpers/session';
-import {
-  DEFAULT_SLUG,
-  nextCpf,
-  resetQrTables,
-  staffFetch,
-} from '../helpers/physical-qr';
+import { DEFAULT_SLUG, nextCpf, resetQrTables, staffFetch } from '../helpers/physical-qr';
 
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(90_000);
@@ -30,18 +25,15 @@ function nextBrowserIp(): string {
 }
 
 async function createCourtesy(item: string, notes = 'Teste real via Playwright') {
-  const response = await staffFetch<{ id?: string; item?: string }>(
-    `/${DEFAULT_SLUG}/courtesies`,
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        type: 'Sobremesa',
-        item,
-        tableNumber: TABLE_NUMBER,
-        notes,
-      }),
-    },
-  );
+  const response = await staffFetch<{ id?: string; item?: string }>(`/${DEFAULT_SLUG}/courtesies`, {
+    method: 'POST',
+    body: JSON.stringify({
+      type: 'Sobremesa',
+      item,
+      tableNumber: TABLE_NUMBER,
+      notes,
+    }),
+  });
   expect(response.status).toBe(201);
   expect(response.body.id).toBeTruthy();
   return response.body;

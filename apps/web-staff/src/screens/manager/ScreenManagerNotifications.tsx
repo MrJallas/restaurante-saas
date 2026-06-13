@@ -52,9 +52,9 @@ export interface ScreenManagerNotificationsProps {
 }
 
 const SEV_LABEL: Record<AlertSeverity, string> = {
-  'crítica': 'Crítica',
-  'atenção': 'Atenção',
-  'info': 'Info',
+  crítica: 'Crítica',
+  atenção: 'Atenção',
+  info: 'Info',
 };
 
 const SEV_ORDER: AlertSeverity[] = ['crítica', 'atenção', 'info'];
@@ -87,9 +87,7 @@ export function ScreenManagerNotifications({
       // Backend `/:slug/alerts` pode não estar reachable ainda — o screen
       // continua usável caindo no empty state (não bloqueia a UX do sino).
       setAlerts([]);
-      setError(
-        err instanceof Error ? err.message : 'Falha ao carregar notificações.',
-      );
+      setError(err instanceof Error ? err.message : 'Falha ao carregar notificações.');
     } finally {
       setLoading(false);
     }
@@ -107,9 +105,9 @@ export function ScreenManagerNotifications({
 
   const grouped = useMemo(() => {
     const map: Record<AlertSeverity, AlertRow[]> = {
-      'crítica': [],
-      'atenção': [],
-      'info': [],
+      crítica: [],
+      atenção: [],
+      info: [],
     };
     for (const a of alerts) {
       if (map[a.sev]) map[a.sev].push(a);
@@ -206,12 +204,7 @@ export function ScreenManagerNotifications({
             const rows = grouped[sev];
             if (!rows || rows.length === 0) return null;
             return (
-              <Section
-                key={sev}
-                label={SEV_LABEL[sev]}
-                count={rows.length}
-                dark={dark}
-              >
+              <Section key={sev} label={SEV_LABEL[sev]} count={rows.length} dark={dark}>
                 {rows.map((a) => (
                   <NotificationRow
                     key={a.id}
@@ -253,11 +246,7 @@ export function ScreenManagerNotifications({
           }}
         />
       ) : (
-        <MBottomNav
-          active="home"
-          dark={dark}
-          onTo={(r) => router.push(r)}
-        />
+        <MBottomNav active="home" dark={dark} onTo={(r) => router.push(r)} />
       )}
     </div>
   );
@@ -344,11 +333,7 @@ function NotificationRow({
   const accent = isCrit ? '#C43A3A' : isWarn ? '#D98E2B' : C.faint;
   const accentSoft = isCrit ? '#F4C7C7' : isWarn ? '#F0DCB6' : C.borderSoft;
   const relTime = formatRelative(alert.created_at);
-  const sevPillTone: 'danger' | 'warn' | 'info' = isCrit
-    ? 'danger'
-    : isWarn
-    ? 'warn'
-    : 'info';
+  const sevPillTone: 'danger' | 'warn' | 'info' = isCrit ? 'danger' : isWarn ? 'warn' : 'info';
 
   return (
     <div
@@ -469,10 +454,7 @@ function NotificationRow({
                 letterSpacing: -0.1,
                 background: action.kind === 'primary' ? C.ink : 'transparent',
                 color: action.kind === 'primary' ? C.bg : C.ink,
-                border:
-                  action.kind === 'primary'
-                    ? 'none'
-                    : `1px solid ${C.borderSoft}`,
+                border: action.kind === 'primary' ? 'none' : `1px solid ${C.borderSoft}`,
               }}
             >
               {action.label}
@@ -485,13 +467,7 @@ function NotificationRow({
 }
 
 // ─── EmptyState — mono eyebrow + ícone neutro ────────────────────
-function EmptyState({
-  dark,
-  error,
-}: {
-  dark?: boolean;
-  error?: string | null;
-}) {
+function EmptyState({ dark, error }: { dark?: boolean; error?: string | null }) {
   const C = useG(!!dark);
   return (
     <div

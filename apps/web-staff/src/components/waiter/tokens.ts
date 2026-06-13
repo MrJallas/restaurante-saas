@@ -69,20 +69,40 @@ export const useG = (dark: boolean): GTokens => (dark ? G_DARK : G_LIGHT);
 // Status colors for host views (HSt mirror)
 export const HSt = {
   livre: {
-    bg: '#fff', bd: '#e5e5e5', fg: '#0a0a0a', dot: '#a3a3a3',
-    label: 'Livre', dashed: true, pulse: false,
+    bg: '#fff',
+    bd: '#e5e5e5',
+    fg: '#0a0a0a',
+    dot: '#a3a3a3',
+    label: 'Livre',
+    dashed: true,
+    pulse: false,
   },
   liberada: {
-    bg: '#FFF7E8', bd: '#F0DCB6', fg: '#7a4d10', dot: '#D98E2B',
-    label: 'Liberada', dashed: false, pulse: true,
+    bg: '#FFF7E8',
+    bd: '#F0DCB6',
+    fg: '#7a4d10',
+    dot: '#D98E2B',
+    label: 'Liberada',
+    dashed: false,
+    pulse: true,
   },
   ocupada: {
-    bg: '#fff', bd: '#0a0a0a', fg: '#0a0a0a', dot: '#1E8C5A',
-    label: 'Ocupada', dashed: false, pulse: false,
+    bg: '#fff',
+    bd: '#0a0a0a',
+    fg: '#0a0a0a',
+    dot: '#1E8C5A',
+    label: 'Ocupada',
+    dashed: false,
+    pulse: false,
   },
   alerta: {
-    bg: '#FFF1F1', bd: '#C43A3A', fg: '#A12626', dot: '#C43A3A',
-    label: 'Atenção', dashed: false, pulse: true,
+    bg: '#FFF1F1',
+    bd: '#C43A3A',
+    fg: '#A12626',
+    dot: '#C43A3A',
+    label: 'Atenção',
+    dashed: false,
+    pulse: true,
   },
 } as const;
 

@@ -144,7 +144,9 @@ function CookProfileInner() {
   const kitchenStaff = staff.filter((s) => ['cook', 'kitchen'].includes(s.role));
   const stats = useMemo(() => {
     const entered = orders.length;
-    const preparing = orders.filter((o) => ['received', 'open', 'confirmed', 'in_progress', 'preparing'].includes(o.status)).length;
+    const preparing = orders.filter((o) =>
+      ['received', 'open', 'confirmed', 'in_progress', 'preparing'].includes(o.status),
+    ).length;
     const ready = orders.filter((o) => o.status === 'ready').length;
     const inTransit = orders.filter((o) => o.status === 'in_transit').length;
     const out = ready + inTransit;
@@ -265,10 +267,9 @@ function CookProfileInner() {
   const page = dark ? 'bg-gray-950 text-white' : 'bg-zinc-50 text-zinc-950';
   const panel = dark ? 'border-white/10 bg-gray-900' : 'border-zinc-200 bg-white';
   const muted = dark ? 'text-white/45' : 'text-zinc-500';
-  const input =
-    dark
-      ? 'border-white/10 bg-black/20 text-white placeholder:text-white/30'
-      : 'border-zinc-200 bg-white text-zinc-950 placeholder:text-zinc-400';
+  const input = dark
+    ? 'border-white/10 bg-black/20 text-white placeholder:text-white/30'
+    : 'border-zinc-200 bg-white text-zinc-950 placeholder:text-zinc-400';
 
   return (
     <div className={`min-h-screen p-4 ${page}`}>
@@ -299,7 +300,9 @@ function CookProfileInner() {
           <button
             type="button"
             onClick={() =>
-              router.push(`/cozinha/mensagens?tenant=${tenantSlug}${cookId ? `&cookId=${cookId}` : ''}`)
+              router.push(
+                `/cozinha/mensagens?tenant=${tenantSlug}${cookId ? `&cookId=${cookId}` : ''}`,
+              )
             }
             className={`flex h-9 w-9 items-center justify-center rounded-lg border ${panel}`}
             aria-label="Mensagens"
@@ -367,7 +370,9 @@ function CookProfileInner() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-sm font-black">{shift.label}</div>
-                    <div className={`mt-0.5 flex items-center gap-1 text-xs font-semibold ${muted}`}>
+                    <div
+                      className={`mt-0.5 flex items-center gap-1 text-xs font-semibold ${muted}`}
+                    >
                       <Clock className="h-3 w-3" />
                       {shift.range_label}
                     </div>
@@ -376,7 +381,9 @@ function CookProfileInner() {
                 </div>
                 <div className="mt-3 space-y-2">
                   {shift.members.length === 0 && (
-                    <div className={`rounded-lg border border-dashed px-3 py-4 text-center text-xs ${muted}`}>
+                    <div
+                      className={`rounded-lg border border-dashed px-3 py-4 text-center text-xs ${muted}`}
+                    >
                       Sem escala
                     </div>
                   )}
@@ -418,18 +425,23 @@ function CookProfileInner() {
           <section className={`rounded-xl border p-4 ${panel}`}>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <div className={`text-xs font-black uppercase tracking-wide ${muted}`}>
-                  Equipe
+                <div className={`text-xs font-black uppercase tracking-wide ${muted}`}>Equipe</div>
+                <div className="mt-1 text-lg font-extrabold">
+                  {kitchenStaff.length} pessoas ativas
                 </div>
-                <div className="mt-1 text-lg font-extrabold">{kitchenStaff.length} pessoas ativas</div>
               </div>
               <Users className="h-5 w-5 text-orange-400" />
             </div>
             <div className="space-y-2">
               {kitchenStaff.slice(0, 6).map((person) => (
-                <div key={person.id} className={`rounded-lg border px-3 py-2 ${dark ? 'border-white/10' : 'border-zinc-100'}`}>
+                <div
+                  key={person.id}
+                  className={`rounded-lg border px-3 py-2 ${dark ? 'border-white/10' : 'border-zinc-100'}`}
+                >
                   <div className="text-sm font-bold">{person.name}</div>
-                  <div className={`text-xs ${muted}`}>{person.default_shift || 'Sem turno padrão'}</div>
+                  <div className={`text-xs ${muted}`}>
+                    {person.default_shift || 'Sem turno padrão'}
+                  </div>
                 </div>
               ))}
             </div>
@@ -450,9 +462,8 @@ function CookProfileInner() {
               <Clock className="h-5 w-5 text-orange-400" />
             </div>
             <p className={`mb-3 text-xs leading-relaxed ${muted}`}>
-              Range base que o cliente vê. O sistema soma a fila de pedidos
-              automaticamente (urgência &gt; VIP &gt; normal) e encolhe o tempo
-              conforme o pedido avança.
+              Range base que o cliente vê. O sistema soma a fila de pedidos automaticamente
+              (urgência &gt; VIP &gt; normal) e encolhe o tempo conforme o pedido avança.
             </p>
             <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
               <input
@@ -541,7 +552,10 @@ function CookProfileInner() {
             </div>
             <div className="mt-4 grid gap-2 md:grid-cols-6">
               {Object.entries(stats.byHour).map(([hour, count]) => (
-                <div key={hour} className={`rounded-lg border px-3 py-2 ${dark ? 'border-white/10 bg-black/20' : 'border-zinc-100 bg-zinc-50'}`}>
+                <div
+                  key={hour}
+                  className={`rounded-lg border px-3 py-2 ${dark ? 'border-white/10 bg-black/20' : 'border-zinc-100 bg-zinc-50'}`}
+                >
                   <div className={`text-xs font-black uppercase ${muted}`}>{hour}h</div>
                   <div className="mt-1 text-xl font-black">{count}</div>
                 </div>
@@ -576,11 +590,17 @@ function CookProfileInner() {
 
 function StatCard({ label, value, dark }: { label: string; value: string; dark: boolean }) {
   return (
-    <div className={`rounded-xl border p-4 ${dark ? 'border-white/10 bg-black/20' : 'border-zinc-100 bg-zinc-50'}`}>
-      <div className={`text-[11px] font-bold uppercase tracking-[0.6px] ${dark ? 'text-white/40' : 'text-zinc-500'}`}>
+    <div
+      className={`rounded-xl border p-4 ${dark ? 'border-white/10 bg-black/20' : 'border-zinc-100 bg-zinc-50'}`}
+    >
+      <div
+        className={`text-[11px] font-bold uppercase tracking-[0.6px] ${dark ? 'text-white/40' : 'text-zinc-500'}`}
+      >
         {label}
       </div>
-      <div className={`mt-1 text-2xl font-extrabold tracking-tight tabular-nums ${dark ? 'text-white' : 'text-zinc-950'}`}>
+      <div
+        className={`mt-1 text-2xl font-extrabold tracking-tight tabular-nums ${dark ? 'text-white' : 'text-zinc-950'}`}
+      >
         {value}
       </div>
     </div>

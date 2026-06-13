@@ -1,9 +1,4 @@
-import {
-  HttpException,
-  HttpStatus,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { ComplaintsService } from '../complaints/complaints.service';
 
@@ -31,13 +26,7 @@ export class OrderRatingsService {
        VALUES ($1, $2, $3, $4, now(), now(), $5)
        ON CONFLICT (order_id) DO NOTHING
        RETURNING *`,
-      [
-        input.orderId,
-        input.customerId,
-        input.visitId ?? null,
-        input.rating,
-        input.comment ?? null,
-      ],
+      [input.orderId, input.customerId, input.visitId ?? null, input.rating, input.comment ?? null],
     )) as Array<Record<string, unknown>>;
 
     let alreadyRated = false;
@@ -49,10 +38,7 @@ export class OrderRatingsService {
         [input.orderId],
       )) as Array<Record<string, unknown>>;
       if (!existing.length) {
-        throw new HttpException(
-          'Falha ao gravar rating.',
-          HttpStatus.INTERNAL_SERVER_ERROR,
-        );
+        throw new HttpException('Falha ao gravar rating.', HttpStatus.INTERNAL_SERVER_ERROR);
       }
       row = existing[0];
     } else {
@@ -63,12 +49,7 @@ export class OrderRatingsService {
     let complaintId: string | null = null;
 
     // Auto-complaint when rating is low + comment populated.
-    if (
-      !alreadyRated &&
-      input.rating <= 2 &&
-      input.comment &&
-      input.comment.trim().length > 0
-    ) {
+    if (!alreadyRated && input.rating <= 2 && input.comment && input.comment.trim().length > 0) {
       const complaint = await this.complaints.createFromRating({
         customerId: input.customerId,
         visitId: input.visitId ?? null,
@@ -96,15 +77,11 @@ export class OrderRatingsService {
   }
 
   async getByOrderId(orderId: string) {
-    const rows = (await this.tenantConn.query(
-      `SELECT * FROM order_ratings WHERE order_id = $1`,
-      [orderId],
-    )) as Array<Record<string, unknown>>;
+    const rows = (await this.tenantConn.query(`SELECT * FROM order_ratings WHERE order_id = $1`, [
+      orderId,
+    ])) as Array<Record<string, unknown>>;
     if (!rows.length) {
-      throw new HttpException(
-        'Rating nao encontrado.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Rating nao encontrado.', HttpStatus.NOT_FOUND);
     }
     const r = rows[0];
     return {
@@ -162,11 +139,7 @@ export class OrderRatingsService {
       `INSERT INTO order_ratings (order_id, customer_id, visit_id, prompted_at)
        VALUES ($1, $2, $3, now())
        ON CONFLICT (order_id) DO NOTHING`,
-      [
-        input.orderId,
-        input.customerId ?? null,
-        input.visitId ?? null,
-      ],
+      [input.orderId, input.customerId ?? null, input.visitId ?? null],
     );
     return { orderId: input.orderId, scheduled: true };
   }

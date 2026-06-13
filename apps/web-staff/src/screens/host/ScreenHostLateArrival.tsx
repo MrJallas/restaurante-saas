@@ -9,9 +9,7 @@ import { useEffect, useState } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitives';
-import {
-  approveLateArrival, getLateArrival, rejectLateArrival,
-} from '../../lib/api/host';
+import { approveLateArrival, getLateArrival, rejectLateArrival } from '../../lib/api/host';
 import { useStaffTheme } from '../../lib/theme';
 import type { LateArrivalRequestDto } from '@restaurant/shared-types';
 
@@ -33,7 +31,10 @@ function fmtDeadline(iso: string | undefined): string {
 }
 
 export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
-  tenantSlug, requestId, onBack, onResolved,
+  tenantSlug,
+  requestId,
+  onBack,
+  onResolved,
 }) => {
   const { dark } = useStaffTheme();
   const C = useG(dark);
@@ -84,8 +85,13 @@ export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
   return (
     <div
       style={{
-        width: '100%', height: '100vh', background: C.bg, color: C.ink,
-        fontFamily: G_FONT, display: 'flex', flexDirection: 'column',
+        width: '100%',
+        height: '100vh',
+        background: C.bg,
+        color: C.ink,
+        fontFamily: G_FONT,
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       <GAppHeader
@@ -97,13 +103,18 @@ export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
       <div style={{ flex: 1, overflow: 'auto' }}>
         <div
           style={{
-            background: '#9A7212', color: '#fff', padding: '28px 24px 32px',
+            background: '#9A7212',
+            color: '#fff',
+            padding: '28px 24px 32px',
             position: 'relative',
           }}
         >
           <div
             style={{
-              fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: 700,
+              fontSize: 11,
+              letterSpacing: 1.5,
+              textTransform: 'uppercase',
+              fontWeight: 700,
               opacity: 0.85,
             }}
           >
@@ -120,17 +131,25 @@ export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
         <div style={{ padding: '20px 16px' }}>
           <div
             style={{
-              fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase',
-              color: C.mute, fontWeight: 700, marginBottom: 8,
+              fontSize: 11,
+              letterSpacing: 1.5,
+              textTransform: 'uppercase',
+              color: C.mute,
+              fontWeight: 700,
+              marginBottom: 8,
             }}
           >
             Contexto
           </div>
           <div
             style={{
-              padding: 14, borderRadius: 14,
-              background: C.surface, border: `1px solid ${C.borderFaint}`,
-              fontSize: 13, color: C.ink, lineHeight: 1.5,
+              padding: 14,
+              borderRadius: 14,
+              background: C.surface,
+              border: `1px solid ${C.borderFaint}`,
+              fontSize: 13,
+              color: C.ink,
+              lineHeight: 1.5,
             }}
           >
             {request?.visitContext ?? 'Sem contexto adicional. Aprove com cuidado.'}
@@ -138,23 +157,32 @@ export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
 
           <div
             style={{
-              marginTop: 18, padding: 14, borderRadius: 14,
-              background: '#FFF7E6', border: '1px solid #F0DCB6',
-              fontSize: 12, color: '#7A4D10', lineHeight: 1.5,
+              marginTop: 18,
+              padding: 14,
+              borderRadius: 14,
+              background: '#FFF7E6',
+              border: '1px solid #F0DCB6',
+              fontSize: 12,
+              color: '#7A4D10',
+              lineHeight: 1.5,
             }}
           >
-            <b>Como funciona</b><br />
-            O cliente-host original não respondeu em 60s. A recepção é a primeira
-            no fallback. Se você não responder em mais 60s, o pedido vai pro
-            gerente.
+            <b>Como funciona</b>
+            <br />O cliente-host original não respondeu em 60s. A recepção é a primeira no fallback.
+            Se você não responder em mais 60s, o pedido vai pro gerente.
           </div>
 
           {error && (
             <div
               role="alert"
               style={{
-                marginTop: 14, padding: '10px 12px', borderRadius: 10,
-                background: C.dangerBg, color: C.danger, fontSize: 13, fontWeight: 600,
+                marginTop: 14,
+                padding: '10px 12px',
+                borderRadius: 10,
+                background: C.dangerBg,
+                color: C.danger,
+                fontSize: 13,
+                fontWeight: 600,
               }}
             >
               {error}
@@ -166,15 +194,28 @@ export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
       <div
         style={{
           padding: '12px 16px 18px',
-          borderTop: `1px solid ${C.borderFaint}`, background: C.bg,
-          display: 'flex', gap: 10,
+          borderTop: `1px solid ${C.borderFaint}`,
+          background: C.bg,
+          display: 'flex',
+          gap: 10,
         }}
       >
-        <GButton kind="secondary" dark={dark} onClick={() => handle('reject')} disabled={submitting || expired}>
+        <GButton
+          kind="secondary"
+          dark={dark}
+          onClick={() => handle('reject')}
+          disabled={submitting || expired}
+        >
           Rejeitar
         </GButton>
         <div style={{ flex: 1 }}>
-          <GButton kind="success" full dark={dark} onClick={() => handle('approve')} disabled={submitting || expired}>
+          <GButton
+            kind="success"
+            full
+            dark={dark}
+            onClick={() => handle('approve')}
+            disabled={submitting || expired}
+          >
             {submitting ? 'Enviando...' : 'Aprovar entrada'}
           </GButton>
         </div>

@@ -88,9 +88,7 @@ export class ShiftsService {
       [data.shiftId, data.staffId, data.workDate],
     )) as Array<{ id: string }>;
     if (existing.length) {
-      throw new BadRequestException(
-        'Funcionário já escalado nesse turno nessa data.',
-      );
+      throw new BadRequestException('Funcionário já escalado nesse turno nessa data.');
     }
     const rows = unwrapRows<{ id: string }>(
       await this.tenantConn.query(
@@ -103,7 +101,10 @@ export class ShiftsService {
     return this.getMember(rows[0].id);
   }
 
-  async moveMember(assignmentId: string, toShiftId: string): Promise<ShiftMemberRow & { shift_id: string }> {
+  async moveMember(
+    assignmentId: string,
+    toShiftId: string,
+  ): Promise<ShiftMemberRow & { shift_id: string }> {
     const rows = unwrapRows<{ id: string }>(
       await this.tenantConn.query(
         `UPDATE staff_shift_assignments
@@ -117,7 +118,10 @@ export class ShiftsService {
     return this.getMember(rows[0].id);
   }
 
-  async setOvertime(assignmentId: string, minutes: number): Promise<ShiftMemberRow & { shift_id: string }> {
+  async setOvertime(
+    assignmentId: string,
+    minutes: number,
+  ): Promise<ShiftMemberRow & { shift_id: string }> {
     if (minutes < 0 || minutes > 600) {
       throw new BadRequestException('Hora extra fora do limite (0-600 min).');
     }
@@ -169,11 +173,7 @@ export class ShiftsService {
     return { duplicated: rows.length };
   }
 
-  async requestShiftEnd(data: {
-    waiterId: string;
-    reason?: string;
-    slug?: string;
-  }): Promise<{
+  async requestShiftEnd(data: { waiterId: string; reason?: string; slug?: string }): Promise<{
     requestId: string;
     status: 'pending';
     threadId: string | null;

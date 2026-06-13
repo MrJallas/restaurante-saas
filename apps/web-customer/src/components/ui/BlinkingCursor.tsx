@@ -6,7 +6,10 @@ interface BlinkingCursorProps {
 }
 
 /** Cursor piscante puramente visual — memo para n\u00e3o repintar junto com parent. */
-export const BlinkingCursor = memo(function BlinkingCursor({ height = 20, className = '' }: BlinkingCursorProps) {
+export const BlinkingCursor = memo(function BlinkingCursor({
+  height = 20,
+  className = '',
+}: BlinkingCursorProps) {
   return (
     <span
       aria-hidden

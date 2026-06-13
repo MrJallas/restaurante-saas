@@ -127,9 +127,19 @@ export function MOpSummary({
             >
               Antes e depois
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${kpis.length}, 1fr)`, gap: 8 }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: `repeat(${kpis.length}, 1fr)`,
+                gap: 8,
+              }}
+            >
               {kpis.map((k, i) => {
-                const accentMap = { success: '#1E8C5A', warn: '#9A7212', danger: '#C43A3A' } as const;
+                const accentMap = {
+                  success: '#1E8C5A',
+                  warn: '#9A7212',
+                  danger: '#C43A3A',
+                } as const;
                 const accent = k.accent ? accentMap[k.accent] : C.ink;
                 return (
                   <div
@@ -252,8 +262,7 @@ export function MOpSummary({
                     alignItems: 'flex-start',
                     gap: 12,
                     padding: '10px 0',
-                    borderBottom:
-                      i < timeline.length - 1 ? `1px dashed ${C.borderFaint}` : 'none',
+                    borderBottom: i < timeline.length - 1 ? `1px dashed ${C.borderFaint}` : 'none',
                   }}
                 >
                   <div
@@ -281,7 +290,15 @@ export function MOpSummary({
                       marginTop: 6,
                     }}
                   />
-                  <div style={{ flex: 1, fontSize: 13, fontWeight: 500, color: C.ink, lineHeight: 1.4 }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: C.ink,
+                      lineHeight: 1.4,
+                    }}
+                  >
                     {ev.text}
                   </div>
                 </li>
@@ -318,7 +335,15 @@ export function MOpSummary({
                 padding: 14,
               }}
             >
-              <div style={{ fontSize: 13, color: C.ink, fontWeight: 500, lineHeight: 1.5, marginBottom: 10 }}>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: C.ink,
+                  fontWeight: 500,
+                  lineHeight: 1.5,
+                  marginBottom: 10,
+                }}
+              >
                 {suggestion.text}
               </div>
               {suggestion.ctaLabel && (

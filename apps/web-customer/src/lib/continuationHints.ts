@@ -30,10 +30,7 @@ function isContinuationKindHint(value: unknown): value is ContinuationKindHint {
   );
 }
 
-export function recordContinuationHint(
-  kind: ContinuationKindHint,
-  ttlMs = DEFAULT_TTL_MS,
-): void {
+export function recordContinuationHint(kind: ContinuationKindHint, ttlMs = DEFAULT_TTL_MS): void {
   if (typeof window === 'undefined') return;
   try {
     const currentRaw = window.sessionStorage.getItem(HINT_KEY);

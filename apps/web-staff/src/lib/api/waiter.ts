@@ -224,9 +224,7 @@ export function isDeliveryForWaiter(d: PendingDelivery, staffId: string | null):
 }
 
 export function isDeliveryClaimedBy(d: PendingDelivery, staffId: string | null): boolean {
-  return (
-    d.delivery_status === 'claimed' && staffId != null && d.claimed_by === staffId
-  );
+  return d.delivery_status === 'claimed' && staffId != null && d.claimed_by === staffId;
 }
 
 /** Timestamp de referência da entrega (chamada → claim → criação da row). */
@@ -283,17 +281,11 @@ export function requestWaiterShiftEnd(
   tenantSlug: string,
   body: { reason?: string },
 ): Promise<WaiterShiftEndRequestResponse> {
-  return staffPost<WaiterShiftEndRequestResponse>(
-    `/${tenantSlug}/waiter/shift-end-requests`,
-    body,
-  );
+  return staffPost<WaiterShiftEndRequestResponse>(`/${tenantSlug}/waiter/shift-end-requests`, body);
 }
 
 // ─── QR issue ───
-export function reportQrIssue(
-  tenantSlug: string,
-  body: QrIssueReportDto,
-): Promise<{ id: string }> {
+export function reportQrIssue(tenantSlug: string, body: QrIssueReportDto): Promise<{ id: string }> {
   // Routed through the shared "qr-issue" complaint endpoint when present;
   // backend may expose either /qr-issue or /complaints?type=qr_issue.
   return staffPost<{ id: string }>(`/${tenantSlug}/qr-issues`, body);
@@ -351,8 +343,5 @@ export function markMessageRead(
   staffId: string,
 ): Promise<{ ok: true }> {
   // P1 #18 — backend requires `staffId` in the body per ReadDto.
-  return staffPost<{ ok: true }>(
-    `/${tenantSlug}/staff-messages/${messageId}/read`,
-    { staffId },
-  );
+  return staffPost<{ ok: true }>(`/${tenantSlug}/staff-messages/${messageId}/read`, { staffId });
 }

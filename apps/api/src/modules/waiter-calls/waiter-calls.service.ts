@@ -1,19 +1,9 @@
-import {
-  Injectable,
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { EventsGateway } from '../websocket/events.gateway';
 
 /** Whitelist kept in-sync with WaiterCallReason in packages/shared-types. */
-const VALID_REASONS = new Set([
-  'bring_menu',
-  'place_order',
-  'serve_drink',
-  'ask_bill',
-  'other',
-]);
+const VALID_REASONS = new Set(['bring_menu', 'place_order', 'serve_drink', 'ask_bill', 'other']);
 
 // "Ativo" tem que casar EXATAMENTE com o predicado do índice único parcial
 // `waiter_calls_one_active_per_session` (migration 057) e do ON CONFLICT do
@@ -36,11 +26,7 @@ export class WaiterCallsService {
     private readonly eventsGateway: EventsGateway,
   ) {}
 
-  async createCall(
-    tableSessionId: string,
-    slug: string,
-    options: CreateWaiterCallOptions = {},
-  ) {
+  async createCall(tableSessionId: string, slug: string, options: CreateWaiterCallOptions = {}) {
     const reason = options.reason ?? 'other';
     if (!VALID_REASONS.has(reason)) {
       throw new BadRequestException(`Motivo invalido: ${reason}.`);
@@ -73,12 +59,7 @@ export class WaiterCallsService {
        DO UPDATE SET reason = EXCLUDED.reason
        RETURNING id, status, reason, created_at, assigned_waiter_name, eta_minutes,
                  (xmax = 0) AS was_inserted`,
-      [
-        tableSessionId,
-        reason,
-        options.customerId ?? null,
-        options.visitId ?? null,
-      ],
+      [tableSessionId, reason, options.customerId ?? null, options.visitId ?? null],
     )) as {
       id: string;
       status: string;
@@ -231,21 +212,16 @@ export class WaiterCallsService {
 
     if (!updated.length) {
       // Distinguir "não existe" de "já atendido" pra UX correta.
-      const probe = (await this.tenantConn.query(
-        `SELECT status FROM waiter_calls WHERE id = $1`,
-        [callId],
-      )) as { status: string }[];
+      const probe = (await this.tenantConn.query(`SELECT status FROM waiter_calls WHERE id = $1`, [
+        callId,
+      ])) as { status: string }[];
       if (!probe.length) {
         throw new NotFoundException('Chamado nao encontrado.');
       }
       throw new BadRequestException('Chamado ja foi atendido.');
     }
 
-    this.eventsGateway.emitWaiterCallAcknowledged(
-      slug,
-      callId,
-      updated[0].table_session_id,
-    );
+    this.eventsGateway.emitWaiterCallAcknowledged(slug, callId, updated[0].table_session_id);
 
     return {
       callId,

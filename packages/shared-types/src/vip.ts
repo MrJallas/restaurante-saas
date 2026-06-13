@@ -6,10 +6,7 @@
  * Session-level flags. Stored as `table_sessions.flags text[]`. Always a set
  * (no duplicates). Drives priority overrides in the call balancer.
  */
-export type SessionFlag =
-  | 'vip'
-  | 'allergy'
-  | 'reincidente';
+export type SessionFlag = 'vip' | 'allergy' | 'reincidente';
 
 /**
  * Marker payload for the audit log + WS event. Issued when a manager/host

@@ -27,6 +27,7 @@ Este é o monorepo `restauranteSaaS`. O app da cozinha (KDS — Kitchen Display 
 **Atual**: A cozinha aperta "Entregue" e o pedido sai do KDS — **errado**. Cozinha não sabe nem se o garçom chegou na mesa.
 
 **Esperado** — novo fluxo:
+
 1. Cozinha termina o prato e clica "Pronto!" → vai pra coluna `PRONTOS`
 2. Na coluna `PRONTOS`, em vez de "Entregue", botão é "**Chamar garçom**"
 3. Cozinha aperta "Chamar garçom":
@@ -41,6 +42,7 @@ Este é o monorepo `restauranteSaaS`. O app da cozinha (KDS — Kitchen Display 
 **Componente API**: ver `06-api-transversais.md` bug 24 — endpoints novos: `POST /orders/{id}/call-waiter`, `POST /orders/{id}/in-transit`, `POST /orders/{id}/delivered` (último é do garçom, não da cozinha).
 
 **Critério de aceitação**:
+
 - [ ] Botão "Entregue" removido do KDS
 - [ ] Botão "Chamar garçom" no lugar
 - [ ] Estados intermediários: "Aguardando garçom" / "Em trânsito"
@@ -68,6 +70,7 @@ Este é o monorepo `restauranteSaaS`. O app da cozinha (KDS — Kitchen Display 
 **Login**: pode ser feito pelo **chefe máximo da cozinha** OU pelo **gerente** (qualquer um deles).
 
 **Funcionalidades nessa tela**:
+
 - **Escalar próximos turnos** (similar à interface de turnos do gerente):
   - Escolher assistentes de cozinha (precisa de menu pra adicionar essas pessoas no sistema)
   - Escolher cozinheiros pra cada turno
@@ -80,16 +83,19 @@ Este é o monorepo `restauranteSaaS`. O app da cozinha (KDS — Kitchen Display 
   - Outras métricas relevantes
 
 **Refs canvas**:
+
 - `docs/design-canvas/v8-shifteditor-row1.png` (referência de shift editor do gerente)
 - `docs/design-canvas/screens-kitchen.jsx`
 - Procurar telas de turno em `docs/design-canvas/screens.jsx`, `screens-extra.jsx`
 
 **Componente API**: ver `06-api-transversais.md` — endpoints novos pra:
+
 - Cadastrar assistentes de cozinha (similar a cadastrar funcionários)
 - CRUD de turnos da cozinha
 - Stats em tempo real da cozinha
 
 **Critério de aceitação**:
+
 - [ ] Tema claro funcional no KDS
 - [ ] Tela `/cozinha/eu` repensada com gestão de equipe da cozinha + escala de turnos
 - [ ] Login: chefe máximo OU gerente
@@ -102,6 +108,7 @@ Este é o monorepo `restauranteSaaS`. O app da cozinha (KDS — Kitchen Display 
 **Cenário**: Gerente puxa pedidos pra frente (prioridade gerência). Hoje:
 
 **Atual**:
+
 - Cozinha **não é notificada**
 - Sistema aceita automaticamente (mente: tela do gerente diz "COZINHA ACEITOU" sem cozinha ter consentido)
 - No KDS, aparece apenas badge genérico: "**PRIORIDADE GERÊNCIA · MESA 22 ESTÁ HÁ 19385 MIN ESPERANDO · ACIMA DA META DA COZINHA**"
@@ -109,6 +116,7 @@ Este é o monorepo `restauranteSaaS`. O app da cozinha (KDS — Kitchen Display 
 - Sem opção de a cozinha responder/negociar
 
 **Esperado**:
+
 1. Gerente puxa pedido → request vai pra cozinha como **alerta visual + sonoro**
 2. UI na cozinha mostra modal/card destacado:
    - Lista dos pedidos que o gerente quer puxar
@@ -125,6 +133,7 @@ Este é o monorepo `restauranteSaaS`. O app da cozinha (KDS — Kitchen Display 
 **Refs canvas**: procurar fluxo "puxar pra frente" em `docs/design-canvas/screens-kitchen.jsx` e nas telas do gerente.
 
 **Critério de aceitação**:
+
 - [ ] Pedido puxado dispara alerta sonoro + visual na cozinha
 - [ ] Cozinha tem botões reais de resposta (não só badge informativo)
 - [ ] Opção "serão os próximos" deixa cozinha selecionar pedidos atuais que não vão ser interrompidos

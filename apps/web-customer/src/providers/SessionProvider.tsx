@@ -1,13 +1,6 @@
 'use client';
 
-import {
-  createContext,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  ReactNode,
-} from 'react';
+import { createContext, useCallback, useEffect, useMemo, useState, ReactNode } from 'react';
 
 // Bundle mantido no sessionStorage para sobreviver a refresh/hard-reload da
 // mesma aba. Sem isso, o SessionContext fica null apos F5 e o MenuDrawer (que

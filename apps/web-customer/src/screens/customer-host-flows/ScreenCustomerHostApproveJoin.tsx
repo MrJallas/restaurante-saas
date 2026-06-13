@@ -5,10 +5,7 @@ import { useRouter } from 'next/navigation';
 import { PillButton } from '../../components/ui/PillButton';
 import { useSession } from '../../hooks/useSession';
 import { useCustomerHostEvents } from '../../hooks/useCustomerHostEvents';
-import {
-  approveLateArrival,
-  rejectLateArrival,
-} from '../../lib/api/customer-host';
+import { approveLateArrival, rejectLateArrival } from '../../lib/api/customer-host';
 import { TypewriterBubble } from './TypewriterBubble';
 import type { LateArrivalRequestDto } from '@restaurant/shared-types';
 
@@ -167,8 +164,7 @@ export function ScreenCustomerHostApproveJoin({
                 Quem tá na mesa
               </span>
               <span className="text-[9.5px] font-bold uppercase tracking-[1px] text-faint">
-                {partyNames.length}{' '}
-                {partyNames.length === 1 ? 'pessoa' : 'pessoas'}
+                {partyNames.length} {partyNames.length === 1 ? 'pessoa' : 'pessoas'}
               </span>
             </div>
             <ul className="mt-3 flex flex-col gap-2.5">
@@ -185,11 +181,7 @@ export function ScreenCustomerHostApproveJoin({
             Quem quer entrar
           </span>
           <div className="mt-3">
-            <PersonRow
-              name={request.requesterName}
-              sub={request.visitContext}
-              size={42}
-            />
+            <PersonRow name={request.requesterName} sub={request.visitContext} size={42} />
           </div>
         </div>
 
@@ -201,8 +193,8 @@ export function ScreenCustomerHostApproveJoin({
 
         {autoExpired && (
           <p className="mt-4 rounded-[10px] border border-mute/20 bg-surface p-2.5 text-[12px] text-mute">
-            Esse pedido expirou. {request.requesterName} já recebeu a sugestão
-            de chamar a recepcionista.
+            Esse pedido expirou. {request.requesterName} já recebeu a sugestão de chamar a
+            recepcionista.
           </p>
         )}
 
@@ -284,9 +276,7 @@ function PersonRow({
         {initial}
       </span>
       <div className="flex flex-col gap-0.5">
-        <span className="text-[14px] font-semibold tracking-[-0.1px] text-ink">
-          {name}
-        </span>
+        <span className="text-[14px] font-semibold tracking-[-0.1px] text-ink">{name}</span>
         {subLine && (
           <span className="text-[9.5px] font-bold uppercase tracking-[1px] text-faint">
             {subLine}

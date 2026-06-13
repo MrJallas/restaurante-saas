@@ -1,10 +1,4 @@
-import {
-  HttpException,
-  HttpStatus,
-  Injectable,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, Optional } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { EventsGateway } from '../websocket/events.gateway';
 import type { SessionFlag } from '@restaurant/shared-types';
@@ -34,10 +28,7 @@ export class VipService {
     slug?: string,
   ) {
     if (!KNOWN_FLAGS.has(flag)) {
-      throw new HttpException(
-        `Flag desconhecida: ${flag}.`,
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException(`Flag desconhecida: ${flag}.`, HttpStatus.BAD_REQUEST);
     }
 
     if (action === 'add') {

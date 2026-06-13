@@ -1,10 +1,4 @@
-import {
-  HttpException,
-  HttpStatus,
-  Injectable,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { MongoService } from '../../infra/mongo/mongo.service';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
@@ -110,11 +104,7 @@ export class CustomerStaffMessagesService {
    * visit gets a fresh tableSessionId → fresh thread. Deterministic key
    * matches the chat-history pattern of grouping by a stable bucket.
    */
-  private buildThreadId(
-    tenantId: string,
-    customerId: string,
-    tableSessionId: string,
-  ): string {
+  private buildThreadId(tenantId: string, customerId: string, tableSessionId: string): string {
     return `${tenantId}:${customerId}:${tableSessionId}`;
   }
 
@@ -168,14 +158,8 @@ export class CustomerStaffMessagesService {
 
     try {
       const now = new Date();
-      const expiresAt = new Date(
-        now.getTime() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000,
-      );
-      const threadId = this.buildThreadId(
-        input.tenantId,
-        input.customerId,
-        input.tableSessionId,
-      );
+      const expiresAt = new Date(now.getTime() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000);
+      const threadId = this.buildThreadId(input.tenantId, input.customerId, input.tableSessionId);
       const preview = input.content.slice(0, 80);
       const staffRoleLabel = input.staffRoleLabel ?? 'gerente';
 
@@ -235,10 +219,7 @@ export class CustomerStaffMessagesService {
     input: AppendOutboundInput,
   ): Promise<StaffMessageHistoryCustomerSendResponse> {
     if (!input.content || !input.content.trim()) {
-      throw new HttpException(
-        'Mensagem não pode ser vazia.',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException('Mensagem não pode ser vazia.', HttpStatus.BAD_REQUEST);
     }
     if (input.content.length > 2000) {
       throw new HttpException(
@@ -250,14 +231,8 @@ export class CustomerStaffMessagesService {
     await this.ensureIndexes();
 
     const now = new Date();
-    const expiresAt = new Date(
-      now.getTime() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000,
-    );
-    const threadId = this.buildThreadId(
-      input.tenantId,
-      input.customerId,
-      input.tableSessionId,
-    );
+    const expiresAt = new Date(now.getTime() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000);
+    const threadId = this.buildThreadId(input.tenantId, input.customerId, input.tableSessionId);
     const preview = input.content.slice(0, 80);
 
     await db.collection<ThreadDoc>(THREADS_COLLECTION).updateOne(
@@ -327,23 +302,15 @@ export class CustomerStaffMessagesService {
           wsPayload,
         );
       } catch (err) {
-        this.logger.warn(
-          `Falha ao emitir WS customer reply (session): ${(err as Error).message}`,
-        );
+        this.logger.warn(`Falha ao emitir WS customer reply (session): ${(err as Error).message}`);
       }
       try {
         // `tenantId` aqui é o schema name (ex: `restaurant_dev`) que casa
         // com o slug usado pelas rooms staff. Ver assistant.service.ts
         // round 21 §E onde a convenção foi firmada.
-        this.events.emitToTenant(
-          input.tenantId,
-          'staff_messages.customer_replied',
-          wsPayload,
-        );
+        this.events.emitToTenant(input.tenantId, 'staff_messages.customer_replied', wsPayload);
       } catch (err) {
-        this.logger.warn(
-          `Falha ao emitir WS customer reply (tenant): ${(err as Error).message}`,
-        );
+        this.logger.warn(`Falha ao emitir WS customer reply (tenant): ${(err as Error).message}`);
       }
     }
 
@@ -383,10 +350,7 @@ export class CustomerStaffMessagesService {
     content: string,
   ): Promise<StaffMessageHistoryMessageDto> {
     if (!content || !content.trim()) {
-      throw new HttpException(
-        'Mensagem não pode ser vazia.',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException('Mensagem não pode ser vazia.', HttpStatus.BAD_REQUEST);
     }
     if (content.length > 2000) {
       throw new HttpException(
@@ -398,9 +362,7 @@ export class CustomerStaffMessagesService {
     const db = this.requireDb();
     await this.ensureIndexes();
 
-    const thread = await db
-      .collection<ThreadDoc>(THREADS_COLLECTION)
-      .findOne({ threadId });
+    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
     if (!thread || thread.tenantId !== tenantId) {
       throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
@@ -410,17 +372,12 @@ export class CustomerStaffMessagesService {
       [staffId],
     )) as Array<{ name: string; role: string }>;
     if (!staffRows.length) {
-      throw new HttpException(
-        'staff não encontrado ou inativo.',
-        HttpStatus.UNAUTHORIZED,
-      );
+      throw new HttpException('staff não encontrado ou inativo.', HttpStatus.UNAUTHORIZED);
     }
 
     const roleLabel = this.mapStaffRoleLabel(staffRows[0].role);
     const now = new Date();
-    const expiresAt = new Date(
-      now.getTime() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000,
-    );
+    const expiresAt = new Date(now.getTime() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000);
     const trimmed = content.trim();
 
     const doc: MessageDoc = {
@@ -465,20 +422,10 @@ export class CustomerStaffMessagesService {
       createdAt: now.toISOString(),
     };
     try {
-      this.events?.emitToSession(
-        thread.tableSessionId,
-        'staff_messages.staff_replied',
-        wsPayload,
-      );
-      this.events?.emitToTenant(
-        tenantId,
-        'staff_messages.staff_replied',
-        wsPayload,
-      );
+      this.events?.emitToSession(thread.tableSessionId, 'staff_messages.staff_replied', wsPayload);
+      this.events?.emitToTenant(tenantId, 'staff_messages.staff_replied', wsPayload);
     } catch (err) {
-      this.logger.warn(
-        `Falha ao emitir WS staff reply: ${(err as Error).message}`,
-      );
+      this.logger.warn(`Falha ao emitir WS staff reply: ${(err as Error).message}`);
     }
 
     return {
@@ -492,10 +439,7 @@ export class CustomerStaffMessagesService {
     };
   }
 
-  async listThreads(
-    customerId: string,
-    tenantId: string,
-  ): Promise<StaffMessageHistoryThreadDto[]> {
+  async listThreads(customerId: string, tenantId: string): Promise<StaffMessageHistoryThreadDto[]> {
     const db = this.requireDb();
     const threads = await db
       .collection<ThreadDoc>(THREADS_COLLECTION)
@@ -533,9 +477,7 @@ export class CustomerStaffMessagesService {
    * staff continua vendo o histórico mesmo se o cliente apagou no
    * lado dele (mesma política de auditoria que complaints/feedback).
    */
-  async listInboundForTenant(
-    tenantId: string,
-  ): Promise<StaffInboundThreadDto[]> {
+  async listInboundForTenant(tenantId: string): Promise<StaffInboundThreadDto[]> {
     const db = this.requireDb();
     const threads = await db
       .collection<ThreadDoc>(THREADS_COLLECTION)
@@ -619,9 +561,7 @@ export class CustomerStaffMessagesService {
     tenantId: string,
   ): Promise<StaffMessageHistoryMessageDto[]> {
     const db = this.requireDb();
-    const thread = await db
-      .collection<ThreadDoc>(THREADS_COLLECTION)
-      .findOne({ threadId });
+    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
     if (!thread || thread.tenantId !== tenantId) {
       throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
@@ -652,22 +592,18 @@ export class CustomerStaffMessagesService {
     tenantId: string,
   ): Promise<StaffMessageHistoryReadResponse> {
     const db = this.requireDb();
-    const thread = await db
-      .collection<ThreadDoc>(THREADS_COLLECTION)
-      .findOne({ threadId });
+    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
     if (!thread || thread.tenantId !== tenantId) {
       throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
-    const res = await db
-      .collection<MessageDoc>(MESSAGES_COLLECTION)
-      .updateMany(
-        {
-          threadId,
-          fromRole: 'customer',
-          $or: [{ readAt: null }, { readAt: { $exists: false } }],
-        },
-        { $set: { readAt: new Date() } },
-      );
+    const res = await db.collection<MessageDoc>(MESSAGES_COLLECTION).updateMany(
+      {
+        threadId,
+        fromRole: 'customer',
+        $or: [{ readAt: null }, { readAt: { $exists: false } }],
+      },
+      { $set: { readAt: new Date() } },
+    );
     return {
       threadId,
       markedCount: res.modifiedCount ?? 0,
@@ -686,14 +622,9 @@ export class CustomerStaffMessagesService {
     customerId: string,
   ): Promise<StaffMessageHistoryMessageDto[]> {
     const db = this.requireDb();
-    const thread = await db
-      .collection<ThreadDoc>(THREADS_COLLECTION)
-      .findOne({ threadId });
+    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
     if (!thread || thread.customerId !== customerId) {
-      throw new HttpException(
-        'Conversa não encontrada.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
     const msgs = await db
       .collection<MessageDoc>(MESSAGES_COLLECTION)
@@ -717,19 +648,11 @@ export class CustomerStaffMessagesService {
    * the inverse `fromRole: 'customer'` rows untouched (those become read
    * receipts for the future staff inbox).
    */
-  async markRead(
-    threadId: string,
-    customerId: string,
-  ): Promise<StaffMessageHistoryReadResponse> {
+  async markRead(threadId: string, customerId: string): Promise<StaffMessageHistoryReadResponse> {
     const db = this.requireDb();
-    const thread = await db
-      .collection<ThreadDoc>(THREADS_COLLECTION)
-      .findOne({ threadId });
+    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
     if (!thread || thread.customerId !== customerId) {
-      throw new HttpException(
-        'Conversa não encontrada.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
     const res = await db
       .collection<MessageDoc>(MESSAGES_COLLECTION)
@@ -754,25 +677,15 @@ export class CustomerStaffMessagesService {
     customerId: string,
   ): Promise<StaffMessageHistoryThreadDeleteResponse> {
     const db = this.requireDb();
-    const thread = await db
-      .collection<ThreadDoc>(THREADS_COLLECTION)
-      .findOne({ threadId });
+    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
     if (!thread || thread.customerId !== customerId) {
-      throw new HttpException(
-        'Conversa não encontrada.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
-    const messages = await db
-      .collection<MessageDoc>(MESSAGES_COLLECTION)
-      .deleteMany({ threadId });
+    const messages = await db.collection<MessageDoc>(MESSAGES_COLLECTION).deleteMany({ threadId });
     const now = new Date();
     await db
       .collection<ThreadDoc>(THREADS_COLLECTION)
-      .updateOne(
-        { threadId },
-        { $set: { deletedByUser: true, deletedAt: now } },
-      );
+      .updateOne({ threadId }, { $set: { deletedByUser: true, deletedAt: now } });
     return {
       deletedAt: now.toISOString(),
       messagesDeleted: messages.deletedCount ?? 0,
@@ -783,14 +696,10 @@ export class CustomerStaffMessagesService {
    * Bulk delete · LGPD-style erasure alias. Soft-fails when Mongo is offline
    * so the LGPD path can still record the request elsewhere.
    */
-  async deleteAll(
-    customerId: string,
-  ): Promise<StaffMessageHistoryDeleteResponse> {
+  async deleteAll(customerId: string): Promise<StaffMessageHistoryDeleteResponse> {
     const db = this.mongo.tryDb();
     if (!db) {
-      this.logger.warn(
-        `Bulk delete staff history for customer ${customerId} — Mongo offline`,
-      );
+      this.logger.warn(`Bulk delete staff history for customer ${customerId} — Mongo offline`);
       return { deletedCount: 0, threadsMarked: 0, mongoAvailable: false };
     }
     const messages = await db
@@ -798,10 +707,7 @@ export class CustomerStaffMessagesService {
       .deleteMany({ customerId });
     const threadsRes = await db
       .collection<ThreadDoc>(THREADS_COLLECTION)
-      .updateMany(
-        { customerId },
-        { $set: { deletedByUser: true, deletedAt: new Date() } },
-      );
+      .updateMany({ customerId }, { $set: { deletedByUser: true, deletedAt: new Date() } });
     return {
       deletedCount: messages.deletedCount ?? 0,
       threadsMarked: threadsRes.modifiedCount ?? 0,
@@ -812,10 +718,7 @@ export class CustomerStaffMessagesService {
   private requireDb() {
     const db = this.mongo.tryDb();
     if (!db) {
-      throw new HttpException(
-        'Serviço de histórico indisponível.',
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
+      throw new HttpException('Serviço de histórico indisponível.', HttpStatus.SERVICE_UNAVAILABLE);
     }
     return db;
   }

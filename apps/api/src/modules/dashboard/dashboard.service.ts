@@ -96,7 +96,12 @@ export class DashboardService {
               SUM(CASE WHEN was_blocked THEN 1 ELSE 0 END) as blocked_count
        FROM assistant_messages
        WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'`,
-    )) as { total_messages: string; total_tokens: string; total_cost_cents: string; blocked_count: string }[];
+    )) as {
+      total_messages: string;
+      total_tokens: string;
+      total_cost_cents: string;
+      blocked_count: string;
+    }[];
 
     return {
       totalMessages: parseInt(rows[0].total_messages) || 0,

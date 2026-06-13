@@ -10,15 +10,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  useG,
-  G_FONT,
-  Icon,
-  MTopBar,
-  GIconBtn,
-  GButton,
-  MPill,
-} from '../../components/manager';
+import { useG, G_FONT, Icon, MTopBar, GIconBtn, GButton, MPill } from '../../components/manager';
 import { manager } from '../../lib/api/manager';
 import type {
   LateArrivalRequestDto,
@@ -110,7 +102,14 @@ export function ScreenManagerStatDetail({
       <MTopBar
         dark={dark}
         title={titleByKind[kind]}
-        left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.back()} ariaLabel="Voltar" />}
+        left={
+          <GIconBtn
+            dark={dark}
+            icon={Icon.back(20)}
+            onClick={() => router.back()}
+            ariaLabel="Voltar"
+          />
+        }
       />
       <div style={{ flex: 1, overflow: 'auto', padding: '14px 16px 24px' }}>
         {loading ? (
@@ -162,22 +161,47 @@ function DetailContent({
     const r = data as LateArrivalRequestDto;
     return (
       <>
-        <Hero dark={dark} kicker={`MESA ${r.tableNumber}`} title={`${r.requesterName} pediu pra entrar`} />
+        <Hero
+          dark={dark}
+          kicker={`MESA ${r.tableNumber}`}
+          title={`${r.requesterName} pediu pra entrar`}
+        />
         <Field dark={dark} label="Status">
-          <MPill tone={r.status === 'pending' ? 'warn' : r.status === 'approved' ? 'success' : 'danger'} dark={dark}>
+          <MPill
+            tone={r.status === 'pending' ? 'warn' : r.status === 'approved' ? 'success' : 'danger'}
+            dark={dark}
+          >
             {r.status}
           </MPill>
         </Field>
-        {r.visitContext && <Field dark={dark} label="Contexto">{r.visitContext}</Field>}
-        <Field dark={dark} label="Criada em">{new Date(r.createdAt).toLocaleString('pt-BR')}</Field>
-        <Field dark={dark} label="Expira em">{new Date(r.expiresAt).toLocaleString('pt-BR')}</Field>
+        {r.visitContext && (
+          <Field dark={dark} label="Contexto">
+            {r.visitContext}
+          </Field>
+        )}
+        <Field dark={dark} label="Criada em">
+          {new Date(r.createdAt).toLocaleString('pt-BR')}
+        </Field>
+        <Field dark={dark} label="Expira em">
+          {new Date(r.expiresAt).toLocaleString('pt-BR')}
+        </Field>
 
         {r.status === 'pending' && (
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <GButton dark={dark} full kind="ghost" onClick={() => api.lateArrival.reject(r.id).then(onBack)}>
+            <GButton
+              dark={dark}
+              full
+              kind="ghost"
+              onClick={() => api.lateArrival.reject(r.id).then(onBack)}
+            >
               Rejeitar
             </GButton>
-            <GButton dark={dark} full kind="primary" onClick={() => api.lateArrival.approve(r.id).then(onBack)}>
+            <GButton
+              dark={dark}
+              full
+              kind="primary"
+              onClick={() => api.lateArrival.approve(r.id).then(onBack)}
+            >
               Aprovar
             </GButton>
           </div>
@@ -196,21 +220,44 @@ function DetailContent({
           title={`${m.originHostName} quer juntar`}
         />
         <Field dark={dark} label="Status">
-          <MPill tone={m.status === 'pending' ? 'warn' : m.status === 'approved' ? 'success' : 'danger'} dark={dark}>
+          <MPill
+            tone={m.status === 'pending' ? 'warn' : m.status === 'approved' ? 'success' : 'danger'}
+            dark={dark}
+          >
             {m.status}
           </MPill>
         </Field>
-        <Field dark={dark} label="Pessoas (origem)">{m.originPartySize}</Field>
-        <Field dark={dark} label="Pessoas (destino)">{m.targetPartySize}</Field>
-        {m.targetHostName && <Field dark={dark} label="Host destino">{m.targetHostName}</Field>}
-        <Field dark={dark} label="Expira em">{new Date(m.expiresAt).toLocaleString('pt-BR')}</Field>
+        <Field dark={dark} label="Pessoas (origem)">
+          {m.originPartySize}
+        </Field>
+        <Field dark={dark} label="Pessoas (destino)">
+          {m.targetPartySize}
+        </Field>
+        {m.targetHostName && (
+          <Field dark={dark} label="Host destino">
+            {m.targetHostName}
+          </Field>
+        )}
+        <Field dark={dark} label="Expira em">
+          {new Date(m.expiresAt).toLocaleString('pt-BR')}
+        </Field>
 
         {m.status === 'pending' && (
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <GButton dark={dark} full kind="ghost" onClick={() => api.tableMerge.reject(m.id).then(onBack)}>
+            <GButton
+              dark={dark}
+              full
+              kind="ghost"
+              onClick={() => api.tableMerge.reject(m.id).then(onBack)}
+            >
               Rejeitar
             </GButton>
-            <GButton dark={dark} full kind="primary" onClick={() => api.tableMerge.approve(m.id).then(onBack)}>
+            <GButton
+              dark={dark}
+              full
+              kind="primary"
+              onClick={() => api.tableMerge.approve(m.id).then(onBack)}
+            >
               Aprovar
             </GButton>
           </div>
@@ -229,17 +276,33 @@ function DetailContent({
           title={c.customerName}
         />
         <Field dark={dark} label="Status">
-          <MPill tone={c.status === 'created' ? 'danger' : c.status === 'responded' ? 'warn' : 'success'} dark={dark}>
+          <MPill
+            tone={c.status === 'created' ? 'danger' : c.status === 'responded' ? 'warn' : 'success'}
+            dark={dark}
+          >
             {c.status}
           </MPill>
         </Field>
-        {c.rating != null && <Field dark={dark} label="Avaliação">{c.rating} ★</Field>}
-        <Field dark={dark} label="Descrição">{c.description}</Field>
-        <Field dark={dark} label="Aberta em">{new Date(c.createdAt).toLocaleString('pt-BR')}</Field>
+        {c.rating != null && (
+          <Field dark={dark} label="Avaliação">
+            {c.rating} ★
+          </Field>
+        )}
+        <Field dark={dark} label="Descrição">
+          {c.description}
+        </Field>
+        <Field dark={dark} label="Aberta em">
+          {new Date(c.createdAt).toLocaleString('pt-BR')}
+        </Field>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
           {c.status !== 'resolved' && (
-            <GButton dark={dark} full kind="ghost" onClick={() => api.complaints.resolve(c.id).then(onBack)}>
+            <GButton
+              dark={dark}
+              full
+              kind="ghost"
+              onClick={() => api.complaints.resolve(c.id).then(onBack)}
+            >
               Resolver
             </GButton>
           )}
@@ -254,7 +317,9 @@ function DetailContent({
   if (kind === 'zone-pause') {
     const p = data as ZonePauseDto;
     const remaining = Math.max(0, Math.floor((new Date(p.endsAt).getTime() - Date.now()) / 1000));
-    const mm = Math.floor(remaining / 60).toString().padStart(2, '0');
+    const mm = Math.floor(remaining / 60)
+      .toString()
+      .padStart(2, '0');
     const ss = (remaining % 60).toString().padStart(2, '0');
     return (
       <>
@@ -267,14 +332,29 @@ function DetailContent({
         <Field dark={dark} label="Tempo restante">
           {p.active ? `${mm}:${ss}` : '—'}
         </Field>
-        <Field dark={dark} label="Iniciada em">{new Date(p.startedAt).toLocaleString('pt-BR')}</Field>
-        <Field dark={dark} label="Encerra em">{new Date(p.endsAt).toLocaleString('pt-BR')}</Field>
-        <Field dark={dark} label="Iniciada por">{p.startedByName}</Field>
-        {p.reason && <Field dark={dark} label="Motivo">{p.reason}</Field>}
+        <Field dark={dark} label="Iniciada em">
+          {new Date(p.startedAt).toLocaleString('pt-BR')}
+        </Field>
+        <Field dark={dark} label="Encerra em">
+          {new Date(p.endsAt).toLocaleString('pt-BR')}
+        </Field>
+        <Field dark={dark} label="Iniciada por">
+          {p.startedByName}
+        </Field>
+        {p.reason && (
+          <Field dark={dark} label="Motivo">
+            {p.reason}
+          </Field>
+        )}
 
         {p.active && (
           <div style={{ marginTop: 16 }}>
-            <GButton dark={dark} full kind="primary" onClick={() => api.zonePauses.end(p.id).then(onBack)}>
+            <GButton
+              dark={dark}
+              full
+              kind="primary"
+              onClick={() => api.zonePauses.end(p.id).then(onBack)}
+            >
               Encerrar agora
             </GButton>
           </div>
@@ -289,13 +369,22 @@ function DetailContent({
       <>
         <Hero dark={dark} kicker={l.protocolNumber} title={`Solicitação LGPD · ${l.type}`} />
         <Field dark={dark} label="Status">
-          <MPill tone={l.status === 'fulfilled' ? 'success' : l.status === 'rejected' ? 'danger' : 'warn'} dark={dark}>
+          <MPill
+            tone={
+              l.status === 'fulfilled' ? 'success' : l.status === 'rejected' ? 'danger' : 'warn'
+            }
+            dark={dark}
+          >
             {l.status}
           </MPill>
         </Field>
-        <Field dark={dark} label="Aberta em">{new Date(l.createdAt).toLocaleString('pt-BR')}</Field>
+        <Field dark={dark} label="Aberta em">
+          {new Date(l.createdAt).toLocaleString('pt-BR')}
+        </Field>
         {l.fulfilledAt && (
-          <Field dark={dark} label="Atendida em">{new Date(l.fulfilledAt).toLocaleString('pt-BR')}</Field>
+          <Field dark={dark} label="Atendida em">
+            {new Date(l.fulfilledAt).toLocaleString('pt-BR')}
+          </Field>
         )}
       </>
     );
@@ -344,7 +433,15 @@ function Hero({ kicker, title, dark }: { kicker: string; title: string; dark?: b
       >
         {kicker}
       </div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: -0.4, lineHeight: 1.15 }}>
+      <div
+        style={{
+          fontSize: 22,
+          fontWeight: 800,
+          color: C.ink,
+          letterSpacing: -0.4,
+          lineHeight: 1.15,
+        }}
+      >
         {title}
       </div>
     </div>
@@ -383,7 +480,9 @@ function Field({
       >
         {label}
       </div>
-      <div style={{ fontSize: 14, color: C.ink, fontWeight: 500, lineHeight: 1.45 }}>{children}</div>
+      <div style={{ fontSize: 14, color: C.ink, fontWeight: 500, lineHeight: 1.45 }}>
+        {children}
+      </div>
     </div>
   );
 }

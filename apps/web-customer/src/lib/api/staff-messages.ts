@@ -20,9 +20,7 @@ import type {
 
 const BASE = (slug: string) => `/${slug}/customer-staff-messages`;
 
-export function listThreads(
-  slug: string,
-): Promise<StaffMessageHistoryThreadDto[]> {
+export function listThreads(slug: string): Promise<StaffMessageHistoryThreadDto[]> {
   return apiGet<StaffMessageHistoryThreadDto[]>(`${BASE(slug)}/threads`);
 }
 
@@ -35,10 +33,7 @@ export function listMessages(
   );
 }
 
-export function markRead(
-  slug: string,
-  threadId: string,
-): Promise<StaffMessageHistoryReadResponse> {
+export function markRead(slug: string, threadId: string): Promise<StaffMessageHistoryReadResponse> {
   return apiPost<StaffMessageHistoryReadResponse>(
     `${BASE(slug)}/threads/${encodeURIComponent(threadId)}/read`,
     {},
@@ -66,9 +61,7 @@ export function deleteThread(
   );
 }
 
-export function deleteAllThreads(
-  slug: string,
-): Promise<StaffMessageHistoryDeleteResponse> {
+export function deleteAllThreads(slug: string): Promise<StaffMessageHistoryDeleteResponse> {
   return api<StaffMessageHistoryDeleteResponse>(BASE(slug), {
     method: 'DELETE',
   });

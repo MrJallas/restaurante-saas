@@ -157,9 +157,7 @@ export function MContactClientSheet({
       // `fromStaffId` vem do localStorage.staffId (auth pattern do staff
       // login). Endpoint exige manager-only via guards no backend.
       const fromStaffId =
-        typeof window !== 'undefined'
-          ? window.localStorage.getItem('staffId')
-          : null;
+        typeof window !== 'undefined' ? window.localStorage.getItem('staffId') : null;
       if (!fromStaffId) {
         throw new Error('staffId ausente — faça login antes de enviar.');
       }
@@ -242,9 +240,10 @@ export function MContactClientSheet({
           display: 'flex',
           flexDirection: 'column',
           transform: `translateY(${dragOffsetY}px)`,
-          transition: dragOffsetY === 0
-            ? 'height 220ms cubic-bezier(.2,.8,.2,1), transform 180ms cubic-bezier(.2,.8,.2,1)'
-            : 'height 220ms cubic-bezier(.2,.8,.2,1)',
+          transition:
+            dragOffsetY === 0
+              ? 'height 220ms cubic-bezier(.2,.8,.2,1), transform 180ms cubic-bezier(.2,.8,.2,1)'
+              : 'height 220ms cubic-bezier(.2,.8,.2,1)',
           touchAction: 'pan-y',
         }}
       >
@@ -362,7 +361,8 @@ export function MContactClientSheet({
               )}
               {suggestions.map((s, i) => {
                 const sel = i === selectedIdx;
-                const isCourtesy = s.linksTo === 'mgr-compensate' || s.linksTo === '/manager/cortesia';
+                const isCourtesy =
+                  s.linksTo === 'mgr-compensate' || s.linksTo === '/manager/cortesia';
                 const Ico = ICON_FOR[s.icon ?? 'default'] ?? ICON_FOR.default;
                 return (
                   <button
@@ -392,11 +392,7 @@ export function MContactClientSheet({
                         height: 26,
                         borderRadius: 13,
                         flexShrink: 0,
-                        background: sel
-                          ? 'rgba(255,255,255,0.14)'
-                          : isCourtesy
-                          ? '#EFF5EC'
-                          : C.bg,
+                        background: sel ? 'rgba(255,255,255,0.14)' : isCourtesy ? '#EFF5EC' : C.bg,
                         color: sel ? C.bg : isCourtesy ? '#2F7D4F' : C.faint,
                         border: sel
                           ? '1px solid rgba(255,255,255,0.2)'

@@ -839,9 +839,7 @@ export default function MesaPage() {
 
   const heroMessage = homeData?.heroMessage ?? defaultHeroMessage(firstName, restaurantName);
   const returningHighlight =
-    isReturning && lastItems.length > 0
-      ? buildReturningMessage(firstName, lastItems)
-      : null;
+    isReturning && lastItems.length > 0 ? buildReturningMessage(firstName, lastItems) : null;
   const continuationText =
     typeof continuationMessage?.rendered === 'string' && continuationMessage.rendered.trim()
       ? continuationMessage.rendered
@@ -915,11 +913,7 @@ export default function MesaPage() {
               <PillButton onClick={openCallWaiterSheet}>Chamar garçom</PillButton>
               <PillButton onClick={() => push(`/${slug}/cardapio`)}>Ver cardápio</PillButton>
               {isReturning && lastItems.length > 0 && (
-                <PillButton
-                  variant="filled"
-                  onClick={handleRepeatLastVisit}
-                  disabled={repeatBusy}
-                >
+                <PillButton variant="filled" onClick={handleRepeatLastVisit} disabled={repeatBusy}>
                   {repeatBusy ? 'Carregando…' : '↻ Repetir última visita'}
                 </PillButton>
               )}

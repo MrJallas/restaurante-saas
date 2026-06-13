@@ -10,10 +10,7 @@ import { useNav } from '../../../../hooks/useNav';
 import { useDraftOrder } from '../../../../providers/DraftOrderProvider';
 import { FoodDetail, FoodDetailData } from '../../../../components/cardapio/FoodDetail';
 import { DrinkDetail, DrinkDetailData } from '../../../../components/cardapio/DrinkDetail';
-import {
-  CommandPicker,
-  CommandModeChoice,
-} from '../../../../components/cardapio/CommandPicker';
+import { CommandPicker, CommandModeChoice } from '../../../../components/cardapio/CommandPicker';
 
 interface MenuItemApi {
   id: string;
@@ -125,12 +122,7 @@ export default function ItemDetailPage() {
   );
 
   const handleAddDrink = useCallback(
-    (data: {
-      size?: string;
-      preferences: string[];
-      quantity: number;
-      priceCents: number;
-    }) => {
+    (data: { size?: string; preferences: string[]; quantity: number; priceCents: number }) => {
       const next = {
         size: data.size,
         preferences: data.preferences,

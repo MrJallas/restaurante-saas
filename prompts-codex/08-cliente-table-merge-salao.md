@@ -77,7 +77,7 @@ Resposta sugerida:
     sessionId?: string;
     host?: string;
     party?: number;
-  }>
+  }>;
 }
 ```
 

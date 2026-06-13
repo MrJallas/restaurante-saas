@@ -34,7 +34,12 @@ export interface MContactStaffSheetProps {
   onClose?: () => void;
   onSent?: (preview: string) => void;
   /** Quick-suggestion chips. Manager screen passes pre-baked text per context. */
-  suggestions?: { id: string; icon?: 'chat' | 'user' | 'pause' | 'table' | 'flame'; text: string; linksTo?: string }[];
+  suggestions?: {
+    id: string;
+    icon?: 'chat' | 'user' | 'pause' | 'table' | 'flame';
+    text: string;
+    linksTo?: string;
+  }[];
 }
 
 const ICONS = {
@@ -165,9 +170,10 @@ export function MContactStaffSheet({
           display: 'flex',
           flexDirection: 'column',
           transform: `translateY(${dragOffsetY}px)`,
-          transition: dragOffsetY === 0
-            ? 'height 220ms cubic-bezier(.2,.8,.2,1), transform 180ms cubic-bezier(.2,.8,.2,1)'
-            : 'height 220ms cubic-bezier(.2,.8,.2,1)',
+          transition:
+            dragOffsetY === 0
+              ? 'height 220ms cubic-bezier(.2,.8,.2,1), transform 180ms cubic-bezier(.2,.8,.2,1)'
+              : 'height 220ms cubic-bezier(.2,.8,.2,1)',
           touchAction: 'pan-y',
         }}
       >

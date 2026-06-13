@@ -63,10 +63,7 @@ export async function liberateQrTestTable({
   }
 }
 
-async function resolveHostOrManagerStaffId(
-  apiBaseUrl: string,
-  slug: string,
-): Promise<string> {
+async function resolveHostOrManagerStaffId(apiBaseUrl: string, slug: string): Promise<string> {
   const response = await fetch(`${apiBaseUrl}/${slug}/staff?activeOnly=true`);
   if (!response.ok) {
     throw new Error(`Failed to list staff: ${response.status} ${await response.text()}`);

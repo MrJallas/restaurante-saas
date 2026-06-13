@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { MongoService } from '../../infra/mongo/mongo.service';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
@@ -102,11 +98,9 @@ export class ManagerAccountService {
       twoFactorEnabled: patch.twoFactorEnabled ?? current.twoFactorEnabled,
       updatedAt: new Date(),
     };
-    await db.collection<ManagerPreferencesDoc>(PREFS_COLLECTION).updateOne(
-      { tenantSlug: slug, staffId },
-      { $set: next },
-      { upsert: true },
-    );
+    await db
+      .collection<ManagerPreferencesDoc>(PREFS_COLLECTION)
+      .updateOne({ tenantSlug: slug, staffId }, { $set: next }, { upsert: true });
     return {
       notifications: next.notifications,
       theme: next.theme,
@@ -155,11 +149,13 @@ export class ManagerAccountService {
       current: true,
       lastSeenAt: new Date(),
     };
-    await db.collection(SESSIONS_COLLECTION).updateOne(
-      { sessionId: currentSession.sessionId, staffId },
-      { $set: currentSession },
-      { upsert: true },
-    );
+    await db
+      .collection(SESSIONS_COLLECTION)
+      .updateOne(
+        { sessionId: currentSession.sessionId, staffId },
+        { $set: currentSession },
+        { upsert: true },
+      );
     const docs = await db
       .collection(SESSIONS_COLLECTION)
       .find({ staffId, revokedAt: { $exists: false } })
@@ -174,9 +170,7 @@ export class ManagerAccountService {
         userAgent: String(doc.userAgent ?? ''),
         current: doc.sessionId === currentSession.sessionId,
         lastSeenAt:
-          doc.lastSeenAt instanceof Date
-            ? doc.lastSeenAt.toISOString()
-            : new Date().toISOString(),
+          doc.lastSeenAt instanceof Date ? doc.lastSeenAt.toISOString() : new Date().toISOString(),
       })),
     };
   }
@@ -262,10 +256,7 @@ export class ManagerAccountService {
     return this.mapShiftLog(doc);
   }
 
-  async listShiftLogs(
-    slug: string,
-    filters: { date?: string; staff?: string; shift?: string },
-  ) {
+  async listShiftLogs(slug: string, filters: { date?: string; staff?: string; shift?: string }) {
     const db = this.dbOrThrow();
     await this.ensureShiftIndexes();
     const query: Record<string, unknown> = { tenantSlug: slug };

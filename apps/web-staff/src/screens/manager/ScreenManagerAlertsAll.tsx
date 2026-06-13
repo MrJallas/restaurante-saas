@@ -178,11 +178,26 @@ export function ScreenManagerAlertsAll({
 
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: 100 }}>
         <div style={{ padding: '12px 16px 0', display: 'flex', gap: 10 }}>
-          <MStat dark={dark} label="Críticos" value={String(high)} sub="resolver agora" accent={high > 0 ? '#C43A3A' : undefined} />
-          <MStat dark={dark} label="Atenção" value={String(med)} sub="próximos 10 min" accent={med > 0 ? '#9A7212' : undefined} />
+          <MStat
+            dark={dark}
+            label="Críticos"
+            value={String(high)}
+            sub="resolver agora"
+            accent={high > 0 ? '#C43A3A' : undefined}
+          />
+          <MStat
+            dark={dark}
+            label="Atenção"
+            value={String(med)}
+            sub="próximos 10 min"
+            accent={med > 0 ? '#9A7212' : undefined}
+          />
         </div>
 
-        <div data-hide-scrollbar style={{ padding: '14px 16px 4px', display: 'flex', gap: 6, overflowX: 'auto' }}>
+        <div
+          data-hide-scrollbar
+          style={{ padding: '14px 16px 4px', display: 'flex', gap: 6, overflowX: 'auto' }}
+        >
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -209,29 +224,86 @@ export function ScreenManagerAlertsAll({
         </div>
 
         {errorMsg && (
-          <div role="alert" style={{ margin: '10px 16px', padding: 12, borderRadius: 10, border: '1px solid #F0DCB6', background: '#FFF7E6', color: '#7A4D10', fontSize: 12.5, fontWeight: 600 }}>
+          <div
+            role="alert"
+            style={{
+              margin: '10px 16px',
+              padding: 12,
+              borderRadius: 10,
+              border: '1px solid #F0DCB6',
+              background: '#FFF7E6',
+              color: '#7A4D10',
+              fontSize: 12.5,
+              fontWeight: 600,
+            }}
+          >
             {errorMsg}
           </div>
         )}
 
-        <div style={{ padding: '8px 16px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div
+          style={{ padding: '8px 16px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}
+        >
           {loading ? (
-            <div style={{ padding: 24, color: C.faint, fontSize: 13, textAlign: 'center' }}>Carregando alertas…</div>
+            <div style={{ padding: 24, color: C.faint, fontSize: 13, textAlign: 'center' }}>
+              Carregando alertas…
+            </div>
           ) : filtered.length === 0 ? (
-            <div style={{ padding: 24, border: `1px dashed ${C.borderSoft}`, borderRadius: 12, textAlign: 'center', color: C.faint, fontSize: 13 }}>
+            <div
+              style={{
+                padding: 24,
+                border: `1px dashed ${C.borderSoft}`,
+                borderRadius: 12,
+                textAlign: 'center',
+                color: C.faint,
+                fontSize: 13,
+              }}
+            >
               Sem alertas nessa categoria · tudo no ritmo.
             </div>
           ) : (
             filtered.map((a) => {
               const sc = sevDecor[a.sev];
               return (
-                <div key={a.id} style={{ border: `1px solid ${C.borderSoft}`, borderRadius: 12, overflow: 'hidden', borderLeft: `4px solid ${sc.bar}`, background: C.bg }}>
+                <div
+                  key={a.id}
+                  style={{
+                    border: `1px solid ${C.borderSoft}`,
+                    borderRadius: 12,
+                    overflow: 'hidden',
+                    borderLeft: `4px solid ${sc.bar}`,
+                    background: C.bg,
+                  }}
+                >
                   <div style={{ padding: 12 }}>
                     <div style={{ marginBottom: 4 }}>
-                      <MPill tone={sc.tone} dark={dark}>{sc.label} · {relativeMinutes(a.created_at)}</MPill>
+                      <MPill tone={sc.tone} dark={dark}>
+                        {sc.label} · {relativeMinutes(a.created_at)}
+                      </MPill>
                     </div>
-                    <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.3, letterSpacing: -0.1 }}>{a.title}</div>
-                    {a.sub && <div style={{ fontSize: 12, color: C.faint, fontWeight: 500, marginTop: 2, lineHeight: 1.4 }}>{a.sub}</div>}
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        lineHeight: 1.3,
+                        letterSpacing: -0.1,
+                      }}
+                    >
+                      {a.title}
+                    </div>
+                    {a.sub && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: C.faint,
+                          fontWeight: 500,
+                          marginTop: 2,
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {a.sub}
+                      </div>
+                    )}
                     <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {a.actions.map((action, idx) => (
                         <button
@@ -258,7 +330,15 @@ export function ScreenManagerAlertsAll({
                         type="button"
                         onClick={() => dismiss(a.id)}
                         disabled={pendingId === a.id}
-                        style={{ all: 'unset', cursor: pendingId === a.id ? 'not-allowed' : 'pointer', padding: '8px 10px', borderRadius: 8, color: C.faint, fontSize: 12, fontWeight: 500 }}
+                        style={{
+                          all: 'unset',
+                          cursor: pendingId === a.id ? 'not-allowed' : 'pointer',
+                          padding: '8px 10px',
+                          borderRadius: 8,
+                          color: C.faint,
+                          fontSize: 12,
+                          fontWeight: 500,
+                        }}
                       >
                         Dispensar
                       </button>
@@ -271,14 +351,47 @@ export function ScreenManagerAlertsAll({
         </div>
 
         <div style={{ padding: '0 16px 24px' }}>
-          <div style={{ fontSize: 11, color: C.faint, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 8, fontFamily: MONO_FONT }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: C.faint,
+              fontWeight: 700,
+              letterSpacing: 0.6,
+              textTransform: 'uppercase',
+              marginBottom: 8,
+              fontFamily: MONO_FONT,
+            }}
+          >
             Resolvidos hoje · {resolved.length}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {resolved.map((h) => (
-              <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: C.surface, borderRadius: 8 }}>
-                <div style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: C.faint, fontWeight: 700, width: 46, fontFamily: MONO_FONT }}>{relativeMinutes(h.created_at)}</div>
-                <div style={{ flex: 1, fontSize: 12, color: C.ink, fontWeight: 500 }}>{h.title}</div>
+              <div
+                key={h.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '8px 10px',
+                  background: C.surface,
+                  borderRadius: 8,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontVariantNumeric: 'tabular-nums',
+                    color: C.faint,
+                    fontWeight: 700,
+                    width: 46,
+                    fontFamily: MONO_FONT,
+                  }}
+                >
+                  {relativeMinutes(h.created_at)}
+                </div>
+                <div style={{ flex: 1, fontSize: 12, color: C.ink, fontWeight: 500 }}>
+                  {h.title}
+                </div>
               </div>
             ))}
           </div>

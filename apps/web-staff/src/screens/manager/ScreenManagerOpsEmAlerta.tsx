@@ -188,7 +188,9 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
               </div>
             </div>
           )}
-          <div style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}>
+          <div
+            style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}
+          >
             {items.length > 0
               ? `${items.length} mesas onde algo passou da meta de tempo.`
               : 'Nenhuma mesa em alerta agora.'}
@@ -294,7 +296,9 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
               <ActionPill
                 C={C}
                 icon={Icon.chat(13)}
-                onClick={() => router.push(slugQs ? `/manager/mensagens?slug=${slugQs}` : '/manager/mensagens')}
+                onClick={() =>
+                  router.push(slugQs ? `/manager/mensagens?slug=${slugQs}` : '/manager/mensagens')
+                }
               >
                 Mensagem direta pros garçons das críticas
               </ActionPill>
@@ -304,7 +308,8 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
 
         <div style={{ height: 18 }} />
         <Formula C={C}>
-          Mesas com pedido ou chamado que <b>passou da meta</b> · ATENÇÃO se &gt;80% da meta · CRÍTICA se &gt;100%.
+          Mesas com pedido ou chamado que <b>passou da meta</b> · ATENÇÃO se &gt;80% da meta ·
+          CRÍTICA se &gt;100%.
         </Formula>
       </div>
 
@@ -416,7 +421,9 @@ function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.
       >
         Como esse número é calculado
       </div>
-      <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>{children}</div>
+      <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>
+        {children}
+      </div>
     </div>
   );
 }

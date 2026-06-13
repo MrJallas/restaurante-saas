@@ -15,11 +15,7 @@ import { cManagerArrive, useReducedMotion } from '../../lib/animations';
  *  - `courtesy`      "Estou enviando uma cortesia"
  *  - `custom`        free-text, sem inset
  */
-export type ManagerChipActionKind =
-  | 'on-the-way'
-  | 'kitchen-check'
-  | 'courtesy'
-  | 'custom';
+export type ManagerChipActionKind = 'on-the-way' | 'kitchen-check' | 'courtesy' | 'custom';
 
 interface ManagerBubbleProps {
   /** Nome do gerente — usado pro avatar inicial e pro label. */
@@ -71,20 +67,45 @@ function ChipActionIcon({ kind }: { kind: Exclude<ManagerChipActionKind, 'custom
       {kind === 'on-the-way' && (
         <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
           <circle cx="10" cy="10" r="7" stroke="var(--color-ink)" strokeWidth="1.5" />
-          <path d="M10 6 V10 L13 12" stroke="var(--color-ink)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M10 6 V10 L13 12"
+            stroke="var(--color-ink)"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       )}
       {kind === 'kitchen-check' && (
         <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
-          <path d="M5 10 L9 14 L15 6" stroke="var(--color-ink)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M5 10 L9 14 L15 6"
+            stroke="var(--color-ink)"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       )}
       {kind === 'courtesy' && (
         <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
-          <rect x="3" y="8" width="14" height="9" rx="1" stroke="var(--color-ink)" strokeWidth="1.5" />
+          <rect
+            x="3"
+            y="8"
+            width="14"
+            height="9"
+            rx="1"
+            stroke="var(--color-ink)"
+            strokeWidth="1.5"
+          />
           <path d="M3 11 H17" stroke="var(--color-ink)" strokeWidth="1.5" />
           <path d="M10 8 V17" stroke="var(--color-ink)" strokeWidth="1.5" />
-          <path d="M10 8 C7 6 5 4 7 3 C9 2 10 5 10 8 C10 5 11 2 13 3 C15 4 13 6 10 8 Z" stroke="var(--color-ink)" strokeWidth="1.3" strokeLinejoin="round" />
+          <path
+            d="M10 8 C7 6 5 4 7 3 C9 2 10 5 10 8 C10 5 11 2 13 3 C15 4 13 6 10 8 Z"
+            stroke="var(--color-ink)"
+            strokeWidth="1.3"
+            strokeLinejoin="round"
+          />
         </svg>
       )}
     </div>
@@ -121,11 +142,8 @@ export const ManagerBubble = memo(function ManagerBubble({
   const initial = name.charAt(0).toUpperCase();
   // `chipAction` is rendered as an inset only for the 3 canonical kinds.
   // `null`/undefined or `'custom'` skip the inset (the prose carries it).
-  const insetKind =
-    chipAction && chipAction !== 'custom' ? chipAction : null;
-  const insetLabel = insetKind
-    ? chipActionLabelOverride ?? chipActionLabel[insetKind]
-    : null;
+  const insetKind = chipAction && chipAction !== 'custom' ? chipAction : null;
+  const insetLabel = insetKind ? (chipActionLabelOverride ?? chipActionLabel[insetKind]) : null;
   // `cManagerArrive` keyframes (see `lib/animations.ts` + `globals.css`) —
   // 360ms slide-up + fade so when the bubble shows up live (after a
   // `complaint.responded` WS event) it doesn't pop in. Reduced-motion
@@ -160,7 +178,10 @@ export const ManagerBubble = memo(function ManagerBubble({
             </span>
           )}
         </div>
-        <div className="text-[14px] leading-[1.45] tracking-[-0.005em] text-ink" style={{ textWrap: 'pretty' as never }}>
+        <div
+          className="text-[14px] leading-[1.45] tracking-[-0.005em] text-ink"
+          style={{ textWrap: 'pretty' as never }}
+        >
           {children}
         </div>
         {insetKind && insetLabel && (

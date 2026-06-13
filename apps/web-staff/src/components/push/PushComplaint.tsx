@@ -26,12 +26,20 @@ const TYPE_TO_LABEL: Partial<Record<ComplaintProblemType, string>> = {
 };
 
 export const PushComplaint: React.FC<PushComplaintProps> = ({
-  tableLabel, customerName, problemType, rating, description, time = 'agora', onTap,
+  tableLabel,
+  customerName,
+  problemType,
+  rating,
+  description,
+  time = 'agora',
+  onTap,
 }) => {
-  const label = problemType ? TYPE_TO_LABEL[problemType] ?? null : null;
+  const label = problemType ? (TYPE_TO_LABEL[problemType] ?? null) : null;
   const stars = rating ? '★'.repeat(rating) + '☆'.repeat(Math.max(0, 5 - rating)) : '';
   const body = description
-    ? description.length > 90 ? `${description.slice(0, 87)}…` : description
+    ? description.length > 90
+      ? `${description.slice(0, 87)}…`
+      : description
     : `${customerName ?? 'Cliente'} ${stars ? `· ${stars}` : ''}${label ? ` · ${label}` : ''}`.trim();
   return (
     <PushCardIOS

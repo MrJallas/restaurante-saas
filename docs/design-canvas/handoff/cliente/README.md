@@ -69,19 +69,19 @@ handoff/cliente/
 
 ## Linguagem da casa (resumo, espelhada de screens.jsx)
 
-| Token | Valor | Uso |
-|---|---|---|
-| `C.bg` | `#ffffff` | canvas — branco puro |
-| `C.surface` | `#f6f5f2` | off-white levemente quente p/ surfaces |
-| `C.ink` | `#0a0a0a` | borda + texto principal (também é o "accent") |
-| `C.borderSoft` | `#e5e5e5` | divisores |
-| `C.mute` | `#6b6b6b` | texto secundário |
-| `C.faint` | `#a3a3a3` | metadata / terciário |
-| `C.danger` | `#c43a3a` + wash `#fbe9e7` | brick — alertas / chamado |
-| `C.success` | `#2f7d4f` + wash `#e3efe7` | moss — entregue / pago |
-| `C.warning` | `#b88a1a` + wash `#fbf1d8` | mustard — preparando / novo |
-| **Body** | `Inter` 400/500/600 | tudo |
-| **Mono** | `JetBrains Mono` 500–600 caps + tracking 1.1 | eyebrows, badges, time chips, nome+role do gerente |
+| Token          | Valor                                        | Uso                                                |
+| -------------- | -------------------------------------------- | -------------------------------------------------- |
+| `C.bg`         | `#ffffff`                                    | canvas — branco puro                               |
+| `C.surface`    | `#f6f5f2`                                    | off-white levemente quente p/ surfaces             |
+| `C.ink`        | `#0a0a0a`                                    | borda + texto principal (também é o "accent")      |
+| `C.borderSoft` | `#e5e5e5`                                    | divisores                                          |
+| `C.mute`       | `#6b6b6b`                                    | texto secundário                                   |
+| `C.faint`      | `#a3a3a3`                                    | metadata / terciário                               |
+| `C.danger`     | `#c43a3a` + wash `#fbe9e7`                   | brick — alertas / chamado                          |
+| `C.success`    | `#2f7d4f` + wash `#e3efe7`                   | moss — entregue / pago                             |
+| `C.warning`    | `#b88a1a` + wash `#fbf1d8`                   | mustard — preparando / novo                        |
+| **Body**       | `Inter` 400/500/600                          | tudo                                               |
+| **Mono**       | `JetBrains Mono` 500–600 caps + tracking 1.1 | eyebrows, badges, time chips, nome+role do gerente |
 
 Sem serif. Sem terracota. Sem ornamentos editoriais. **Monocromático: preto É o accent.**
 
@@ -89,19 +89,19 @@ Sem serif. Sem terracota. Sem ornamentos editoriais. **Monocromático: preto É 
 
 ## Componentes-chave (todos em `cliente-tokens.jsx`)
 
-| Componente | Quando usar |
-|---|---|
-| `IOSFrame` / `AndroidFrame` | 390×844, dynamic island ou punch-hole, status bar correta |
-| `TopBar` | Brand + mesa à esquerda, ícone à direita (menu / back) |
-| `MonoLabel` | Eyebrows e tiny labels — mono caps tracking 1.2 |
-| `StatusPill tone="..."` | dot + label mono — success/warning/danger/mute |
-| `PillButton variant="outline"` | CTA secundário (white + 1.3px ink) |
-| `PillButton variant="filled"` | CTA primário (ink solid + white text) |
-| `PillButton variant="ghost"` | Link discreto sublinhado |
-| `LiquidInput` | Input do home com play-button preto à esquerda |
-| `AssistantBlock` | Texto da IA inline com mono caps acima — **sem bubble** |
-| `ManagerBubble` | 4.5 — bubble assinatura, border-left ink, badge mono "NOME · GERENTE" |
-| `Caption` | Bloco de notas embaixo de cada frame |
+| Componente                     | Quando usar                                                           |
+| ------------------------------ | --------------------------------------------------------------------- |
+| `IOSFrame` / `AndroidFrame`    | 390×844, dynamic island ou punch-hole, status bar correta             |
+| `TopBar`                       | Brand + mesa à esquerda, ícone à direita (menu / back)                |
+| `MonoLabel`                    | Eyebrows e tiny labels — mono caps tracking 1.2                       |
+| `StatusPill tone="..."`        | dot + label mono — success/warning/danger/mute                        |
+| `PillButton variant="outline"` | CTA secundário (white + 1.3px ink)                                    |
+| `PillButton variant="filled"`  | CTA primário (ink solid + white text)                                 |
+| `PillButton variant="ghost"`   | Link discreto sublinhado                                              |
+| `LiquidInput`                  | Input do home com play-button preto à esquerda                        |
+| `AssistantBlock`               | Texto da IA inline com mono caps acima — **sem bubble**               |
+| `ManagerBubble`                | 4.5 — bubble assinatura, border-left ink, badge mono "NOME · GERENTE" |
+| `Caption`                      | Bloco de notas embaixo de cada frame                                  |
 
 Ícones em `Ico` (peso 1.4): `arrow`, `back`, `menu`, `x`, `hand`, `book`, `notepad`, `glass`, `receipt`, `chat`, `giftSeal`, `check`, `clock`, `send`.
 
@@ -110,23 +110,27 @@ Sem serif. Sem terracota. Sem ornamentos editoriais. **Monocromático: preto É 
 ## Inventário das 17 telas
 
 ### 4.2 · Continuação · Home pós-ação · 6 frames
+
 - `viu_cardapio` (iOS) · `chamou_garcom` (iOS) · `abriu_pedido` (iOS, com CTA filled "Acompanhar pedido") · `pagou` (iOS) · `voltou_sem_acao` (iOS) · `viu_cardapio` (Android)
 - Mesmo `HomeHero`/`AssistantBlock` do screens.jsx — só o texto e os chips mudam
 - Chips contextuais (não estáticos) — substituem o `SUGGESTION_CHIPS` mock
 
 ### 4.3 · Bottom sheet "Chamar garçom" (vaul) · 4 frames
+
 - `idle` (iOS) — sheet sobre home atenuado, backdrop 32% preto, CTA disabled
 - `motivo selecionado` (iOS) — radio "Fazer pedido" ativo, CTA filled habilita
 - `swipe-dismissing` (iOS) — translateY follow-finger, hint "Swipe down ↓"
 - `idle` (Android)
 
 ### 4.4 · Cortesia da casa — redesign · 4 frames
+
 - `recebimento` (iOS) — selo redondo (não retangular), ornamentos sutis nos 4 cantos, quote do gerente em itálico com travessão, CTA filled "Aceitar com gratidão" + secundário "Não, obrigado" sublinhado
 - `aceito · selo carimbado` (iOS) — selo escala 2x rotate -7deg, dashed inner ring, pill avatar+ETA da Marina
 - `recusa` (iOS) — X em circle outline, copy curta sem culpabilizar
 - `recebimento` (Android)
 
 ### 4.5 · Mensagem do gerente no chat · 3 frames
+
 - `solo` (iOS) — só ManagerBubble com Renata; input vira "Responder Renata"
 - `IA + cliente + gerente` (iOS) — IA inline (sem bubble), cliente em bubble ink à direita, gerente em bubble assinatura à esquerda com border-left ink
 - `solo` (Android)
@@ -152,12 +156,14 @@ Sem serif. Sem terracota. Sem ornamentos editoriais. **Monocromático: preto É 
 Cada caption no canvas resume **trigger / endpoint / animação / hit target**.
 
 Animações usadas:
+
 - `cursor-blink` — typing cursor da IA (1s loop)
 - `cSlideUp` — bottom sheet abre (220ms cubic-bezier(.2,.8,.2,1))
 - `cManagerArrive` — bubble do gerente entra (translateY 8→0 + fade, 360ms)
 - `cStampIn` — selo da cortesia entra com bounce + rotate 0→-7deg (480ms)
 
 Hit targets verificados:
+
 - ✓ PillButton md = 14×26 padding + 15px font ≈ 48px
 - ✓ PillButton lg = 16×28 padding + 16px font ≈ 52px
 - ✓ Sheet reason rows = 14×16 padding + 38px icon ≈ 66px
@@ -175,12 +181,14 @@ Hit targets verificados:
 ### Caminho duplo · chip OU texto livre
 
 Cliente sempre completa o fluxo de **2 formas equivalentes**:
+
 1. **Tap chip** (1 toque · caminho rápido)
 2. **Texto livre** (LLM detecta intent e roteia pra mesma tool)
 
 Ambos disparam a mesma tool · mesmos params · mesmo resultado.
 
 ### Princípios visuais
+
 - 2-4 chips · scroll horizontal se exceder
 - Ordem: primário esquerda · destrutivo/cancelar direita
 - Copy: verbo + objeto · ≤22 chars
@@ -207,14 +215,14 @@ que o gerente já chega na mesa **com a solução**.
 
 ### Inventário · 24 tools em 6 grupos
 
-| # | Grupo | Tools |
-|---|---|---|
-| A | **Cardápio · navegação** (5) | `view_menu` · `search_dish` · `recommend_dish` · `check_allergens` · `compare_dishes` |
-| B | **Pedido** (4) | `add_to_order` · `modify_order_item` · `remove_order_item` · `view_order` |
-| C | **Comunicação com staff** (3 · texto obrigatório) | `call_waiter` · `send_complaint` · `send_message_to_manager` |
-| D | **Pagamento** (4 · UI dedicada) | `request_bill` · `split_bill` · `pay_individual` · `pay_full` |
-| E | **Sessão / utilidade** (6) | `view_chat_history` · `delete_chat` · `delete_all_chats` · `rate_order` · `view_courtesy` · `ask_about_restaurant` |
-| F | **LGPD · privacy** (2 · ★ NOVO ★) | `show_lgpd_notice` · `lgpd_data_request` |
+| #   | Grupo                                             | Tools                                                                                                              |
+| --- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| A   | **Cardápio · navegação** (5)                      | `view_menu` · `search_dish` · `recommend_dish` · `check_allergens` · `compare_dishes`                              |
+| B   | **Pedido** (4)                                    | `add_to_order` · `modify_order_item` · `remove_order_item` · `view_order`                                          |
+| C   | **Comunicação com staff** (3 · texto obrigatório) | `call_waiter` · `send_complaint` · `send_message_to_manager`                                                       |
+| D   | **Pagamento** (4 · UI dedicada)                   | `request_bill` · `split_bill` · `pay_individual` · `pay_full`                                                      |
+| E   | **Sessão / utilidade** (6)                        | `view_chat_history` · `delete_chat` · `delete_all_chats` · `rate_order` · `view_courtesy` · `ask_about_restaurant` |
+| F   | **LGPD · privacy** (2 · ★ NOVO ★)                 | `show_lgpd_notice` · `lgpd_data_request`                                                                           |
 
 Mapping completo de chips por tool em [`cliente-screens-v13.jsx`](./cliente-screens-v13.jsx) · `TOOL_REGISTRY`. Backend espelha em `CONTEXTUAL_CHIPS_PER_TOOL`.
 
@@ -229,13 +237,13 @@ prazo legal (15 dias úteis). Detalhes em [`docs/features/chat-history-lgpd.md`]
 
 ### Componentes novos (em `cliente-tokens.jsx`)
 
-| Componente | Quando usar |
-|---|---|
-| `ContextualChip` | Pill outline ink · 1 chip individual · suporta `primary`, `destructive`, `requiresText` |
-| `ContextualChips` | Row de 2-4 chips · scroll horizontal se exceder · ordem alinhada à esquerda por default |
-| `ToolCallIndicator` | "··· USANDO {name} ···" · 5 categorias de cor (menu/order/staff/payment/destructive/lgpd) · animação `cDotPulse` 1.2s loop |
+| Componente              | Quando usar                                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ContextualChip`        | Pill outline ink · 1 chip individual · suporta `primary`, `destructive`, `requiresText`                                                     |
+| `ContextualChips`       | Row de 2-4 chips · scroll horizontal se exceder · ordem alinhada à esquerda por default                                                     |
+| `ToolCallIndicator`     | "··· USANDO {name} ···" · 5 categorias de cor (menu/order/staff/payment/destructive/lgpd) · animação `cDotPulse` 1.2s loop                  |
 | `ContextualInputExpand` | Textarea inline com animação Apple-flavor · 3 variantes (`snappy`/`liquid`/`drape`) · CTA full-width filled · X discreto reverte pros chips |
-| `CustomerBubble` | Bubble do cliente alinhada à direita · ink solid · timestamp mono caps |
+| `CustomerBubble`        | Bubble do cliente alinhada à direita · ink solid · timestamp mono caps                                                                      |
 
 ---
 

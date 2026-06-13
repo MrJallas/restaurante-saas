@@ -99,8 +99,7 @@ async function patchStatus(orderId: string, status: string): Promise<void> {
 /** Navega pro assistente capturando o kind da continuation da landing. */
 async function gotoAssistenteAndGetKind(page: Page): Promise<string> {
   const responsePromise = page.waitForResponse(
-    (res) =>
-      res.url().includes(`/${SLUG}/continuation`) && res.request().method() === 'POST',
+    (res) => res.url().includes(`/${SLUG}/continuation`) && res.request().method() === 'POST',
     { timeout: 20_000 },
   );
   await page.goto(`/${SLUG}/assistente`, { waitUntil: 'commit' });
@@ -173,10 +172,9 @@ test('matriz de contexto: eyebrow de status + mensagem consumível 1x + WS ao vi
 
   // ── Pedido avança (WS) com assistente aberto: eyebrow muda ao vivo ──
   await patchStatus(orderId, 'in_progress');
-  await expect(page.getByTestId('order-status-eyebrow').first()).toContainText(
-    /Em preparo/i,
-    { timeout: 15_000 },
-  );
+  await expect(page.getByTestId('order-status-eyebrow').first()).toContainText(/Em preparo/i, {
+    timeout: 15_000,
+  });
 
   // ── Entregue: eyebrow volta ao normal ──
   // (in_transit só existe via fluxo de entrega do garçom — o PATCH staff

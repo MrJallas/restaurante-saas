@@ -39,9 +39,19 @@ const COURTESY_TYPES: {
   sub: string;
   defaultItem: string;
 }[] = [
-  { id: 'Sobremesa', label: 'Sobremesa', sub: 'Da casa', defaultItem: 'Fondant de chocolate · 2 porções' },
+  {
+    id: 'Sobremesa',
+    label: 'Sobremesa',
+    sub: 'Da casa',
+    defaultItem: 'Fondant de chocolate · 2 porções',
+  },
   { id: 'Drink', label: 'Drink', sub: 'Bar manda', defaultItem: 'Caipirinha · 2 doses' },
-  { id: 'Couvert', label: 'Couvert', sub: 'Por conta', defaultItem: 'Couvert (R$ 18) sai da conta' },
+  {
+    id: 'Couvert',
+    label: 'Couvert',
+    sub: 'Por conta',
+    defaultItem: 'Couvert (R$ 18) sai da conta',
+  },
   { id: 'Desconto', label: 'Desconto', sub: '% no total', defaultItem: '15% de desconto na conta' },
   { id: 'Mensagem', label: 'Mensagem', sub: 'Sem brinde', defaultItem: 'Obrigado pela visita!' },
   { id: 'Outro', label: 'Outro', sub: 'Personalizado', defaultItem: '' },
@@ -68,7 +78,7 @@ export function ScreenManagerCompensateClient({
   const slug =
     tenantSlug ??
     (typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('slug') ?? undefined
+      ? (new URLSearchParams(window.location.search).get('slug') ?? undefined)
       : undefined) ??
     process.env.NEXT_PUBLIC_TENANT_SLUG ??
     'demo';
@@ -78,9 +88,9 @@ export function ScreenManagerCompensateClient({
   const [selectedTableNumber, setSelectedTableNumber] = useState<number | null>(
     preselectedTableNumber ?? null,
   );
-  const [selectedTableSessionId, setSelectedTableSessionId] = useState<
-    string | null
-  >(preselectedTableSessionId ?? null);
+  const [selectedTableSessionId, setSelectedTableSessionId] = useState<string | null>(
+    preselectedTableSessionId ?? null,
+  );
   const [type, setType] = useState<CreateCourtesyPayload['type']>('Sobremesa');
   const [item, setItem] = useState(COURTESY_TYPES[0].defaultItem);
   const [notes, setNotes] = useState('');
@@ -178,7 +188,14 @@ export function ScreenManagerCompensateClient({
 
         {!savedId && (
           <>
-            <Section C={C} label={preselectedTableNumber ? `Pra mesa ${preselectedTableNumber} · vinda do menu` : 'Pra qual mesa'}>
+            <Section
+              C={C}
+              label={
+                preselectedTableNumber
+                  ? `Pra mesa ${preselectedTableNumber} · vinda do menu`
+                  : 'Pra qual mesa'
+              }
+            >
               {loadingTables ? (
                 <div style={{ padding: 12, fontSize: 12, color: C.faint }}>Carregando mesas…</div>
               ) : tables.length === 0 ? (

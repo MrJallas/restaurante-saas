@@ -4,14 +4,17 @@
 > Backend: a implementar.
 
 ## O que é
+
 Marcação de **sessão como VIP**. Vale só durante a sessão da mesa — não vira atributo permanente do cliente. Impacta priorização de chamados e apresentação visual da mesa.
 
 ## Quem marca
+
 - **Gerente:** `ScreenManagerTableMenu` · MoreSheet (3 pontinhos do topbar) · "Marcar como VIP nessa sessão"
 - **Recepcionista:** mesma MoreSheet na variante host
 - **Garçom:** **não** marca — só consome (vê o badge, recebe os pushes priorizados)
 
 ## Persistência
+
 - Coluna nova em `table_sessions`:
   ```sql
   ALTER TABLE table_sessions ADD COLUMN flags text[] DEFAULT '{}';
@@ -29,16 +32,16 @@ Hoje `priorityOf(call, loads)` retorna `'high' | 'medium' | 'low'` baseado em sa
 function priorityOf(call: Call, loads: Record<Station, StationLoad>): Priority {
   // OVERRIDES ABSOLUTOS (por cima da saturação) ─────
   if (call.flags?.includes('allergy')) return 'high'; // segurança alimentar
-  if (call.flags?.includes('vip'))     return 'high'; // experiência
+  if (call.flags?.includes('vip')) return 'high'; // experiência
 
   // Casos contextuais existentes:
-  if (call.type === 'pediu-conta'    && call.elapsedMin > 5) return 'high';
+  if (call.type === 'pediu-conta' && call.elapsedMin > 5) return 'high';
   if (call.type === 'pronto-cozinha' && call.elapsedMin > 3) return 'high';
 
   // Fallback: saturação da estação de origem
   const sat = saturation(loads[call.sourceStation]);
   if (sat >= HIGH_THRESHOLD) return 'high';
-  if (sat >= MED_THRESHOLD)  return 'medium';
+  if (sat >= MED_THRESHOLD) return 'medium';
   return 'low';
 }
 ```

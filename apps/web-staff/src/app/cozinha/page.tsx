@@ -153,9 +153,7 @@ export default function CozinhaKDS() {
   const loadOrders = useCallback(async () => {
     try {
       const res = await staffGet<{ orders: Order[] }>(`/${TENANT_SLUG}/kitchen/queue`);
-      const activeOrders = res.orders.filter(
-        (o) => !['delivered', 'cancelled'].includes(o.status),
-      );
+      const activeOrders = res.orders.filter((o) => !['delivered', 'cancelled'].includes(o.status));
 
       if (soundEnabled && activeOrders.length > prevCountRef.current && prevCountRef.current > 0) {
         playBeep();
@@ -295,15 +293,9 @@ export default function CozinhaKDS() {
     }
   };
 
-  const newOrders = orders.filter((o) =>
-    ['received', 'open', 'confirmed'].includes(o.status),
-  );
-  const preparingOrders = orders.filter((o) =>
-    ['in_progress', 'preparing'].includes(o.status),
-  );
-  const readyOrders = orders.filter(
-    (o) => o.status === 'ready' && o.delivery_status !== 'claimed',
-  );
+  const newOrders = orders.filter((o) => ['received', 'open', 'confirmed'].includes(o.status));
+  const preparingOrders = orders.filter((o) => ['in_progress', 'preparing'].includes(o.status));
+  const readyOrders = orders.filter((o) => o.status === 'ready' && o.delivery_status !== 'claimed');
   const transitOrders = orders.filter(
     (o) => o.status === 'in_transit' || o.delivery_status === 'claimed',
   );
@@ -334,7 +326,9 @@ export default function CozinhaKDS() {
 
   return (
     <div className={`min-h-screen p-4 ${page}`}>
-      <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 border-b ${headerBorder} pb-3`}>
+      <div
+        className={`mb-4 flex flex-wrap items-center justify-between gap-3 border-b ${headerBorder} pb-3`}
+      >
         <h1 className="min-w-0 truncate text-2xl font-bold">
           <ChefHat className="mr-2 inline h-7 w-7 text-orange-400" />
           Cozinha — KDS
@@ -352,11 +346,15 @@ export default function CozinhaKDS() {
           </button>
           <button
             onClick={() =>
-              router.push(`/cozinha/mensagens?tenant=${TENANT_SLUG}${staffId ? `&cookId=${staffId}` : ''}`)
+              router.push(
+                `/cozinha/mensagens?tenant=${TENANT_SLUG}${staffId ? `&cookId=${staffId}` : ''}`,
+              )
             }
             aria-label="Mensagens"
             className={`flex h-9 w-9 items-center justify-center rounded-lg border ${
-              dark ? 'border-white/15 bg-white/5 text-white/80' : 'border-zinc-200 bg-white text-zinc-700'
+              dark
+                ? 'border-white/15 bg-white/5 text-white/80'
+                : 'border-zinc-200 bg-white text-zinc-700'
             }`}
           >
             <MessageSquare className="h-4 w-4" />
@@ -367,7 +365,9 @@ export default function CozinhaKDS() {
             }
             aria-label="Perfil"
             className={`flex h-9 w-9 items-center justify-center rounded-lg border ${
-              dark ? 'border-white/15 bg-white/5 text-white/80' : 'border-zinc-200 bg-white text-zinc-700'
+              dark
+                ? 'border-white/15 bg-white/5 text-white/80'
+                : 'border-zinc-200 bg-white text-zinc-700'
             }`}
           >
             <User className="h-4 w-4" />
@@ -618,11 +618,12 @@ function KdsCard({
   const deliveryLabel = deliveryStateLabel(order);
 
   return (
-    <div className={`rounded-xl border ${borderColor} ${dark ? 'bg-gray-900' : 'bg-white'} p-4 shadow-sm`}>
+    <div
+      className={`rounded-xl border ${borderColor} ${dark ? 'bg-gray-900' : 'bg-white'} p-4 shadow-sm`}
+    >
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className={`min-w-0 truncate text-xs ${dark ? 'text-white/40' : 'text-zinc-500'}`}>
-          {order.table_label ? `${order.table_label} · ` : ''}
-          #{order.id.slice(0, 8)}
+          {order.table_label ? `${order.table_label} · ` : ''}#{order.id.slice(0, 8)}
         </span>
         <TimerBadge createdAt={order.created_at} dark={dark} />
       </div>
@@ -716,7 +717,9 @@ function PriorityRequestPanel({
             {requestOrders.length} pedido{requestOrders.length === 1 ? '' : 's'} para puxar
           </div>
           {request.reason && (
-            <div className={`mt-1 text-sm font-semibold ${dark ? 'text-white/70' : 'text-zinc-600'}`}>
+            <div
+              className={`mt-1 text-sm font-semibold ${dark ? 'text-white/70' : 'text-zinc-600'}`}
+            >
               {request.reason}
             </div>
           )}
@@ -744,7 +747,9 @@ function PriorityRequestPanel({
 
       {preparingOrders.length > 0 && (
         <div className="mt-4">
-          <div className={`mb-2 text-xs font-black uppercase tracking-wide ${dark ? 'text-white/45' : 'text-zinc-500'}`}>
+          <div
+            className={`mb-2 text-xs font-black uppercase tracking-wide ${dark ? 'text-white/45' : 'text-zinc-500'}`}
+          >
             Mantém antes destes em preparo
           </div>
           <div className="flex flex-wrap gap-2">

@@ -24,11 +24,7 @@ import { CallerResolverModule } from '../../common/services/caller-resolver.modu
  */
 @Module({
   imports: [TenantModule, StaffMessagesModule, AlertsModule, CallerResolverModule],
-  controllers: [
-    ShiftsController,
-    WaiterShiftRequestsController,
-    ManagerShiftEndRequestsController,
-  ],
+  controllers: [ShiftsController, WaiterShiftRequestsController, ManagerShiftEndRequestsController],
   providers: [ShiftsService, ManagerOnlyGuard],
   exports: [ShiftsService],
 })

@@ -3,11 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiRequestError } from '../../lib/api';
-import {
-  listThreads,
-  deleteThread,
-  deleteAllThreads,
-} from '../../lib/api/staff-messages';
+import { listThreads, deleteThread, deleteAllThreads } from '../../lib/api/staff-messages';
 import { useSession } from '../../hooks/useSession';
 import { useRequireCustomerId } from '../../hooks/useRequireCustomerId';
 import { AppShell } from '../../components/layout/AppShell';
@@ -23,8 +19,18 @@ interface ScreenCustomerStaffMessagesProps {
 }
 
 const MONTH_LABELS = [
-  'JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN',
-  'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ',
+  'JAN',
+  'FEV',
+  'MAR',
+  'ABR',
+  'MAI',
+  'JUN',
+  'JUL',
+  'AGO',
+  'SET',
+  'OUT',
+  'NOV',
+  'DEZ',
 ];
 
 function formatMonthLabel(iso: string): string {
@@ -67,9 +73,7 @@ function roleLabelDisplay(label: StaffMessageHistoryRoleLabel | null): string {
  * realtime path; this screen is the persistent inbox the customer goes to
  * later to revisit prior conversations.
  */
-export function ScreenCustomerStaffMessages({
-  slug,
-}: ScreenCustomerStaffMessagesProps) {
+export function ScreenCustomerStaffMessages({ slug }: ScreenCustomerStaffMessagesProps) {
   const session = useSession();
   const router = useRouter();
   const ready = useRequireCustomerId(slug);
@@ -77,9 +81,7 @@ export function ScreenCustomerStaffMessages({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<
-    | { kind: 'one'; threadId: string; messageCount: number }
-    | { kind: 'all' }
-    | null
+    { kind: 'one'; threadId: string; messageCount: number } | { kind: 'all' } | null
   >(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -127,15 +129,11 @@ export function ScreenCustomerStaffMessages({
     setDeleting(true);
     try {
       await deleteThread(slug, confirming.threadId);
-      setThreads((prev) =>
-        prev.filter((t) => t.threadId !== confirming.threadId),
-      );
+      setThreads((prev) => prev.filter((t) => t.threadId !== confirming.threadId));
       setConfirming(null);
     } catch (err) {
       const message =
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Não consegui apagar essa conversa agora.';
+        err instanceof ApiRequestError ? err.message : 'Não consegui apagar essa conversa agora.';
       setError(message);
     } finally {
       setDeleting(false);
@@ -151,9 +149,7 @@ export function ScreenCustomerStaffMessages({
       setConfirming(null);
     } catch (err) {
       const message =
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Não consegui apagar tudo agora.';
+        err instanceof ApiRequestError ? err.message : 'Não consegui apagar tudo agora.';
       setError(message);
     } finally {
       setDeleting(false);
@@ -190,15 +186,12 @@ export function ScreenCustomerStaffMessages({
               Nenhuma mensagem por aqui ainda
             </div>
             <div className="text-[13px] leading-[1.5] text-mute">
-              Suas conversas com a equipe aparecem aqui · ficam por 30 dias
-              antes de sumir.
+              Suas conversas com a equipe aparecem aqui · ficam por 30 dias antes de sumir.
             </div>
           </div>
         )}
 
-        {loading && (
-          <div className="text-center text-[13px] text-mute">Carregando…</div>
-        )}
+        {loading && <div className="text-center text-[13px] text-mute">Carregando…</div>}
 
         {threads.length > 0 && (
           <div className="flex flex-col gap-5">
@@ -217,9 +210,7 @@ export function ScreenCustomerStaffMessages({
                         type="button"
                         className="block w-full text-left"
                         onClick={() =>
-                          router.push(
-                            `/${slug}/staff-messages/${encodeURIComponent(t.threadId)}`,
-                          )
+                          router.push(`/${slug}/staff-messages/${encodeURIComponent(t.threadId)}`)
                         }
                       >
                         <div className="mb-1 flex items-center justify-between gap-2">
@@ -228,8 +219,7 @@ export function ScreenCustomerStaffMessages({
                           </span>
                           {t.lastStaffName && (
                             <span className="rounded-full bg-surface px-2 py-[2px] text-[10px] font-semibold uppercase tracking-[1px] text-mute">
-                              {t.lastStaffName.split(' ')[0]} ·{' '}
-                              {roleLabelDisplay(t.lastStaffRole)}
+                              {t.lastStaffName.split(' ')[0]} · {roleLabelDisplay(t.lastStaffRole)}
                             </span>
                           )}
                         </div>
@@ -237,8 +227,7 @@ export function ScreenCustomerStaffMessages({
                           {t.preview || 'Mensagem sem prévia disponível'}
                         </div>
                         <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-[1.2px] text-mute">
-                          {t.messageCount}{' '}
-                          {t.messageCount === 1 ? 'MENSAGEM' : 'MENSAGENS'}
+                          {t.messageCount} {t.messageCount === 1 ? 'MENSAGEM' : 'MENSAGENS'}
                         </div>
                       </button>
                       <div className="mt-2 flex justify-end">
@@ -274,8 +263,7 @@ export function ScreenCustomerStaffMessages({
               Apagar todas as conversas
             </button>
             <p className="px-2 text-center text-[10px] font-semibold uppercase leading-[1.5] tracking-[1.2px] text-faint">
-              Suas mensagens ficam aqui por 30 dias e são apagadas
-              automaticamente · LGPD Art. 18
+              Suas mensagens ficam aqui por 30 dias e são apagadas automaticamente · LGPD Art. 18
             </p>
           </div>
         )}
@@ -322,8 +310,7 @@ export function ScreenCustomerStaffMessages({
             </h2>
             <p className="mb-6 text-[14px] leading-[1.5] text-mute">
               Vai sumir {confirming.messageCount}{' '}
-              {confirming.messageCount === 1 ? 'mensagem' : 'mensagens'} · não
-              tem volta.
+              {confirming.messageCount === 1 ? 'mensagem' : 'mensagens'} · não tem volta.
             </p>
             <div className="flex flex-col gap-2.5">
               <PillButton

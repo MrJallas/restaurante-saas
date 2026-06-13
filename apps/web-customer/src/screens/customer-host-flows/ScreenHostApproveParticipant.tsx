@@ -58,24 +58,18 @@ export function ScreenHostApproveParticipant({
   const router = useRouter();
   const { sessionId, customerId, tableLabel } = useSession();
 
-  const [participants, setParticipants] = useState<ParticipantRow[] | null>(
-    null,
-  );
+  const [participants, setParticipants] = useState<ParticipantRow[] | null>(null);
   const [busy, setBusy] = useState<'approving' | 'rejecting' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     try {
-      const res = await apiGet<ParticipantsResponse>(
-        `/${slug}/table/participants`,
-      );
+      const res = await apiGet<ParticipantsResponse>(`/${slug}/table/participants`);
       setParticipants(res.participants);
       setLoadError(null);
     } catch (err) {
-      setLoadError(
-        err instanceof Error ? err.message : 'Erro ao carregar pedidos.',
-      );
+      setLoadError(err instanceof Error ? err.message : 'Erro ao carregar pedidos.');
     }
   }, [slug]);
 
@@ -151,10 +145,7 @@ export function ScreenHostApproveParticipant({
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-bg px-6 text-center">
         <p className="text-[15px] text-mute">{loadError}</p>
-        <PillButton
-          variant="outline"
-          onClick={() => router.replace(onCloseHref ?? `/${slug}`)}
-        >
+        <PillButton variant="outline" onClick={() => router.replace(onCloseHref ?? `/${slug}`)}>
           Voltar pra mesa
         </PillButton>
       </main>
@@ -179,10 +170,7 @@ export function ScreenHostApproveParticipant({
   }
 
   return (
-    <main
-      className="flex min-h-dvh flex-col bg-bg"
-      data-testid="host-approve-participant"
-    >
+    <main className="flex min-h-dvh flex-col bg-bg" data-testid="host-approve-participant">
       <div className="flex flex-1 flex-col px-[22px] pb-6 pt-[max(env(safe-area-inset-top),20px)]">
         <p className="mb-3 font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-faint">
           {tableLabel ? `${tableLabel} · ` : 'Mesa · '}alguém quer entrar
@@ -210,8 +198,7 @@ export function ScreenHostApproveParticipant({
             Pedido agora · sem prazo
           </span>
           <p className="mt-1 text-[14px] leading-[1.5] tracking-[-0.05px] text-ink">
-            {current.name} acabou de escanear o QR da mesa. Decide aí — sem
-            pressa.
+            {current.name} acabou de escanear o QR da mesa. Decide aí — sem pressa.
           </p>
         </div>
 
@@ -223,8 +210,7 @@ export function ScreenHostApproveParticipant({
                 Quem tá na mesa
               </span>
               <span className="font-mono text-[9.5px] font-bold uppercase tracking-[1px] text-faint">
-                {partyNames.length}{' '}
-                {partyNames.length === 1 ? 'pessoa' : 'pessoas'}
+                {partyNames.length} {partyNames.length === 1 ? 'pessoa' : 'pessoas'}
               </span>
             </div>
             <ul className="mt-3 flex flex-col gap-2.5">
@@ -348,9 +334,7 @@ function PersonRow({
         {ch}
       </span>
       <div className="flex flex-col gap-0.5">
-        <span className="text-[14px] font-semibold tracking-[-0.1px] text-ink">
-          {name}
-        </span>
+        <span className="text-[14px] font-semibold tracking-[-0.1px] text-ink">{name}</span>
         {subLine && (
           <span className="font-mono text-[9.5px] font-bold uppercase tracking-[1px] text-faint">
             {subLine}

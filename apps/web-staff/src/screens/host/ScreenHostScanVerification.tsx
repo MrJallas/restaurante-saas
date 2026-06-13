@@ -44,7 +44,10 @@ function formatDistance(request: ScanVerificationRequestDto | null): string {
 }
 
 export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProps> = ({
-  tenantSlug, requestId, onBack, onResolved,
+  tenantSlug,
+  requestId,
+  onBack,
+  onResolved,
 }) => {
   const { dark } = useStaffTheme();
   const C = useG(dark);
@@ -97,8 +100,13 @@ export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProp
   return (
     <div
       style={{
-        width: '100%', height: '100vh', background: C.bg, color: C.ink,
-        fontFamily: G_FONT, display: 'flex', flexDirection: 'column',
+        width: '100%',
+        height: '100vh',
+        background: C.bg,
+        color: C.ink,
+        fontFamily: G_FONT,
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       <GAppHeader
@@ -110,13 +118,18 @@ export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProp
       <div style={{ flex: 1, overflow: 'auto' }}>
         <div
           style={{
-            background: '#1E8C5A', color: '#fff', padding: '28px 24px 32px',
+            background: '#1E8C5A',
+            color: '#fff',
+            padding: '28px 24px 32px',
             position: 'relative',
           }}
         >
           <div
             style={{
-              fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: 700,
+              fontSize: 11,
+              letterSpacing: 1.5,
+              textTransform: 'uppercase',
+              fontWeight: 700,
               opacity: 0.85,
             }}
           >
@@ -133,21 +146,29 @@ export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProp
         <div style={{ padding: '20px 16px' }}>
           <div
             style={{
-              fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase',
-              color: C.mute, fontWeight: 700, marginBottom: 8,
+              fontSize: 11,
+              letterSpacing: 1.5,
+              textTransform: 'uppercase',
+              color: C.mute,
+              fontWeight: 700,
+              marginBottom: 8,
             }}
           >
             Inspecao
           </div>
           <div
             style={{
-              padding: 14, borderRadius: 14,
-              background: C.surface, border: `1px solid ${C.borderFaint}`,
-              fontSize: 13, color: C.ink, lineHeight: 1.5,
+              padding: 14,
+              borderRadius: 14,
+              background: C.surface,
+              border: `1px solid ${C.borderFaint}`,
+              fontSize: 13,
+              color: C.ink,
+              lineHeight: 1.5,
             }}
           >
-            Vá até a mesa {request?.tableNumber ?? '--'} e confirme se há cliente
-            sentado. CPF {request?.cpfMasked ?? '--'} · {formatDistance(request)}.
+            Vá até a mesa {request?.tableNumber ?? '--'} e confirme se há cliente sentado. CPF{' '}
+            {request?.cpfMasked ?? '--'} · {formatDistance(request)}.
             {(request?.locationWithinRestaurant ?? request?.insideRadius) === true && (
               <span
                 style={{
@@ -169,44 +190,55 @@ export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProp
             )}
             {request?.locationStatus === 'granted' &&
               (request.locationWithinRestaurant ?? request.insideRadius) === false && (
-              <span
-                style={{
-                  display: 'inline-flex',
-                  marginLeft: 6,
-                  padding: '2px 7px',
-                  borderRadius: 100,
-                  background: C.dangerBg,
-                  color: C.danger,
-                  border: `1px solid ${C.danger}`,
-                  fontSize: 10,
-                  fontWeight: 800,
-                  textTransform: 'uppercase',
-                  verticalAlign: 'middle',
-                }}
-              >
-                fora da área do restaurante
-              </span>
-            )}
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    marginLeft: 6,
+                    padding: '2px 7px',
+                    borderRadius: 100,
+                    background: C.dangerBg,
+                    color: C.danger,
+                    border: `1px solid ${C.danger}`,
+                    fontSize: 10,
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    verticalAlign: 'middle',
+                  }}
+                >
+                  fora da área do restaurante
+                </span>
+              )}
           </div>
 
           <div
             style={{
-              marginTop: 18, padding: 14, borderRadius: 14,
-              background: '#F3FBF6', border: '1px solid #CBE8D8',
-              fontSize: 12, color: '#176C45', lineHeight: 1.5,
+              marginTop: 18,
+              padding: 14,
+              borderRadius: 14,
+              background: '#F3FBF6',
+              border: '1px solid #CBE8D8',
+              fontSize: 12,
+              color: '#176C45',
+              lineHeight: 1.5,
             }}
           >
-            <b>Decisao</b><br />
-            Aprove se houver cliente fisicamente na mesa. Rejeite se a mesa
-            estiver vazia ou se parecer tentativa com foto do QR.
+            <b>Decisao</b>
+            <br />
+            Aprove se houver cliente fisicamente na mesa. Rejeite se a mesa estiver vazia ou se
+            parecer tentativa com foto do QR.
           </div>
 
           {error && (
             <div
               role="alert"
               style={{
-                marginTop: 14, padding: '10px 12px', borderRadius: 10,
-                background: C.dangerBg, color: C.danger, fontSize: 13, fontWeight: 600,
+                marginTop: 14,
+                padding: '10px 12px',
+                borderRadius: 10,
+                background: C.dangerBg,
+                color: C.danger,
+                fontSize: 13,
+                fontWeight: 600,
               }}
             >
               {error}
@@ -218,15 +250,28 @@ export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProp
       <div
         style={{
           padding: '12px 16px 18px',
-          borderTop: `1px solid ${C.borderFaint}`, background: C.bg,
-          display: 'flex', gap: 10,
+          borderTop: `1px solid ${C.borderFaint}`,
+          background: C.bg,
+          display: 'flex',
+          gap: 10,
         }}
       >
-        <GButton kind="secondary" dark={dark} onClick={() => handle('reject')} disabled={submitting || expired}>
+        <GButton
+          kind="secondary"
+          dark={dark}
+          onClick={() => handle('reject')}
+          disabled={submitting || expired}
+        >
           Rejeitar
         </GButton>
         <div style={{ flex: 1 }}>
-          <GButton kind="success" full dark={dark} onClick={() => handle('approve')} disabled={submitting || expired}>
+          <GButton
+            kind="success"
+            full
+            dark={dark}
+            onClick={() => handle('approve')}
+            disabled={submitting || expired}
+          >
             {submitting ? 'Enviando...' : 'Aprovar entrada'}
           </GButton>
         </div>

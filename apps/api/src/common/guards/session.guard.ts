@@ -1,4 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { RedisService } from '../../infra/redis/redis.service';
 import { safeJsonParse } from '../utils/safe-json';
 
@@ -24,18 +30,22 @@ export class SessionGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<SessionRequest>();
 
-    const token =
-      request.cookies?.session_token ||
-      request.headers['x-session-token'];
+    const token = request.cookies?.session_token || request.headers['x-session-token'];
 
     if (!token) {
-      throw new HttpException('Sessao nao encontrada. Escaneie o QR Code novamente.', HttpStatus.UNAUTHORIZED);
+      throw new HttpException(
+        'Sessao nao encontrada. Escaneie o QR Code novamente.',
+        HttpStatus.UNAUTHORIZED,
+      );
     }
 
     const data = await this.redis.get(`session:${token}`);
 
     if (!data) {
-      throw new HttpException('Sessao expirada. Escaneie o QR Code novamente.', HttpStatus.UNAUTHORIZED);
+      throw new HttpException(
+        'Sessao expirada. Escaneie o QR Code novamente.',
+        HttpStatus.UNAUTHORIZED,
+      );
     }
 
     // Round 16 (B-NEW-53): safeJsonParse trata payload corrompido como

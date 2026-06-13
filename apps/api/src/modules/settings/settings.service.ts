@@ -55,10 +55,7 @@ export class SettingsService {
       logoUrl: (config.logo_url as string) || null,
     };
 
-    if (
-      Number.isFinite(this.publicSettingsCacheTtlMs) &&
-      this.publicSettingsCacheTtlMs > 0
-    ) {
+    if (Number.isFinite(this.publicSettingsCacheTtlMs) && this.publicSettingsCacheTtlMs > 0) {
       SettingsService.publicSettingsCache.set(cacheKey, {
         expiresAt: now + this.publicSettingsCacheTtlMs,
         value,

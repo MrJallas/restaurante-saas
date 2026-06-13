@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Post,
-  Get,
-  Patch,
-  Param,
-  Body,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Post, Get, Patch, Param, Body, UseGuards } from '@nestjs/common';
 import {
   IsString,
   IsNotEmpty,
@@ -108,10 +100,7 @@ export class PaymentsController {
 
   @Post()
   @UseGuards(SessionGuard)
-  async requestPayment(
-    @Body() dto: RequestPaymentDto,
-    @Session() session: SessionData,
-  ) {
+  async requestPayment(@Body() dto: RequestPaymentDto, @Session() session: SessionData) {
     return this.paymentsService.requestPayment(
       session.sessionId,
       dto.visitId || null,
@@ -139,11 +128,7 @@ export class PaymentsController {
     @Body() dto: ConfirmPaymentDto,
     @Session() session: SessionData,
   ) {
-    return this.paymentsService.confirmPayment(
-      paymentId,
-      session.sessionId,
-      dto.pspTransactionId,
-    );
+    return this.paymentsService.confirmPayment(paymentId, session.sessionId, dto.pspTransactionId);
   }
 
   /**
@@ -151,10 +136,7 @@ export class PaymentsController {
    */
   @Patch(':paymentId/cancel')
   @UseGuards(SessionGuard)
-  async cancelPayment(
-    @Param('paymentId') paymentId: string,
-    @Session() session: SessionData,
-  ) {
+  async cancelPayment(@Param('paymentId') paymentId: string, @Session() session: SessionData) {
     return this.paymentsService.cancelPayment(paymentId, session.sessionId);
   }
 
@@ -165,10 +147,7 @@ export class PaymentsController {
    */
   @Post('bill/split/compute')
   @UseGuards(SessionGuard)
-  async computeSplit(
-    @Body() dto: ComputeSplitDto,
-    @Session() session: SessionData,
-  ) {
+  async computeSplit(@Body() dto: ComputeSplitDto, @Session() session: SessionData) {
     return this.paymentsService.computeSplit(
       session.sessionId,
       dto.mode,
@@ -182,32 +161,20 @@ export class PaymentsController {
    */
   @Post('bill/split/notify')
   @UseGuards(SessionGuard)
-  async notifySplit(
-    @Body() dto: NotifySplitDto,
-    @Session() session: SessionData,
-  ) {
-    return this.paymentsService.notifySplit(
-      session.sessionId,
-      dto.mode,
-      dto.allocations,
-    );
+  async notifySplit(@Body() dto: NotifySplitDto, @Session() session: SessionData) {
+    return this.paymentsService.notifySplit(session.sessionId, dto.mode, dto.allocations);
   }
 
   @Get()
   @UseGuards(SessionGuard)
   async getSessionPayments(@Session() session: SessionData) {
-    const payments = await this.paymentsService.getSessionPayments(
-      session.sessionId,
-    );
+    const payments = await this.paymentsService.getSessionPayments(session.sessionId);
     return { payments };
   }
 
   @Get(':paymentId')
   @UseGuards(SessionGuard)
-  async getPaymentStatus(
-    @Param('paymentId') paymentId: string,
-    @Session() session: SessionData,
-  ) {
+  async getPaymentStatus(@Param('paymentId') paymentId: string, @Session() session: SessionData) {
     // Passa session pra que o service filtre por ownership; antes,
     // qualquer cliente autenticado podia ler QR Code Pix e
     // pix_copy_paste de pagamentos de OUTRA mesa adivinhando o UUID

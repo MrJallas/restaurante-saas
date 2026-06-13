@@ -16,9 +16,7 @@ function KitchenReorderInner() {
 export default function ManagerKitchenReorderPage() {
   return (
     <Suspense
-      fallback={
-        <div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>
-      }
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}
     >
       <KitchenReorderInner />
     </Suspense>

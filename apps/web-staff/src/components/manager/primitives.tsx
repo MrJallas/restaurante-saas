@@ -172,7 +172,16 @@ export function MTopBar({
       }}
     >
       {left ?? <div style={{ width: 32 }} />}
-      <h1 style={{ flex: 1, margin: 0, fontSize: 18, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>
+      <h1
+        style={{
+          flex: 1,
+          margin: 0,
+          fontSize: 18,
+          fontWeight: 700,
+          color: C.ink,
+          letterSpacing: -0.2,
+        }}
+      >
         {title}
       </h1>
       {right ?? <div style={{ width: 32 }} />}
@@ -248,7 +257,15 @@ export function MAvatar({
   color?: string;
   size?: number;
 }) {
-  const initials = init ?? (name ? name.split(' ').map((p) => p[0]).slice(0, 2).join('') : '');
+  const initials =
+    init ??
+    (name
+      ? name
+          .split(' ')
+          .map((p) => p[0])
+          .slice(0, 2)
+          .join('')
+      : '');
   return (
     <div
       style={{
@@ -399,11 +416,14 @@ export function MStat({
         </div>
       )}
       {help && !compact && (
-        <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6, fontWeight: 400, lineHeight: 1.4 }}>
+        <div
+          style={{ fontSize: 10.5, color: C.faint, marginTop: 6, fontWeight: 400, lineHeight: 1.4 }}
+        >
           {help}
         </div>
       )}
-      {help && compact &&
+      {help &&
+        compact &&
         (onHelp ? (
           <button
             onClick={(e: MouseEvent) => {
@@ -503,7 +523,9 @@ export function MSection({
             {title}
           </div>
           {sub && (
-            <div style={{ fontSize: 11.5, color: C.mute, fontWeight: 500, marginTop: 2 }}>{sub}</div>
+            <div style={{ fontSize: 11.5, color: C.mute, fontWeight: 500, marginTop: 2 }}>
+              {sub}
+            </div>
           )}
         </div>
         {action &&
@@ -549,12 +571,44 @@ export function MBottomNav({
   // useSearchParams retorna null durante o SSR; appendPreservedQuery
   // tolera null devolvendo o destino sem alteração.
   const searchParams = useSearchParams();
-  const items: { id: ManagerNavId; label: string; icon: (s?: number) => ReactNode; to: string; badge?: number }[] = [
-    { id: 'home', label: 'Painel', icon: Icon.list, to: appendPreservedQuery('/manager', searchParams) },
-    { id: 'ops', label: 'Operação', icon: Icon.flame, to: appendPreservedQuery('/manager/operacoes', searchParams), badge: alerts > 0 ? alerts : undefined },
-    { id: 'staff', label: 'Equipe', icon: Icon.user, to: appendPreservedQuery('/manager/equipe', searchParams) },
-    { id: 'finance', label: 'Financeiro', icon: Icon.receipt, to: appendPreservedQuery('/manager/financeiro', searchParams) },
-    { id: 'me', label: 'Eu', icon: Icon.settings, to: appendPreservedQuery('/manager/configuracoes', searchParams) },
+  const items: {
+    id: ManagerNavId;
+    label: string;
+    icon: (s?: number) => ReactNode;
+    to: string;
+    badge?: number;
+  }[] = [
+    {
+      id: 'home',
+      label: 'Painel',
+      icon: Icon.list,
+      to: appendPreservedQuery('/manager', searchParams),
+    },
+    {
+      id: 'ops',
+      label: 'Operação',
+      icon: Icon.flame,
+      to: appendPreservedQuery('/manager/operacoes', searchParams),
+      badge: alerts > 0 ? alerts : undefined,
+    },
+    {
+      id: 'staff',
+      label: 'Equipe',
+      icon: Icon.user,
+      to: appendPreservedQuery('/manager/equipe', searchParams),
+    },
+    {
+      id: 'finance',
+      label: 'Financeiro',
+      icon: Icon.receipt,
+      to: appendPreservedQuery('/manager/financeiro', searchParams),
+    },
+    {
+      id: 'me',
+      label: 'Eu',
+      icon: Icon.settings,
+      to: appendPreservedQuery('/manager/configuracoes', searchParams),
+    },
   ];
   return (
     <nav
@@ -683,7 +737,9 @@ export function MAppHeader({
       />
       <div style={{ padding: '4px 16px 14px' }}>
         <div style={{ fontSize: 13, color: C.faint, fontWeight: 500 }}>{greeting}</div>
-        <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.4, color: C.ink, marginTop: 2 }}>
+        <div
+          style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.4, color: C.ink, marginTop: 2 }}
+        >
           {greetingName}
         </div>
       </div>

@@ -13,20 +13,31 @@ import {
   MBottomNav,
 } from '../../components/manager';
 import { useStaffTheme, type StaffThemeMode } from '../../lib/theme';
-import {
-  manager,
-  type ManagerSecuritySession,
-  type ManagerShiftLog,
-} from '../../lib/api/manager';
+import { manager, type ManagerSecuritySession, type ManagerShiftLog } from '../../lib/api/manager';
 
 type Toast = { tone: 'success' | 'danger' | 'info'; text: string } | null;
 
 const NOTIFICATION_ROWS = [
-  { id: 'turn.alerts', label: 'Avisos do turno', sub: 'Chamados, reclamações e alertas críticos', defaultOn: true },
+  {
+    id: 'turn.alerts',
+    label: 'Avisos do turno',
+    sub: 'Chamados, reclamações e alertas críticos',
+    defaultOn: true,
+  },
   { id: 'turn.push', label: 'Push', sub: 'Notificação no dispositivo', defaultOn: true },
   { id: 'turn.sound', label: 'Sons', sub: 'Toque curto em eventos urgentes', defaultOn: true },
-  { id: 'turn.lockScreen', label: 'Lock screen', sub: 'Prévia na tela bloqueada', defaultOn: false },
-  { id: 'critical.complaints', label: 'Reclamações críticas', sub: 'Prioridade alta no painel', defaultOn: true },
+  {
+    id: 'turn.lockScreen',
+    label: 'Lock screen',
+    sub: 'Prévia na tela bloqueada',
+    defaultOn: false,
+  },
+  {
+    id: 'critical.complaints',
+    label: 'Reclamações críticas',
+    sub: 'Prioridade alta no painel',
+    defaultOn: true,
+  },
 ];
 
 const THEME_OPTIONS: Array<{ id: StaffThemeMode; label: string; sub: string }> = [
@@ -52,11 +63,7 @@ function formatDateTime(iso: string) {
   });
 }
 
-export function ScreenManagerNotificationPrefs({
-  tenantSlug,
-}: {
-  tenantSlug: string;
-}) {
+export function ScreenManagerNotificationPrefs({ tenantSlug }: { tenantSlug: string }) {
   const { dark } = useStaffTheme();
   const router = useRouter();
   const api = useMemo(() => manager(tenantSlug), [tenantSlug]);
@@ -104,11 +111,7 @@ export function ScreenManagerNotificationPrefs({
   );
 }
 
-export function ScreenManagerAppearance({
-  tenantSlug,
-}: {
-  tenantSlug: string;
-}) {
+export function ScreenManagerAppearance({ tenantSlug }: { tenantSlug: string }) {
   const { mode, dark, setMode } = useStaffTheme();
   const C = useG(dark);
   const router = useRouter();
@@ -174,7 +177,15 @@ export function ScreenManagerAppearance({
               </span>
               <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
                 <span style={{ display: 'block', fontSize: 14, fontWeight: 800 }}>{opt.label}</span>
-                <span style={{ display: 'block', marginTop: 2, fontSize: 11.5, color: C.faint, fontWeight: 600 }}>
+                <span
+                  style={{
+                    display: 'block',
+                    marginTop: 2,
+                    fontSize: 11.5,
+                    color: C.faint,
+                    fontWeight: 600,
+                  }}
+                >
                   {opt.sub}
                 </span>
               </span>
@@ -187,11 +198,7 @@ export function ScreenManagerAppearance({
   );
 }
 
-export function ScreenManagerSecurity({
-  tenantSlug,
-}: {
-  tenantSlug: string;
-}) {
+export function ScreenManagerSecurity({ tenantSlug }: { tenantSlug: string }) {
   const { dark } = useStaffTheme();
   const C = useG(dark);
   const router = useRouter();
@@ -343,11 +350,7 @@ export function ScreenManagerSecurity({
   );
 }
 
-export function ScreenManagerShiftHistory({
-  tenantSlug,
-}: {
-  tenantSlug: string;
-}) {
+export function ScreenManagerShiftHistory({ tenantSlug }: { tenantSlug: string }) {
   const { dark } = useStaffTheme();
   const C = useG(dark);
   const router = useRouter();
@@ -369,16 +372,44 @@ export function ScreenManagerShiftHistory({
 
   return (
     <SettingsShell title="Histórico de turnos" dark={dark} onBack={() => router.back()} active="me">
-      <div style={{ padding: '14px 16px 0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <FilterInput dark={dark} label="Data" type="date" value={filters.date} onChange={(date) => setFilters((p) => ({ ...p, date }))} />
-        <FilterInput dark={dark} label="Turno" value={filters.shift} onChange={(shift) => setFilters((p) => ({ ...p, shift }))} />
+      <div
+        style={{ padding: '14px 16px 0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}
+      >
+        <FilterInput
+          dark={dark}
+          label="Data"
+          type="date"
+          value={filters.date}
+          onChange={(date) => setFilters((p) => ({ ...p, date }))}
+        />
+        <FilterInput
+          dark={dark}
+          label="Turno"
+          value={filters.shift}
+          onChange={(shift) => setFilters((p) => ({ ...p, shift }))}
+        />
       </div>
       <div style={{ padding: '8px 16px 0' }}>
-        <FilterInput dark={dark} label="Gerente ou garçom" value={filters.staff} onChange={(staff) => setFilters((p) => ({ ...p, staff }))} />
+        <FilterInput
+          dark={dark}
+          label="Gerente ou garçom"
+          value={filters.staff}
+          onChange={(staff) => setFilters((p) => ({ ...p, staff }))}
+        />
       </div>
       <div style={{ padding: '14px 16px 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {shifts.length === 0 ? (
-          <div style={{ padding: 24, border: `1.5px dashed ${C.borderSoft}`, borderRadius: 12, textAlign: 'center', color: C.faint, fontSize: 13, fontWeight: 600 }}>
+          <div
+            style={{
+              padding: 24,
+              border: `1.5px dashed ${C.borderSoft}`,
+              borderRadius: 12,
+              textAlign: 'center',
+              color: C.faint,
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
             Nenhum turno encontrado.
           </div>
         ) : (
@@ -403,13 +434,28 @@ export function ScreenManagerShiftHistory({
                   {formatCurrency(shift.salesCents)}
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 12 }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: 8,
+                  marginTop: 12,
+                }}
+              >
                 <MiniKpi dark={dark} label="Mesas" value={shift.tablesServed} />
                 <MiniKpi dark={dark} label="Pedidos" value={shift.orders} />
                 <MiniKpi dark={dark} label="Críticos" value={shift.criticalAlerts} />
               </div>
               {shift.waitersOnShift.length > 0 && (
-                <div style={{ marginTop: 10, fontSize: 11.5, color: C.faint, fontWeight: 600, lineHeight: 1.4 }}>
+                <div
+                  style={{
+                    marginTop: 10,
+                    fontSize: 11.5,
+                    color: C.faint,
+                    fontWeight: 600,
+                    lineHeight: 1.4,
+                  }}
+                >
                   Equipe: {shift.waitersOnShift.slice(0, 5).join(', ')}
                   {shift.waitersOnShift.length > 5 ? ` +${shift.waitersOnShift.length - 5}` : ''}
                 </div>
@@ -489,7 +535,15 @@ function ToggleRow({
     >
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'block', fontSize: 14, fontWeight: 800 }}>{label}</span>
-        <span style={{ display: 'block', marginTop: 2, fontSize: 11.5, color: C.faint, fontWeight: 600 }}>
+        <span
+          style={{
+            display: 'block',
+            marginTop: 2,
+            fontSize: 11.5,
+            color: C.faint,
+            fontWeight: 600,
+          }}
+        >
           {sub}
         </span>
       </span>
@@ -533,7 +587,17 @@ function ToggleRow({
 function SectionLabel({ children, dark }: { children: React.ReactNode; dark: boolean }) {
   const C = useG(dark);
   return (
-    <div style={{ padding: '18px 16px 8px', fontSize: 11, color: C.faint, fontWeight: 900, letterSpacing: 0.6, textTransform: 'uppercase', fontFamily: MONO_FONT }}>
+    <div
+      style={{
+        padding: '18px 16px 8px',
+        fontSize: 11,
+        color: C.faint,
+        fontWeight: 900,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        fontFamily: MONO_FONT,
+      }}
+    >
       {children}
     </div>
   );
@@ -571,12 +635,34 @@ function ActionRow({
         gap: 12,
       }}
     >
-      <span aria-hidden style={{ width: 36, height: 36, borderRadius: 10, background: C.surface, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <span
+        aria-hidden
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 10,
+          background: C.surface,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
         {icon}
       </span>
       <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
         <span style={{ display: 'block', fontSize: 14, fontWeight: 800 }}>{label}</span>
-        <span style={{ display: 'block', marginTop: 2, fontSize: 11.5, color: C.faint, fontWeight: 600 }}>{sub}</span>
+        <span
+          style={{
+            display: 'block',
+            marginTop: 2,
+            fontSize: 11.5,
+            color: C.faint,
+            fontWeight: 600,
+          }}
+        >
+          {sub}
+        </span>
       </span>
       <span style={{ color: C.faint, flexShrink: 0 }}>{Icon.arrow(16)}</span>
     </button>
@@ -612,19 +698,67 @@ function ChangePinSheet({
   };
 
   return (
-    <div role="dialog" aria-modal="true" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.42)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: C.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: '18px 16px 24px' }}>
-        <div style={{ width: 38, height: 4, borderRadius: 2, background: C.borderSoft, margin: '0 auto 14px' }} />
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 70,
+        background: 'rgba(0,0,0,0.42)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-end',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: C.bg,
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          padding: '18px 16px 24px',
+        }}
+      >
+        <div
+          style={{
+            width: 38,
+            height: 4,
+            borderRadius: 2,
+            background: C.borderSoft,
+            margin: '0 auto 14px',
+          }}
+        />
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900 }}>Trocar PIN</h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
           <PinField dark={dark} label="PIN atual" value={currentPin} onChange={setCurrentPin} />
           <PinField dark={dark} label="Novo PIN" value={nextPin} onChange={setNextPin} />
           <PinField dark={dark} label="Confirmar novo PIN" value={confirm} onChange={setConfirm} />
         </div>
-        {error && <div role="alert" style={{ marginTop: 12, padding: 10, borderRadius: 10, background: '#FFF1F1', color: '#A12626', fontSize: 12, fontWeight: 700 }}>{error}</div>}
+        {error && (
+          <div
+            role="alert"
+            style={{
+              marginTop: 12,
+              padding: 10,
+              borderRadius: 10,
+              background: '#FFF1F1',
+              color: '#A12626',
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
+            {error}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-          <GButton dark={dark} full kind="ghost" onClick={onClose}>Cancelar</GButton>
-          <GButton dark={dark} full kind="primary" onClick={submit}>Salvar</GButton>
+          <GButton dark={dark} full kind="ghost" onClick={onClose}>
+            Cancelar
+          </GButton>
+          <GButton dark={dark} full kind="primary" onClick={submit}>
+            Salvar
+          </GButton>
         </div>
       </div>
     </div>
@@ -645,12 +779,31 @@ function PinField({
   const C = useG(dark);
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span style={{ fontSize: 11, color: C.faint, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.6 }}>{label}</span>
+      <span
+        style={{
+          fontSize: 11,
+          color: C.faint,
+          fontWeight: 900,
+          textTransform: 'uppercase',
+          letterSpacing: 0.6,
+        }}
+      >
+        {label}
+      </span>
       <input
         inputMode="numeric"
         value={value}
         onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
-        style={{ padding: '12px 12px', borderRadius: 10, border: `1px solid ${C.borderSoft}`, background: C.surface, color: C.ink, fontSize: 18, fontFamily: MONO_FONT, letterSpacing: 2 }}
+        style={{
+          padding: '12px 12px',
+          borderRadius: 10,
+          border: `1px solid ${C.borderSoft}`,
+          background: C.surface,
+          color: C.ink,
+          fontSize: 18,
+          fontFamily: MONO_FONT,
+          letterSpacing: 2,
+        }}
       />
     </label>
   );
@@ -672,12 +825,31 @@ function FilterInput({
   const C = useG(dark);
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <span style={{ fontSize: 10, color: C.faint, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.6 }}>{label}</span>
+      <span
+        style={{
+          fontSize: 10,
+          color: C.faint,
+          fontWeight: 900,
+          textTransform: 'uppercase',
+          letterSpacing: 0.6,
+        }}
+      >
+        {label}
+      </span>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ minWidth: 0, padding: '10px 11px', borderRadius: 10, border: `1px solid ${C.borderSoft}`, background: C.bg, color: C.ink, fontSize: 13, fontFamily: G_FONT }}
+        style={{
+          minWidth: 0,
+          padding: '10px 11px',
+          borderRadius: 10,
+          border: `1px solid ${C.borderSoft}`,
+          background: C.bg,
+          color: C.ink,
+          fontSize: 13,
+          fontFamily: G_FONT,
+        }}
       />
     </label>
   );
@@ -686,9 +858,30 @@ function FilterInput({
 function MiniKpi({ dark, label, value }: { dark: boolean; label: string; value: number | string }) {
   const C = useG(dark);
   return (
-    <div style={{ padding: 10, borderRadius: 10, background: C.surface, border: `1px solid ${C.borderFaint}` }}>
-      <div style={{ fontSize: 9.5, color: C.faint, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.6 }}>{label}</div>
-      <div style={{ marginTop: 4, fontSize: 16, fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    <div
+      style={{
+        padding: 10,
+        borderRadius: 10,
+        background: C.surface,
+        border: `1px solid ${C.borderFaint}`,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9.5,
+          color: C.faint,
+          fontWeight: 900,
+          textTransform: 'uppercase',
+          letterSpacing: 0.6,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{ marginTop: 4, fontSize: 16, fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}
+      >
+        {value}
+      </div>
     </div>
   );
 }

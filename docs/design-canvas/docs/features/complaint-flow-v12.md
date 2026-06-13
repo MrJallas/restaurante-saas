@@ -5,10 +5,12 @@ Feature ponta-a-ponta cobrindo (i) o cliente avaliando o pedido após o garçom 
 retornando ao chat IA do cliente como `ManagerBubble` com **chip-action inset** opcional.
 
 Canvas:
+
 - Cliente: [`app-cliente-canvas-v2.html`](../../app-cliente-canvas-v2.html) · 6 seções · 10 frames
 - Gerente: [`app-garcom-canvas-v12.html`](../../app-garcom-canvas-v12.html) · 7 seções · 7 frames
 
 Handoff:
+
 - `handoff/cliente/cliente-screens-v2.jsx` — todas as telas do cliente + `ManagerBubbleWithAction`
 - `handoff/garcom/garcom-complaint.jsx` — telas do gerente + `MComplaintInProgressCard` + `ScreenComplaintDetail`
 
@@ -164,12 +166,12 @@ POST /staff/complaints/:id/forward
 
 ## WebSocket events
 
-| event | target | payload |
-|---|---|---|
-| `complaint.created` | broadcast managers do tenant | `{ complaintId, tableNumber, customerId, problemType, rating }` |
-| `complaint.responded` | target customer device | `{ complaintId, messageId, content, chipAction? }` |
-| `complaint.read` | target manager que respondeu | `{ complaintId, readAt }` |
-| `complaint.resolved` | broadcast managers | `{ complaintId, resolvedAt, resolvedBy }` |
+| event                 | target                       | payload                                                         |
+| --------------------- | ---------------------------- | --------------------------------------------------------------- |
+| `complaint.created`   | broadcast managers do tenant | `{ complaintId, tableNumber, customerId, problemType, rating }` |
+| `complaint.responded` | target customer device       | `{ complaintId, messageId, content, chipAction? }`              |
+| `complaint.read`      | target manager que respondeu | `{ complaintId, readAt }`                                       |
+| `complaint.resolved`  | broadcast managers           | `{ complaintId, resolvedAt, resolvedBy }`                       |
 
 `complaint.read` dispara automaticamente quando o cliente abre o chat e a `ManagerBubble` entra
 no viewport (IntersectionObserver no client). `30 s` após `complaint.responded`, se não houver
@@ -180,22 +182,22 @@ feedback ao gerente, não bloqueia a transição.
 
 ## Componentes-chave
 
-| Componente | Arquivo | Notas |
-|---|---|---|
-| `ScreenCustomerOrderRating` | `cliente-screens-v2.jsx` | 5 estrelas + textarea opcional. CTAs condicionais. |
-| `ScreenCustomerComplaintCompose` | `cliente-screens-v2.jsx` | 5 chips de tipo · textarea obrig. · `RENATA · ON-LINE AGORA` indicator. |
-| `ScreenCustomerComplaintWaiting` | `cliente-screens-v2.jsx` | Spinner reassurance · 10 s antes de redirect. |
-| `ManagerBubbleWithAction` | `cliente-screens-v2.jsx` | Extende `ManagerBubble` (V4) com `<ChipActionInset kind="...">`. |
-| `MComplaintInProgressCard` | `garcom-complaint.jsx` | Pattern V4 (border-left brick/moss). 2 estados: `active` · `resolved-summary`. |
-| `ScreenComplaintDetail` | `garcom-complaint.jsx` | Hero brick · 4 chips · composer custom · MoreSheet. |
+| Componente                       | Arquivo                  | Notas                                                                          |
+| -------------------------------- | ------------------------ | ------------------------------------------------------------------------------ |
+| `ScreenCustomerOrderRating`      | `cliente-screens-v2.jsx` | 5 estrelas + textarea opcional. CTAs condicionais.                             |
+| `ScreenCustomerComplaintCompose` | `cliente-screens-v2.jsx` | 5 chips de tipo · textarea obrig. · `RENATA · ON-LINE AGORA` indicator.        |
+| `ScreenCustomerComplaintWaiting` | `cliente-screens-v2.jsx` | Spinner reassurance · 10 s antes de redirect.                                  |
+| `ManagerBubbleWithAction`        | `cliente-screens-v2.jsx` | Extende `ManagerBubble` (V4) com `<ChipActionInset kind="...">`.               |
+| `MComplaintInProgressCard`       | `garcom-complaint.jsx`   | Pattern V4 (border-left brick/moss). 2 estados: `active` · `resolved-summary`. |
+| `ScreenComplaintDetail`          | `garcom-complaint.jsx`   | Hero brick · 4 chips · composer custom · MoreSheet.                            |
 
 ### `ChipActionInset` — kinds disponíveis
 
-| `kind` | Eyebrow + label | Ícone |
-|---|---|---|
-| `on-the-way` | Renata avisou · "Chega em 3 min" | clock |
-| `kitchen-check` | Renata avisou · "Foi falar com a cozinha" | check |
-| `courtesy` | Renata avisou · "Cortesia a caminho" | giftSeal |
+| `kind`          | Eyebrow + label                           | Ícone    |
+| --------------- | ----------------------------------------- | -------- |
+| `on-the-way`    | Renata avisou · "Chega em 3 min"          | clock    |
+| `kitchen-check` | Renata avisou · "Foi falar com a cozinha" | check    |
+| `courtesy`      | Renata avisou · "Cortesia a caminho"      | giftSeal |
 
 Visual: inset row dentro do mesmo card `ManagerBubble`, separada da prosa por `border-top: 1px C.borderSoft`,
 com mono caps eyebrow + ícone outline em circle 28×28. **Não floating · não card separado.**
@@ -222,6 +224,7 @@ com mono caps eyebrow + ícone outline em circle 28×28. **Não floating · não
 ## Checklist de implementação
 
 ### Backend
+
 - [ ] migration `complaints` + index parcial unresolved
 - [ ] endpoints customer (rating · complaint) + manager (list · respond · resolve · forward)
 - [ ] WS events `complaint.created` · `complaint.responded` · `complaint.read` · `complaint.resolved`
@@ -229,11 +232,13 @@ com mono caps eyebrow + ícone outline em circle 28×28. **Não floating · não
 - [ ] notification-router respeita complaint over zone-pause
 
 ### apps/web-customer
+
 - [ ] rota `/[slug]/avaliar/[orderId]` + páginas rating/complaint/waiting
 - [ ] componente `ManagerBubble` aceita prop `chipAction`
 - [ ] continuation-message kind `pos_reclamacao`
 
 ### apps/web-staff
+
 - [ ] `Call.type` adiciona `'complaint'`
 - [ ] `MInProgressCard` aceita `kind='complaint'` (active + resolved-summary)
 - [ ] `ScreenCallDetail` aceita `type='complaint'` com 4 chips

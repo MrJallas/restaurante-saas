@@ -9,7 +9,8 @@ export async function captureCustomerLocationSignal(options: {
       status: 'granted',
       latitude: finiteEnvNumber(process.env.NEXT_PUBLIC_DEV_GEOLOCATION_LATITUDE) ?? 0,
       longitude: finiteEnvNumber(process.env.NEXT_PUBLIC_DEV_GEOLOCATION_LONGITUDE) ?? 0,
-      accuracyMeters: finiteEnvNumber(process.env.NEXT_PUBLIC_DEV_GEOLOCATION_ACCURACY_METERS) ?? 9999,
+      accuracyMeters:
+        finiteEnvNumber(process.env.NEXT_PUBLIC_DEV_GEOLOCATION_ACCURACY_METERS) ?? 9999,
       capturedAt: new Date().toISOString(),
     };
   }
@@ -58,9 +59,7 @@ export async function captureCustomerLocationSignal(options: {
   });
 }
 
-async function readPermissionState(): Promise<
-  CustomerLocationSignal['status'] | null
-> {
+async function readPermissionState(): Promise<CustomerLocationSignal['status'] | null> {
   if (!('permissions' in navigator)) return null;
   try {
     const status = await navigator.permissions.query({

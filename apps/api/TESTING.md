@@ -11,10 +11,10 @@ npm test --workspace @restaurant/api      # jest --runInBand
 
 ## Convenção de nomes
 
-| Sufixo | O que é | Quem roda |
-|---|---|---|
-| `*.test.ts` | Teste Jest (unit ou HTTP/supertest). **Padrão novo.** | `npm test` |
-| `*.spec.ts` | Spec ts-node legado (type-checked pelo `tsc`; executável via `node -r ts-node/register`). | manual |
+| Sufixo      | O que é                                                                                   | Quem roda  |
+| ----------- | ----------------------------------------------------------------------------------------- | ---------- |
+| `*.test.ts` | Teste Jest (unit ou HTTP/supertest). **Padrão novo.**                                     | `npm test` |
+| `*.spec.ts` | Spec ts-node legado (type-checked pelo `tsc`; executável via `node -r ts-node/register`). | manual     |
 
 O Jest só executa `*.test.ts` (ver `jest.config.js`) — specs legados não
 quebram a suíte enquanto não forem migrados.

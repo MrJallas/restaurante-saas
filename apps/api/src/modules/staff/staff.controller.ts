@@ -113,8 +113,7 @@ export class StaffController {
   async myTables(
     @Req() req: { actorType?: 'staff' | 'session'; sessionData?: { sessionId: string } },
   ) {
-    const sessionId =
-      req.actorType === 'session' ? req.sessionData?.sessionId ?? null : null;
+    const sessionId = req.actorType === 'session' ? (req.sessionData?.sessionId ?? null) : null;
     return this.staffService.listActiveTables(sessionId);
   }
 
@@ -148,10 +147,7 @@ export class StaffController {
    */
   @Get(':id/performance')
   @UseGuards(StaffOrSessionGuard)
-  async getPerformance(
-    @Param('id') id: string,
-    @Query('period') period?: string,
-  ) {
+  async getPerformance(@Param('id') id: string, @Query('period') period?: string) {
     const p =
       period === '7d' || period === '30d' || period === 'today'
         ? (period as 'today' | '7d' | '30d')
@@ -208,10 +204,7 @@ export class StaffController {
     } else {
       const attempts = await this.redis.incr(`${ipKey}:attempts`);
       if (attempts === 1) {
-        await this.redis.expire(
-          `${ipKey}:attempts`,
-          PIN_IP_RATE_WINDOW_SECONDS,
-        );
+        await this.redis.expire(`${ipKey}:attempts`, PIN_IP_RATE_WINDOW_SECONDS);
       }
       if (attempts >= PIN_IP_RATE_MAX) {
         await this.redis.set(`${ipKey}:lock`, '1', PIN_IP_LOCK_SECONDS);
@@ -222,16 +215,10 @@ export class StaffController {
     return { valid };
   }
 
-  private pinIpKey(req: {
-    ip?: string;
-    headers: Record<string, string | string[]>;
-  }): string {
+  private pinIpKey(req: { ip?: string; headers: Record<string, string | string[]> }): string {
     const xff = req.headers['x-forwarded-for'];
     const xffStr = Array.isArray(xff) ? xff[0] : xff;
-    const ip = (xffStr ?? req.ip ?? 'unknown')
-      .toString()
-      .split(',')[0]
-      .trim();
+    const ip = (xffStr ?? req.ip ?? 'unknown').toString().split(',')[0].trim();
     return `staff:pin_ip:${ip}`;
   }
 }

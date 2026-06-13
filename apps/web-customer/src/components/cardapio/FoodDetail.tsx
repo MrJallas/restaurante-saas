@@ -106,9 +106,7 @@ export function FoodDetail({ item, onBack, onAskAI, onAdd, isAdding }: FoodDetai
 
           {ingredientsList && (
             <Section title="Ingredientes">
-              <p className="text-[13px] leading-[1.6] text-ink text-pretty">
-                {ingredientsList}
-              </p>
+              <p className="text-[13px] leading-[1.6] text-ink text-pretty">{ingredientsList}</p>
             </Section>
           )}
 
@@ -171,9 +169,7 @@ export function FoodDetail({ item, onBack, onAskAI, onAdd, isAdding }: FoodDetai
           variant="filled"
           fullWidth
           disabled={isAdding}
-          onClick={() =>
-            onAdd({ note: note.trim(), quantity, priceCents: item.priceCents })
-          }
+          onClick={() => onAdd({ note: note.trim(), quantity, priceCents: item.priceCents })}
         >
           {isAdding
             ? 'Adicionando…'

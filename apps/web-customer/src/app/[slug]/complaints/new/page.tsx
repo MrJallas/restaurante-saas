@@ -17,10 +17,6 @@ export default function ComplaintComposePage() {
   const orderRatingId = sp.get('orderRatingId') ?? undefined;
   if (!slug) return null;
   return (
-    <ScreenCustomerComplaintCompose
-      slug={slug}
-      orderId={orderId}
-      orderRatingId={orderRatingId}
-    />
+    <ScreenCustomerComplaintCompose slug={slug} orderId={orderId} orderRatingId={orderRatingId} />
   );
 }

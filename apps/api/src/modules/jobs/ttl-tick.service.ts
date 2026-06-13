@@ -151,7 +151,7 @@ export class TtlTickService {
         target_table_session_id: string;
       }>(
         await qr.query(
-            `UPDATE table_merge_requests
+          `UPDATE table_merge_requests
               SET status = 'expired',
                   decided_at = now(),
                   updated_at = now()
@@ -175,10 +175,7 @@ export class TtlTickService {
     }
   }
 
-  private async existingTables(
-    schemaName: string,
-    tableNames: string[],
-  ): Promise<Set<string>> {
+  private async existingTables(schemaName: string, tableNames: string[]): Promise<Set<string>> {
     if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schemaName)) {
       throw new Error(`Invalid schema name: ${schemaName}`);
     }
@@ -230,10 +227,7 @@ export class TtlTickService {
         try {
           await this.advanceChain(slug, schemaName, row.escalation_chain_id);
         } catch (e) {
-          this.logger.error(
-            `[${slug}] advanceChain after late_arrival expire failed`,
-            e as Error,
-          );
+          this.logger.error(`[${slug}] advanceChain after late_arrival expire failed`, e as Error);
         }
       }
     }
@@ -326,9 +320,8 @@ export class TtlTickService {
             WHERE id = $1`,
           [chainId],
         );
-        let scanResolution:
-          | { tableSessionId: string; tableId: string; customerId: string }
-          | null = null;
+        let scanResolution: { tableSessionId: string; tableId: string; customerId: string } | null =
+          null;
         if (kind === 'scan_verification' && sourceId) {
           const expired = unwrapRows<{
             table_session_id: string;
@@ -407,9 +400,7 @@ export class TtlTickService {
           WHERE id = $1`,
         [chainId, nextLevel, nextRole, ttl],
       );
-      let scan:
-        | { tableSessionId: string; tableId: string; customerId: string }
-        | null = null;
+      let scan: { tableSessionId: string; tableId: string; customerId: string } | null = null;
       if (kind === 'scan_verification' && sourceId) {
         const updatedScan = unwrapRows<{
           table_session_id: string;
@@ -456,11 +447,7 @@ export class TtlTickService {
         outcome: 'timeout',
         resolvedBy: null,
       });
-      if (
-        result.kind === 'scan_verification' &&
-        result.sourceId &&
-        result.scanResolution
-      ) {
+      if (result.kind === 'scan_verification' && result.sourceId && result.scanResolution) {
         const decidedAt = new Date().toISOString();
         this.gateway.emitScanVerificationResolved(slug, {
           requestId: result.sourceId,
@@ -471,15 +458,11 @@ export class TtlTickService {
           decidedByStaffId: null,
           reason: 'auto-timeout',
         });
-        this.gateway.emitToSession(
-          result.scanResolution.tableSessionId,
-          'participant:decision',
-          {
-            customerId: result.scanResolution.customerId,
-            status: 'rejected',
-            decidedAt,
-          },
-        );
+        this.gateway.emitToSession(result.scanResolution.tableSessionId, 'participant:decision', {
+          customerId: result.scanResolution.customerId,
+          status: 'rejected',
+          decidedAt,
+        });
         await this.logScanVerificationTtlEvent(slug, 'scan_verification_timeout', {
           requestId: result.sourceId,
           escalationId: chainId,
@@ -514,21 +497,17 @@ export class TtlTickService {
           expiresAt: result.deadline,
         });
         if (result.scan) {
-          await this.logScanVerificationTtlEvent(
-            slug,
-            'scan_verification_escalated',
-            {
-              requestId: result.sourceId,
-              escalationId: chainId,
-              tableSessionId: result.scan.tableSessionId,
-              tableId: result.scan.tableId,
-              customerId: result.scan.customerId,
-              fromLevel: result.fromLevel,
-              toLevel: result.toLevel,
-              assigneeRole: result.nextRole,
-              expiresAt: result.deadline,
-            },
-          );
+          await this.logScanVerificationTtlEvent(slug, 'scan_verification_escalated', {
+            requestId: result.sourceId,
+            escalationId: chainId,
+            tableSessionId: result.scan.tableSessionId,
+            tableId: result.scan.tableId,
+            customerId: result.scan.customerId,
+            fromLevel: result.fromLevel,
+            toLevel: result.toLevel,
+            assigneeRole: result.nextRole,
+            expiresAt: result.deadline,
+          });
         }
       }
     }
@@ -570,9 +549,7 @@ export class TtlTickService {
       this.audit.log('scan_verification_events', event),
       this.audit.logAudit(event),
     ]).catch((err) =>
-      this.logger.warn(
-        `[${slug}] scan verification ttl log failed: ${(err as Error).message}`,
-      ),
+      this.logger.warn(`[${slug}] scan verification ttl log failed: ${(err as Error).message}`),
     );
   }
 

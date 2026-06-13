@@ -10,11 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  useG,
-  G_FONT,
-  MONO_FONT,
-} from '../../components/waiter/tokens';
+import { useG, G_FONT, MONO_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitives';
 import {
@@ -308,9 +304,7 @@ export function ScreenTableDetail({
                     border: '1.5px solid rgba(255,255,255,0.5)',
                   }}
                 />
-                <span style={{ opacity: 0.85 }}>
-                  {pessoas - pagaram - processando} pendente
-                </span>
+                <span style={{ opacity: 0.85 }}>{pessoas - pagaram - processando} pendente</span>
               </span>
             </div>
           </div>

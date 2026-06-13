@@ -3,11 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiRequestError } from '../../lib/api';
-import {
-  listThreads,
-  deleteThread,
-  deleteAllThreads,
-} from '../../lib/api/chat-history';
+import { listThreads, deleteThread, deleteAllThreads } from '../../lib/api/chat-history';
 import { useSession } from '../../hooks/useSession';
 import { useRequireCustomerId } from '../../hooks/useRequireCustomerId';
 import { AppShell } from '../../components/layout/AppShell';
@@ -82,9 +78,7 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<
-    | { kind: 'one'; threadId: string; messageCount: number }
-    | { kind: 'all' }
-    | null
+    { kind: 'one'; threadId: string; messageCount: number } | { kind: 'all' } | null
   >(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -101,9 +95,7 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
       } catch (err) {
         if (cancelled) return;
         const message =
-          err instanceof ApiRequestError
-            ? err.message
-            : 'Não consegui carregar o histórico agora.';
+          err instanceof ApiRequestError ? err.message : 'Não consegui carregar o histórico agora.';
         setError(message);
       } finally {
         if (!cancelled) setLoading(false);
@@ -141,9 +133,7 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
       setConfirming(null);
     } catch (err) {
       const message =
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Não consegui apagar essa conversa agora.';
+        err instanceof ApiRequestError ? err.message : 'Não consegui apagar essa conversa agora.';
       setError(message);
     } finally {
       setDeleting(false);
@@ -159,9 +149,7 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
       setConfirming(null);
     } catch (err) {
       const message =
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Não consegui apagar tudo agora.';
+        err instanceof ApiRequestError ? err.message : 'Não consegui apagar tudo agora.';
       setError(message);
     } finally {
       setDeleting(false);
@@ -200,15 +188,12 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
               Nenhuma conversa por aqui ainda
             </div>
             <div className="text-[13px] leading-[1.5] text-mute">
-              Suas conversas com a IA aparecem aqui · ficam por 30 dias antes
-              de sumir.
+              Suas conversas com a IA aparecem aqui · ficam por 30 dias antes de sumir.
             </div>
           </div>
         )}
 
-        {loading && (
-          <div className="text-center text-[13px] text-mute">Carregando…</div>
-        )}
+        {loading && <div className="text-center text-[13px] text-mute">Carregando…</div>}
 
         {threads.length > 0 && (
           <div className="flex flex-col gap-5">
@@ -226,9 +211,7 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
                       <button
                         type="button"
                         className="block w-full text-left"
-                        onClick={() =>
-                          router.push(`/${slug}/chat-history/${t.threadId}`)
-                        }
+                        onClick={() => router.push(`/${slug}/chat-history/${t.threadId}`)}
                       >
                         <div className="mb-1 text-[10px] font-semibold uppercase tracking-[1.2px] text-faint">
                           {formatThreadDateTime(t.lastMessageAt)}
@@ -237,8 +220,7 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
                           {t.preview || 'Conversa sem prévia disponível'}
                         </div>
                         <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-[1.2px] text-mute">
-                          {t.messageCount}{' '}
-                          {t.messageCount === 1 ? 'MENSAGEM' : 'MENSAGENS'}
+                          {t.messageCount} {t.messageCount === 1 ? 'MENSAGEM' : 'MENSAGENS'}
                         </div>
                       </button>
                       <div className="mt-2 flex justify-end">
@@ -274,8 +256,7 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
               Apagar todo o histórico
             </button>
             <p className="px-2 text-center text-[10px] font-semibold uppercase leading-[1.5] tracking-[1.2px] text-faint">
-              Suas conversas ficam aqui por 30 dias e são apagadas
-              automaticamente · LGPD Art. 18
+              Suas conversas ficam aqui por 30 dias e são apagadas automaticamente · LGPD Art. 18
             </p>
           </div>
         )}
@@ -322,8 +303,7 @@ export function ScreenCustomerChatHistory({ slug }: ScreenCustomerChatHistoryPro
             </h2>
             <p className="mb-6 text-[14px] leading-[1.5] text-mute">
               Vai sumir {confirming.messageCount}{' '}
-              {confirming.messageCount === 1 ? 'mensagem' : 'mensagens'} · não
-              tem volta.
+              {confirming.messageCount === 1 ? 'mensagem' : 'mensagens'} · não tem volta.
             </p>
             <div className="flex flex-col gap-2.5">
               <PillButton

@@ -85,9 +85,7 @@ export function SoftInput({
     if (!scrollOnFocus) return;
     // Scroll suave ate o bottom assim que o teclado abre. rAF evita
     // disputar frame com o resize do visualViewport.
-    requestAnimationFrame(() =>
-      el.scrollIntoView({ block: 'end', behavior: 'smooth' }),
-    );
+    requestAnimationFrame(() => el.scrollIntoView({ block: 'end', behavior: 'smooth' }));
   };
 
   return (

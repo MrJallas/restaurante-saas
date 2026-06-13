@@ -20,7 +20,10 @@ interface ScreenHostTableSwapProps {
 }
 
 export const ScreenHostTableSwap: React.FC<ScreenHostTableSwapProps> = ({
-  tenantSlug, fromTable, onBack, onDone,
+  tenantSlug,
+  fromTable,
+  onBack,
+  onDone,
 }) => {
   const { dark } = useStaffTheme();
   const C = useG(dark);
@@ -70,8 +73,13 @@ export const ScreenHostTableSwap: React.FC<ScreenHostTableSwapProps> = ({
   return (
     <div
       style={{
-        width: '100%', height: '100dvh', background: C.bg, color: C.ink,
-        fontFamily: G_FONT, display: 'flex', flexDirection: 'column',
+        width: '100%',
+        height: '100dvh',
+        background: C.bg,
+        color: C.ink,
+        fontFamily: G_FONT,
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       <GAppHeader
@@ -83,8 +91,12 @@ export const ScreenHostTableSwap: React.FC<ScreenHostTableSwapProps> = ({
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: '14px 16px' }}>
         <div
           style={{
-            fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase',
-            color: C.mute, fontWeight: 700, marginBottom: 8,
+            fontSize: 11,
+            letterSpacing: 1.5,
+            textTransform: 'uppercase',
+            color: C.mute,
+            fontWeight: 700,
+            marginBottom: 8,
           }}
         >
           De qual mesa
@@ -98,9 +110,12 @@ export const ScreenHostTableSwap: React.FC<ScreenHostTableSwapProps> = ({
                 type="button"
                 onClick={() => setFrom(t.number)}
                 style={{
-                  all: 'unset', cursor: 'pointer',
-                  padding: '8px 14px', borderRadius: 100,
-                  fontSize: 13, fontWeight: 600,
+                  all: 'unset',
+                  cursor: 'pointer',
+                  padding: '8px 14px',
+                  borderRadius: 100,
+                  fontSize: 13,
+                  fontWeight: 600,
                   background: active ? C.ink : 'transparent',
                   color: active ? C.bg : C.ink,
                   border: `1.5px solid ${active ? C.ink : C.borderSoft}`,
@@ -114,8 +129,12 @@ export const ScreenHostTableSwap: React.FC<ScreenHostTableSwapProps> = ({
 
         <div
           style={{
-            fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase',
-            color: C.mute, fontWeight: 700, marginBottom: 8,
+            fontSize: 11,
+            letterSpacing: 1.5,
+            textTransform: 'uppercase',
+            color: C.mute,
+            fontWeight: 700,
+            marginBottom: 8,
           }}
         >
           Pra qual mesa livre
@@ -134,19 +153,28 @@ export const ScreenHostTableSwap: React.FC<ScreenHostTableSwapProps> = ({
                   type="button"
                   onClick={() => setTo(t.number)}
                   style={{
-                    all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
-                    display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '12px 14px', borderRadius: 12,
+                    all: 'unset',
+                    cursor: 'pointer',
+                    boxSizing: 'border-box',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '12px 14px',
+                    borderRadius: 12,
                     background: active ? '#fafafa' : 'transparent',
                     border: `1.5px solid ${active ? C.ink : C.borderSoft}`,
                   }}
                 >
                   <div
                     style={{
-                      width: 44, height: 44, borderRadius: 10,
+                      width: 44,
+                      height: 44,
+                      borderRadius: 10,
                       background: active ? C.ink : C.surface,
                       color: active ? C.bg : C.ink,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                       flexShrink: 0,
                     }}
                   >
@@ -169,8 +197,13 @@ export const ScreenHostTableSwap: React.FC<ScreenHostTableSwapProps> = ({
           <div
             role="alert"
             style={{
-              marginTop: 14, padding: '10px 12px', borderRadius: 10,
-              background: C.dangerBg, color: C.danger, fontSize: 13, fontWeight: 600,
+              marginTop: 14,
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: C.dangerBg,
+              color: C.danger,
+              fontSize: 13,
+              fontWeight: 600,
             }}
           >
             {error}
@@ -181,12 +214,15 @@ export const ScreenHostTableSwap: React.FC<ScreenHostTableSwapProps> = ({
       <div
         style={{
           padding: '12px 16px 18px',
-          borderTop: `1px solid ${C.borderFaint}`, background: C.bg,
+          borderTop: `1px solid ${C.borderFaint}`,
+          background: C.bg,
           flexShrink: 0,
         }}
       >
         <GButton
-          kind="primary" full dark={dark}
+          kind="primary"
+          full
+          dark={dark}
           onClick={submit}
           disabled={!from || !to || submitting}
         >

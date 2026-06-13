@@ -32,7 +32,11 @@ function extractTableCode(raw: string): string {
   const value = raw.trim();
   if (!value) return '';
   try {
-    const parsed = JSON.parse(value) as { tableCode?: string; code?: string; table?: string | number };
+    const parsed = JSON.parse(value) as {
+      tableCode?: string;
+      code?: string;
+      table?: string | number;
+    };
     const jsonCode = parsed.tableCode ?? parsed.code ?? parsed.table;
     if (jsonCode) return String(jsonCode).trim();
   } catch {
@@ -61,7 +65,9 @@ function extractTableCode(raw: string): string {
 }
 
 export const ScreenWaiterScanQr: React.FC<ScreenWaiterScanQrProps> = ({
-  onClose, onManualEntry, onScanned,
+  onClose,
+  onManualEntry,
+  onScanned,
 }) => {
   const bg = '#0a0a0a';
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -101,11 +107,7 @@ export const ScreenWaiterScanQr: React.FC<ScreenWaiterScanQrProps> = ({
         setStatus('Procurando QR…');
         raf = window.requestAnimationFrame(scan);
       } catch (err) {
-        setCameraError(
-          err instanceof Error
-            ? err.message
-            : 'Não foi possível acessar a câmera.',
-        );
+        setCameraError(err instanceof Error ? err.message : 'Não foi possível acessar a câmera.');
       }
     }
 
@@ -150,13 +152,21 @@ export const ScreenWaiterScanQr: React.FC<ScreenWaiterScanQrProps> = ({
   return (
     <div
       style={{
-        width: '100%', height: '100vh', background: bg, color: '#fff',
-        fontFamily: G_FONT, display: 'flex', flexDirection: 'column', position: 'relative',
+        width: '100%',
+        height: '100vh',
+        background: bg,
+        color: '#fff',
+        fontFamily: G_FONT,
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
       }}
     >
       <div
         style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
           padding: '54px 16px 12px',
         }}
       >
@@ -165,10 +175,15 @@ export const ScreenWaiterScanQr: React.FC<ScreenWaiterScanQrProps> = ({
           aria-label="Fechar"
           onClick={onClose}
           style={{
-            all: 'unset', cursor: 'pointer',
-            width: 40, height: 40, borderRadius: 20,
+            all: 'unset',
+            cursor: 'pointer',
+            width: 40,
+            height: 40,
+            borderRadius: 20,
             background: 'rgba(255,255,255,0.15)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             color: '#fff',
           }}
         >
@@ -176,8 +191,11 @@ export const ScreenWaiterScanQr: React.FC<ScreenWaiterScanQrProps> = ({
         </button>
         <div
           style={{
-            fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase',
-            fontWeight: 700, color: 'rgba(255,255,255,0.7)',
+            fontSize: 11,
+            letterSpacing: 1.5,
+            textTransform: 'uppercase',
+            fontWeight: 700,
+            color: 'rgba(255,255,255,0.7)',
           }}
         >
           Câmera
@@ -189,7 +207,9 @@ export const ScreenWaiterScanQr: React.FC<ScreenWaiterScanQrProps> = ({
         <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: -0.5, marginTop: 18 }}>
           Escaneie a mesa
         </div>
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', marginTop: 8, lineHeight: 1.4 }}>
+        <div
+          style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', marginTop: 8, lineHeight: 1.4 }}
+        >
           Posicione o QR code da mesa dentro da moldura para começar o atendimento.
         </div>
       </div>
@@ -197,8 +217,12 @@ export const ScreenWaiterScanQr: React.FC<ScreenWaiterScanQrProps> = ({
       {/* Viewfinder */}
       <div
         style={{
-          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          position: 'relative', minHeight: 320,
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative',
+          minHeight: 320,
         }}
       >
         <div style={{ position: 'relative', width: 240, height: 240 }}>
@@ -217,18 +241,49 @@ export const ScreenWaiterScanQr: React.FC<ScreenWaiterScanQrProps> = ({
             }}
           />
           {[
-            { top: 0, left: 0, borderTop: '3px solid #fff', borderLeft: '3px solid #fff', borderTopLeftRadius: 14 },
-            { top: 0, right: 0, borderTop: '3px solid #fff', borderRight: '3px solid #fff', borderTopRightRadius: 14 },
-            { bottom: 0, left: 0, borderBottom: '3px solid #fff', borderLeft: '3px solid #fff', borderBottomLeftRadius: 14 },
-            { bottom: 0, right: 0, borderBottom: '3px solid #fff', borderRight: '3px solid #fff', borderBottomRightRadius: 14 },
+            {
+              top: 0,
+              left: 0,
+              borderTop: '3px solid #fff',
+              borderLeft: '3px solid #fff',
+              borderTopLeftRadius: 14,
+            },
+            {
+              top: 0,
+              right: 0,
+              borderTop: '3px solid #fff',
+              borderRight: '3px solid #fff',
+              borderTopRightRadius: 14,
+            },
+            {
+              bottom: 0,
+              left: 0,
+              borderBottom: '3px solid #fff',
+              borderLeft: '3px solid #fff',
+              borderBottomLeftRadius: 14,
+            },
+            {
+              bottom: 0,
+              right: 0,
+              borderBottom: '3px solid #fff',
+              borderRight: '3px solid #fff',
+              borderBottomRightRadius: 14,
+            },
           ].map((s, i) => (
-            <span key={i} style={{ position: 'absolute', width: 36, height: 36, ...(s as React.CSSProperties) }} />
+            <span
+              key={i}
+              style={{ position: 'absolute', width: 36, height: 36, ...(s as React.CSSProperties) }}
+            />
           ))}
           <div
             style={{
-              position: 'absolute', left: 8, right: 8, top: '50%',
+              position: 'absolute',
+              left: 8,
+              right: 8,
+              top: '50%',
               height: 2,
-              background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.85), transparent)',
+              background:
+                'linear-gradient(90deg, transparent, rgba(255,255,255,0.85), transparent)',
               boxShadow: '0 0 14px rgba(255,255,255,0.6)',
               animation: 'gPulse 1.6s infinite ease-in-out',
             }}
@@ -240,12 +295,18 @@ export const ScreenWaiterScanQr: React.FC<ScreenWaiterScanQrProps> = ({
       <div
         style={{
           padding: '8px 16px 36px',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 14,
         }}
       >
         <div
           style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: 1,
+            textTransform: 'uppercase',
             color: 'rgba(255,255,255,0.45)',
             fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
           }}
@@ -256,10 +317,14 @@ export const ScreenWaiterScanQr: React.FC<ScreenWaiterScanQrProps> = ({
           type="button"
           onClick={onManualEntry}
           style={{
-            all: 'unset', cursor: 'pointer',
-            fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)',
+            all: 'unset',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: 600,
+            color: 'rgba(255,255,255,0.85)',
             letterSpacing: -0.1,
-            textDecoration: 'underline', textUnderlineOffset: 4,
+            textDecoration: 'underline',
+            textUnderlineOffset: 4,
           }}
         >
           Inserir número da mesa

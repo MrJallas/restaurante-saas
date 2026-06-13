@@ -1,10 +1,4 @@
-import {
-  Injectable,
-  HttpException,
-  HttpStatus,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, Logger, Optional } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -57,9 +51,7 @@ export class LateArrivalService {
     },
     slug?: string,
   ) {
-    const ttlExpiresAt = new Date(
-      Date.now() + DEFAULT_TTL_SECONDS * 1000,
-    ).toISOString();
+    const ttlExpiresAt = new Date(Date.now() + DEFAULT_TTL_SECONDS * 1000).toISOString();
     const expectedArrivalAt =
       input.expectedArrivalAt ?? new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
@@ -106,10 +98,7 @@ export class LateArrivalService {
    * sem host carimbado; (c) host_customer_id != callerCustomerId.
    * Distinção 404/403 fica a cargo do controller.
    */
-  async isCallerHostOfRequest(
-    requestId: string,
-    callerCustomerId: string,
-  ): Promise<boolean> {
+  async isCallerHostOfRequest(requestId: string, callerCustomerId: string): Promise<boolean> {
     const rows = (await this.tenantConn.query(
       `SELECT ts.host_customer_id
          FROM late_arrival_requests lar
@@ -122,11 +111,7 @@ export class LateArrivalService {
     return !!hostId && hostId === callerCustomerId;
   }
 
-  async approve(
-    id: string,
-    by: { staffId?: string; customerId?: string },
-    slug?: string,
-  ) {
+  async approve(id: string, by: { staffId?: string; customerId?: string }, slug?: string) {
     return this.respond(id, 'approved', by, undefined, slug);
   }
 
@@ -151,10 +136,7 @@ export class LateArrivalService {
       [id],
     )) as LateArrivalRow[];
     if (!existing.length) {
-      throw new HttpException(
-        'Late-arrival request nao encontrado.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Late-arrival request nao encontrado.', HttpStatus.NOT_FOUND);
     }
     if (existing[0].status !== 'pending') {
       throw new HttpException(
@@ -180,20 +162,11 @@ export class LateArrivalService {
                  updated_at = now()
            WHERE id = $5
            RETURNING *`,
-          [
-            status,
-            by.staffId ?? null,
-            by.customerId ?? null,
-            reason ?? null,
-            id,
-          ],
+          [status, by.staffId ?? null, by.customerId ?? null, reason ?? null, id],
         ),
       );
       if (!updatedRows.length) {
-        throw new HttpException(
-          'Late-arrival request nao encontrado.',
-          HttpStatus.NOT_FOUND,
-        );
+        throw new HttpException('Late-arrival request nao encontrado.', HttpStatus.NOT_FOUND);
       }
 
       // Only on approval: ensure the requesting customer is a session
@@ -223,13 +196,7 @@ export class LateArrivalService {
                            approved_by = COALESCE(EXCLUDED.approved_by,
                                                   session_participants.approved_by),
                            left_at = NULL`,
-            [
-              tableSessionId,
-              customerId,
-              row.visit_id,
-              approver,
-              PARTICIPANT_COLORS.length,
-            ],
+            [tableSessionId, customerId, row.visit_id, approver, PARTICIPANT_COLORS.length],
           );
         }
       }
@@ -286,10 +253,7 @@ export class LateArrivalService {
       [id],
     )) as LateArrivalRow[];
     if (!rows.length) {
-      throw new HttpException(
-        'Late-arrival request nao encontrado.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Late-arrival request nao encontrado.', HttpStatus.NOT_FOUND);
     }
     return this.mapRow(rows[0]);
   }
@@ -331,8 +295,7 @@ export class LateArrivalService {
   private mapRow(row: LateArrivalRow) {
     const now = Date.now();
     const ttlMs = new Date(row.ttl_expires_at).getTime();
-    const effectiveStatus =
-      row.status === 'pending' && ttlMs < now ? 'expired' : row.status;
+    const effectiveStatus = row.status === 'pending' && ttlMs < now ? 'expired' : row.status;
 
     return {
       id: row.id,

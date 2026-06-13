@@ -1,5 +1,13 @@
 import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
-import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import type { Request } from 'express';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
@@ -43,18 +51,9 @@ export class KitchenController {
   }
 
   @Post('reorder')
-  async reorder(
-    @Param('slug') slug: string,
-    @Body() dto: ReorderKitchenDto,
-    @Req() req: Request,
-  ) {
+  async reorder(@Param('slug') slug: string, @Body() dto: ReorderKitchenDto, @Req() req: Request) {
     const staffId = await this.callerResolver.requireActiveStaffId(req);
-    return this.ordersService.reorderKitchenQueue(
-      dto.orderIds,
-      dto.reason ?? null,
-      staffId,
-      slug,
-    );
+    return this.ordersService.reorderKitchenQueue(dto.orderIds, dto.reason ?? null, staffId, slug);
   }
 
   @Post('reorder-requests')

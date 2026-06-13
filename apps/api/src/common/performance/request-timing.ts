@@ -53,8 +53,7 @@ export function createRequestTimingMiddleware() {
 
     requestTiming.run(store, () => {
       res.on('finish', () => {
-        const routePath =
-          typeof req.route?.path === 'string' ? req.route.path : undefined;
+        const routePath = typeof req.route?.path === 'string' ? req.route.path : undefined;
         const route = routePath
           ? `${req.baseUrl ?? ''}${routePath}`
           : req.originalUrl.split('?')[0];

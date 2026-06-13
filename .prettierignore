@@ -1,0 +1,20 @@
+# Gerados / vendored — prettier NÃO deve tocar (npm/build/cache os gerenciam).
+node_modules
+dist
+build
+out
+.next
+.turbo
+coverage
+.rag
+*.min.js
+*.min.css
+
+# Lockfiles e artefatos gerenciados por ferramentas
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Evidências/artefatos de QA — não é código (inclui dumps JSON-lines do idb/
+# simulador que o prettier nem consegue parsear). Não formatar/checar.
+qa-reports

@@ -99,7 +99,11 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
         dark={dark}
         left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={onBack} ariaLabel="Voltar" />}
         title="Atender espera"
-        sub={entry ? `${entry.party} ${entry.party === 1 ? 'pessoa' : 'pessoas'} · ${entry.wait_minutes} min` : ''}
+        sub={
+          entry
+            ? `${entry.party} ${entry.party === 1 ? 'pessoa' : 'pessoas'} · ${entry.wait_minutes} min`
+            : ''
+        }
       />
 
       <div style={{ flex: 1, overflow: 'auto', padding: '16px 16px 88px' }}>
@@ -125,7 +129,14 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
         ) : (
           <>
             <section style={{ marginBottom: 18 }}>
-              <div style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: C.faint,
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                }}
+              >
                 Pessoa na fila
               </div>
               <div
@@ -182,7 +193,14 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
             </section>
 
             <section>
-              <div style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: C.faint,
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                }}
+              >
                 Mesas compatíveis
               </div>
               {suggestions.length === 0 ? (
@@ -244,7 +262,9 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
                           {table.sector} · {table.capacity} lugares
                         </div>
                       </div>
-                      <span style={{ color: idx === 0 ? '#1E8C5A' : C.faint }}>{Icon.arrow(16)}</span>
+                      <span style={{ color: idx === 0 ? '#1E8C5A' : C.faint }}>
+                        {Icon.arrow(16)}
+                      </span>
                     </button>
                   ))}
                 </div>

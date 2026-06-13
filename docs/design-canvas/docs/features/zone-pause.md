@@ -76,11 +76,11 @@ GET /{slug}/staff/:id/zone-pause/active
 
 ## WS events
 
-| Evento | Direção | Payload | Quando |
-|---|---|---|---|
-| `zone_pause.started` | server → staff alvo + gerente | `{ id, ends_at, duration_min, triggered_by }` | gerente acionou pause |
-| `zone_pause.released` | server → staff alvo + gerente | `{ id, released_at, by_auto }` | timer terminou OU release manual |
-| `zone_pause.expiring_soon` | server → staff alvo | `{ id, ends_at, seconds_left }` | 30s antes de expirar |
+| Evento                     | Direção                       | Payload                                       | Quando                           |
+| -------------------------- | ----------------------------- | --------------------------------------------- | -------------------------------- |
+| `zone_pause.started`       | server → staff alvo + gerente | `{ id, ends_at, duration_min, triggered_by }` | gerente acionou pause            |
+| `zone_pause.released`      | server → staff alvo + gerente | `{ id, released_at, by_auto }`                | timer terminou OU release manual |
+| `zone_pause.expiring_soon` | server → staff alvo           | `{ id, ends_at, seconds_left }`               | 30s antes de expirar             |
 
 ---
 
@@ -124,7 +124,7 @@ Por que não barrar:
 UX side-effect:
 
 - Toast discreto após o lançar: `"Pedido entra no fluxo quando a pausa
-  encerrar (em 4:23)."` — sem cor de erro, mostarda discreta. Garçom vê e
+encerrar (em 4:23)."` — sem cor de erro, mostarda discreta. Garçom vê e
   entende; cliente nunca vê esse aviso.
 - O pedido aparece na fila do `ScreenManagerOrdersPause` em modo zone com
   badge `MANUAL` ao lado do `DIGITAL` — gerente vê de onde veio se for
@@ -140,11 +140,11 @@ no congelador. Ver `ScreenManagerOrdersPause` para a UI de pausa global.
 
 - Se o gerente acionar zone-pause pra um garçom que **já tem zone-pause
   ativa**, o `POST /zone-pause` retorna 409 com `{ error: 'already_paused',
-  ends_at }`. Frontend abre o `ScreenManagerOrdersPause` em modo zone do
+ends_at }`. Frontend abre o `ScreenManagerOrdersPause` em modo zone do
   pause existente.
 - Se o garçom alvo **encerrar o turno** durante a zone-pause, ela é
   auto-released (`released_by = NULL · trigger_source registra
-  'shift-end'`). Pedidos `pending_zone_pause` daquele garçom são
+'shift-end'`). Pedidos `pending_zone_pause` daquele garçom são
   redistribuídos pro garçom de cobertura conforme `staff_users.is_paused` →
   na prática isso não acontece com frequência e cai no fluxo de
   realocação de mesa (ver `host-swap` no canvas).

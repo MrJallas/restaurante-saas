@@ -50,7 +50,14 @@ const TONE_TO_TINT_ANDROID: Record<PushTone, string> = {
  * preview screens (the 9 variants).
  */
 export const PushCardIOS: React.FC<PushCardProps> = ({
-  tone, title, body, time, urgent, appLabel = 'TL', appBadge, onTap,
+  tone,
+  title,
+  body,
+  time,
+  urgent,
+  appLabel = 'TL',
+  appBadge,
+  onTap,
 }) => {
   const tint = TONE_TO_TINT_IOS[tone];
   return (
@@ -58,9 +65,13 @@ export const PushCardIOS: React.FC<PushCardProps> = ({
       type="button"
       onClick={onTap}
       style={{
-        all: 'unset', cursor: onTap ? 'pointer' : 'default', boxSizing: 'border-box',
+        all: 'unset',
+        cursor: onTap ? 'pointer' : 'default',
+        boxSizing: 'border-box',
         margin: '0 12px',
-        position: 'relative', borderRadius: 18, overflow: 'hidden',
+        position: 'relative',
+        borderRadius: 18,
+        overflow: 'hidden',
         background: 'rgba(255,255,255,0.7)',
         backdropFilter: 'blur(20px) saturate(180%)',
         WebkitBackdropFilter: 'blur(20px) saturate(180%)',
@@ -68,25 +79,41 @@ export const PushCardIOS: React.FC<PushCardProps> = ({
           ? `0 0 0 2px ${tint}d9, 0 8px 24px ${tint}40`
           : '0 1px 0 rgba(255,255,255,0.4) inset, 0 4px 16px rgba(0,0,0,0.06)',
         animation: urgent ? 'gPushPulse 1.6s infinite' : 'none',
-        display: 'block', width: 'auto', maxWidth: 380,
+        display: 'block',
+        width: 'auto',
+        maxWidth: 380,
       }}
     >
       <div style={{ display: 'flex', padding: '12px 14px 14px', gap: 12 }}>
         <div
           style={{
-            width: 38, height: 38, borderRadius: 9, flexShrink: 0,
-            background: '#0a0a0a', color: '#fff',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: "'Inter', system-ui", fontWeight: 700, fontSize: 14,
-            letterSpacing: -0.5, position: 'relative',
+            width: 38,
+            height: 38,
+            borderRadius: 9,
+            flexShrink: 0,
+            background: '#0a0a0a',
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontFamily: "'Inter', system-ui",
+            fontWeight: 700,
+            fontSize: 14,
+            letterSpacing: -0.5,
+            position: 'relative',
           }}
         >
           {appLabel}
           {(urgent || appBadge) && (
             <span
               style={{
-                position: 'absolute', top: -3, right: -3,
-                width: 12, height: 12, borderRadius: 6, background: tint,
+                position: 'absolute',
+                top: -3,
+                right: -3,
+                width: 12,
+                height: 12,
+                borderRadius: 6,
+                background: tint,
                 border: '2px solid rgba(255,255,255,0.9)',
               }}
             />
@@ -94,8 +121,11 @@ export const PushCardIOS: React.FC<PushCardProps> = ({
         </div>
         <div
           style={{
-            flex: 1, minWidth: 0,
-            fontFamily: '-apple-system, system-ui', color: '#000', textAlign: 'left',
+            flex: 1,
+            minWidth: 0,
+            fontFamily: '-apple-system, system-ui',
+            color: '#000',
+            textAlign: 'left',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -103,8 +133,10 @@ export const PushCardIOS: React.FC<PushCardProps> = ({
             {time && (
               <div
                 style={{
-                  fontSize: 13, color: 'rgba(60,60,67,0.6)',
-                  flexShrink: 0, marginLeft: 8,
+                  fontSize: 13,
+                  color: 'rgba(60,60,67,0.6)',
+                  flexShrink: 0,
+                  marginLeft: 8,
                 }}
               >
                 {time}
@@ -113,8 +145,11 @@ export const PushCardIOS: React.FC<PushCardProps> = ({
           </div>
           <div
             style={{
-              fontSize: 15, lineHeight: '20px', color: '#000',
-              marginTop: 1, letterSpacing: -0.2,
+              fontSize: 15,
+              lineHeight: '20px',
+              color: '#000',
+              marginTop: 1,
+              letterSpacing: -0.2,
             }}
           >
             {body}
@@ -130,7 +165,14 @@ export const PushCardIOS: React.FC<PushCardProps> = ({
  * the canvas layout when caller wants the rich card with buttons.
  */
 export const PushCardAndroid: React.FC<PushCardProps> = ({
-  tone, title, body, time, urgent, expanded, actions = [], onTap,
+  tone,
+  title,
+  body,
+  time,
+  urgent,
+  expanded,
+  actions = [],
+  onTap,
 }) => {
   const tint = TONE_TO_TINT_ANDROID[tone];
   return (
@@ -138,27 +180,44 @@ export const PushCardAndroid: React.FC<PushCardProps> = ({
       type="button"
       onClick={onTap}
       style={{
-        all: 'unset', cursor: onTap ? 'pointer' : 'default', boxSizing: 'border-box',
-        margin: '0 8px', borderRadius: 28, overflow: 'hidden',
+        all: 'unset',
+        cursor: onTap ? 'pointer' : 'default',
+        boxSizing: 'border-box',
+        margin: '0 8px',
+        borderRadius: 28,
+        overflow: 'hidden',
         background: 'rgba(46,42,52,0.78)',
-        backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+        backdropFilter: 'blur(40px)',
+        WebkitBackdropFilter: 'blur(40px)',
         boxShadow: urgent ? `0 0 0 2px ${tint}, 0 6px 18px ${tint}4d` : 'none',
         animation: urgent ? 'gPushPulse 1.6s infinite' : 'none',
-        display: 'block', width: 'auto', maxWidth: 400,
+        display: 'block',
+        width: 'auto',
+        maxWidth: 400,
       }}
     >
       <div
         style={{
-          padding: '14px 16px 12px', fontFamily: 'Roboto, system-ui', color: '#fff',
+          padding: '14px 16px 12px',
+          fontFamily: 'Roboto, system-ui',
+          color: '#fff',
           textAlign: 'left',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <div
             style={{
-              width: 18, height: 18, borderRadius: 4, background: '#fff', color: '#000',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontFamily: "'Inter', system-ui", fontWeight: 700, fontSize: 9,
+              width: 18,
+              height: 18,
+              borderRadius: 4,
+              background: '#fff',
+              color: '#000',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: "'Inter', system-ui",
+              fontWeight: 700,
+              fontSize: 9,
             }}
           >
             TL
@@ -177,8 +236,11 @@ export const PushCardAndroid: React.FC<PushCardProps> = ({
               <span
                 key={i}
                 style={{
-                  padding: '8px 14px', borderRadius: 100,
-                  fontSize: 13, fontWeight: 500, letterSpacing: 0.1,
+                  padding: '8px 14px',
+                  borderRadius: 100,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  letterSpacing: 0.1,
                   color: a.primary ? '#000' : tint,
                   background: a.primary ? tint : 'transparent',
                 }}

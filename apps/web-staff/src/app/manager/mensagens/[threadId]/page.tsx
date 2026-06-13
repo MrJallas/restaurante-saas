@@ -20,7 +20,9 @@ function ThreadInner() {
 
 export default function ManagerMessageThreadPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}>
+    <Suspense
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}
+    >
       <ThreadInner />
     </Suspense>
   );

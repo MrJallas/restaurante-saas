@@ -14,27 +14,28 @@ Em 25/05/2026 rodei teste manual no app inteiro (cliente, recepcionista, garçom
 
 ## Ordem sugerida de paralelização
 
-| Chat | Arquivo | Risco/Bloqueio |
-|---|---|---|
-| 1 | `06-api-transversais.md` | **Primeiro** — bugs de auth (`x-staff-id`, `manager-only`) destravam várias telas |
-| 2 | `01-cliente.md` | Independente |
-| 3 | `02-recepcionista.md` | Bloqueia parcialmente cliente (geolocalização) |
-| 4 | `03-garcom.md` | Independente |
-| 5 | `04-cozinha.md` | Depende parcialmente do 06 (Chamar garçom endpoint) |
-| 6 | `05-gerente.md` | Depende do 06 (xstaff id em várias telas) |
-| 7 | `07-infra-auditoria.md` | Auditoria + MongoDB — paralelo aos outros |
-| 8 | `08-cliente-table-merge-salao.md` | Continuação feature incompleta — cliente escolhe mesa para junção |
-| 9 | `09-gerente-timeline-real.md` | Feature incompleta — timeline real de pedido/mesa no gerente |
-| 10 | `10-cliente-staffbubble-historico.md` | Assistente cliente — StaffBubble deve sobreviver a reload |
-| 11 | `11-cliente-courtesy-arrival.md` | Cliente recebe/aceita/recusa cortesia real |
-| 12 | `12-cliente-home-chips-dinamicos.md` | Home da mesa renderiza chips da continuation API |
-| 13 | `13-cliente-join-table-ai-typewriter.md` | Host cliente decide entrada de participante por chat IA |
-| 14 | `14-cliente-table-merge-pos-confirmacao.md` | Estados finais de junção: aprovado, recusado, cooldown |
-| 15 | `15-staff-login-superusers.md` | Login funcional de staff/superusers para acessar interfaces |
+| Chat | Arquivo                                     | Risco/Bloqueio                                                                    |
+| ---- | ------------------------------------------- | --------------------------------------------------------------------------------- |
+| 1    | `06-api-transversais.md`                    | **Primeiro** — bugs de auth (`x-staff-id`, `manager-only`) destravam várias telas |
+| 2    | `01-cliente.md`                             | Independente                                                                      |
+| 3    | `02-recepcionista.md`                       | Bloqueia parcialmente cliente (geolocalização)                                    |
+| 4    | `03-garcom.md`                              | Independente                                                                      |
+| 5    | `04-cozinha.md`                             | Depende parcialmente do 06 (Chamar garçom endpoint)                               |
+| 6    | `05-gerente.md`                             | Depende do 06 (xstaff id em várias telas)                                         |
+| 7    | `07-infra-auditoria.md`                     | Auditoria + MongoDB — paralelo aos outros                                         |
+| 8    | `08-cliente-table-merge-salao.md`           | Continuação feature incompleta — cliente escolhe mesa para junção                 |
+| 9    | `09-gerente-timeline-real.md`               | Feature incompleta — timeline real de pedido/mesa no gerente                      |
+| 10   | `10-cliente-staffbubble-historico.md`       | Assistente cliente — StaffBubble deve sobreviver a reload                         |
+| 11   | `11-cliente-courtesy-arrival.md`            | Cliente recebe/aceita/recusa cortesia real                                        |
+| 12   | `12-cliente-home-chips-dinamicos.md`        | Home da mesa renderiza chips da continuation API                                  |
+| 13   | `13-cliente-join-table-ai-typewriter.md`    | Host cliente decide entrada de participante por chat IA                           |
+| 14   | `14-cliente-table-merge-pos-confirmacao.md` | Estados finais de junção: aprovado, recusado, cooldown                            |
+| 15   | `15-staff-login-superusers.md`              | Login funcional de staff/superusers para acessar interfaces                       |
 
 **Diretriz**: o `06-api-transversais.md` resolve bugs que aparecem em vários frontends. Idealmente roda primeiro ou em paralelo com os frontends, pra os chats frontend não terem que mockar workaround.
 
 **Diretriz de dependência das continuações 09-15**:
+
 - `13` e `14` mexem nos mesmos fluxos de host/customer/table-merge. Rodar `13` antes do `14`, ou coordenar merge.
 - `08` deve vir antes ou junto do `14`, porque a seleção da mesa alvo alimenta os estados finais.
 - `10`, `11` e `12` mexem em `apps/web-customer/src/app/[slug]/assistente/page.tsx` e/ou home customer; evitar rodar três agentes no mesmo arquivo sem combinar.
@@ -80,6 +81,7 @@ Para `06` e APIs compartilhadas:
 ## Convenções dos prompts
 
 Cada arquivo segue:
+
 - **Contexto** — projeto + role + regras V20
 - **Bugs** numerados com:
   - Descrição (na minha voz)

@@ -1,17 +1,8 @@
-import {
-  Body,
-  Controller,
-  Post,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import { IsBoolean, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import type { TenantRequest } from '../tenant/tenant.middleware';
-import {
-  ContinuationResponse,
-  ContinuationService,
-} from './continuation.service';
+import { ContinuationResponse, ContinuationService } from './continuation.service';
 
 class ContinuationDto {
   @IsString()

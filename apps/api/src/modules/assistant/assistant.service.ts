@@ -30,8 +30,7 @@ const SUGGESTION_CHIPS = [
   'Mais pedidos do restaurante',
 ];
 
-const FALLBACK_RESPONSE =
-  'Desculpe, estou com dificuldade no momento. Posso ajudar em breve.';
+const FALLBACK_RESPONSE = 'Desculpe, estou com dificuldade no momento. Posso ajudar em breve.';
 
 const MAX_MESSAGES_PER_SESSION = 50;
 
@@ -97,8 +96,7 @@ type AssistantPublicHistoryMessage =
       createdAt: string;
     };
 
-const UUID_TEXT_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_TEXT_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isUuidText(value: string | null | undefined): value is string {
   return typeof value === 'string' && UUID_TEXT_PATTERN.test(value);
@@ -154,12 +152,8 @@ function normalizeToolCalls(
 ): Array<Record<string, unknown>> {
   if (!raw || raw.length === 0) return [];
   return raw.map((tc) => {
-    const fn = (tc as { function?: { name?: string; arguments?: unknown } })
-      .function;
-    const flatName =
-      typeof tc.name === 'string' && tc.name.length > 0
-        ? tc.name
-        : (fn?.name ?? '');
+    const fn = (tc as { function?: { name?: string; arguments?: unknown } }).function;
+    const flatName = typeof tc.name === 'string' && tc.name.length > 0 ? tc.name : (fn?.name ?? '');
     const flatArgs = (tc.args ?? fn?.arguments ?? {}) as Record<string, unknown>;
     const result = (tc.result ?? null) as Record<string, unknown> | null;
     const chips = Array.isArray(result?.chips) ? (result!.chips as unknown[]) : [];
@@ -176,12 +170,9 @@ function normalizeToolCalls(
       result,
       // Hoist the most useful FE-side discriminators to top-level so the FE
       // doesn't have to dig into `tc.result` for the silent/router flags.
-      silent:
-        result && typeof result.silent === 'boolean' ? result.silent : undefined,
+      silent: result && typeof result.silent === 'boolean' ? result.silent : undefined,
       routerTarget:
-        result && typeof result.routerTarget === 'string'
-          ? result.routerTarget
-          : undefined,
+        result && typeof result.routerTarget === 'string' ? result.routerTarget : undefined,
       actionPayload,
       chips,
     };
@@ -224,9 +215,7 @@ function enrichToolActionPayload(
  * NO tool emitted chips, returns `null` so the caller can fall back to the
  * static SUGGESTION_CHIPS — keeps the chat from rendering empty bottom row.
  */
-function aggregateChipsFromTools(
-  toolCalls: Array<Record<string, unknown>>,
-): unknown[] | null {
+function aggregateChipsFromTools(toolCalls: Array<Record<string, unknown>>): unknown[] | null {
   const seen = new Set<string>();
   const out: unknown[] = [];
   for (const tc of toolCalls) {
@@ -244,7 +233,12 @@ function aggregateChipsFromTools(
 function chipsForAddToOrder(): Array<Record<string, unknown>> {
   return [
     { id: 'view_order', label: 'Ver pedido', action: 'send', payload: 'ver meu pedido' },
-    { id: 'add_more', label: 'Pedir mais', action: 'send', payload: 'quero pedir mais alguma coisa' },
+    {
+      id: 'add_more',
+      label: 'Pedir mais',
+      action: 'send',
+      payload: 'quero pedir mais alguma coisa',
+    },
     { id: 'request_check', label: 'Pedir conta', action: 'send', payload: 'quero pagar a conta' },
   ];
 }
@@ -252,13 +246,17 @@ function chipsForAddToOrder(): Array<Record<string, unknown>> {
 function isDirectWaterOrder(message: string): boolean {
   const text = normalizeForMatch(message);
   if (!/\bagua\b/.test(text)) return false;
-  return /\b(quero|queria|vou querer|me traz|traz|pede|pedir|adiciona|adicionar|coloca|manda|inclui)\b/.test(text);
+  return /\b(quero|queria|vou querer|me traz|traz|pede|pedir|adiciona|adicionar|coloca|manda|inclui)\b/.test(
+    text,
+  );
 }
 
 function waterMenuItem(menuItems: MenuItemRow[]): MenuItemRow | null {
   return (
     menuItems.find((item) => {
-      const haystack = normalizeForMatch(`${item.name} ${item.category_name} ${(item.tags ?? []).join(' ')}`);
+      const haystack = normalizeForMatch(
+        `${item.name} ${item.category_name} ${(item.tags ?? []).join(' ')}`,
+      );
       return /\bagua\b/.test(haystack);
     }) ?? null
   );
@@ -311,7 +309,9 @@ function isPaymentIntent(message: string): boolean {
   if (!text) return false;
   return (
     /\b(quero|queria|vamos|vou)\s+pagar\b/.test(text) ||
-    /\b(pagar|pagamento|fechar|finalizar|pedir|trazer|traz|manda)\b.*\b(conta|comanda)\b/.test(text) ||
+    /\b(pagar|pagamento|fechar|finalizar|pedir|trazer|traz|manda)\b.*\b(conta|comanda)\b/.test(
+      text,
+    ) ||
     /\b(conta|comanda)\b.*\b(pagar|pagamento|fechar|finalizar|pedir|trazer|traz|manda)\b/.test(text)
   );
 }
@@ -320,10 +320,16 @@ function isViewOrderIntent(message: string): boolean {
   const text = normalizeForMatch(message);
   if (!text) return false;
   return (
-    /\b(ver|ve|olhar|mostrar|consultar|acompanhar)\b.*\b(meu|minha|o|a|esse|este)?\s*(pedido|comanda|carrinho)\b/.test(text) ||
+    /\b(ver|ve|olhar|mostrar|consultar|acompanhar)\b.*\b(meu|minha|o|a|esse|este)?\s*(pedido|comanda|carrinho)\b/.test(
+      text,
+    ) ||
     /\b(pedido|comanda|carrinho)\b.*\b(ver|ve|olhar|mostrar|consultar|acompanhar)\b/.test(text) ||
-    /\b(quanto tempo|demora|vai demorar|cade|status|andamento|previsao|quando)\b.*\b(pedido|comida|prato|cozinha)\b/.test(text) ||
-    /\b(pedido|comida|prato|cozinha)\b.*\b(quanto tempo|demora|vai demorar|cade|status|andamento|previsao|quando)\b/.test(text)
+    /\b(quanto tempo|demora|vai demorar|cade|status|andamento|previsao|quando)\b.*\b(pedido|comida|prato|cozinha)\b/.test(
+      text,
+    ) ||
+    /\b(pedido|comida|prato|cozinha)\b.*\b(quanto tempo|demora|vai demorar|cade|status|andamento|previsao|quando)\b/.test(
+      text,
+    )
   );
 }
 
@@ -343,16 +349,36 @@ function rescueViewOrderTool(
       result: {
         message: 'Claro, vou mostrar seu pedido.',
         chips: [
-          { id: 'add_more', label: 'Pedir mais', action: 'send', payload: 'quero pedir mais alguma coisa' },
-          { id: 'request_check', label: 'Pedir conta', action: 'send', payload: 'quero pagar a conta' },
+          {
+            id: 'add_more',
+            label: 'Pedir mais',
+            action: 'send',
+            payload: 'quero pedir mais alguma coisa',
+          },
+          {
+            id: 'request_check',
+            label: 'Pedir conta',
+            action: 'send',
+            payload: 'quero pagar a conta',
+          },
         ],
         actionPayload: { tool: 'view_order' },
         routerTarget: 'ScreenCustomerOrder',
       },
       actionPayload: { tool: 'view_order' },
       chips: [
-        { id: 'add_more', label: 'Pedir mais', action: 'send', payload: 'quero pedir mais alguma coisa' },
-        { id: 'request_check', label: 'Pedir conta', action: 'send', payload: 'quero pagar a conta' },
+        {
+          id: 'add_more',
+          label: 'Pedir mais',
+          action: 'send',
+          payload: 'quero pedir mais alguma coisa',
+        },
+        {
+          id: 'request_check',
+          label: 'Pedir conta',
+          action: 'send',
+          payload: 'quero pagar a conta',
+        },
       ],
       routerTarget: 'ScreenCustomerOrder',
     },
@@ -361,7 +387,11 @@ function rescueViewOrderTool(
 
 function paymentToolNameForMessage(message: string): string {
   const text = normalizeForMatch(message);
-  if (/\b(dividir|rachar|separar)\b.*\b(conta|comanda)\b|\b(conta|comanda)\b.*\b(dividir|rachar|separar)\b/.test(text)) {
+  if (
+    /\b(dividir|rachar|separar)\b.*\b(conta|comanda)\b|\b(conta|comanda)\b.*\b(dividir|rachar|separar)\b/.test(
+      text,
+    )
+  ) {
     return 'split_bill';
   }
   if (/\b(minha parte|minha comanda|so a minha|individual)\b/.test(text)) {
@@ -378,8 +408,18 @@ function paymentToolResult(toolName: string): Record<string, unknown> {
     return {
       message: 'Te levo pra tela de dividir a conta.',
       chips: [
-        { id: 'pay_mine', label: 'Pagar minha parte', action: 'send', payload: 'quero pagar só a minha parte' },
-        { id: 'pay_full', label: 'Pagar tudo', action: 'send', payload: 'quero pagar a conta toda' },
+        {
+          id: 'pay_mine',
+          label: 'Pagar minha parte',
+          action: 'send',
+          payload: 'quero pagar só a minha parte',
+        },
+        {
+          id: 'pay_full',
+          label: 'Pagar tudo',
+          action: 'send',
+          payload: 'quero pagar a conta toda',
+        },
       ],
       actionPayload: { tool: 'split_bill' },
       routerTarget: 'ScreenCustomerSplitBill',
@@ -389,8 +429,18 @@ function paymentToolResult(toolName: string): Record<string, unknown> {
     return {
       message: 'Abro a tela pra você pagar só a sua parte.',
       chips: [
-        { id: 'pay_pix', label: 'Pagar com PIX', action: 'send', payload: 'quero pagar minha parte com pix' },
-        { id: 'pay_full', label: 'Pagar tudo', action: 'send', payload: 'quero pagar a conta toda' },
+        {
+          id: 'pay_pix',
+          label: 'Pagar com PIX',
+          action: 'send',
+          payload: 'quero pagar minha parte com pix',
+        },
+        {
+          id: 'pay_full',
+          label: 'Pagar tudo',
+          action: 'send',
+          payload: 'quero pagar a conta toda',
+        },
       ],
       actionPayload: { tool: 'pay_individual' },
       routerTarget: 'ScreenCustomerPayIndividual',
@@ -411,7 +461,12 @@ function paymentToolResult(toolName: string): Record<string, unknown> {
     message: 'Abro a tela de pagamento pra você.',
     chips: [
       { id: 'pay_full', label: 'Pagar tudo', action: 'send', payload: 'quero pagar a conta toda' },
-      { id: 'pay_individual', label: 'Pagar minha parte', action: 'send', payload: 'quero pagar só a minha parte' },
+      {
+        id: 'pay_individual',
+        label: 'Pagar minha parte',
+        action: 'send',
+        payload: 'quero pagar só a minha parte',
+      },
       { id: 'split', label: 'Dividir conta', action: 'send', payload: 'quero dividir a conta' },
     ],
     actionPayload: { tool: 'open_payment_screen' },
@@ -434,7 +489,9 @@ function rescuePaymentTool(
   const actionPayload = result.actionPayload as Record<string, unknown>;
   const chips = result.chips as Array<Record<string, unknown>>;
   return [
-    ...toolCalls.filter((tc) => !['call_waiter', 'request_check', 'view_menu'].includes(String(tc.name))),
+    ...toolCalls.filter(
+      (tc) => !['call_waiter', 'request_check', 'view_menu'].includes(String(tc.name)),
+    ),
     {
       name: toolName,
       arguments: {},
@@ -448,7 +505,12 @@ function rescuePaymentTool(
 
 function isGlutenFreeRecommendationIntent(message: string): boolean {
   const text = normalizeForMatch(message);
-  return /\bsem gluten\b/.test(text) && /\b(opcoes|opcao|prato|pratos|recomenda|recomendar|indica|indicar|tem|quais|alguma)\b/.test(text);
+  return (
+    /\bsem gluten\b/.test(text) &&
+    /\b(opcoes|opcao|prato|pratos|recomenda|recomendar|indica|indicar|tem|quais|alguma)\b/.test(
+      text,
+    )
+  );
 }
 
 function rescueDietaryRecommendationTool(
@@ -564,9 +626,10 @@ function extractLinkedItems(
   for (const tc of toolCalls) {
     const args = (tc.arguments ?? {}) as Record<string, unknown>;
     const result = (tc.result ?? {}) as Record<string, unknown>;
-    const actionPayload = (tc.actionPayload ??
-      result.actionPayload ??
-      {}) as Record<string, unknown>;
+    const actionPayload = (tc.actionPayload ?? result.actionPayload ?? {}) as Record<
+      string,
+      unknown
+    >;
     for (const val of [
       args.itemId,
       args.item_id,
@@ -643,18 +706,19 @@ function menuItemMatchesRecommendationCategory(
   category: string | null,
 ): boolean {
   if (!category) return true;
-  const haystack = normalizeForMatch(`${item.category_name} ${item.name} ${(item.tags ?? []).join(' ')}`);
-  if (category === 'bebida') return /\b(bebida|bebidas|drink|drinks|vinho|suco|cerveja|agua)\b/.test(haystack);
+  const haystack = normalizeForMatch(
+    `${item.category_name} ${item.name} ${(item.tags ?? []).join(' ')}`,
+  );
+  if (category === 'bebida')
+    return /\b(bebida|bebidas|drink|drinks|vinho|suco|cerveja|agua)\b/.test(haystack);
   if (category === 'sobremesa') return /\b(sobremesa|sobremesas|doce|doces)\b/.test(haystack);
   if (category === 'entrada') return /\b(entrada|entradas|aperitivo|aperitivos)\b/.test(haystack);
-  if (category === 'principal') return /\b(principal|principais|prato|pratos|refeicao|refeicoes)\b/.test(haystack);
+  if (category === 'principal')
+    return /\b(principal|principais|prato|pratos|refeicao|refeicoes)\b/.test(haystack);
   return true;
 }
 
-function menuItemMatchesDietary(
-  item: MenuItemRow,
-  dietary: 'gluten_free' | null,
-): boolean {
+function menuItemMatchesDietary(item: MenuItemRow, dietary: 'gluten_free' | null): boolean {
   if (!dietary) return true;
   const allergens = normalizeForMatch((item.allergens ?? []).join(' '));
   if (dietary === 'gluten_free') return !/\bgluten\b/.test(allergens);
@@ -662,8 +726,12 @@ function menuItemMatchesDietary(
 }
 
 function isDrinkItem(item: MenuItemRow): boolean {
-  const haystack = normalizeForMatch(`${item.category_name} ${item.name} ${(item.tags ?? []).join(' ')}`);
-  return /\b(bebida|bebidas|drink|drinks|vinho|suco|cerveja|agua|refrigerante|caipirinha)\b/.test(haystack);
+  const haystack = normalizeForMatch(
+    `${item.category_name} ${item.name} ${(item.tags ?? []).join(' ')}`,
+  );
+  return /\b(bebida|bebidas|drink|drinks|vinho|suco|cerveja|agua|refrigerante|caipirinha)\b/.test(
+    haystack,
+  );
 }
 
 function formatCents(cents: number): string {
@@ -682,9 +750,7 @@ function recommendationMessageForItems(
     personalized?: boolean;
   } = {},
 ): string {
-  const lines = items.map(
-    (item) => `- ${item.name} — ${formatCents(item.price_cents)}`,
-  );
+  const lines = items.map((item) => `- ${item.name} — ${formatCents(item.price_cents)}`);
   if (context.dietary === 'gluten_free') {
     // Restrição manda na copy; a personalização ainda ordena os itens por
     // baixo (repeat/parecido), mas o título sinaliza o filtro de segurança.
@@ -741,20 +807,14 @@ export function rankCandidatesByHistory(
   }
   const lastNames = new Set(valid.map((it) => normalizeName(it.name)));
   const lastCats = new Set(
-    valid
-      .map((it) => (it.category ? normalizeName(it.category) : ''))
-      .filter((c) => c.length > 0),
+    valid.map((it) => (it.category ? normalizeName(it.category) : '')).filter((c) => c.length > 0),
   );
   const repeats = candidates.filter((c) => lastNames.has(normalizeName(c.name)));
   const similar = candidates.filter(
-    (c) =>
-      !lastNames.has(normalizeName(c.name)) &&
-      lastCats.has(normalizeName(c.category_name)),
+    (c) => !lastNames.has(normalizeName(c.name)) && lastCats.has(normalizeName(c.category_name)),
   );
   const rest = candidates.filter(
-    (c) =>
-      !lastNames.has(normalizeName(c.name)) &&
-      !lastCats.has(normalizeName(c.category_name)),
+    (c) => !lastNames.has(normalizeName(c.name)) && !lastCats.has(normalizeName(c.category_name)),
   );
   return {
     ordered: [...repeats, ...similar, ...rest],
@@ -800,9 +860,7 @@ function enrichRecommendationToolCalls(
       menuItemMatchesDietary(item, dietary),
   );
   const preferredCandidates =
-    dietary && !category
-      ? candidates.filter((item) => !isDrinkItem(item))
-      : candidates;
+    dietary && !category ? candidates.filter((item) => !isDrinkItem(item)) : candidates;
   const pickedSource = preferredCandidates.length >= 3 ? preferredCandidates : candidates;
   // Mix repetir+parecido: re-ordena os candidatos pela vibe do último
   // pedido. Primeira visita (lastItems vazio) → ordem original + genérico.
@@ -892,16 +950,11 @@ export class AssistantService {
     if (customerId && this.chatHistory) {
       const threadId =
         continueThreadId?.trim() ||
-        (conversationId?.trim()
-          ? `${tenantId}:${customerId}:${conversationId.trim()}`
-          : null);
+        (conversationId?.trim() ? `${tenantId}:${customerId}:${conversationId.trim()}` : null);
 
       if (threadId) {
         try {
-          const messages = await this.chatHistory.listMessagesForCustomer(
-            threadId,
-            customerId,
-          );
+          const messages = await this.chatHistory.listMessagesForCustomer(threadId, customerId);
           return messages
             .filter((m) => m.role === 'user' || m.role === 'assistant')
             .slice(-10)
@@ -1017,14 +1070,10 @@ export class AssistantService {
       conversationId,
       continueThreadId,
     );
-    const classification = await this.aiClient.classify(
-      message,
-      recentHistory.slice(-4),
-    );
+    const classification = await this.aiClient.classify(message, recentHistory.slice(-4));
 
     if (classification.reason === 'greeting') {
-      const greeting =
-        GREETING_RESPONSES[Math.floor(Math.random() * GREETING_RESPONSES.length)];
+      const greeting = GREETING_RESPONSES[Math.floor(Math.random() * GREETING_RESPONSES.length)];
       await this.saveMessage(tableSessionId, safeCustomerId, message, greeting, {
         tokensIn: 0,
         tokensOut: 0,
@@ -1095,17 +1144,11 @@ export class AssistantService {
 
     // Step 3: Call AI
     try {
-      const result = await this.aiClient.chat(
-        message,
-        history,
-        tenantContext,
-        customerContext,
-        {
-          tenantId: tenantSlug || _schemaName,
-          customerId: safeCustomerId,
-          sessionId: tableSessionId,
-        },
-      );
+      const result = await this.aiClient.chat(message, history, tenantContext, customerContext, {
+        tenantId: tenantSlug || _schemaName,
+        customerId: safeCustomerId,
+        sessionId: tableSessionId,
+      });
 
       const normalizedToolsRaw = rescueDietaryRecommendationTool(
         message,
@@ -1123,9 +1166,7 @@ export class AssistantService {
       );
       // Histórico do último pedido (customer_consumption_summary) pra
       // personalizar a recomendação genérica (decisão Caleb 2026-06-13).
-      const lastItemsForRec: ConsumptionHistoryItem[] = Array.isArray(
-        customerContext?.last_items,
-      )
+      const lastItemsForRec: ConsumptionHistoryItem[] = Array.isArray(customerContext?.last_items)
         ? (customerContext!.last_items as unknown[]).flatMap((raw) => {
             if (!isPlainRecord(raw) || typeof raw.name !== 'string') return [];
             return [
@@ -1150,7 +1191,9 @@ export class AssistantService {
         normalizedTools,
       );
       const persistedToolCalls =
-        normalizedTools.length > 0 ? (normalizedTools as AiToolCall[]) : result.tool_calls ?? null;
+        normalizedTools.length > 0
+          ? (normalizedTools as AiToolCall[])
+          : (result.tool_calls ?? null);
       // K-1 fix: prefer chips canônicos das tools sobre SUGGESTION_CHIPS estático.
       // Quando nenhuma tool emitiu chips (ex: turno 100% texto), caímos
       // pro trio default — assim o cliente nunca vê uma row de chips vazia.
@@ -1170,11 +1213,7 @@ export class AssistantService {
         contextualChips: toolChips,
       });
 
-      const linkedItems = extractLinkedItems(
-        assistantResponse,
-        menuItems,
-        normalizedTools,
-      );
+      const linkedItems = extractLinkedItems(assistantResponse, menuItems, normalizedTools);
 
       // Round 22 fix · `send_message_to_manager` server-side handoff.
       //
@@ -1212,11 +1251,7 @@ export class AssistantService {
         }
       }
 
-      await this.persistLgpdToolRequests(
-        normalizedTools,
-        safeCustomerId,
-        _schemaName,
-      );
+      await this.persistLgpdToolRequests(normalizedTools, safeCustomerId, _schemaName);
 
       // P1 #B-6 fix (round 3): dual-write pra Mongo `chat_messages`.
       // Best-effort — Postgres remains source of truth e o appendTurn
@@ -1309,9 +1344,7 @@ export class AssistantService {
       if (tc.name !== 'lgpd_data_request') continue;
 
       const actionPayload =
-        tc.actionPayload &&
-        typeof tc.actionPayload === 'object' &&
-        !Array.isArray(tc.actionPayload)
+        tc.actionPayload && typeof tc.actionPayload === 'object' && !Array.isArray(tc.actionPayload)
           ? (tc.actionPayload as Record<string, unknown>)
           : {};
       const lgpdErasure =
@@ -1332,9 +1365,7 @@ export class AssistantService {
             : 'erasure';
       const kind = requestType === 'erasure' ? 'erasure' : 'export';
       const protocolNumber =
-        typeof lgpdErasure.protocolNumber === 'string'
-          ? lgpdErasure.protocolNumber
-          : undefined;
+        typeof lgpdErasure.protocolNumber === 'string' ? lgpdErasure.protocolNumber : undefined;
 
       try {
         await this.lgpdService.createRequest(
@@ -1347,9 +1378,7 @@ export class AssistantService {
           tenantId,
         );
       } catch (err) {
-        this.logger.warn(
-          `Falha ao persistir lgpd_data_request: ${(err as Error).message}`,
-        );
+        this.logger.warn(`Falha ao persistir lgpd_data_request: ${(err as Error).message}`);
       }
     }
   }
@@ -1604,9 +1633,7 @@ export class AssistantService {
       [input.tableSessionId, input.toCustomerId],
     )) as unknown[];
     if (!recipientRows.length) {
-      throw new NotFoundException(
-        'Cliente destinatário não está ativo nesta mesa.',
-      );
+      throw new NotFoundException('Cliente destinatário não está ativo nesta mesa.');
     }
 
     // Persiste em assistant_messages. Usa `assistant_response` pro corpo
@@ -1621,12 +1648,7 @@ export class AssistantService {
           was_blocked, tokens_in, tokens_out)
        VALUES ($1, $2, '', $3, 'staff', 'customer', 'staff', $4, false, 0, 0)
        RETURNING id, created_at`,
-      [
-        input.tableSessionId,
-        input.toCustomerId,
-        input.message.trim(),
-        input.fromStaffId,
-      ],
+      [input.tableSessionId, input.toCustomerId, input.message.trim(), input.fromStaffId],
     )) as Array<{ id: string; created_at: string }>;
 
     if (!inserted.length) {
@@ -1648,11 +1670,7 @@ export class AssistantService {
     // gerente (decisão 2026-06-11; antes era emitToSession e a mesa toda
     // recebia a bubble).
     if (this.events) {
-      this.events.emitToCustomer(
-        input.toCustomerId,
-        'assistant.staff_message_received',
-        payload,
-      );
+      this.events.emitToCustomer(input.toCustomerId, 'assistant.staff_message_received', payload);
     }
 
     // Persistência paralela no Mongo (`staff_threads` + `staff_messages`)
@@ -1735,10 +1753,9 @@ export class AssistantService {
     customerId: string,
     tableSessionId: string,
   ): Promise<Record<string, unknown>> {
-    const customers = (await this.tenantConn.query(
-      `SELECT name FROM customers WHERE id = $1`,
-      [customerId],
-    )) as { name: string }[];
+    const customers = (await this.tenantConn.query(`SELECT name FROM customers WHERE id = $1`, [
+      customerId,
+    ])) as { name: string }[];
 
     const summaryRows = (await this.tenantConn.query(
       `SELECT last_items, favorite_items FROM customer_consumption_summary WHERE customer_id = $1`,
@@ -1819,9 +1836,7 @@ export class AssistantService {
     // and a NULL keeps the partial GIN index (`WHERE tool_calls IS NOT
     // NULL`, migration 029) tight.
     const toolCallsJson =
-      meta.toolCalls && meta.toolCalls.length > 0
-        ? JSON.stringify(meta.toolCalls)
-        : null;
+      meta.toolCalls && meta.toolCalls.length > 0 ? JSON.stringify(meta.toolCalls) : null;
     const contextualChipsJson =
       meta.contextualChips && meta.contextualChips.length > 0
         ? JSON.stringify(meta.contextualChips)

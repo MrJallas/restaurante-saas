@@ -9,10 +9,7 @@ export class SalonController {
 
   @Get('tables/adjacent')
   @UseGuards(SessionGuard)
-  async listAdjacentTables(
-    @Session() session: SessionData,
-    @Query('radius') radius?: string,
-  ) {
+  async listAdjacentTables(@Session() session: SessionData, @Query('radius') radius?: string) {
     const parsedRadius = radius ? Number(radius) : undefined;
     return this.salonService.listAdjacentTables({
       currentTableId: session.tableId,

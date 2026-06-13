@@ -61,7 +61,14 @@ export const ScreenWaiterProfile: React.FC<ScreenWaiterProfileProps> = ({
   const C = useG(dark);
   const initials =
     waiterInitials ??
-    (waiterName ? waiterName.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase() : 'EU');
+    (waiterName
+      ? waiterName
+          .split(' ')
+          .map((p) => p[0])
+          .slice(0, 2)
+          .join('')
+          .toUpperCase()
+      : 'EU');
 
   // Formata duração em "Xh YYm" pra pílula "EM TURNO · …".
   const fmtDuration = (min: number) => {
@@ -84,7 +91,11 @@ export const ScreenWaiterProfile: React.FC<ScreenWaiterProfileProps> = ({
     >
       <GAppHeader
         dark={dark}
-        left={onBack ? <GIconBtn dark={dark} icon={Icon.back(20)} onClick={onBack} ariaLabel="Voltar" /> : undefined}
+        left={
+          onBack ? (
+            <GIconBtn dark={dark} icon={Icon.back(20)} onClick={onBack} ariaLabel="Voltar" />
+          ) : undefined
+        }
         title="Perfil"
       />
 
@@ -109,7 +120,15 @@ export const ScreenWaiterProfile: React.FC<ScreenWaiterProfileProps> = ({
           >
             {initials}
           </div>
-          <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.4, marginTop: 12, color: C.ink }}>
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 700,
+              letterSpacing: -0.4,
+              marginTop: 12,
+              color: C.ink,
+            }}
+          >
             {waiterName}
           </div>
           <div style={{ fontSize: 13, color: C.mute, marginTop: 2 }}>{roleLabel}</div>
@@ -165,16 +184,42 @@ export const ScreenWaiterProfile: React.FC<ScreenWaiterProfileProps> = ({
         {/* NOTIFICAÇÕES */}
         <SectionTitle dark={dark}>Notificações</SectionTitle>
         <CardGroup dark={dark}>
-          <Row dark={dark} icon={Icon.bell(18)} label="Som de chamado" value={prefs.callSound ?? 'Sino curto'} />
-          <Row dark={dark} icon={Icon.flame(18)} label="Vibrar em atrasos" value={prefs.delayVibration ?? 'Forte'} />
-          <Row dark={dark} icon={Icon.glass(18)} label="Avisar bar pronto" value={prefs.barReadyAlert ?? 'Sempre'} last />
+          <Row
+            dark={dark}
+            icon={Icon.bell(18)}
+            label="Som de chamado"
+            value={prefs.callSound ?? 'Sino curto'}
+          />
+          <Row
+            dark={dark}
+            icon={Icon.flame(18)}
+            label="Vibrar em atrasos"
+            value={prefs.delayVibration ?? 'Forte'}
+          />
+          <Row
+            dark={dark}
+            icon={Icon.glass(18)}
+            label="Avisar bar pronto"
+            value={prefs.barReadyAlert ?? 'Sempre'}
+            last
+          />
         </CardGroup>
 
         {/* PREFERÊNCIAS */}
         <SectionTitle dark={dark}>Preferências</SectionTitle>
         <CardGroup dark={dark}>
-          <Row dark={dark} icon={Icon.table(18)} label="Setor padrão" value={prefs.defaultSector ?? 'Todos'} />
-          <Row dark={dark} icon={Icon.settings(18)} label="Tema" value={dark ? 'Escuro' : 'Claro'} />
+          <Row
+            dark={dark}
+            icon={Icon.table(18)}
+            label="Setor padrão"
+            value={prefs.defaultSector ?? 'Todos'}
+          />
+          <Row
+            dark={dark}
+            icon={Icon.settings(18)}
+            label="Tema"
+            value={dark ? 'Escuro' : 'Claro'}
+          />
           <Row dark={dark} icon={Icon.user(18)} label="Editar PIN" last />
         </CardGroup>
 
@@ -182,7 +227,14 @@ export const ScreenWaiterProfile: React.FC<ScreenWaiterProfileProps> = ({
         <SectionTitle dark={dark}>Sessão</SectionTitle>
         <CardGroup dark={dark} marginBottom>
           <Row dark={dark} icon={Icon.clock(18)} label="Encerrar turno" onClick={onEndShift} />
-          <Row dark={dark} icon={Icon.back(18)} label="Sair da conta" danger onClick={onLogout} last />
+          <Row
+            dark={dark}
+            icon={Icon.back(18)}
+            label="Sair da conta"
+            danger
+            onClick={onLogout}
+            last
+          />
         </CardGroup>
 
         {/* FOOTER · estabelecimento + versão */}
@@ -309,7 +361,9 @@ function Row({
         {icon}
       </div>
       <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-        <div style={{ fontSize: 14, fontWeight: 500, color: danger ? C.danger : C.ink }}>{label}</div>
+        <div style={{ fontSize: 14, fontWeight: 500, color: danger ? C.danger : C.ink }}>
+          {label}
+        </div>
         {sub && (
           <div style={{ fontSize: 11.5, color: C.faint, fontWeight: 500, marginTop: 2 }}>{sub}</div>
         )}

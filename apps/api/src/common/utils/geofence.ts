@@ -1,8 +1,5 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
-import type {
-  CustomerLocationCheck,
-  CustomerLocationSignal,
-} from '@restaurant/shared-types';
+import type { CustomerLocationCheck, CustomerLocationSignal } from '@restaurant/shared-types';
 
 export interface GeofenceConfig {
   latitude: number | null;
@@ -20,16 +17,15 @@ export function haversineDistanceMeters(
   const dLon = toRadians(to.longitude - from.longitude);
   const lat1 = toRadians(from.latitude);
   const lat2 = toRadians(to.latitude);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return earthRadiusMeters * c;
 }
 
-export function assertUsableCustomerLocation(
-  location?: CustomerLocationSignal | null,
-): { latitude: number; longitude: number } {
+export function assertUsableCustomerLocation(location?: CustomerLocationSignal | null): {
+  latitude: number;
+  longitude: number;
+} {
   if (!location || location.status !== 'granted') {
     throw new HttpException(
       'Permita o acesso à localização para entrar no app do restaurante.',
@@ -80,9 +76,7 @@ export function evaluateCustomerGeofence(
   };
 }
 
-export function assertInsideCustomerGeofence(
-  check: CustomerLocationCheck,
-): void {
+export function assertInsideCustomerGeofence(check: CustomerLocationCheck): void {
   if (check.insideRadius === false) {
     throw new HttpException(
       `Você está fora da área do restaurante (${Math.round(

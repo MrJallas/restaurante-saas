@@ -47,9 +47,7 @@
  * `Row[]`. Works for SELECT/INSERT (already flat) and UPDATE/DELETE (tuple
  * `[rows, affected]`). Returns `[]` if the input is null/undefined/empty.
  */
-export function unwrapRows<TRow = Record<string, unknown>>(
-  raw: unknown,
-): TRow[] {
+export function unwrapRows<TRow = Record<string, unknown>>(raw: unknown): TRow[] {
   if (raw == null) return [];
   if (!Array.isArray(raw)) return [];
   // UPDATE/DELETE shape: `[Row[], affectedCount]`. We detect by the second

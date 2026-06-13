@@ -13,11 +13,7 @@ export type StaffMessageFromRole = 'customer' | 'staff';
  * `courtesy` and `direct_reply` are existing kinds. Free-form on backend
  * (text column with CHECK in-app).
  */
-export type StaffMessageKind =
-  | 'complaint_response'
-  | 'courtesy'
-  | 'direct_reply'
-  | 'system_notice';
+export type StaffMessageKind = 'complaint_response' | 'courtesy' | 'direct_reply' | 'system_notice';
 
 /**
  * Metadata payload attached to a staff message. Carries the `chipAction` for

@@ -59,6 +59,7 @@ Comportamento novo (decisão Caleb 2026-06-11):
 ## 2. Mensagem de contexto consumível (1x por evento) + hierarquia
 
 Arquivos-chave:
+
 - apps/api/src/modules/continuation/continuation.service.ts — hierarquia
   atual nas linhas ~107-118 (reclamação<10min → pagou<10min → pedido
   ativo<30min → chamou_garcom<5min → viu_cardapio<10min →
@@ -141,9 +142,9 @@ LLM; o backend resolve por regex/rule-layer e o FRONT CONTINUA IGUAL
     "tem algo sem glúten que chegue rápido?", "meu pedido veio errado, o
     que você sugere?", frases longas/ambíguas com as palavras-gatilho no
     meio ("não quero ver o cardápio agora, me fala de você") etc.
-  Asserts: `layer` correto + `provider.chat.await_count` (0 nas
-  positivas, >0 nas negativas). Validar também manualmente com algumas
-  conversas reais no stack (LLM local) e relatar.
+    Asserts: `layer` correto + `provider.chat.await_count` (0 nas
+    positivas, >0 nas negativas). Validar também manualmente com algumas
+    conversas reais no stack (LLM local) e relatar.
 
 ## 5. Decisões 2026-06-11 a executar (perguntas 1/2/3/7 + pendência)
 
@@ -186,20 +187,20 @@ e corrigir: erro real tratado, sem toast órfão.
 Cobrir com testes (continuation: unit/integration; fluxo: Playwright —
 specs rodam SERIALMENTE, ver MEMORY):
 
-| Ação | Esperado no assistente |
-|---|---|
-| Fez pedido → 1ª entrada | mensagem de contexto do pedido (1x) + eyebrow `● RECEBIDO/EM PREPARO · ETA` |
-| Mesmo pedido → 2ª entrada (veio do cardápio) | mensagem de CARDÁPIO + eyebrow de status persiste |
-| Mesmo pedido → 2ª entrada (não veio do cardápio) | `voltou_sem_acao` + eyebrow persiste |
-| Pedido avança (WS) com assistente aberto | eyebrow muda de estado/ETA ao vivo |
-| Pedido entregue | eyebrow volta ao normal; greeting padrão |
-| Novo pedido (2º) | mensagem de pedido aparece de novo (1x, evento novo) |
-| Abriu reclamação → 1ª entrada | pós-reclamação (1x); depois libera navegação |
-| Pagou → 1ª entrada | pós-pagamento (1x) |
-| Chamou garçom → 1ª entrada ≤5min | chamou_garcom (1x) |
-| Chip/frase direta | resposta rule-layer sem LLM, UX idêntica, chips coerentes |
-| Frase ambígua/raciocínio | vai pro LLM |
-| Resposta do gerente | só o cliente destinatário vê (outro participante da mesa não recebe) |
+| Ação                                             | Esperado no assistente                                                      |
+| ------------------------------------------------ | --------------------------------------------------------------------------- |
+| Fez pedido → 1ª entrada                          | mensagem de contexto do pedido (1x) + eyebrow `● RECEBIDO/EM PREPARO · ETA` |
+| Mesmo pedido → 2ª entrada (veio do cardápio)     | mensagem de CARDÁPIO + eyebrow de status persiste                           |
+| Mesmo pedido → 2ª entrada (não veio do cardápio) | `voltou_sem_acao` + eyebrow persiste                                        |
+| Pedido avança (WS) com assistente aberto         | eyebrow muda de estado/ETA ao vivo                                          |
+| Pedido entregue                                  | eyebrow volta ao normal; greeting padrão                                    |
+| Novo pedido (2º)                                 | mensagem de pedido aparece de novo (1x, evento novo)                        |
+| Abriu reclamação → 1ª entrada                    | pós-reclamação (1x); depois libera navegação                                |
+| Pagou → 1ª entrada                               | pós-pagamento (1x)                                                          |
+| Chamou garçom → 1ª entrada ≤5min                 | chamou_garcom (1x)                                                          |
+| Chip/frase direta                                | resposta rule-layer sem LLM, UX idêntica, chips coerentes                   |
+| Frase ambígua/raciocínio                         | vai pro LLM                                                                 |
+| Resposta do gerente                              | só o cliente destinatário vê (outro participante da mesa não recebe)        |
 
 ## Validações mínimas
 

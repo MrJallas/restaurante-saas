@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import {
   IsBoolean,
   IsInt,
@@ -119,11 +110,7 @@ export class ZonePauseController {
    */
   @Post()
   @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
-  async create(
-    @Param('slug') slug: string,
-    @Body() dto: CreateZonePauseDto,
-    @Req() req: Request,
-  ) {
+  async create(@Param('slug') slug: string, @Body() dto: CreateZonePauseDto, @Req() req: Request) {
     const staffId = this.callerResolver.requireStaffId(req);
     return this.service.create(
       {

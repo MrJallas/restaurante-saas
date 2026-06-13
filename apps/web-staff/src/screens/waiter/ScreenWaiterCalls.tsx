@@ -101,8 +101,7 @@ function mapDelivery(row: PendingDelivery, staffId: string | null): CallRow {
   // Predicado canônico (lib/api/waiter) — variantes locais divergiam entre
   // banner/home/aba e o portador exibido era o ALVO original, não quem
   // claimou (code-review).
-  const mine =
-    isDeliveryForWaiter(row, staffId) || isDeliveryClaimedBy(row, staffId);
+  const mine = isDeliveryForWaiter(row, staffId) || isDeliveryClaimedBy(row, staffId);
   const carrierName = row.claimed_by_name ?? row.target_waiter_name;
   const parts = [
     `${itemsCount} ${itemsCount === 1 ? 'item' : 'itens'} prontos`,
@@ -115,7 +114,10 @@ function mapDelivery(row: PendingDelivery, staffId: string | null): CallRow {
   return {
     id: `delivery:${row.delivery_id}`,
     type: 'pronto-cozinha',
-    tableNumber: tableNumberFromCode({ table_code: row.table_code, table_label: row.table_label } as WaiterCallSummary),
+    tableNumber: tableNumberFromCode({
+      table_code: row.table_code,
+      table_label: row.table_label,
+    } as WaiterCallSummary),
     partySize: row.party_size || undefined,
     sub: parts.join(' · '),
     ts: relativeTime(referenceAt),
@@ -125,7 +127,13 @@ function mapDelivery(row: PendingDelivery, staffId: string | null): CallRow {
   };
 }
 
-export function ScreenWaiterCalls({ dark = false, tenantSlug }: { dark?: boolean; tenantSlug: string }) {
+export function ScreenWaiterCalls({
+  dark = false,
+  tenantSlug,
+}: {
+  dark?: boolean;
+  tenantSlug: string;
+}) {
   const C = useG(dark);
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>('todos');
@@ -146,10 +154,7 @@ export function ScreenWaiterCalls({ dark = false, tenantSlug }: { dark?: boolean
           listPendingDeliveries(tenantSlug).catch(() => [] as PendingDelivery[]),
         ]);
         if (cancelled) return;
-        setCalls([
-          ...deliveries.map((d) => mapDelivery(d, staffId)),
-          ...rows.map(mapCall),
-        ]);
+        setCalls([...deliveries.map((d) => mapDelivery(d, staffId)), ...rows.map(mapCall)]);
         setErrorMsg(null);
       } catch (error) {
         console.error('[waiter-calls] list failed', error);
@@ -207,7 +212,13 @@ export function ScreenWaiterCalls({ dark = false, tenantSlug }: { dark?: boolean
     >
       <GAppHeader
         dark={dark}
-        left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.push(`/waiter?tenant=${tenantSlug}`)} />}
+        left={
+          <GIconBtn
+            dark={dark}
+            icon={Icon.back(20)}
+            onClick={() => router.push(`/waiter?tenant=${tenantSlug}`)}
+          />
+        }
         title="Chamados"
         right={
           <GIconBtn
@@ -354,7 +365,8 @@ export function ScreenWaiterCalls({ dark = false, tenantSlug }: { dark?: boolean
                         marginTop: 2,
                       }}
                     >
-                      Mesa {c.tableNumber ?? '-'}{c.partySize ? ` · ${c.partySize}p` : ''}
+                      Mesa {c.tableNumber ?? '-'}
+                      {c.partySize ? ` · ${c.partySize}p` : ''}
                     </div>
                     <div
                       style={{

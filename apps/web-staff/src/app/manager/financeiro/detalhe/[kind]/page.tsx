@@ -152,7 +152,15 @@ function FinanceDetailInner() {
             marginBottom: 12,
           }}
         >
-          <div style={{ fontSize: 10.5, color: C.faint, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+          <div
+            style={{
+              fontSize: 10.5,
+              color: C.faint,
+              fontWeight: 800,
+              letterSpacing: 0.6,
+              textTransform: 'uppercase',
+            }}
+          >
             Período
           </div>
           <div style={{ marginTop: 5, fontSize: 28, fontWeight: 900, letterSpacing: -0.7 }}>
@@ -161,7 +169,7 @@ function FinanceDetailInner() {
               : kind === 'ticket-medio'
                 ? money(totals.avgTicketCents)
                 : kind === 'pendentes'
-                  ? overview?.today.pendingOrders ?? 0
+                  ? (overview?.today.pendingOrders ?? 0)
                   : money(totals.revenueCents)}
           </div>
         </div>
@@ -243,12 +251,29 @@ function DetailRow({
       }}
     >
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 800,
+            color: C.ink,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
           {left}
         </div>
         <div style={{ marginTop: 2, fontSize: 11, fontWeight: 600, color: C.faint }}>{sub}</div>
       </div>
-      <div style={{ flexShrink: 0, fontSize: 14, fontWeight: 900, color: C.ink, fontVariantNumeric: 'tabular-nums' }}>
+      <div
+        style={{
+          flexShrink: 0,
+          fontSize: 14,
+          fontWeight: 900,
+          color: C.ink,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
         {right}
       </div>
     </div>
@@ -257,7 +282,9 @@ function DetailRow({
 
 export default function FinanceDetailPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando...</div>}>
+    <Suspense
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando...</div>}
+    >
       <FinanceDetailInner />
     </Suspense>
   );

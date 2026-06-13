@@ -30,8 +30,16 @@ import { manager, type StaffPerformance, type StaffRosterEntry } from '../../lib
 type StaffComparisonMetric = NonNullable<StaffPerformance['teamComparison']>[number]['metric'];
 
 const STAFF_COLORS = [
-  '#4F6BFF', '#E37D2F', '#7A4FBE', '#C43A3A', '#0B7A8B',
-  '#5B7CD9', '#D9595B', '#3E8C72', '#9A4FBE', '#1E8C5A',
+  '#4F6BFF',
+  '#E37D2F',
+  '#7A4FBE',
+  '#C43A3A',
+  '#0B7A8B',
+  '#5B7CD9',
+  '#D9595B',
+  '#3E8C72',
+  '#9A4FBE',
+  '#1E8C5A',
 ];
 function staffColor(id: string): string {
   let h = 0;
@@ -84,10 +92,7 @@ function periodLabel(period: Window): string {
   if (period === 'today') return 'hoje';
   return period === '7d' ? '7 dias' : '30 dias';
 }
-function formatMetricValue(
-  metric: StaffComparisonMetric,
-  value: number,
-): string {
+function formatMetricValue(metric: StaffComparisonMetric, value: number): string {
   if (metric === 'avgResponseSec') return formatDuration(Math.round(value));
   if (metric === 'avgTicketCents') return formatCurrency(Math.round(value));
   return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(value);
@@ -120,7 +125,7 @@ export function ScreenManagerStaffDetail({
   const slug =
     tenantSlug ??
     (typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('slug') ?? undefined
+      ? (new URLSearchParams(window.location.search).get('slug') ?? undefined)
       : undefined) ??
     process.env.NEXT_PUBLIC_TENANT_SLUG ??
     'demo';
@@ -187,10 +192,12 @@ export function ScreenManagerStaffDetail({
   const chartTotal = chartDays.reduce((sum, d) => sum + d.v, 0);
   const chartOrders = chartDays.reduce((sum, d) => sum + d.orders, 0);
   const chartAvgTicket = chartOrders > 0 ? Math.round(chartTotal / chartOrders) : 0;
-  const peakDay = chartDays.reduce(
-    (best, d) => (d.v > best.v ? d : best),
-    { key: '', d: '-', v: 0, orders: 0 },
-  );
+  const peakDay = chartDays.reduce((best, d) => (d.v > best.v ? d : best), {
+    key: '',
+    d: '-',
+    v: 0,
+    orders: 0,
+  });
   const comparisonRows = performance?.teamComparison ?? [];
   const goEdit = () => router.push(`/manager/equipe/${staffId}/editar?slug=${slug}`);
   const goBack = () => router.push('/manager/equipe');
@@ -250,7 +257,9 @@ export function ScreenManagerStaffDetail({
                 size={56}
               />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: -0.2 }}>{staff.name}</div>
+                <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: -0.2 }}>
+                  {staff.name}
+                </div>
                 <div style={{ fontSize: 12, color: C.faint, marginTop: 2, fontWeight: 500 }}>
                   {roleLabel(staff.role)}
                   {staff.default_shift ? ` · turno ${staff.default_shift.toLowerCase()}` : ''}
@@ -263,7 +272,9 @@ export function ScreenManagerStaffDetail({
                   </div>
                 ) : (
                   <div style={{ marginTop: 6 }}>
-                    <MPill tone="warn" dark={dark}>Inativo</MPill>
+                    <MPill tone="warn" dark={dark}>
+                      Inativo
+                    </MPill>
                   </div>
                 )}
               </div>
@@ -278,9 +289,7 @@ export function ScreenManagerStaffDetail({
                 >
                   {kpis?.callsAnswered ?? 0}
                 </div>
-                <div style={{ fontSize: 10, color: C.faint, fontWeight: 600 }}>
-                  chamados
-                </div>
+                <div style={{ fontSize: 10, color: C.faint, fontWeight: 600 }}>chamados</div>
               </div>
             </div>
 
@@ -337,7 +346,9 @@ export function ScreenManagerStaffDetail({
                   dark={dark}
                   label="Mesas atendidas"
                   value={performanceLoading ? '...' : String(kpis?.sessionsHandled ?? 0)}
-                  sub={activeWindow === 'today' ? 'hoje' : activeWindow === '7d' ? '7 dias' : '30 dias'}
+                  sub={
+                    activeWindow === 'today' ? 'hoje' : activeWindow === '7d' ? '7 dias' : '30 dias'
+                  }
                   trend={{ dir: 'up' }}
                   help="Sessões de mesa encerradas por este funcionário."
                 />
@@ -405,8 +416,8 @@ export function ScreenManagerStaffDetail({
                               i === chartDays.length - 1
                                 ? C.ink
                                 : i === chartDays.length - 2
-                                ? '#888'
-                                : '#d8d2c5',
+                                  ? '#888'
+                                  : '#d8d2c5',
                             borderRadius: '4px 4px 0 0',
                             minHeight: 6,
                           }}
@@ -417,7 +428,8 @@ export function ScreenManagerStaffDetail({
                   ))}
                 </div>
                 <div style={{ fontSize: 11, color: C.faint, marginTop: 8, fontWeight: 500 }}>
-                  Total · {formatCurrency(chartTotal)} · ticket médio {formatCurrency(chartAvgTicket)} · pico {peakDay.d}
+                  Total · {formatCurrency(chartTotal)} · ticket médio{' '}
+                  {formatCurrency(chartAvgTicket)} · pico {peakDay.d}
                 </div>
               </div>
             </MSection>
@@ -449,7 +461,9 @@ export function ScreenManagerStaffDetail({
                         gap: 10,
                       }}
                     >
-                      <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{metricLabel(row.metric)}</div>
+                      <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>
+                        {metricLabel(row.metric)}
+                      </div>
                       <div style={{ textAlign: 'right' }}>
                         <div
                           style={{

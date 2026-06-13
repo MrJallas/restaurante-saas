@@ -238,14 +238,18 @@ describe('Matriz de contexto consumível (prompt 100 §7)', () => {
     const service = makeService(state);
 
     expect(
-      (await service.getContinuation(SESSION, CUSTOMER, 'restaurant_dev', {
-        surface: 'assistente',
-      })).kind,
+      (
+        await service.getContinuation(SESSION, CUSTOMER, 'restaurant_dev', {
+          surface: 'assistente',
+        })
+      ).kind,
     ).toBe('pagou');
     expect(
-      (await service.getContinuation(SESSION, CUSTOMER, 'restaurant_dev', {
-        surface: 'assistente',
-      })).kind,
+      (
+        await service.getContinuation(SESSION, CUSTOMER, 'restaurant_dev', {
+          surface: 'assistente',
+        })
+      ).kind,
     ).toBe('voltou_sem_acao');
   });
 
@@ -259,14 +263,18 @@ describe('Matriz de contexto consumível (prompt 100 §7)', () => {
     const service = makeService(state);
 
     expect(
-      (await service.getContinuation(SESSION, CUSTOMER, 'restaurant_dev', {
-        surface: 'assistente',
-      })).kind,
+      (
+        await service.getContinuation(SESSION, CUSTOMER, 'restaurant_dev', {
+          surface: 'assistente',
+        })
+      ).kind,
     ).toBe('chamou_garcom');
     expect(
-      (await service.getContinuation(SESSION, CUSTOMER, 'restaurant_dev', {
-        surface: 'assistente',
-      })).kind,
+      (
+        await service.getContinuation(SESSION, CUSTOMER, 'restaurant_dev', {
+          surface: 'assistente',
+        })
+      ).kind,
     ).toBe('voltou_sem_acao');
   });
 

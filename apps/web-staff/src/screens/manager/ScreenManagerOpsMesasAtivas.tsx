@@ -71,7 +71,10 @@ const FALLBACK_SECTIONS: TableSection[] = [
 ];
 const TOTAL_TABLES = 16;
 
-export function ScreenManagerOpsMesasAtivas({ dark, tenantSlug: _tenantSlug }: ScreenManagerOpsMesasAtivasProps) {
+export function ScreenManagerOpsMesasAtivas({
+  dark,
+  tenantSlug: _tenantSlug,
+}: ScreenManagerOpsMesasAtivasProps) {
   const C = useG(!!dark);
   const router = useRouter();
   const params = useSearchParams();
@@ -166,7 +169,9 @@ export function ScreenManagerOpsMesasAtivas({ dark, tenantSlug: _tenantSlug }: S
           >
             · {free} LIVRES
           </div>
-          <div style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}>
+          <div
+            style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}
+          >
             {occ} mesas com cliente sentado agora · {free} livres.
           </div>
         </div>
@@ -258,7 +263,9 @@ export function ScreenManagerOpsMesasAtivas({ dark, tenantSlug: _tenantSlug }: S
                   >
                     R$ {t.val}
                   </div>
-                  <span style={{ color: C.faint, opacity: 0.7, flexShrink: 0 }}>{Icon.arrow(14)}</span>
+                  <span style={{ color: C.faint, opacity: 0.7, flexShrink: 0 }}>
+                    {Icon.arrow(14)}
+                  </span>
                 </button>
               ))}
             </div>
@@ -271,7 +278,9 @@ export function ScreenManagerOpsMesasAtivas({ dark, tenantSlug: _tenantSlug }: S
             C={C}
             icon={Icon.table(13)}
             onClick={() =>
-              router.push(slugQs ? `/manager/operacoes?slug=${slugQs}&tab=map` : '/manager/operacoes?tab=map')
+              router.push(
+                slugQs ? `/manager/operacoes?slug=${slugQs}&tab=map` : '/manager/operacoes?tab=map',
+              )
             }
           >
             Ver no Mapa →
@@ -280,7 +289,8 @@ export function ScreenManagerOpsMesasAtivas({ dark, tenantSlug: _tenantSlug }: S
 
         <div style={{ height: 18 }} />
         <Formula C={C}>
-          Total de mesas com <b>sessão aberta</b> dividido pelo total de mesas configuradas no estabelecimento.
+          Total de mesas com <b>sessão aberta</b> dividido pelo total de mesas configuradas no
+          estabelecimento.
         </Formula>
       </div>
 
@@ -392,7 +402,9 @@ function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.
       >
         Como esse número é calculado
       </div>
-      <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>{children}</div>
+      <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>
+        {children}
+      </div>
     </div>
   );
 }

@@ -106,8 +106,12 @@ export function ScreenManagerStaff({
   const router = useRouter();
   const [team, setTeam] = useState<StaffMember[]>(M_TEAM_FALLBACK);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'todos' | 'em_turno' | 'sobrec' | 'folga' | 'fora'>('todos');
-  const [roleFilter, setRoleFilter] = useState<'todos' | StaffMember['role'] | 'cozinha+bar'>('todos');
+  const [statusFilter, setStatusFilter] = useState<
+    'todos' | 'em_turno' | 'sobrec' | 'folga' | 'fora'
+  >('todos');
+  const [roleFilter, setRoleFilter] = useState<'todos' | StaffMember['role'] | 'cozinha+bar'>(
+    'todos',
+  );
   const [openShift, setOpenShift] = useState<ShiftId | null>(null);
   const [contactTarget, setContactTarget] = useState<ManagerStaffTarget | null>(null);
 
@@ -122,7 +126,12 @@ export function ScreenManagerStaff({
             id: s.id,
             name: s.name,
             role: ROLE_LABEL[s.role] ?? (s.role as StaffMember['role']) ?? 'Garçom',
-            init: s.name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase(),
+            init: s.name
+              .split(' ')
+              .map((p) => p[0])
+              .slice(0, 2)
+              .join('')
+              .toUpperCase(),
             shift: '17:00 — 23:00',
             status: s.is_active ? 'on' : 'off',
             rating: 4.5 + (i % 3) * 0.1,
@@ -173,7 +182,9 @@ export function ScreenManagerStaff({
     if (search.trim() && !p.name.toLowerCase().includes(search.trim().toLowerCase())) return false;
     return true;
   });
-  const isEmptyResult = filtered.length === 0 && (search.trim() !== '' || statusFilter !== 'todos' || roleFilter !== 'todos');
+  const isEmptyResult =
+    filtered.length === 0 &&
+    (search.trim() !== '' || statusFilter !== 'todos' || roleFilter !== 'todos');
 
   // ─── Turnos do dia ──────────────────────────────────────────────
   const derivedShifts: ShiftRow[] = [
@@ -209,7 +220,13 @@ export function ScreenManagerStaff({
         color: C.ink,
       }}
     >
-      <div style={{ flex: 1, overflow: 'auto', paddingBottom: 'calc(140px + max(0px, env(safe-area-inset-bottom, 0px) - 14px))' }}>
+      <div
+        style={{
+          flex: 1,
+          overflow: 'auto',
+          paddingBottom: 'calc(140px + max(0px, env(safe-area-inset-bottom, 0px) - 14px))',
+        }}
+      >
         <MAppHeader dark={dark} title="Equipe" />
 
         {/* 2 · 3 KPIs Compact — Round 18 Onda 4: tap navega pro drill-down V9.
@@ -225,7 +242,9 @@ export function ScreenManagerStaff({
               value={
                 <span>
                   {inField}
-                  <span style={{ fontSize: 13, color: C.faint, fontWeight: 500 }}>/{totalCount}</span>
+                  <span style={{ fontSize: 13, color: C.faint, fontWeight: 500 }}>
+                    /{totalCount}
+                  </span>
                 </span>
               }
               sub={totalCount - inField > 0 ? `${totalCount - inField} fora` : 'todos OK'}
@@ -368,12 +387,34 @@ export function ScreenManagerStaff({
             dark={dark}
             items={[
               { id: 'todos', label: 'Todos', count: totalCount, active: statusFilter === 'todos' },
-              { id: 'em_turno', label: 'Em turno', count: inField, active: statusFilter === 'em_turno' },
-              { id: 'sobrec', label: 'Sobrecarregados', count: overloadCount, active: statusFilter === 'sobrec' },
-              { id: 'folga', label: 'Folga', count: team.filter((p) => p.status === 'off').length, active: statusFilter === 'folga' },
-              { id: 'fora', label: 'Fora', count: totalCount - inField, active: statusFilter === 'fora' },
+              {
+                id: 'em_turno',
+                label: 'Em turno',
+                count: inField,
+                active: statusFilter === 'em_turno',
+              },
+              {
+                id: 'sobrec',
+                label: 'Sobrecarregados',
+                count: overloadCount,
+                active: statusFilter === 'sobrec',
+              },
+              {
+                id: 'folga',
+                label: 'Folga',
+                count: team.filter((p) => p.status === 'off').length,
+                active: statusFilter === 'folga',
+              },
+              {
+                id: 'fora',
+                label: 'Fora',
+                count: totalCount - inField,
+                active: statusFilter === 'fora',
+              },
             ]}
-            onClick={(id) => setStatusFilter(id as 'todos' | 'em_turno' | 'sobrec' | 'folga' | 'fora')}
+            onClick={(id) =>
+              setStatusFilter(id as 'todos' | 'em_turno' | 'sobrec' | 'folga' | 'fora')
+            }
           />
           <div style={{ height: 6 }} />
           <ChipRow
@@ -466,12 +507,7 @@ export function ScreenManagerStaff({
             </div>
           ) : (
             filtered.map((p) => (
-              <StaffCard
-                key={p.id}
-                dark={dark}
-                p={p}
-                onContact={(t) => setContactTarget(t)}
-              />
+              <StaffCard key={p.id} dark={dark} p={p} onContact={(t) => setContactTarget(t)} />
             ))
           )}
         </div>
@@ -499,7 +535,9 @@ export function ScreenManagerStaff({
                       padding: '10px 12px',
                       border: `1px solid ${C.borderSoft}`,
                       borderRadius: isOpen ? '12px 12px 0 0' : 12,
-                      borderBottom: isOpen ? `1px dashed ${C.borderSoft}` : `1px solid ${C.borderSoft}`,
+                      borderBottom: isOpen
+                        ? `1px dashed ${C.borderSoft}`
+                        : `1px solid ${C.borderSoft}`,
                       background: C.bg,
                       display: 'flex',
                       alignItems: 'center',
@@ -556,9 +594,14 @@ export function ScreenManagerStaff({
                         </div>
                       ) : (
                         sh.members.map((m) => (
-                          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div
+                            key={m.id}
+                            style={{ display: 'flex', alignItems: 'center', gap: 10 }}
+                          >
                             <MAvatar name={m.name} init={m.init} color={m.color} size={28} />
-                            <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.ink }}>{m.name}</div>
+                            <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.ink }}>
+                              {m.name}
+                            </div>
                             <div
                               style={{
                                 fontSize: 10,
@@ -585,7 +628,9 @@ export function ScreenManagerStaff({
         {/* 7 · Próximos eventos do turno (oculto quando vazio) */}
         {nextEvents.length > 0 && (
           <MSection dark={dark} title="Próximos eventos do turno">
-            <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div
+              style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}
+            >
               {nextEvents.map((e, i) => (
                 <div
                   key={i}
@@ -603,7 +648,8 @@ export function ScreenManagerStaff({
                     style={{
                       fontSize: 12,
                       fontWeight: 800,
-                      color: e.tone === 'success' ? '#1E8C5A' : e.tone === 'warn' ? '#9A7212' : C.ink,
+                      color:
+                        e.tone === 'success' ? '#1E8C5A' : e.tone === 'warn' ? '#9A7212' : C.ink,
                       fontVariantNumeric: 'tabular-nums',
                       letterSpacing: 0.2,
                       minWidth: 44,
@@ -612,7 +658,15 @@ export function ScreenManagerStaff({
                   >
                     {e.time}
                   </div>
-                  <div style={{ flex: 1, fontSize: 13, color: C.ink, fontWeight: 600, letterSpacing: -0.1 }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      fontSize: 13,
+                      color: C.ink,
+                      fontWeight: 600,
+                      letterSpacing: -0.1,
+                    }}
+                  >
                     {e.txt}
                   </div>
                 </div>
@@ -637,8 +691,7 @@ export function ScreenManagerStaff({
           right: 0,
           bottom: 0,
           paddingTop: 40,
-          paddingBottom:
-            'calc(92px + max(0px, env(safe-area-inset-bottom, 0px) - 14px))',
+          paddingBottom: 'calc(92px + max(0px, env(safe-area-inset-bottom, 0px) - 14px))',
           paddingLeft: 16,
           paddingRight: 16,
           pointerEvents: 'none',
@@ -704,13 +757,7 @@ export function ScreenManagerStaff({
 // já contém um `<button>` (o ícone `?` de help tooltip), e nesting de
 // button dentro de button é HTML inválido + causa hydration error.
 // Keyboard handler dá Enter/Space pra a11y, igual a um `<button>` nativo.
-function StatButton({
-  onClick,
-  children,
-}: {
-  onClick: () => void;
-  children: ReactNode;
-}) {
+function StatButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return (
     <div
       role="button"
@@ -808,25 +855,21 @@ function StaffCard({
     p.status === 'off'
       ? { id: 'folga' as const, tone: 'mute' as const, label: 'Folga' }
       : p.tables >= 7
-      ? { id: 'sobre' as const, tone: 'danger' as const, label: 'Sobrecarregado' }
-      : p.tables >= 5
-      ? { id: 'media' as const, tone: 'warn' as const, label: 'Carga média' }
-      : { id: 'ok' as const, tone: 'success' as const, label: 'Em turno' };
+        ? { id: 'sobre' as const, tone: 'danger' as const, label: 'Sobrecarregado' }
+        : p.tables >= 5
+          ? { id: 'media' as const, tone: 'warn' as const, label: 'Carga média' }
+          : { id: 'ok' as const, tone: 'success' as const, label: 'Em turno' };
   const showOverloadActions = status.id === 'sobre' || status.id === 'media';
 
   // Round 18 (Onda 2): clique no card abre StaffDetail. Antes o card
   // era render-only.
   const openDetail = () => {
-    const search = new URLSearchParams(
-      typeof window !== 'undefined' ? window.location.search : '',
-    );
+    const search = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
     const slug = search.get('slug') ?? '';
     router.push(`/manager/equipe/${p.id}${slug ? `?slug=${slug}` : ''}`);
   };
   const withSlug = (path: string) => {
-    const search = new URLSearchParams(
-      typeof window !== 'undefined' ? window.location.search : '',
-    );
+    const search = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
     const slug = search.get('slug');
     return slug ? `${path}?slug=${slug}` : path;
   };
@@ -889,7 +932,10 @@ function StaffCard({
         >
           {[
             { lbl: 'MESAS', val: p.tables || '—' },
-            { lbl: 'RESPOSTA', val: p.callsAvg ? `${p.callsAvg.toFixed(1).replace('.', ',')}m` : '—' },
+            {
+              lbl: 'RESPOSTA',
+              val: p.callsAvg ? `${p.callsAvg.toFixed(1).replace('.', ',')}m` : '—',
+            },
             { lbl: 'VENDIDO', val: p.sales ? `R$ ${p.sales.toLocaleString('pt-BR')}` : '—' },
           ].map((m, i) => (
             <div
@@ -957,10 +1003,16 @@ function StaffCard({
             </>
           ) : (
             <>
-              <ActionPill dark={dark} onClick={() => router.push(withSlug('/manager/operacoes/mesas-ativas'))}>
+              <ActionPill
+                dark={dark}
+                onClick={() => router.push(withSlug('/manager/operacoes/mesas-ativas'))}
+              >
                 Ver mesas
               </ActionPill>
-              <ActionPill dark={dark} onClick={() => router.push(withSlug('/manager/equipe/sobrecarga'))}>
+              <ActionPill
+                dark={dark}
+                onClick={() => router.push(withSlug('/manager/equipe/sobrecarga'))}
+              >
                 Mover mesa
               </ActionPill>
             </>

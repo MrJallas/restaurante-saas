@@ -68,14 +68,11 @@ export default function PedidoRevisarPage() {
         notes: it.note || undefined,
         customerId: it.commandMode === 'individual' ? customerId : null,
       }));
-      const res = await apiPost<{ id: string; autoConfirmAt?: string }>(
-        `/${slug}/orders`,
-        {
-          billingMode: firstMode,
-          visitId: visitId || undefined,
-          items: orderItems,
-        },
-      );
+      const res = await apiPost<{ id: string; autoConfirmAt?: string }>(`/${slug}/orders`, {
+        billingMode: firstMode,
+        visitId: visitId || undefined,
+        items: orderItems,
+      });
       push(`/${slug}/pedido/confirmando?orderId=${res.id}`);
     } catch (err) {
       if (
@@ -89,9 +86,7 @@ export default function PedidoRevisarPage() {
         setSubmitting(false);
         return;
       }
-      setSubmitError(
-        err instanceof Error ? err.message : 'Erro ao criar pedido. Tente novamente.',
-      );
+      setSubmitError(err instanceof Error ? err.message : 'Erro ao criar pedido. Tente novamente.');
       setSubmitting(false);
     }
   };
@@ -198,9 +193,7 @@ export default function PedidoRevisarPage() {
                     {it.commandMode === 'table' ? 'comanda da mesa' : 'minha comanda'}
                   </div>
                   {it.preferences && it.preferences.length > 0 && (
-                    <div className="mb-1 text-[11px] text-mute">
-                      {it.preferences.join(' · ')}
-                    </div>
+                    <div className="mb-1 text-[11px] text-mute">{it.preferences.join(' · ')}</div>
                   )}
                   {isEditing ? (
                     <textarea
@@ -225,9 +218,7 @@ export default function PedidoRevisarPage() {
                     >
                       <span className="truncate">{it.note || '+ adicionar observação'}</span>
                       {it.note && (
-                        <span className="shrink-0 text-[11px] text-mute underline">
-                          editar
-                        </span>
+                        <span className="shrink-0 text-[11px] text-mute underline">editar</span>
                       )}
                     </button>
                   )}
@@ -259,17 +250,15 @@ export default function PedidoRevisarPage() {
             <div className="h-2.5" />
             <Row
               label={<b className="text-[16px] text-ink">Total estimado</b>}
-              value={
-                <b className="text-[20px] text-ink tabular-nums">{fmt(totalCents)}</b>
-              }
+              value={<b className="text-[20px] text-ink tabular-nums">{fmt(totalCents)}</b>}
             />
           </div>
 
           <div className="mt-3.5 flex items-start gap-2 rounded-[12px] border border-border-soft bg-surface p-3 text-[11px] leading-[1.5] text-mute">
             <span className="text-[12px]">ⓘ</span>
             <span className="text-pretty">
-              Após confirmar, você terá <b className="text-ink">15 segundos</b> para
-              revisar antes do pedido ir para a cozinha.
+              Após confirmar, você terá <b className="text-ink">15 segundos</b> para revisar antes
+              do pedido ir para a cozinha.
             </span>
           </div>
 

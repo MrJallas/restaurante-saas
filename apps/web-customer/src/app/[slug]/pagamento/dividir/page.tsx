@@ -93,9 +93,7 @@ export default function PagamentoDividirPage() {
     if (participants.length === 0 || items.length === 0) return;
     if (mode === 'equal') {
       const per = Math.round((subtotalCents + serviceCents) / participants.length);
-      setAllocations(
-        participants.map((p) => ({ customerId: p.customerId, amountCents: per })),
-      );
+      setAllocations(participants.map((p) => ({ customerId: p.customerId, amountCents: per })));
     } else if (mode === 'by_item') {
       const totals = new Map<string, number>();
       participants.forEach((p) => totals.set(p.customerId, 0));
@@ -283,9 +281,7 @@ export default function PagamentoDividirPage() {
                         </span>
                       )}
                     </div>
-                    <div className="text-[11px] text-mute">
-                      base {fmt(base)} · + taxa 10%
-                    </div>
+                    <div className="text-[11px] text-mute">base {fmt(base)} · + taxa 10%</div>
                   </div>
                   <div className="text-[16px] font-semibold tabular-nums">{fmt(amt)}</div>
                 </div>

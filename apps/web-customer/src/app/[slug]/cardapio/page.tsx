@@ -51,9 +51,7 @@ function normalizeCategory(value: string): string {
 }
 
 function categoryLooksLikeDrink(value: string): boolean {
-  return /bebida|drink|vinho|cerveja|suco|agua|refrigerante/.test(
-    normalizeCategory(value),
-  );
+  return /bebida|drink|vinho|cerveja|suco|agua|refrigerante/.test(normalizeCategory(value));
 }
 
 export default function CardapioPage() {
@@ -129,16 +127,12 @@ export default function CardapioPage() {
 
   const foodItems = useMemo(() => {
     const foodCatIds = new Set(foodCategories.map((c) => c.id));
-    return items.filter((it) =>
-      it.kind ? it.kind === 'food' : foodCatIds.has(it.category_id),
-    );
+    return items.filter((it) => (it.kind ? it.kind === 'food' : foodCatIds.has(it.category_id)));
   }, [items, foodCategories]);
 
   const drinkItems = useMemo(() => {
     const drinkCatIds = new Set(drinkCategories.map((c) => c.id));
-    return items.filter((it) =>
-      it.kind ? it.kind === 'drink' : drinkCatIds.has(it.category_id),
-    );
+    return items.filter((it) => (it.kind ? it.kind === 'drink' : drinkCatIds.has(it.category_id)));
   }, [items, drinkCategories]);
 
   useEffect(() => {
@@ -225,10 +219,7 @@ export default function CardapioPage() {
             <button
               type="button"
               onClick={() =>
-                setCommandMode(
-                  commandMode === 'individual' ? 'table' : 'individual',
-                  true,
-                )
+                setCommandMode(commandMode === 'individual' ? 'table' : 'individual', true)
               }
               className="shrink-0 rounded-full border border-ink px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.8px] text-ink"
             >
@@ -245,128 +236,124 @@ export default function CardapioPage() {
         )}
       </div>
 
-        <div className="shrink-0 px-[22px] pb-2.5">
-          <div className="flex gap-1 rounded-full border border-border-soft bg-surface p-1">
+      <div className="shrink-0 px-[22px] pb-2.5">
+        <div className="flex gap-1 rounded-full border border-border-soft bg-surface p-1">
+          <button
+            type="button"
+            onClick={() => {
+              setTab('food');
+              setActiveCategory(null);
+            }}
+            className={`flex-1 rounded-full px-4 py-2 text-[13px] ${
+              tab === 'food' ? 'bg-ink font-semibold text-white' : 'font-medium text-mute'
+            }`}
+          >
+            Comida{tab !== 'food' ? ` · ${foodItems.length}` : ''}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setTab('drink');
+              setActiveCategory(null);
+            }}
+            className={`flex-1 rounded-full px-4 py-2 text-[13px] ${
+              tab === 'drink' ? 'bg-ink font-semibold text-white' : 'font-medium text-mute'
+            }`}
+          >
+            Bebidas{tab !== 'drink' ? ` · ${drinkItems.length}` : ''}
+          </button>
+        </div>
+      </div>
+
+      <div className="shrink-0 px-[22px] pb-2.5">
+        <div className="flex items-center gap-2.5 rounded-full border-[1.3px] border-ink bg-bg px-4 py-3">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+            <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.3" />
+            <path d="m9.5 9.5 3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={tab === 'food' ? 'Buscar pratos, ingredientes…' : 'Buscar bebidas…'}
+            className="flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-faint"
+          />
+          {searchQuery && (
             <button
               type="button"
-              onClick={() => {
-                setTab('food');
-                setActiveCategory(null);
-              }}
-              className={`flex-1 rounded-full px-4 py-2 text-[13px] ${
-                tab === 'food'
-                  ? 'bg-ink font-semibold text-white'
-                  : 'font-medium text-mute'
-              }`}
+              onClick={() => setSearchQuery('')}
+              aria-label="Limpar busca"
+              className="flex h-5 w-5 items-center justify-center rounded-full bg-surface text-[11px] text-mute"
             >
-              Comida{tab !== 'food' ? ` · ${foodItems.length}` : ''}
+              ×
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setTab('drink');
-                setActiveCategory(null);
-              }}
-              className={`flex-1 rounded-full px-4 py-2 text-[13px] ${
-                tab === 'drink'
-                  ? 'bg-ink font-semibold text-white'
-                  : 'font-medium text-mute'
-              }`}
-            >
-              Bebidas{tab !== 'drink' ? ` · ${drinkItems.length}` : ''}
-            </button>
-          </div>
-        </div>
-
-        <div className="shrink-0 px-[22px] pb-2.5">
-          <div className="flex items-center gap-2.5 rounded-full border-[1.3px] border-ink bg-bg px-4 py-3">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-              <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.3" />
-              <path d="m9.5 9.5 3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-            </svg>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={tab === 'food' ? 'Buscar pratos, ingredientes…' : 'Buscar bebidas…'}
-              className="flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-faint"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                aria-label="Limpar busca"
-                className="flex h-5 w-5 items-center justify-center rounded-full bg-surface text-[11px] text-mute"
-              >
-                ×
-              </button>
-            )}
-          </div>
-        </div>
-
-        {searchResults === null && currentCategories.length > 0 && (
-          <div className="flex shrink-0 gap-2 overflow-x-auto px-[22px] pb-2.5 pt-1.5 [&::-webkit-scrollbar]:hidden">
-            {currentCategories.map((cat) => {
-              const count = currentItems.filter((i) => i.category_id === cat.id).length;
-              const active = activeCategory === cat.id;
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => setActiveCategory(active ? null : cat.id)}
-                  className={`shrink-0 whitespace-nowrap rounded-full border-[1.2px] border-ink px-4 py-2 text-[13px] font-medium ${
-                    active ? 'bg-ink text-white' : 'bg-bg text-ink'
-                  }`}
-                >
-                  {cat.name} · {count}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="flex-1 overflow-auto px-[22px] pb-6">
-          {searchResults !== null ? (
-            searchResults.length === 0 && searchQuery.length >= 2 ? (
-              <EmptySearchState query={searchQuery} onAskAI={handleAskAI} />
-            ) : (
-              <div>
-                <div className="py-2 text-[11px] font-semibold uppercase tracking-[1.5px] text-mute">
-                  {searchResults.length} resultado
-                  {searchResults.length !== 1 ? 's' : ''} para “{searchQuery}”
-                </div>
-                {searchResults.map((item) => (
-                  <MenuItemRow
-                    key={item.id}
-                    item={{
-                      id: item.id,
-                      name: item.name,
-                      description: item.short_description,
-                      priceCents: item.price_cents,
-                      tags: item.tags,
-                      imageUrl: item.image_url,
-                    }}
-                    onClick={() => handleItemClick(item.id)}
-                  />
-                ))}
-              </div>
-            )
-          ) : tab === 'food' ? (
-            <FoodListByCategory
-              categories={foodCategories}
-              items={filteredByCategory}
-              activeCategoryId={activeCategory}
-              onClick={handleItemClick}
-            />
-          ) : (
-            <DrinksSectioned
-              categories={drinkCategories}
-              items={drinkItems}
-              activeCategoryId={activeCategory}
-              onClick={handleItemClick}
-            />
           )}
         </div>
+      </div>
+
+      {searchResults === null && currentCategories.length > 0 && (
+        <div className="flex shrink-0 gap-2 overflow-x-auto px-[22px] pb-2.5 pt-1.5 [&::-webkit-scrollbar]:hidden">
+          {currentCategories.map((cat) => {
+            const count = currentItems.filter((i) => i.category_id === cat.id).length;
+            const active = activeCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setActiveCategory(active ? null : cat.id)}
+                className={`shrink-0 whitespace-nowrap rounded-full border-[1.2px] border-ink px-4 py-2 text-[13px] font-medium ${
+                  active ? 'bg-ink text-white' : 'bg-bg text-ink'
+                }`}
+              >
+                {cat.name} · {count}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex-1 overflow-auto px-[22px] pb-6">
+        {searchResults !== null ? (
+          searchResults.length === 0 && searchQuery.length >= 2 ? (
+            <EmptySearchState query={searchQuery} onAskAI={handleAskAI} />
+          ) : (
+            <div>
+              <div className="py-2 text-[11px] font-semibold uppercase tracking-[1.5px] text-mute">
+                {searchResults.length} resultado
+                {searchResults.length !== 1 ? 's' : ''} para “{searchQuery}”
+              </div>
+              {searchResults.map((item) => (
+                <MenuItemRow
+                  key={item.id}
+                  item={{
+                    id: item.id,
+                    name: item.name,
+                    description: item.short_description,
+                    priceCents: item.price_cents,
+                    tags: item.tags,
+                    imageUrl: item.image_url,
+                  }}
+                  onClick={() => handleItemClick(item.id)}
+                />
+              ))}
+            </div>
+          )
+        ) : tab === 'food' ? (
+          <FoodListByCategory
+            categories={foodCategories}
+            items={filteredByCategory}
+            activeCategoryId={activeCategory}
+            onClick={handleItemClick}
+          />
+        ) : (
+          <DrinksSectioned
+            categories={drinkCategories}
+            items={drinkItems}
+            activeCategoryId={activeCategory}
+            onClick={handleItemClick}
+          />
+        )}
+      </div>
     </div>
   );
 
@@ -397,9 +384,7 @@ function FoodListByCategory({
   activeCategoryId: string | null;
   onClick: (id: string) => void;
 }) {
-  const activeCat = activeCategoryId
-    ? categories.find((c) => c.id === activeCategoryId)
-    : null;
+  const activeCat = activeCategoryId ? categories.find((c) => c.id === activeCategoryId) : null;
   const categoryLabel = activeCat
     ? `${activeCat.name} · ${items.length} opções`
     : `Tudo · ${items.length} opções`;
@@ -410,9 +395,7 @@ function FoodListByCategory({
         {categoryLabel}
       </div>
       {items.length === 0 ? (
-        <div className="py-10 text-center text-[13px] text-mute">
-          Nenhum item disponível.
-        </div>
+        <div className="py-10 text-center text-[13px] text-mute">Nenhum item disponível.</div>
       ) : (
         items.map((item) => (
           <MenuItemRow
@@ -479,13 +462,7 @@ function DrinksSectioned({
   );
 }
 
-function EmptySearchState({
-  query,
-  onAskAI,
-}: {
-  query: string;
-  onAskAI: () => void;
-}) {
+function EmptySearchState({ query, onAskAI }: { query: string; onAskAI: () => void }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16 text-center">
       <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full border-[1.5px] border-border-soft text-[28px] text-faint">

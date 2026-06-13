@@ -29,24 +29,64 @@ const SECTIONS: Section[] = [
   {
     title: 'Push',
     rows: [
-      { id: 'push.mesa_liberada', label: 'Mesa liberada', sub: 'Um garçom liberou uma mesa', defaultOn: true },
-      { id: 'push.espera_longa', label: 'Espera longa', sub: 'Cliente na lista de espera há mais de 30 min', defaultOn: true },
-      { id: 'push.reserva_proxima', label: 'Reserva próxima', sub: '15 min antes da hora marcada', defaultOn: true },
-      { id: 'push.chegada_tardia', label: 'Chegada tardia', sub: 'Pedido de cliente pra entrar em mesa ocupada', defaultOn: true },
+      {
+        id: 'push.mesa_liberada',
+        label: 'Mesa liberada',
+        sub: 'Um garçom liberou uma mesa',
+        defaultOn: true,
+      },
+      {
+        id: 'push.espera_longa',
+        label: 'Espera longa',
+        sub: 'Cliente na lista de espera há mais de 30 min',
+        defaultOn: true,
+      },
+      {
+        id: 'push.reserva_proxima',
+        label: 'Reserva próxima',
+        sub: '15 min antes da hora marcada',
+        defaultOn: true,
+      },
+      {
+        id: 'push.chegada_tardia',
+        label: 'Chegada tardia',
+        sub: 'Pedido de cliente pra entrar em mesa ocupada',
+        defaultOn: true,
+      },
     ],
   },
   {
     title: 'Som',
     rows: [
-      { id: 'sound.alerts', label: 'Tocar som em alertas', sub: 'Som curto em chegadas/liberações', defaultOn: true },
-      { id: 'sound.long_wait', label: 'Som de espera longa', sub: 'Toque insistente quando espera passa 30 min', defaultOn: false },
+      {
+        id: 'sound.alerts',
+        label: 'Tocar som em alertas',
+        sub: 'Som curto em chegadas/liberações',
+        defaultOn: true,
+      },
+      {
+        id: 'sound.long_wait',
+        label: 'Som de espera longa',
+        sub: 'Toque insistente quando espera passa 30 min',
+        defaultOn: false,
+      },
     ],
   },
   {
     title: 'Lock screen',
     rows: [
-      { id: 'lock.preview', label: 'Mostrar conteúdo na tela bloqueada', sub: 'Nome e mesa aparecem mesmo com o celular travado', defaultOn: false },
-      { id: 'lock.haptic', label: 'Vibração forte', sub: 'Padrão de vibração mais perceptível em ambiente barulhento', defaultOn: true },
+      {
+        id: 'lock.preview',
+        label: 'Mostrar conteúdo na tela bloqueada',
+        sub: 'Nome e mesa aparecem mesmo com o celular travado',
+        defaultOn: false,
+      },
+      {
+        id: 'lock.haptic',
+        label: 'Vibração forte',
+        sub: 'Padrão de vibração mais perceptível em ambiente barulhento',
+        defaultOn: true,
+      },
     ],
   },
 ];
@@ -56,7 +96,10 @@ interface ScreenHostNotificationPrefsProps {
   onTabChange?: (tab: string) => void;
 }
 
-export const ScreenHostNotificationPrefs: React.FC<ScreenHostNotificationPrefsProps> = ({ onBack, onTabChange }) => {
+export const ScreenHostNotificationPrefs: React.FC<ScreenHostNotificationPrefsProps> = ({
+  onBack,
+  onTabChange,
+}) => {
   const { dark } = useStaffTheme();
   const C = useG(dark);
   const [prefs, setPrefs] = useState<Record<string, boolean>>({});
@@ -114,7 +157,16 @@ export const ScreenHostNotificationPrefs: React.FC<ScreenHostNotificationPrefsPr
         }}
       >
         <GIconBtn dark={dark} icon={Icon.back(20)} onClick={onBack} ariaLabel="Voltar" />
-        <h1 style={{ flex: 1, margin: 0, fontSize: 18, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>
+        <h1
+          style={{
+            flex: 1,
+            margin: 0,
+            fontSize: 18,
+            fontWeight: 700,
+            color: C.ink,
+            letterSpacing: -0.2,
+          }}
+        >
           Notificações
         </h1>
         <div style={{ width: 40 }} />
@@ -130,8 +182,7 @@ export const ScreenHostNotificationPrefs: React.FC<ScreenHostNotificationPrefsPr
             lineHeight: 1.5,
           }}
         >
-          Configurações ficam neste dispositivo. Sincronização com sua conta
-          chega no round 19.
+          Configurações ficam neste dispositivo. Sincronização com sua conta chega no round 19.
         </div>
 
         {SECTIONS.map((section) => (
@@ -206,7 +257,9 @@ function ToggleRowItem({
         <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, letterSpacing: -0.1 }}>
           {label}
         </div>
-        <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, fontWeight: 500, lineHeight: 1.3 }}>
+        <div
+          style={{ fontSize: 11.5, color: C.faint, marginTop: 2, fontWeight: 500, lineHeight: 1.3 }}
+        >
           {sub}
         </div>
       </div>

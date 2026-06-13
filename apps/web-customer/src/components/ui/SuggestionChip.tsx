@@ -61,25 +61,20 @@ export const SuggestionChip = memo(function SuggestionChip({
       // aria-label leva o label do chip + flag opcional pra screen reader
       // saber que "expand" abre input. Ajuda usuários screen-reader a entender
       // que o tap NÃO envia direto — precisa input adicional.
-      aria-label={
-        requiresText
-          ? `${chip.label} (abre campo de texto)`
-          : chip.label
-      }
+      aria-label={requiresText ? `${chip.label} (abre campo de texto)` : chip.label}
       className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border-[1.2px] px-3.5 py-2 text-[13px] font-medium tracking-[-0.005em] transition-[colors,transform] duration-100 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 ${tone}`}
     >
       {chip.label}
       {requiresText && (
         // Ícone "3 linhas" indica que o chip abre input — afordância visual
         // que o canvas v14 trouxe (cliente-tokens.jsx ContextualChip props).
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 10 10"
-          aria-hidden
-          className="opacity-60"
-        >
-          <path d="M2 2h6M2 5h4M2 8h6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden className="opacity-60">
+          <path
+            d="M2 2h6M2 5h4M2 8h6"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinecap="round"
+          />
         </svg>
       )}
     </button>

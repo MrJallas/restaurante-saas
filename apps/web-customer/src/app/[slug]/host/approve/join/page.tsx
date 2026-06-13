@@ -74,11 +74,7 @@ export default function HostApproveJoinPage() {
         }
       } catch (err) {
         if (cancelled) return;
-        setLoadError(
-          err instanceof Error
-            ? err.message
-            : 'Erro ao carregar pedido.',
-        );
+        setLoadError(err instanceof Error ? err.message : 'Erro ao carregar pedido.');
       }
     })();
     return () => {
@@ -152,10 +148,6 @@ export default function HostApproveJoinPage() {
   }
 
   return (
-    <ScreenCustomerHostApproveJoin
-      slug={slug}
-      request={request}
-      skipTypewriter={skipTypewriter}
-    />
+    <ScreenCustomerHostApproveJoin slug={slug} request={request} skipTypewriter={skipTypewriter} />
   );
 }

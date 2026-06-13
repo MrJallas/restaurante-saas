@@ -21,12 +21,16 @@ function HostTableStatusPageInner() {
       tenantSlug={tenantSlug}
       status={status as 'alerta' | 'liberada' | 'ocupada' | 'livre'}
       onBack={() => router.back()}
-      onLiberate={(table) => router.push(`/host/liberate/${table}?tenant=${tenantSlug}&hostId=${hostId}`)}
+      onLiberate={(table) =>
+        router.push(`/host/liberate/${table}?tenant=${tenantSlug}&hostId=${hostId}`)
+      }
       onTabChange={(tab) => {
         if (tab === 'tables') router.push(`/host?tenant=${tenantSlug}&hostId=${hostId}`);
         if (tab === 'waitlist') router.push(`/host/waitlist?tenant=${tenantSlug}&hostId=${hostId}`);
-        if (tab === 'reserva') router.push(`/host/reservations?tenant=${tenantSlug}&hostId=${hostId}`);
-        if (tab === 'inbox') router.push(`/host/notifications?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'reserva')
+          router.push(`/host/reservations?tenant=${tenantSlug}&hostId=${hostId}`);
+        if (tab === 'inbox')
+          router.push(`/host/notifications?tenant=${tenantSlug}&hostId=${hostId}`);
         if (tab === 'me') router.push(`/host/profile?tenant=${tenantSlug}&hostId=${hostId}`);
       }}
     />

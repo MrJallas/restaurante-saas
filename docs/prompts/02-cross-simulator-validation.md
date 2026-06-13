@@ -3,7 +3,7 @@
 > **Versão**: v3.1 (2026-05-09 · pós round 4 fixes C16/C17/C-NEW-1..5 +
 > Subagentes S/T novos + O/K updates).
 > **Como usar:** rodar **DEPOIS** que o Prompt 1 mergou os PRs de fix
-> *e* o PR consolidado da round 4 (este). Pré-condição absoluta: stack
+> _e_ o PR consolidado da round 4 (este). Pré-condição absoluta: stack
 > inteira viva e estável. Cola num chat novo de Claude Code dentro do
 > repo. O orquestrador dispara **20 subagentes** (14 originais A-N +
 > 6 novos O/P/Q/R/S/T) em paralelo via Agent tool
@@ -96,6 +96,7 @@ PG_T "SELECT contextual_chips IS NOT NULL FROM restaurant_dev.assistant_messages
 Se algum dos 3 esperados acima falhar (em particular tools_dispatched=0
 ou contextual_chips=NULL), **PARA** — Cat 1 não foi fixado de verdade
 neste deploy. Conferir:
+
 - `docker exec restaurant-ai env | grep API_BASE_URL` (deve mostrar `http://api:3001/api/restaurant_dev`)
 - `docker logs restaurant-ai --tail 50 | grep tool_calls`
 - `apps/api/src/modules/assistant/assistant.service.ts:normalizeToolCalls`
@@ -110,6 +111,7 @@ Se algum check falhar, **PARA** e me avisa.
 1. **Multi-device sempre que possível.** Cross-validation = 2+ devices observando o mesmo evento. Se for single-device (ex: tools customer-only), validar com query DB direta no fim.
 
 2. **Sequência: Ação A → Observação B → Validação DB.** UI mente, DB não. Sempre conferir Postgres + Redis + Mongo + WS log no fim de cada passo.
+
    ```bash
    # Postgres
    docker exec restaurant-postgres psql -U postgres -d restaurant_dev -c "..."
@@ -229,6 +231,7 @@ subagentes A-D. Os outros (E-N) testam interações multi-papel + edge cases.
     ```
 
 **Bugs a procurar**:
+
 - Customer com CPF conhecido pede CPF de novo (auto-login broken)
 - WelcomeModal não bloqueia navegação (deve ser modal forçado)
 - IA responde "Ok" intermediário em `ask_about_restaurant` (viola spec)
@@ -290,6 +293,7 @@ subagentes A-D. Os outros (E-N) testam interações multi-papel + edge cases.
 21. **Tool naming canon (round 3)** — após `add_to_order` ok, dispatch `change_order(itemId=X, qty=2)` (não `modify_order_item`!). Validar `tool_calls[0].name='change_order'`. Mesma coisa pra `remove_from_cart` (era `remove_order_item`).
 
 **Bugs a procurar**:
+
 - Cozinha não recebe modify (polling stale)
 - `total_cents` desincroniza entre orders e order_items (regression de soma)
 - Modify gera nova row em vez de UPDATE
@@ -330,6 +334,7 @@ subagentes A-D. Os outros (E-N) testam interações multi-papel + edge cases.
 18. Encerra subagent C (continuação no Subagent G).
 
 **Bugs a procurar**:
+
 - `call_waiter` cria row com waiter_id errado (não é o garçom da mesa)
 - Vaul sheet não atualiza ao staff pegar (WS missing)
 - `send_complaint` aceita texto vazio (bypass do requiresText)
@@ -356,35 +361,18 @@ subagentes A-D. Os outros (E-N) testam interações multi-papel + edge cases.
 3. Bruno pede 1 nhoque.
 4. **Validar Postgres**: `SELECT customer_id, SUM(total_cents) FROM orders WHERE table_session_id='X' GROUP BY customer_id;` → 2 rows.
 
-**Pay-full path**:
-5. Ana digita "quero pagar a conta inteira". → IA dispara `request_bill()`. Bubble com 2 opções: "Pagar pelo app · Chamar garçom".
-6. Tap "Pagar pelo app". → IA dispara `pay_full(method=null)`. Navega `/pagamento?mode=full`.
-7. Tela `/pagamento?mode=full` mostra total combinado (risoto + nhoque). Escolhe PIX. → `pay_full(method='pix')`.
-8. PIX QR aparece. Stub paid (env flag) OR rodar mock provider.
-9. **Validar Postgres**: `payments` row com `mode='full'`, `amount_cents = sum total`. `orders.payment_status = 'paid'`.
+**Pay-full path**: 5. Ana digita "quero pagar a conta inteira". → IA dispara `request_bill()`. Bubble com 2 opções: "Pagar pelo app · Chamar garçom". 6. Tap "Pagar pelo app". → IA dispara `pay_full(method=null)`. Navega `/pagamento?mode=full`. 7. Tela `/pagamento?mode=full` mostra total combinado (risoto + nhoque). Escolhe PIX. → `pay_full(method='pix')`. 8. PIX QR aparece. Stub paid (env flag) OR rodar mock provider. 9. **Validar Postgres**: `payments` row com `mode='full'`, `amount_cents = sum total`. `orders.payment_status = 'paid'`.
 
-**Reset (Ana e Bruno re-entram em mesa diferente)**:
-10. Reset DB pra mesa 7 (ou outra). Repete steps 1-3 com mesa 7.
+**Reset (Ana e Bruno re-entram em mesa diferente)**: 10. Reset DB pra mesa 7 (ou outra). Repete steps 1-3 com mesa 7.
 
-**Pay-individual path**:
-11. Ana digita "quero pagar só a minha parte". → `pay_individual(amount=null)`. Navega `/pagamento?mode=individual`.
-12. Tela mostra só itens da Ana (risoto). Escolhe cartão.
-13. **Validar Postgres**: `payments` row com `mode='individual'`, `amount_cents = risoto only`.
-14. Bruno (sim 2): vê em sua UI que apenas Ana pagou. Digita "vou pagar a minha". → `pay_individual` → idem.
+**Pay-individual path**: 11. Ana digita "quero pagar só a minha parte". → `pay_individual(amount=null)`. Navega `/pagamento?mode=individual`. 12. Tela mostra só itens da Ana (risoto). Escolhe cartão. 13. **Validar Postgres**: `payments` row com `mode='individual'`, `amount_cents = risoto only`. 14. Bruno (sim 2): vê em sua UI que apenas Ana pagou. Digita "vou pagar a minha". → `pay_individual` → idem.
 
-**Reset → mesa 14, Ana host, Bruno entra**:
-15. Reset. Mesa 14.
+**Reset → mesa 14, Ana host, Bruno entra**: 15. Reset. Mesa 14.
 
-**Split path**:
-16. Ana digita "vamos dividir a conta". → `split_bill(method='even')` ou similar. Navega `/pagamento/dividir`.
-17. Tela mostra split UI (50/50 ou per-person).
-18. **Validar Postgres**: `payments` 2 rows com `mode='split'`, `split_share=0.5` cada.
-19. **Customer-host privilege**: Bruno (não-host) tenta `split_bill` → IA bloqueia ou pergunta? Validar spec.
-20. **Open payment screen como sub-tool**: customer fala "abre a tela de pagamento" → `open_payment_screen()` direto sem `request_bill`.
-21. Validar todos 3 modes em `payments.mode` enum.
-22. **Mongo**: chat tem todas as 5 tool calls registradas.
+**Split path**: 16. Ana digita "vamos dividir a conta". → `split_bill(method='even')` ou similar. Navega `/pagamento/dividir`. 17. Tela mostra split UI (50/50 ou per-person). 18. **Validar Postgres**: `payments` 2 rows com `mode='split'`, `split_share=0.5` cada. 19. **Customer-host privilege**: Bruno (não-host) tenta `split_bill` → IA bloqueia ou pergunta? Validar spec. 20. **Open payment screen como sub-tool**: customer fala "abre a tela de pagamento" → `open_payment_screen()` direto sem `request_bill`. 21. Validar todos 3 modes em `payments.mode` enum. 22. **Mongo**: chat tem todas as 5 tool calls registradas.
 
 **Bugs a procurar**:
+
 - `request_bill` router não diferencia "pelo app" vs "garçom" (cai no mesmo)
 - Pay-full soma pedidos de mesas diferentes (cross-tenant leak)
 - Pay-individual aceita pagar conta de outro customer
@@ -408,7 +396,7 @@ Spec: `docs/features/customer-host-model.md`.
 2. Bruno cadastrado já — pra contraste. Eduardo (CPF `66633377788`) **NÃO** existe.
 3. Eduardo (sim 2) scan QR T05 → **IdentifyBeforeJoin** força nome+CPF (não pode pular).
 4. Eduardo digita "Eduardo Vargas" + CPF `66633377788` → submit.
-5. **Validar Postgres**: 
+5. **Validar Postgres**:
    ```sql
    INSERT into customers triggered? SELECT * FROM customers WHERE cpf='66633377788';
    SELECT customer_id, table_id, is_host, status FROM table_session_participants WHERE table_id=5 ORDER BY created_at DESC LIMIT 2;
@@ -428,6 +416,7 @@ Spec: `docs/features/customer-host-model.md`.
 16. **Anonymous removal validation**: per spec "Spec atualizou de anonymous variant existe pra anonymous removido". Tentar entrar sem CPF (vazio) → API recusa 400.
 
 **Bugs a procurar**:
+
 - Typewriter renderiza tudo de uma vez (CSS animation broken)
 - chip-action duplica em re-render
 - Auto-login mostrando CPF do customer conhecido (over-disclosure)
@@ -450,7 +439,7 @@ Spec: `docs/features/customer-host-model.md` seção table-merge.
 1. Ana (sim 1) scan T14 → host. Bruno (sim 2) scan T15 → host.
 2. Ana digita "quero juntar com a mesa do lado". → IA dispara `request_table_merge()` **sem target** → abre `OverlaySalonMap`.
 3. Overlay mostra mesas vizinhas (T13, T15, T22). Tap T15.
-4. **Validar Postgres**: 
+4. **Validar Postgres**:
    ```sql
    SELECT * FROM table_merge_requests ORDER BY created_at DESC LIMIT 1;
    SELECT * FROM escalation_chains WHERE type='table_merge' LIMIT 1;
@@ -460,24 +449,12 @@ Spec: `docs/features/customer-host-model.md` seção table-merge.
 6. Bruno tap "Recusar".
 7. **Validar Postgres**: row updated `status=rejected`. `merge_cooldowns` row criada com `from_table=T14, to_table=T15, expires_at = now + 20min`.
 
-**Cooldown unidirecional** (per spec):
-8. Ana tenta de novo T15 (5s depois). IA responde "essa mesa não tá disponível agora, tente outra".
-9. **Validar Postgres**: nenhuma nova row em `table_merge_requests`. Cooldown ativo.
-10. **CAMINHO REVERSO**: Bruno (sim 2) digita "quero juntar com a M14". → `request_table_merge('T14')`. **Esperado**: ABRE pedido (cooldown só bloqueia A→B, não B→A — per spec linha "respeita mudança de ideia").
-11. **Validar Postgres**: row criada `origin=T15, target=T14`.
-12. Ana recebe typewriter. Tap "Aceitar".
-13. **Mesas merged**: ambas marcadas merged. **Validar `merged-tile V3` no /manager Mapa**.
-14. **Manager (Playwright)**: vê `MInProgressCard` info kind `info-table-merge`. NÃO há staff approval needed.
-15. **Bills unificados**: Ana e Bruno (já mesma mesa) — pedidos somam.
+**Cooldown unidirecional** (per spec): 8. Ana tenta de novo T15 (5s depois). IA responde "essa mesa não tá disponível agora, tente outra". 9. **Validar Postgres**: nenhuma nova row em `table_merge_requests`. Cooldown ativo. 10. **CAMINHO REVERSO**: Bruno (sim 2) digita "quero juntar com a M14". → `request_table_merge('T14')`. **Esperado**: ABRE pedido (cooldown só bloqueia A→B, não B→A — per spec linha "respeita mudança de ideia"). 11. **Validar Postgres**: row criada `origin=T15, target=T14`. 12. Ana recebe typewriter. Tap "Aceitar". 13. **Mesas merged**: ambas marcadas merged. **Validar `merged-tile V3` no /manager Mapa**. 14. **Manager (Playwright)**: vê `MInProgressCard` info kind `info-table-merge`. NÃO há staff approval needed. 15. **Bills unificados**: Ana e Bruno (já mesma mesa) — pedidos somam.
 
-**Staff override**:
-16. Reset. Ana host T14, Bruno host T15. Bruno recusa. Cooldown ativo.
-17. Manager Renata abre `/manager/operacoes` → MoreSheet sobre M14 → "Forçar merge com M15".
-18. **Validar Postgres**: nova `escalation_chains` row com `origin=staff_override, requester_id=manager_id, bypassed_cooldown=true`.
-19. Mesas merged sem chips no customer (manager forçou).
-20. **Cooldown cleanup test**: cron 10s tick deve limpar `merge_cooldowns` rows expiradas. Aguardar 20min OR forçar `expires_at = now()` direto + tick. Validar limpeza.
+**Staff override**: 16. Reset. Ana host T14, Bruno host T15. Bruno recusa. Cooldown ativo. 17. Manager Renata abre `/manager/operacoes` → MoreSheet sobre M14 → "Forçar merge com M15". 18. **Validar Postgres**: nova `escalation_chains` row com `origin=staff_override, requester_id=manager_id, bypassed_cooldown=true`. 19. Mesas merged sem chips no customer (manager forçou). 20. **Cooldown cleanup test**: cron 10s tick deve limpar `merge_cooldowns` rows expiradas. Aguardar 20min OR forçar `expires_at = now()` direto + tick. Validar limpeza.
 
 **Bugs a procurar**:
+
 - Cooldown bidirecional (P0 violation)
 - merged-tile V3 não renderiza
 - Staff override sem audit trail
@@ -524,6 +501,7 @@ Spec: `docs/features/complaint-flow-v12.md`.
 16. **Validar Postgres**: `assigned_manager_id` lock (FOR UPDATE NOWAIT).
 
 **Bugs a procurar**:
+
 - ManagerBubble sem chip-action sub-card
 - Chip-action duplicado após tap
 - 4 quick replies aparecem em ordem diferente (consistência)
@@ -562,6 +540,7 @@ Spec: `docs/features/complaint-flow-v12.md`.
 18. **Validar 9 push lockscreens** (`apps/web-staff/src/components/push/`): cada tipo tem template visual distinto. Capturar 1 de cada via simulator screenshot.
 
 **Bugs a procurar**:
+
 - Polling 5s atrasa update além do esperado
 - Beep dispara em modify (não deveria)
 - Waiter push duplicado (1 cozinha → 2 push)
@@ -582,6 +561,7 @@ Specs: `docs/features/vip-customer.md` + `docs/features/zone-pause.md`.
 **Sequência (22 passos)**:
 
 **VIP path**:
+
 1. Manager abre `/manager/operacoes` (ou Mapa). Mesa 7 ocupada por Pedro.
 2. Tap mesa 7 → MoreSheet → "Marcar VIP".
 3. **Validar Postgres**: `table_sessions.flags @> '["vip"]'::jsonb` (session-scoped). **NUNCA** `customers.is_vip=true`.
@@ -589,30 +569,16 @@ Specs: `docs/features/vip-customer.md` + `docs/features/zone-pause.md`.
 5. **Waiter Caleb**: vê chamado COM badge VIP no card. **priorityOf** retornou `'high'`.
 6. **Manager**: vê chamado com VIP badge no Mapa + Chamados. Ordenação prioriza.
 
-**Allergy path**:
-7. Manager flag mesa 7 com `'allergy'` (mesma sheet, opção diferente).
-8. Pedro pede "1 risoto cogumelos". → `add_to_order` ok.
-9. **Cozinha**: card mesa 7 mostra alerta vermelho "ALERGIA". Validar UI.
-10. **priorityOf**: incluí `'allergy'` → `'high'`.
+**Allergy path**: 7. Manager flag mesa 7 com `'allergy'` (mesma sheet, opção diferente). 8. Pedro pede "1 risoto cogumelos". → `add_to_order` ok. 9. **Cozinha**: card mesa 7 mostra alerta vermelho "ALERGIA". Validar UI. 10. **priorityOf**: incluí `'allergy'` → `'high'`.
 
-**Zone-pause path**:
-11. Manager abre `/manager/pausa-zona` OR via MQuickActionsBar → "Pausar Zona".
-12. Modal: seleciona Caleb (waiter) + duração 5min.
-13. **Validar Postgres**: `zone_pauses` row com `waiter_id=Caleb_id, kind='orders', ends_at = now + 5min, active=true`.
-14. **Waiter Caleb (sim 2)**: dentro de 2s vê banner amarelo "ZONA PAUSADA · até HH:MM" no top.
-15. **Customer Pedro (mesa 7, atendida por Caleb)**: faz novo pedido. ETA inflado **silenciosamente** (não mostrar "pausado" — per spec).
-16. **Outros waiters** (Olivia, Henrique): NÃO recebem banner.
-17. **Customer mesa 22 (atendida por Olivia)**: faz pedido normal sem ETA inflado.
-18. **Garçom manual override**: Caleb pode lançar pedido manual durante pausa (entra no congelador, não bloqueado).
-19. **Cron expiry**: aguardar 5min OR forçar `ends_at=now()` + tick. Banner some sozinho. ETA volta normal.
-20. **MOpSummary post-mortem**: aparece pro manager um summary card com "Pausa de Caleb · 5 min · 3 pedidos esperaram".
+**Zone-pause path**: 11. Manager abre `/manager/pausa-zona` OR via MQuickActionsBar → "Pausar Zona". 12. Modal: seleciona Caleb (waiter) + duração 5min. 13. **Validar Postgres**: `zone_pauses` row com `waiter_id=Caleb_id, kind='orders', ends_at = now + 5min, active=true`. 14. **Waiter Caleb (sim 2)**: dentro de 2s vê banner amarelo "ZONA PAUSADA · até HH:MM" no top. 15. **Customer Pedro (mesa 7, atendida por Caleb)**: faz novo pedido. ETA inflado **silenciosamente** (não mostrar "pausado" — per spec). 16. **Outros waiters** (Olivia, Henrique): NÃO recebem banner. 17. **Customer mesa 22 (atendida por Olivia)**: faz pedido normal sem ETA inflado. 18. **Garçom manual override**: Caleb pode lançar pedido manual durante pausa (entra no congelador, não bloqueado). 19. **Cron expiry**: aguardar 5min OR forçar `ends_at=now()` + tick. Banner some sozinho. ETA volta normal. 20. **MOpSummary post-mortem**: aparece pro manager um summary card com "Pausa de Caleb · 5 min · 3 pedidos esperaram".
 
-**Courtesy path**:
-21. Manager tap mesa 7 → MoreSheet → "Cortesia".
-22. **Customer Pedro**: dentro de 2s recebe overlay `CourtesyArrival` (silent tool `view_courtesy`). Bubble "Cortesia da casa".
-   - **Validar Postgres**: `courtesies` row, `customer_id=Pedro_id, granted_by=manager_id`.
+**Courtesy path**: 21. Manager tap mesa 7 → MoreSheet → "Cortesia". 22. **Customer Pedro**: dentro de 2s recebe overlay `CourtesyArrival` (silent tool `view_courtesy`). Bubble "Cortesia da casa".
+
+- **Validar Postgres**: `courtesies` row, `customer_id=Pedro_id, granted_by=manager_id`.
 
 **Bugs a procurar**:
+
 - VIP em `customers.is_vip` (permanente — viola F1 fix)
 - Zone-pause aplicando zone-wide (Olivia/Henrique também recebem)
 - Customer ver mensagem "pausado" (deveria ser silencioso)
@@ -649,25 +615,14 @@ Spec: `docs/features/chat-history-lgpd.md`.
 11. **Validar UI**: chips somem **definitivamente**. Não reaparecem.
 12. **Validar Postgres customers Carla intacto**: `SELECT * FROM customers WHERE id=Carla.id;` → row presente, name/cpf/recognition_token preservados.
 
-**LGPD canonical path**:
-13. Carla digita "quero apagar meus dados". → IA dispara `show_lgpd_notice()`.
-14. Bubble renderiza **payload literal** de `services/ai-service/services/lgpd_messages.py` LGPD_NOTICE constante.
-15. **Byte-equal validation**:
-    ```bash
+**LGPD canonical path**: 13. Carla digita "quero apagar meus dados". → IA dispara `show_lgpd_notice()`. 14. Bubble renderiza **payload literal** de `services/ai-service/services/lgpd_messages.py` LGPD_NOTICE constante. 15. **Byte-equal validation**:
+`bash
     python -c "from services.ai-service.services.lgpd_messages import LGPD_NOTICE; print(repr(LGPD_NOTICE))"
     # Compara com o que apareceu na bubble. byte-equal.
-    ```
-16. Bubble tem **2 chips binários**: "Sim quero excluir / Não, não quero excluir" (per spec).
-17. Tap "Sim quero excluir". → IA dispara `lgpd_data_request(type='erasure')`.
-18. **Validar Postgres**: `lgpd_requests` row com `type='erasure', status='fulfilled', protocol_number='LGPD-XXXXX', customer_id=Carla.id, fulfilled_at=now()`.
-19. **Validar Mongo**: 0 docs Carla (já estava após step 9).
-20. **Validar Postgres customers**: Carla **intacto** (não over-disclosure).
-21. **UI validation**: bubble final NÃO menciona "cadastro preservado" (per spec — over-disclosure removido).
-22. **Chips somem após sucesso** (regra de re-aparição). Validar que digitar mais frases NÃO ressuscita os chips.
-23. **Mongo TTL test**: criar doc com `createdAt = now - 31days` direto. Esperar TTL 30 dias derrubar (pode forçar via Mongo command).
-24. **`assistant_messages` validation**: `tool_calls` populados pra todas 5 tools (view_chat_history, delete_chat, delete_all_chats, show_lgpd_notice, lgpd_data_request).
+    ` 16. Bubble tem **2 chips binários**: "Sim quero excluir / Não, não quero excluir" (per spec). 17. Tap "Sim quero excluir". → IA dispara `lgpd_data_request(type='erasure')`. 18. **Validar Postgres**: `lgpd_requests` row com `type='erasure', status='fulfilled', protocol_number='LGPD-XXXXX', customer_id=Carla.id, fulfilled_at=now()`. 19. **Validar Mongo**: 0 docs Carla (já estava após step 9). 20. **Validar Postgres customers**: Carla **intacto** (não over-disclosure). 21. **UI validation**: bubble final NÃO menciona "cadastro preservado" (per spec — over-disclosure removido). 22. **Chips somem após sucesso** (regra de re-aparição). Validar que digitar mais frases NÃO ressuscita os chips. 23. **Mongo TTL test**: criar doc com `createdAt = now - 31days` direto. Esperar TTL 30 dias derrubar (pode forçar via Mongo command). 24. **`assistant_messages` validation**: `tool_calls` populados pra todas 5 tools (view_chat_history, delete_chat, delete_all_chats, show_lgpd_notice, lgpd_data_request).
 
 **Bugs a procurar**:
+
 - LGPD_NOTICE divergente do canonical (LLM hallucinated)
 - Chips Sim/Não reaparecem após sucesso
 - Mongo TTL não rodando (docs > 30 dias persistem)
@@ -693,17 +648,17 @@ Esse subagent NÃO testa flows novos — testa qualidade da contextualização a
 2. Captura **TODOS** chips após cada bubble. Lista cada um (texto, ordem, tom).
 3. Validações por tipo de tool:
 
-| Tool invocada | Chips esperados após | Banidos |
-|---|---|---|
-| `view_menu` | "Risoto · Bebidas · Sobremesas" (categorias relevantes) | "Ok" |
-| `search_dish` | "Adicionar este · Ver mais · Ingredientes" | "Sim" |
-| `recommend_dish` | "Adicionar este · Outras opções" | nenhum ack puro |
-| `add_to_order` | "Ver pedido · Pedir mais · Pedir conta" | "Tá bom" |
-| `view_order` | "Pedir mais · Modificar · Pedir conta" | — |
-| `call_waiter` | (poucos · não reabrir) "Cancelar chamado" | — |
-| `delete_all_chats` | (NENHUM · regra de re-aparição) | TODOS |
-| `show_lgpd_notice` | "Sim quero excluir · Não, não quero excluir" (binário) | qualquer terceiro |
-| `pay_full` | "Confirmar PIX · Trocar pra cartão" | — |
+| Tool invocada      | Chips esperados após                                    | Banidos           |
+| ------------------ | ------------------------------------------------------- | ----------------- |
+| `view_menu`        | "Risoto · Bebidas · Sobremesas" (categorias relevantes) | "Ok"              |
+| `search_dish`      | "Adicionar este · Ver mais · Ingredientes"              | "Sim"             |
+| `recommend_dish`   | "Adicionar este · Outras opções"                        | nenhum ack puro   |
+| `add_to_order`     | "Ver pedido · Pedir mais · Pedir conta"                 | "Tá bom"          |
+| `view_order`       | "Pedir mais · Modificar · Pedir conta"                  | —                 |
+| `call_waiter`      | (poucos · não reabrir) "Cancelar chamado"               | —                 |
+| `delete_all_chats` | (NENHUM · regra de re-aparição)                         | TODOS             |
+| `show_lgpd_notice` | "Sim quero excluir · Não, não quero excluir" (binário)  | qualquer terceiro |
+| `pay_full`         | "Confirmar PIX · Trocar pra cartão"                     | —                 |
 
 4. **Memória de longa duração** (15 turns):
    - Turn 1: pede risoto.
@@ -777,6 +732,7 @@ Esse subagent NÃO testa flows novos — testa qualidade da contextualização a
 18. **Idempotência**: re-disparar mesmo event 2× rápidos não duplica push.
 
 **Bugs a procurar**:
+
 - Push duplicado em 1 cozinha → 2 pushes
 - Lockscreen com texto cortado (overflow)
 - Push tap leva pra rota errada
@@ -795,6 +751,7 @@ Esse subagent NÃO testa flows novos — testa qualidade da contextualização a
 **Sub-cenários (cada um vira sub-section no report)**:
 
 #### M.1 · Wifi loss / WS reconnect
+
 1. Customer (sim 1) está em conversa.
 2. Desabilita wifi do sim (xcodebuildmcp). Aguarda 30s.
 3. Reabilita.
@@ -802,12 +759,14 @@ Esse subagent NÃO testa flows novos — testa qualidade da contextualização a
 5. **Validar**: `socket.io-client` reconnect logs visíveis. Customer NÃO perde estado.
 
 #### M.2 · LM Studio offline
+
 1. Para processo LM Studio (`pkill -f lm-studio` ou similar).
 2. Customer pede algo.
 3. **Esperado**: ai-service retorna 503 OR fallback "estou com dificuldades, tenta em 1 min". NÃO crashea.
 4. Reabre LM Studio. Tenta de novo. Funciona.
 
 #### M.3 · 2 managers same complaint
+
 1. Manager A e Manager B ambos em /manager.
 2. Complaint cria → ambos veem card.
 3. Manager A tap "Atender" + responde.
@@ -815,45 +774,54 @@ Esse subagent NÃO testa flows novos — testa qualidade da contextualização a
 5. **Validar locks** em `complaints.assigned_manager_id`.
 
 #### M.4 · 2 customers same merge target
+
 1. Mesa 5 quer mergear com Mesa 14.
 2. Mesa 22 quer mergear com Mesa 14 simultaneamente.
 3. **Esperado**: Mesa 14 host recebe 2 overlays empilhados OR um após outro. Cada um tem decisão independente.
 4. **Validar**: 2 rows em `table_merge_requests` distintas.
 
 #### M.5 · 2 waiters same delivery
+
 1. Waiter A tap "Entreguei" no order X.
 2. Waiter B tap "Entreguei" no mesmo order X (race < 1s).
 3. **Esperado**: 1 sucesso, 1 erro 409 "Already delivered".
 
 #### M.6 · CPF inválido
+
 1. Customer escaneia QR. WelcomeModal pede CPF.
 2. Digita "12345678900" (sem dígito verificador correto).
 3. **Esperado**: erro inline "CPF inválido". Não submete.
 
 #### M.7 · Nome com emoji
+
 1. Customer digita "🌮 Pedro 🍕". Submit.
 2. **Esperado**: customer criado com emoji preservado (UTF-8). UI renderiza ok.
 3. **OR**: validation rejeita emojis.
 
 #### M.8 · 2000 chars no ContextualInputExpand
+
 1. Customer abre complaint compose. ContextualInputExpand cresce.
 2. Cola 2000 chars de lorem ipsum. Tap enviar.
 3. **Esperado**: salva ok, ou trunca em 1000 com aviso. Não crashea.
 
 #### M.9 · Rate limit (50 mensagens em 30s)
+
 1. Script: customer envia 50 msg /chat em 30s.
 2. **Esperado**: 429 Too Many Requests após N mensagens. Cooldown.
 
 #### M.10 · Pedido com qty 0
+
 1. Customer fala "adiciona 0 risotos". → IA dispara `add_to_order(qty=0)` OR rejeita.
 2. **Esperado**: IA pergunta clarificação OR API valida `qty >= 1`.
 
 #### M.11 · Prato esgotado
+
 1. Manager marca dish como `is_available=false`.
 2. Customer pede esse dish. → IA responde "infelizmente acabou, posso sugerir outro?".
 3. **Validar**: `add_to_order` NÃO cria order.
 
 #### M.12 · Manager logout mid-complaint
+
 1. Manager A em ScreenCallDetail respondendo complaint.
 2. Manager A logout abruptly.
 3. **Esperado**: lock libera após N segundos, complaint volta a ficar disponível para outros managers.
@@ -869,6 +837,7 @@ Esse subagent NÃO testa flows novos — testa qualidade da contextualização a
 **Validações por tela**:
 
 #### N.1 · Manager `/manager/configuracoes`
+
 1. Login como Renata. Bottom nav tap aba "Eu" (engrenagem).
 2. **Esperado**: navega `/manager/configuracoes`. ScreenManagerProfile renderiza.
 3. Avatar com iniciais "RA" + nome "Renata Albuquerque" + role "Gerente".
@@ -879,6 +848,7 @@ Esse subagent NÃO testa flows novos — testa qualidade da contextualização a
 8. Validar bottom nav active="me" (engrenagem destacada).
 
 #### N.2 · Waiter `/waiter/eu`
+
 1. Login Caleb. Bottom nav tap "Eu" (4ª aba antes era /mensagens, agora /eu — Subagent 1 do Prompt 1 corrigiu).
 2. **Esperado**: navega `/waiter/eu`. ScreenWaiterProfile renderiza.
 3. Avatar 88×88 com initials "CS" + nome + "Garçom".
@@ -887,6 +857,7 @@ Esse subagent NÃO testa flows novos — testa qualidade da contextualização a
 6. Sair button.
 
 #### N.3 · Cozinha `/cozinha/eu`
+
 1. Acessa `/cozinha`. Header tem botão User (top right, ao lado do som on/off).
 2. Tap → navega `/cozinha/eu`.
 3. Tela dark consistente com KDS. Avatar laranja + nome + "Cozinheiro".
@@ -894,6 +865,7 @@ Esse subagent NÃO testa flows novos — testa qualidade da contextualização a
 5. Voltar → tap header back → volta pra `/cozinha`.
 
 #### N.4 · Customer `/{slug}/eu` COM customerId
+
 1. Customer Pedro logado. MenuDrawer tem entry "Eu · Perfil e privacidade" (nova).
 2. Tap → navega `/restaurant_dev/eu`.
 3. Avatar com iniciais "PS" + nome + "Cliente · Conhecido da casa" (se isReturning=true).
@@ -904,18 +876,21 @@ Esse subagent NÃO testa flows novos — testa qualidade da contextualização a
 8. "Sair da mesa" → sessionStorage clear + `/`.
 
 #### N.5 · Customer `/{slug}/eu` SEM customerId (guard test)
+
 1. Cliente NOVO sem customer cadastrado (usar incognito OR `sessionStorage.clear()`).
 2. Acessa direto `/restaurant_dev/eu` (sem passar por identify).
 3. **Esperado**: tela renderiza versão guard com CTA "Identificar agora" → tap → `/identify`.
 4. **NÃO** mostra tela vazia "Faça login na próxima visita" (que era P0 #13).
 
 #### N.6 · Manager `/manager/financeiro`
+
 1. Bottom nav tap "Financeiro".
 2. Tela "Em desenvolvimento" placeholder com 4 preview boxes.
 3. Botão "Voltar ao Painel" → `/manager`.
 4. Bottom nav active="finance".
 
 #### N.7 · Smoke geral
+
 1. **iOS Safari safe-area**: bottom nav não fica cortado por home indicator.
 2. **Hamburger animation**: drawer abre/fecha smooth, sem flicker.
 3. **Dark mode**: testar (se app suporta) — todas telas Eu legíveis.
@@ -923,6 +898,7 @@ Esse subagent NÃO testa flows novos — testa qualidade da contextualização a
 5. **Back button**: cada tela "Eu" → tap back → volta pra rota anterior correta.
 
 **Bugs a procurar**:
+
 - Tela Eu renderiza mas bottom nav fica out-of-sync (active errado)
 - Customer guard não dispara (mostra tela vazia)
 - Cozinha tela "Eu" Tailwind não bate com KDS (visual inconsistente)
@@ -971,19 +947,19 @@ Após todos 14 subagentes terminarem:
 
 ## Cobertura final esperada
 
-| Categoria | Subagent | Tools/scenarios |
-|---|---|---|
-| **Customer Solo** | A, B, C, D | 6 + 4 + 3 + 5 = 18 tools |
-| **Cross-Role** | E, F, G, H | 5 (4 customer-host) + KDS pipeline |
-| **System Flags** | I, J | VIP+pause+allergy+courtesy + 5 tools privacy |
-| **Quality** | K | Contextualização + chips reativos transversal |
-| **Infrastructure** | L | 9 push lockscreens |
-| **Resilience** | M | 12 sub-cenários de edge/recovery |
-| **Smoke** | N | 5 telas Eu novas + UI smoke |
-| **Regression r3** | O | Re-validar 15 categorias do round 3 |
-| **V20 chat** | P | Redesign customer chat + screenshots |
-| **Continuation** | Q | 5 kinds × 2 segments (regular/vip) |
-| **Dead code** | R | Confirmar limpeza dos componentes órfãos |
+| Categoria          | Subagent   | Tools/scenarios                               |
+| ------------------ | ---------- | --------------------------------------------- |
+| **Customer Solo**  | A, B, C, D | 6 + 4 + 3 + 5 = 18 tools                      |
+| **Cross-Role**     | E, F, G, H | 5 (4 customer-host) + KDS pipeline            |
+| **System Flags**   | I, J       | VIP+pause+allergy+courtesy + 5 tools privacy  |
+| **Quality**        | K          | Contextualização + chips reativos transversal |
+| **Infrastructure** | L          | 9 push lockscreens                            |
+| **Resilience**     | M          | 12 sub-cenários de edge/recovery              |
+| **Smoke**          | N          | 5 telas Eu novas + UI smoke                   |
+| **Regression r3**  | O          | Re-validar 15 categorias do round 3           |
+| **V20 chat**       | P          | Redesign customer chat + screenshots          |
+| **Continuation**   | Q          | 5 kinds × 2 segments (regular/vip)            |
+| **Dead code**      | R          | Confirmar limpeza dos componentes órfãos      |
 
 **Total: 23 tools cobertas + jornada completa (QR scan → LGPD) + 9 push lockscreens + 12 edge cases + 5 telas Eu + 4 subagents de regression r3.**
 
@@ -1003,28 +979,29 @@ re-validar o que foi corrigido na round 3 (Cat 1-15 do prompt de fix).
 
 **Casos de teste** (cada um precisa passar pra subagent passar):
 
-| # | Categoria | Caso | Aceitação |
-|---|---|---|---|
-| O.1 | C1 (tool dispatch) | 5 mutações em sequência (`mostra menu`, `1 risoto`, `pode chamar garçom`, `quero pagar`, `apaga conversa`) | ≥ 4/5 com `tool_calls` populated |
-| O.2 | C1 (chips) | mesma sessão acima | `assistant_messages.contextual_chips` not null em ≥ 4/5 turnos |
-| O.3 | C2 (KDS) | criar order via API → ver em `/cozinha` | Aparece em < 5s, sem hard-refresh |
-| O.4 | C4 (chat V20) | screenshots dos 4 estados (welcome novo / já-na-mesa / turn com chips / multi-step vinho) | Bate com `docs/design-canvas/handoff/cliente/cliente-journey-v20.jsx`: header com nome do host, eyebrow `··· USANDO X ···`, system join notice, placeholder contextual |
-| O.5 | C5 (continuation) | abrir home pós (a) viu menu (b) chamou garçom (c) abriu pedido (d) pagou (e) voltou sem ação | 5 screenshots distintos com texto + chips canon retornados pelo `GET /continuation?kind=…` |
-| O.6 | C6 (cooldown unidirecional) | A→B reject + cooldown ativo + B→A retry | A→B retry: 429. B→A: 201. (cooldown não bloqueia direção reversa) |
-| O.7 | C7 (migration 035→036) | `\d+ table_merge_requests` no schema restaurant_dev | mostra colunas `approved_by_a_at` + `approved_by_b_at` |
-| O.8 | C8 (staff override) | manager `POST /staff/table-merges/force` com mesa em cooldown | merge approved + `escalation_chains.steps` registra `kind=staff_override` |
-| O.9 | C9 (classifier) | `qual o horário?` enviado por customer | classifier.allowed=true, was_blocked=false |
-| O.10 | C10 (customer_id) | qualquer mensagem do chat customer com bundle | `assistant_messages.customer_id IS NOT NULL` |
-| O.11 | C11 (mongo) | enviar 5 mensagens com customerId | `db.chat_messages.countDocuments({customerId})` ≥ 10 |
-| O.12 | C12 (qty validation) | `1 risoto` → `add_to_order(qty=1, itemId=<UUID>)` | qty=1 + itemId é UUID v4 |
-| O.13 | C13 (dead code) | `git diff --stat HEAD~..HEAD` | ContextualInputExpand.tsx + MergedTableTile.tsx removidos do tree |
-| O.14a | C14 (cozinha overflow) | screenshot de `/cozinha` em viewport 430×932 | User-button visível dentro do viewport (header tem flex-wrap) |
-| O.14b | C14 (bottom-nav name) | navegar `/manager?name=Caleb` → tap engrenagem | URL final tem `?name=Caleb` preserved |
-| O.15 | C15 (pix leak) | `POST /payments {method:'card'}` | `pixQrCode === null` no response, `pix_qr_code IS NULL` no DB |
+| #     | Categoria                   | Caso                                                                                                       | Aceitação                                                                                                                                                              |
+| ----- | --------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| O.1   | C1 (tool dispatch)          | 5 mutações em sequência (`mostra menu`, `1 risoto`, `pode chamar garçom`, `quero pagar`, `apaga conversa`) | ≥ 4/5 com `tool_calls` populated                                                                                                                                       |
+| O.2   | C1 (chips)                  | mesma sessão acima                                                                                         | `assistant_messages.contextual_chips` not null em ≥ 4/5 turnos                                                                                                         |
+| O.3   | C2 (KDS)                    | criar order via API → ver em `/cozinha`                                                                    | Aparece em < 5s, sem hard-refresh                                                                                                                                      |
+| O.4   | C4 (chat V20)               | screenshots dos 4 estados (welcome novo / já-na-mesa / turn com chips / multi-step vinho)                  | Bate com `docs/design-canvas/handoff/cliente/cliente-journey-v20.jsx`: header com nome do host, eyebrow `··· USANDO X ···`, system join notice, placeholder contextual |
+| O.5   | C5 (continuation)           | abrir home pós (a) viu menu (b) chamou garçom (c) abriu pedido (d) pagou (e) voltou sem ação               | 5 screenshots distintos com texto + chips canon retornados pelo `GET /continuation?kind=…`                                                                             |
+| O.6   | C6 (cooldown unidirecional) | A→B reject + cooldown ativo + B→A retry                                                                    | A→B retry: 429. B→A: 201. (cooldown não bloqueia direção reversa)                                                                                                      |
+| O.7   | C7 (migration 035→036)      | `\d+ table_merge_requests` no schema restaurant_dev                                                        | mostra colunas `approved_by_a_at` + `approved_by_b_at`                                                                                                                 |
+| O.8   | C8 (staff override)         | manager `POST /staff/table-merges/force` com mesa em cooldown                                              | merge approved + `escalation_chains.steps` registra `kind=staff_override`                                                                                              |
+| O.9   | C9 (classifier)             | `qual o horário?` enviado por customer                                                                     | classifier.allowed=true, was_blocked=false                                                                                                                             |
+| O.10  | C10 (customer_id)           | qualquer mensagem do chat customer com bundle                                                              | `assistant_messages.customer_id IS NOT NULL`                                                                                                                           |
+| O.11  | C11 (mongo)                 | enviar 5 mensagens com customerId                                                                          | `db.chat_messages.countDocuments({customerId})` ≥ 10                                                                                                                   |
+| O.12  | C12 (qty validation)        | `1 risoto` → `add_to_order(qty=1, itemId=<UUID>)`                                                          | qty=1 + itemId é UUID v4                                                                                                                                               |
+| O.13  | C13 (dead code)             | `git diff --stat HEAD~..HEAD`                                                                              | ContextualInputExpand.tsx + MergedTableTile.tsx removidos do tree                                                                                                      |
+| O.14a | C14 (cozinha overflow)      | screenshot de `/cozinha` em viewport 430×932                                                               | User-button visível dentro do viewport (header tem flex-wrap)                                                                                                          |
+| O.14b | C14 (bottom-nav name)       | navegar `/manager?name=Caleb` → tap engrenagem                                                             | URL final tem `?name=Caleb` preserved                                                                                                                                  |
+| O.15  | C15 (pix leak)              | `POST /payments {method:'card'}`                                                                           | `pixQrCode === null` no response, `pix_qr_code IS NULL` no DB                                                                                                          |
 
 **Report**: `qa-reports/e2e-cross-O-regression-r3.md`
 
 **Bugs a procurar (regression)**:
+
 - Algum dos 15 casos volta a falhar como na round 2
 - Side-effects inesperados (ex: chat customer quebra ao usar SuggestionChip)
 - Migration 035→036 rename causa downgrade em outros tenants
@@ -1037,6 +1014,7 @@ re-validar o que foi corrigido na round 3 (Cat 1-15 do prompt de fix).
 > Cobre Categoria 4 do round 3 — port do canvas v20 pro chat customer.
 
 **Spec source-of-truth**:
+
 - `docs/design-canvas/cliente-journey-v20.html` (renderizado do .jsx)
 - `docs/design-canvas/handoff/cliente/cliente-journey-v20.jsx`
 - 4 screenshots-alvo definidos no canvas:
@@ -1062,6 +1040,7 @@ re-validar o que foi corrigido na round 3 (Cat 1-15 do prompt de fix).
 **Aceitação**: 4 screenshots Playwright (393×852) bate com o canvas v20 (eyebrows, system notice, tool eyebrow, placeholder contextual presentes).
 
 **Bugs a procurar**:
+
 - Eyebrow não aparece (lastToolName state não atualizado)
 - System join notice não dispara (WS event missing)
 - Placeholder não muda contextualmente
@@ -1076,31 +1055,34 @@ re-validar o que foi corrigido na round 3 (Cat 1-15 do prompt de fix).
 > Cobre Categoria 5 do round 3 — 5 novos kinds + segment regular/vip.
 
 **Spec source-of-truth**:
+
 - `services/ai-service/services/continuation.py` DEFAULTS dict
 - Canvas v20 prints: `viu cardápio · iOS`, `chamou garçom · iOS`, `abriu pedido · iOS`, `pagou · iOS`, `voltou sem ação · iOS`
 
 **Sequência (10 cenários · 5 kinds × 2 segments)**:
 
-| # | Customer | kind | Setup |
-|---|---|---|---|
-| Q.1 | Pedro (regular, returning) | `viu_menu` | sessão M05 com `assistant_messages` recente que tenha tool_calls @> view_menu |
-| Q.2 | Ana (VIP, returning) | `viu_menu` | mesma situação · tom mais quente esperado |
-| Q.3 | Pedro | `chamou_garcom` | `waiter_calls` row recente status=pending |
-| Q.4 | Ana (VIP) | `chamou_garcom` | idem |
-| Q.5 | Pedro | `abriu_pedido` | `orders` aberto status=preparing · primary_cta "Acompanhar pedido" |
-| Q.6 | Ana (VIP) | `abriu_pedido` | idem |
-| Q.7 | Pedro | `pagou` | `payments` recente status=confirmed (< 10min) |
-| Q.8 | Ana (VIP) | `pagou` | idem |
-| Q.9 | Pedro | `voltou_sem_acao` | sessão reabriu sem nenhum evento recente |
-| Q.10 | Ana (VIP) | `voltou_sem_acao` | idem |
+| #    | Customer                   | kind              | Setup                                                                         |
+| ---- | -------------------------- | ----------------- | ----------------------------------------------------------------------------- |
+| Q.1  | Pedro (regular, returning) | `viu_menu`        | sessão M05 com `assistant_messages` recente que tenha tool_calls @> view_menu |
+| Q.2  | Ana (VIP, returning)       | `viu_menu`        | mesma situação · tom mais quente esperado                                     |
+| Q.3  | Pedro                      | `chamou_garcom`   | `waiter_calls` row recente status=pending                                     |
+| Q.4  | Ana (VIP)                  | `chamou_garcom`   | idem                                                                          |
+| Q.5  | Pedro                      | `abriu_pedido`    | `orders` aberto status=preparing · primary_cta "Acompanhar pedido"            |
+| Q.6  | Ana (VIP)                  | `abriu_pedido`    | idem                                                                          |
+| Q.7  | Pedro                      | `pagou`           | `payments` recente status=confirmed (< 10min)                                 |
+| Q.8  | Ana (VIP)                  | `pagou`           | idem                                                                          |
+| Q.9  | Pedro                      | `voltou_sem_acao` | sessão reabriu sem nenhum evento recente                                      |
+| Q.10 | Ana (VIP)                  | `voltou_sem_acao` | idem                                                                          |
 
 **Aceitação**: pra cada cenário:
+
 - `GET /api/restaurant_dev/continuation?kind=<kind>&isReturning=true&isVip=<bool>&customerName=<name>`
   retorna `rendered`, `chips`, `subtitle`, `primary_cta` opcional
 - Screenshot da home `/restaurant_dev` mostra `ContinuationHome` com texto correto + chips canon
 - VIP segment usa tom mais caloroso (validar prosa)
 
 **Bugs a procurar**:
+
 - kind ausente cai pro idle_nudge (default)
 - chips vazios em algum kind
 - primary_cta de `abriu_pedido` não renderiza
@@ -1117,23 +1099,29 @@ re-validar o que foi corrigido na round 3 (Cat 1-15 do prompt de fix).
 **Sequência (4 verificações)**:
 
 1. **Files removidos**:
+
    ```bash
    test ! -f apps/web-customer/src/components/ui/ContextualInputExpand.tsx
    test ! -f apps/web-staff/src/components/manager/MergedTableTile.tsx
    ```
+
    ESPERADO: ambos retornam 0 (file não existe).
 
 2. **Imports não quebrados**:
+
    ```bash
    npx tsc --noEmit --project apps/web-customer
    npx tsc --noEmit --project apps/web-staff
    ```
+
    ESPERADO: 0 errors.
 
 3. **SuggestionChip wirado**:
+
    ```bash
    grep -n "SuggestionChip" apps/web-customer/src/app/[slug]/assistente/page.tsx
    ```
+
    ESPERADO: pelo menos 2 referências (import + uso no map de chips).
 
 4. **ContinuationHome wirado**:
@@ -1175,24 +1163,24 @@ sequencialmente — ≥ 9/10 com `assistant_messages.contextual_chips IS NOT NUL
 
 Tabela de chips canon esperados:
 
-| Tool | Chips esperados |
-|---|---|
-| `add_to_order` | Ver pedido · Pedir mais · Pedir conta |
-| `change_order` | Ver pedido · Pedir mais · Pedir conta |
-| `remove_from_cart` | Ver pedido · Pedir mais · Pedir conta |
-| `cancel_order` (success) | Ver cardápio · Me recomenda algo · Chamar garçom |
-| `cancel_order` (409) | Chamar garçom · Ver pedido |
-| `confirm_order` | Acompanhar pedido · Pedir mais · Pedir conta |
-| `request_table_merge` (success) | Ver cardápio · Chamar garçom · Ver pedido |
-| `request_table_merge` (429) | Chamar garçom · Ver cardápio |
-| `late_arrival_request` | Ver cardápio · Cancelar |
-| `send_message_to_manager` | Ver cardápio · Ver pedido · Chamar garçom |
-| `ask_about_restaurant` | Como chego aí · Tem estacionamento · Vocês têm wifi |
-| `view_chat_history` | Apagar todas · Pedido LGPD · Voltar ao chat |
-| `view_courtesy` | Chamar garçom · Ver pedido |
-| `delete_chat` | Ver histórico · Apagar todas · Voltar ao chat |
-| `delete_all_chats` | Pedido LGPD formal · Voltar ao chat |
-| `lgpd_data_request` | Voltar ao chat · Ver cardápio |
+| Tool                            | Chips esperados                                     |
+| ------------------------------- | --------------------------------------------------- |
+| `add_to_order`                  | Ver pedido · Pedir mais · Pedir conta               |
+| `change_order`                  | Ver pedido · Pedir mais · Pedir conta               |
+| `remove_from_cart`              | Ver pedido · Pedir mais · Pedir conta               |
+| `cancel_order` (success)        | Ver cardápio · Me recomenda algo · Chamar garçom    |
+| `cancel_order` (409)            | Chamar garçom · Ver pedido                          |
+| `confirm_order`                 | Acompanhar pedido · Pedir mais · Pedir conta        |
+| `request_table_merge` (success) | Ver cardápio · Chamar garçom · Ver pedido           |
+| `request_table_merge` (429)     | Chamar garçom · Ver cardápio                        |
+| `late_arrival_request`          | Ver cardápio · Cancelar                             |
+| `send_message_to_manager`       | Ver cardápio · Ver pedido · Chamar garçom           |
+| `ask_about_restaurant`          | Como chego aí · Tem estacionamento · Vocês têm wifi |
+| `view_chat_history`             | Apagar todas · Pedido LGPD · Voltar ao chat         |
+| `view_courtesy`                 | Chamar garçom · Ver pedido                          |
+| `delete_chat`                   | Ver histórico · Apagar todas · Voltar ao chat       |
+| `delete_all_chats`              | Pedido LGPD formal · Voltar ao chat                 |
+| `lgpd_data_request`             | Voltar ao chat · Ver cardápio                       |
 
 ---
 
@@ -1203,22 +1191,23 @@ Tabela de chips canon esperados:
 
 **Aceitação**:
 
-| Estado | Esperado | Como validar |
-|---|---|---|
-| Home com botão "Chamar garçom" tap | Sheet desliza de baixo, Home blurred ao fundo, backdrop preto 32% | Playwright screenshot 393×852 + DOM `[data-testid=call-waiter-sheet][role=dialog]` visível |
-| Drag handle visível no topo da sheet | Pílula 40×4px cinza claro (`bg-border-soft`) | snapshot `.sheet > div:first-child` |
-| 5 motivos com icon+label+sub | Trazer cardápio · Fazer pedido · Servir bebida · Pedir conta · Outro motivo | snapshot · cada `<button>` tem ícone SVG + label `text-[14.5px]` + sub `text-[12px] text-mute` |
-| CTA disabled até seleção | `bg-faint` cinza inicial → `bg-ink` preto após tap em motivo | `preview_inspect [data-testid=call-waiter-confirm]` antes/depois |
-| Swipe-down dismiss | Sheet some, Home volta opaca, backdrop fade-out | Playwright drag-down 60%+ da altura da sheet |
-| Tap "Confirmar chamado" → `/garcom/chamando?callId=…&reason=…` | navigate, sheet fecha automaticamente | `window.location.pathname` muda |
-| Rota fullscreen `/[slug]/garcom/chamar` | DELETED — não existe mais | `find apps/web-customer/src/app -path '*garcom/chamar*'` retorna 0 hits |
-| Drawer "Chamar garçom" entry | Trigger via `useUIState.openCallWaiterSheet()` em vez de Link href | inspecionar `MenuDrawer` → "Chamar garçom" é `<button>`, não `<Link>` |
-| Pagamento erro · "Pedir ajuda ao garçom" | Abre sheet em vez de navegar | `apps/web-customer/src/app/[slug]/pagamento/erro/page.tsx` usa `onTap` em vez de `href` |
-| Late-arrival rejected · "Chamar recepcionista" CTA | Abre sheet em vez de navegar | `ScreenCustomerWaitingApproval.tsx` usa `openCallWaiterSheet` |
+| Estado                                                         | Esperado                                                                    | Como validar                                                                                   |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Home com botão "Chamar garçom" tap                             | Sheet desliza de baixo, Home blurred ao fundo, backdrop preto 32%           | Playwright screenshot 393×852 + DOM `[data-testid=call-waiter-sheet][role=dialog]` visível     |
+| Drag handle visível no topo da sheet                           | Pílula 40×4px cinza claro (`bg-border-soft`)                                | snapshot `.sheet > div:first-child`                                                            |
+| 5 motivos com icon+label+sub                                   | Trazer cardápio · Fazer pedido · Servir bebida · Pedir conta · Outro motivo | snapshot · cada `<button>` tem ícone SVG + label `text-[14.5px]` + sub `text-[12px] text-mute` |
+| CTA disabled até seleção                                       | `bg-faint` cinza inicial → `bg-ink` preto após tap em motivo                | `preview_inspect [data-testid=call-waiter-confirm]` antes/depois                               |
+| Swipe-down dismiss                                             | Sheet some, Home volta opaca, backdrop fade-out                             | Playwright drag-down 60%+ da altura da sheet                                                   |
+| Tap "Confirmar chamado" → `/garcom/chamando?callId=…&reason=…` | navigate, sheet fecha automaticamente                                       | `window.location.pathname` muda                                                                |
+| Rota fullscreen `/[slug]/garcom/chamar`                        | DELETED — não existe mais                                                   | `find apps/web-customer/src/app -path '*garcom/chamar*'` retorna 0 hits                        |
+| Drawer "Chamar garçom" entry                                   | Trigger via `useUIState.openCallWaiterSheet()` em vez de Link href          | inspecionar `MenuDrawer` → "Chamar garçom" é `<button>`, não `<Link>`                          |
+| Pagamento erro · "Pedir ajuda ao garçom"                       | Abre sheet em vez de navegar                                                | `apps/web-customer/src/app/[slug]/pagamento/erro/page.tsx` usa `onTap` em vez de `href`        |
+| Late-arrival rejected · "Chamar recepcionista" CTA             | Abre sheet em vez de navegar                                                | `ScreenCustomerWaitingApproval.tsx` usa `openCallWaiterSheet`                                  |
 
 **Report**: `qa-reports/e2e-cross-S-sheet-vaul.md`
 
 **Bugs a procurar**:
+
 - Sheet abre mas Home não fica blurred (z-index errado)
 - Tap fora do sheet não fecha (backdrop quebrado)
 - Swipe-down não funciona (touch handlers ausentes)
@@ -1234,23 +1223,25 @@ Tabela de chips canon esperados:
 
 **Casos**:
 
-| # | Cenário | Copy esperado | Copy proibido |
-|---|---|---|---|
-| T.1 | Customer SEM session abre `/restaurant_dev/` | "Escaneie o QR da mesa" | "fale com gerente", "fazer login" |
-| T.2 | Customer escaneia QR inválido (HMAC errado) | "QR Code inválido. Escaneie novamente" | "fale com gerente" |
-| T.3 | Late-arrival rejected | "O host não autorizou. Tente outra mesa ou peça ao garçom" | OK (esse é o canon — `peça ao garçom` é spec V16) |
-| T.4 | LM Studio offline | "Estou com dificuldade no momento. Tente novamente." | "fale com gerente" (não aplicável aqui) |
-| T.5 | LGPD anônimo (`customer_id == None`) | "Pra apagar suas conversas, preciso te identificar primeiro. Faça login na próxima visita…" | "gerente" |
-| T.6 | Late-arrival expired (modo identify) | "Era engano? Confere se escaneou o QR certo. Ou chama a recepcionista pra te ajudar." | "fale com gerente" (recepcionista é canon) |
+| #   | Cenário                                      | Copy esperado                                                                               | Copy proibido                                     |
+| --- | -------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| T.1 | Customer SEM session abre `/restaurant_dev/` | "Escaneie o QR da mesa"                                                                     | "fale com gerente", "fazer login"                 |
+| T.2 | Customer escaneia QR inválido (HMAC errado)  | "QR Code inválido. Escaneie novamente"                                                      | "fale com gerente"                                |
+| T.3 | Late-arrival rejected                        | "O host não autorizou. Tente outra mesa ou peça ao garçom"                                  | OK (esse é o canon — `peça ao garçom` é spec V16) |
+| T.4 | LM Studio offline                            | "Estou com dificuldade no momento. Tente novamente."                                        | "fale com gerente" (não aplicável aqui)           |
+| T.5 | LGPD anônimo (`customer_id == None`)         | "Pra apagar suas conversas, preciso te identificar primeiro. Faça login na próxima visita…" | "gerente"                                         |
+| T.6 | Late-arrival expired (modo identify)         | "Era engano? Confere se escaneou o QR certo. Ou chama a recepcionista pra te ajudar."       | "fale com gerente" (recepcionista é canon)        |
 
 **Report**: `qa-reports/e2e-cross-T-copy-audit.md`
 
 **Spec sources**:
+
 - `customer-host-model.md` — copy canon de late-arrival
 - `chat-history-lgpd.md` — copy canon de LGPD
 - `services/ai-service/services/lgpd_messages.py` — strings imutáveis
 
 **Bugs a procurar**:
+
 - Copy LGPD anônimo aparece em fluxo NÃO-LGPD (regression do filtro)
 - "fale com gerente" surge em qualquer estado em que o spec diz "garçom" ou "recepcionista"
 - Mensagens humanizadas via `humanizeInitError` vazam exception text técnico
@@ -1261,11 +1252,11 @@ Tabela de chips canon esperados:
 
 Adicionar 3 casos novos à tabela de regression:
 
-| # | Categoria | Caso | Aceitação |
-|---|---|---|---|
-| O.16 | C16 (sheet vaul) | tap "Chamar garçom" na Home → sheet aparece sobre Home blurred | DOM `[data-testid=call-waiter-sheet][role=dialog]` visível por cima de `[role=banner]` da Home (z-index 60+) |
-| O.17 | C-NEW-1 (migration runner) | `docker-compose stop api && docker-compose up -d api` → `\d+ table_merge_cooldowns` mostra UNIQUE direcional sem aplicação manual | runner aplica 037 automaticamente. `__migrations__` table tem 37 linhas. Re-run idempotente: `applied=0 skipped=37`. |
-| O.18 | C-NEW-3 (chips full coverage) | rodar 10 mutações distintas customer-side em sequência | ≥ 9/10 com `assistant_messages.contextual_chips IS NOT NULL`. Tools cobertas: ver tabela do K update round 4. |
-| O.19 | C-NEW-2 (classifier) | 5 turnos consecutivos de pedidos comuns ao garçom ("preciso de mais água", "pode trazer um talher", "queria mais um guardanapo", "me ajuda com a conta", "tem como trazer sal") | 5/5 com `was_blocked=false` E `block_reason != 'classifier'` |
-| O.20 | C-NEW-4 (continuation fallback) | `GET /continuation?kind=voltou_sem_acao` SEM passar `last_item` slot | `rendered` não contém `{` literal (sem `{last_item}` vazado) |
-| O.21 | C-NEW-5 (dead code clean) | `grep -rE "ContextualInputExpand\|liquid-morph\|LIQUID_MORPH_MS" apps/web-customer/src` | 0 hits |
+| #    | Categoria                       | Caso                                                                                                                                                                            | Aceitação                                                                                                            |
+| ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| O.16 | C16 (sheet vaul)                | tap "Chamar garçom" na Home → sheet aparece sobre Home blurred                                                                                                                  | DOM `[data-testid=call-waiter-sheet][role=dialog]` visível por cima de `[role=banner]` da Home (z-index 60+)         |
+| O.17 | C-NEW-1 (migration runner)      | `docker-compose stop api && docker-compose up -d api` → `\d+ table_merge_cooldowns` mostra UNIQUE direcional sem aplicação manual                                               | runner aplica 037 automaticamente. `__migrations__` table tem 37 linhas. Re-run idempotente: `applied=0 skipped=37`. |
+| O.18 | C-NEW-3 (chips full coverage)   | rodar 10 mutações distintas customer-side em sequência                                                                                                                          | ≥ 9/10 com `assistant_messages.contextual_chips IS NOT NULL`. Tools cobertas: ver tabela do K update round 4.        |
+| O.19 | C-NEW-2 (classifier)            | 5 turnos consecutivos de pedidos comuns ao garçom ("preciso de mais água", "pode trazer um talher", "queria mais um guardanapo", "me ajuda com a conta", "tem como trazer sal") | 5/5 com `was_blocked=false` E `block_reason != 'classifier'`                                                         |
+| O.20 | C-NEW-4 (continuation fallback) | `GET /continuation?kind=voltou_sem_acao` SEM passar `last_item` slot                                                                                                            | `rendered` não contém `{` literal (sem `{last_item}` vazado)                                                         |
+| O.21 | C-NEW-5 (dead code clean)       | `grep -rE "ContextualInputExpand\|liquid-morph\|LIQUID_MORPH_MS" apps/web-customer/src`                                                                                         | 0 hits                                                                                                               |

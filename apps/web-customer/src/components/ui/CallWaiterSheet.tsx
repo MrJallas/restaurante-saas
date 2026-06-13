@@ -31,12 +31,7 @@ import {
   type ActiveWaiterCall,
 } from '../../screens/customer-host-flows/ScreenCustomerWaiterCallWaiting';
 
-export type CallWaiterReason =
-  | 'bring_menu'
-  | 'place_order'
-  | 'serve_drink'
-  | 'ask_bill'
-  | 'other';
+export type CallWaiterReason = 'bring_menu' | 'place_order' | 'serve_drink' | 'ask_bill' | 'other';
 
 interface ReasonItem {
   key: CallWaiterReason;
@@ -56,7 +51,12 @@ const REASONS: ReasonItem[] = [
     sub: 'Versão impressa pra mesa',
     icon: (
       <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 20 20" fill="none" aria-hidden>
-        <path d="M3 4.5h11a2 2 0 0 1 2 2v9.5l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4-3 1.4V4.5Z" stroke={stroke} strokeWidth="1.4" strokeLinejoin="round" />
+        <path
+          d="M3 4.5h11a2 2 0 0 1 2 2v9.5l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4-3 1.4V4.5Z"
+          stroke={stroke}
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
         <path d="M6 8h7M6 11h5" stroke={stroke} strokeWidth="1.2" strokeLinecap="round" />
       </svg>
     ),
@@ -68,7 +68,12 @@ const REASONS: ReasonItem[] = [
     icon: (
       <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 20 20" fill="none" aria-hidden>
         <rect x="4.5" y="3" width="11" height="14" rx="1.5" stroke={stroke} strokeWidth="1.4" />
-        <path d="M7.5 7h5M7.5 10h5M7.5 13h3" stroke={stroke} strokeWidth="1.2" strokeLinecap="round" />
+        <path
+          d="M7.5 7h5M7.5 10h5M7.5 13h3"
+          stroke={stroke}
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
       </svg>
     ),
   },
@@ -78,7 +83,12 @@ const REASONS: ReasonItem[] = [
     sub: 'Reabastecer ou vinho na taça',
     icon: (
       <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 20 20" fill="none" aria-hidden>
-        <path d="M5 4h10l-1 6.5a4 4 0 0 1-8 0L5 4Z" stroke={stroke} strokeWidth="1.4" strokeLinejoin="round" />
+        <path
+          d="M5 4h10l-1 6.5a4 4 0 0 1-8 0L5 4Z"
+          stroke={stroke}
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
         <path d="M10 14.5V18M7 18h6" stroke={stroke} strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     ),
@@ -89,7 +99,12 @@ const REASONS: ReasonItem[] = [
     sub: 'Iniciar fechamento',
     icon: (
       <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 20 20" fill="none" aria-hidden>
-        <path d="M5 3h10v14l-2-1.2-2 1.2-2-1.2-2 1.2-2-1.2V3Z" stroke={stroke} strokeWidth="1.4" strokeLinejoin="round" />
+        <path
+          d="M5 3h10v14l-2-1.2-2 1.2-2-1.2-2 1.2-2-1.2V3Z"
+          stroke={stroke}
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
         <path d="M8 7h4M8 10h4M8 13h2" stroke={stroke} strokeWidth="1.2" strokeLinecap="round" />
       </svg>
     ),
@@ -100,7 +115,12 @@ const REASONS: ReasonItem[] = [
     sub: 'Você descreve quando atender',
     icon: (
       <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 20 20" fill="none" aria-hidden>
-        <path d="M3.5 5.5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H8.5L5 17v-3.5h-.5a1 1 0 0 1-1-1V5.5Z" stroke={stroke} strokeWidth="1.4" strokeLinejoin="round" />
+        <path
+          d="M3.5 5.5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H8.5L5 17v-3.5h-.5a1 1 0 0 1-1-1V5.5Z"
+          stroke={stroke}
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
       </svg>
     ),
   },
@@ -270,9 +290,7 @@ export function CallWaiterSheet({
         style={{
           transform: dragY ? `translateY(${dragY}px)` : undefined,
           animation: dragY > 0 || isDragging ? 'none' : undefined,
-          transition: isDragging
-            ? undefined
-            : 'transform 220ms cubic-bezier(.2,.8,.2,1)',
+          transition: isDragging ? undefined : 'transform 220ms cubic-bezier(.2,.8,.2,1)',
         }}
         onClick={(e) => e.stopPropagation()}
         {...bind}
@@ -290,9 +308,7 @@ export function CallWaiterSheet({
         </div>
 
         {checkingActive && (
-          <div className="py-10 text-center text-[13px] text-mute">
-            Verificando chamado…
-          </div>
+          <div className="py-10 text-center text-[13px] text-mute">Verificando chamado…</div>
         )}
 
         {!checkingActive && activeCall && (
@@ -333,7 +349,9 @@ export function CallWaiterSheet({
                   >
                     <span className="shrink-0 text-ink">{r.icon}</span>
                     <span className="flex-1">
-                      <span className="block text-[14.5px] font-medium leading-tight text-ink">{r.label}</span>
+                      <span className="block text-[14.5px] font-medium leading-tight text-ink">
+                        {r.label}
+                      </span>
                       <span className="mt-[1px] block text-[12px] text-mute">{r.sub}</span>
                     </span>
                     <span className="shrink-0 text-[14px] text-faint">›</span>
@@ -356,9 +374,7 @@ export function CallWaiterSheet({
               onClick={handleConfirm}
               disabled={!selected || submitting}
               className={`mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-5 py-3.5 text-[14.5px] font-medium tracking-[-0.005em] transition-colors active:scale-[0.99] disabled:cursor-not-allowed ${
-                selected && !submitting
-                  ? 'bg-ink text-white'
-                  : 'bg-faint text-white/80'
+                selected && !submitting ? 'bg-ink text-white' : 'bg-faint text-white/80'
               }`}
               data-testid="call-waiter-confirm"
             >

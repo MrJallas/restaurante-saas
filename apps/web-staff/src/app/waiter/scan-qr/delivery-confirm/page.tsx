@@ -15,10 +15,7 @@ import { Icon } from '../../../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../../../components/waiter/Primitives';
 import { defaultTenantSlug } from '../../../../lib/api';
 import { useStaffTheme } from '../../../../lib/theme';
-import {
-  listPendingDeliveries,
-  type PendingDelivery,
-} from '../../../../lib/api/waiter';
+import { listPendingDeliveries, type PendingDelivery } from '../../../../lib/api/waiter';
 
 function matchesTable(d: PendingDelivery, tableRef: string): boolean {
   const ref = tableRef.trim().toLowerCase();
@@ -90,7 +87,14 @@ function WaiterDeliveryConfirmPageInner() {
     >
       <GAppHeader
         dark={dark}
-        left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.back()} ariaLabel="Voltar" />}
+        left={
+          <GIconBtn
+            dark={dark}
+            icon={Icon.back(20)}
+            onClick={() => router.back()}
+            ariaLabel="Voltar"
+          />
+        }
         title="Entrega"
       />
       <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
@@ -136,8 +140,8 @@ function WaiterDeliveryConfirmPageInner() {
             }}
           >
             Nenhuma entrega pendente
-            {tableRef ? ` para a mesa ${tableRef}` : ''}. A cozinha ainda não chamou
-            garçom para essa mesa.
+            {tableRef ? ` para a mesa ${tableRef}` : ''}. A cozinha ainda não chamou garçom para
+            essa mesa.
           </div>
         ) : (
           <>
@@ -203,7 +207,12 @@ function WaiterDeliveryConfirmPageInner() {
           flexShrink: 0,
         }}
       >
-        <GButton kind="secondary" dark={dark} full onClick={() => router.push(`/waiter?tenant=${tenantSlug}`)}>
+        <GButton
+          kind="secondary"
+          dark={dark}
+          full
+          onClick={() => router.push(`/waiter?tenant=${tenantSlug}`)}
+        >
           Voltar pra home
         </GButton>
       </div>

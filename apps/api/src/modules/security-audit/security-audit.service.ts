@@ -1,10 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MongoService } from '../../infra/mongo/mongo.service';
 
-type SecurityCollection =
-  | 'qr_scan_events'
-  | 'scan_verification_events'
-  | 'security_audit_events';
+type SecurityCollection = 'qr_scan_events' | 'scan_verification_events' | 'security_audit_events';
 
 export interface SecurityAuditEvent {
   tenantId?: string | null;
@@ -27,10 +24,7 @@ export class SecurityAuditService {
 
   constructor(private readonly mongo: MongoService) {}
 
-  async log(
-    collection: SecurityCollection,
-    event: SecurityAuditEvent,
-  ): Promise<void> {
+  async log(collection: SecurityCollection, event: SecurityAuditEvent): Promise<void> {
     const dbName = process.env.MONGODB_SECURITY_DB ?? 'restaurant_security';
     const db = this.mongo.tryDb(dbName);
     if (!db) {
@@ -41,8 +35,7 @@ export class SecurityAuditService {
     }
 
     const createdAt = event.createdAt ?? new Date();
-    const expiresAt =
-      event.expiresAt ?? new Date(createdAt.getTime() + RETENTION_MS);
+    const expiresAt = event.expiresAt ?? new Date(createdAt.getTime() + RETENTION_MS);
 
     try {
       await db.collection(collection).insertOne({

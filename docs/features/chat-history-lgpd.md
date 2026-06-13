@@ -4,9 +4,11 @@
 > Backend: a implementar com NoSQL · auto-deletion 30 dias.
 
 ## O que é
+
 Persistência das conversas do cliente com a IA do restaurante, acessível pelo próprio cliente via menu hamburger. Cliente pode revisar conversas anteriores, apagar individualmente OU apagar tudo de uma vez. Sistema **auto-deleta após 30 dias** sem ação do usuário (limitação de coleta · LGPD princípio da minimização).
 
 ## Por que existe
+
 1. **Direito de acesso (LGPD Art. 18, II)** — cliente pode ver as conversas que mantemos
 2. **Direito de eliminação (LGPD Art. 18, VI)** — cliente pode apagar conversas quando quiser
 3. **Princípio da minimização (LGPD Art. 6, III)** — chats só guardados pelo necessário, e por tempo limitado
@@ -17,12 +19,15 @@ Persistência das conversas do cliente com a IA do restaurante, acessível pelo 
 > **Importante:** "Apagar histórico" toca **APENAS** o NoSQL de conversas. **Não toca** o cadastro do cliente no Postgres.
 
 ### O que é apagado pela ação do usuário
+
 Tudo que vive em **MongoDB** (ou DynamoDB):
+
 - `chat_threads` do `customerId` (todos OU específicos, conforme botão usado)
 - `chat_messages` ligadas aos threads (cascade pelo `threadId`)
 - Tool calls e resultados associados (`tool_calls` / `tool_results` em cada mensagem)
 
 ### O que permanece no Postgres (não é tocado)
+
 - `customers` · nome, telefone, CPF, e-mail, preferências, total de visitas
 - `table_sessions` · histórico de visitas/sessões da pessoa
 - `orders` · pedidos passados (auditoria fiscal · obrigação legal de preservar)
@@ -44,6 +49,7 @@ Tudo que vive em **MongoDB** (ou DynamoDB):
 **Sem persistent notice no rodapé.** A LGPD não aparece como banner permanente.
 
 **Modais simplificados:**
+
 - "Apagar todo o histórico?" → sub: "Vai sumir todas as suas conversas · não tem volta"
 - "Apagar essa conversa?" → sub: "Vai sumir [N] mensagens · não tem volta"
 
@@ -52,6 +58,7 @@ Não menciona cadastro nem pedidos preservados. O usuário entende intuitivament
 ### LGPD aparece só conversacionalmente · via tool padronizada
 
 A LGPD vira parte da experiência **só quando o cliente puxa o assunto**. Detectar via LLM quando o cliente fala (intent classification ou keyword match):
+
 - "quero apagar meus dados"
 - "quais são meus direitos LGPD"
 - "quero exercer meu direito de exclusão"
@@ -59,6 +66,7 @@ A LGPD vira parte da experiência **só quando o cliente puxa o assunto**. Detec
 - "quero saber o que vocês têm sobre mim"
 
 Quando detectado, a LLM **NÃO compõe a resposta livremente** — chama uma tool dedicada que devolve mensagem padronizada e juridicamente correta. Isso garante:
+
 - Copy idêntico toda vez (sem variação por LLM · zero risco de hallucination legal)
 - Auditoria fácil (a frase é a mesma em todas as ocorrências)
 - Atualização centralizada (mudança no copy reflete em 1 lugar só)
@@ -72,7 +80,11 @@ Tool sem parâmetros. LLM chama quando detecta intent LGPD. Retorna payload fixo
   "messageType": "lgpd_notice",
   "content": "Você, como consumidor, tem direito por lei (LGPD) de pedir a exclusão dos seus dados a qualquer momento. Posso encaminhar sua solicitação pra gerência?",
   "chips": [
-    { "label": "Sim, quero excluir",     "action": "lgpd_data_request", "params": { "type": "erasure" } },
+    {
+      "label": "Sim, quero excluir",
+      "action": "lgpd_data_request",
+      "params": { "type": "erasure" }
+    },
     { "label": "Não, não quero excluir", "action": "dismiss" }
   ]
 }
@@ -99,13 +111,14 @@ A escolha do cliente é capturada **na próxima interação** após o LGPD notic
 
 Tudo o que sobra na conversa após a resposta do cliente:
 
-| Item | Persiste no chat? |
-|---|---|
-| Bubble do texto do notice ("Você, como consumidor, tem direito...") | ✅ Sim · fica visível se rolar pra cima |
-| Chips `Sim, quero excluir` / `Não, não quero excluir` | ❌ Não · desativam/somem após o primeiro tap ou após o LLM rotear a resposta de texto livre |
-| Resposta da tool seguinte (`lgpd_data_request` confirmação OU `dismiss` silencioso) | ✅ Sim · vira parte do histórico |
+| Item                                                                                | Persiste no chat?                                                                           |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Bubble do texto do notice ("Você, como consumidor, tem direito...")                 | ✅ Sim · fica visível se rolar pra cima                                                     |
+| Chips `Sim, quero excluir` / `Não, não quero excluir`                               | ❌ Não · desativam/somem após o primeiro tap ou após o LLM rotear a resposta de texto livre |
+| Resposta da tool seguinte (`lgpd_data_request` confirmação OU `dismiss` silencioso) | ✅ Sim · vira parte do histórico                                                            |
 
 **Regra de re-aparição:** os chips de consent **NÃO ressurgem sozinhos**. Não tem auto-renderização periódica · não tem timer de re-prompt · não tem nudge passivo. A única forma de o notice (com chips ativos) aparecer **de novo** é:
+
 - O cliente puxar o assunto novamente em outra mensagem ("quero apagar meus dados", "quais meus direitos LGPD", etc.)
 - A IA detectar o intent
 - A IA chamar `show_lgpd_notice` outra vez
@@ -113,10 +126,12 @@ Tudo o que sobra na conversa após a resposta do cliente:
 Cada chamada de `show_lgpd_notice` é independente · gera novo bubble + novos chips ativos · histórico mantém ambas as ocorrências.
 
 Esse design respeita 2 princípios:
+
 - **Não-aliciamento:** software não fica empurrando "vc quer apagar?" · só responde quando perguntado
 - **Não-cansaço:** se o cliente já respondeu (sim ou não), respeitar a decisão · não re-perguntar na mesma sessão
 
 **Auditoria:** toda chamada de `lgpd_data_request` registra:
+
 - `consent_method`: `chip` ou `free_text`
 - `original_message`: o que o cliente digitou (se text)
 - `chip_label`: qual chip ele tocou (se chip)
@@ -131,7 +146,7 @@ Quando o cliente confirma com tap em "Sim, quero excluir" OU resposta afirmativa
 ```
 POST /customer/lgpd-requests
   body: { type: 'erasure' }
-  → 201 { 
+  → 201 {
        protocolNumber: 'LGPD-2026-05-08-3F2A',  // formato AAAA-MM-DD-XXXX
        status: 'fulfilled',                       // não 'pending'
        executedAt: '2026-05-08T19:42:13Z',
@@ -140,6 +155,7 @@ POST /customer/lgpd-requests
 ```
 
 Backend:
+
 - **Apaga imediatamente** todos os `chat_threads` + `chat_messages` do customer no NoSQL (cascade)
 - Cria registro em `lgpd_requests` table com status `'fulfilled'` direto
 - Sem push de confirmação posterior (ação consumada na hora)
@@ -206,6 +222,7 @@ Nenhum lugar do front-end recompõe esse texto. Sempre vem via tool result.
 ## Arquitetura · NoSQL
 
 Chat data tem perfil ideal pra NoSQL:
+
 - Schema flexível (mensagens podem ter formatos diferentes · tool calls, suggestion chips, image refs)
 - Volume alto (cada cliente gera 10-100 mensagens por visita)
 - Acesso por `customerId` é a query dominante
@@ -248,20 +265,24 @@ Chat data tem perfil ideal pra NoSQL:
 ```
 
 ### TTL index
+
 ```js
-db.chat_threads.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
-db.chat_messages.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+db.chat_threads.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+db.chat_messages.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 ```
 
 MongoDB roda o TTL job a cada 60s · documentos com `expiresAt < now()` são removidos.
 
 ### Por que NÃO Postgres
+
 - Schema rígido — toolCalls com formatos variáveis ficam como JSON column = perde validação e queries ficam feias
 - Volume — 100 mensagens × 1000 visitas/mês × 12 meses = 1.2M rows/ano só de uma loja média
 - TTL no Postgres é via cron job custom · NoSQL nativo é mais robusto
 
 ### Fallback
+
 Se a infra não tem NoSQL, use Postgres com:
+
 - Tabela `chat_messages` com colunas JSON
 - Index parcial `WHERE deleted_at IS NULL`
 - Cron job diário `DELETE WHERE expires_at < now()`
@@ -293,6 +314,7 @@ GET /customer/data-policy
 ## Frontend
 
 ### Entry point
+
 - Hamburger menu do customer app (`apps/web-customer`) ganha entrada nova:
   - Ícone clock-rewind (peso 1.4 igual aos outros do `Ico`)
   - Label: `Histórico de chats`
@@ -300,6 +322,7 @@ GET /customer/data-policy
   - Tap → abre `ScreenCustomerChatHistory`
 
 ### `ScreenCustomerChatHistory` (lista)
+
 - Topbar com back · "Histórico de chats" · ícone busca à direita
 - Lista de threads agrupada por **mês**:
   - Eyebrow mono caps tiny do mês (ex: `MAIO · 2026`)
@@ -318,6 +341,7 @@ GET /customer/data-policy
     > "SUAS CONVERSAS FICAM AQUI POR 30 DIAS E SÃO APAGADAS AUTOMATICAMENTE · LGPD ART. 18"
 
 ### `ScreenCustomerChatThread` (visualização read-only de chat antigo)
+
 - Topbar com back · data do chat · ícone 3 pontinhos
 - Banner mono caps tiny no topo:
   > "ESTE CHAT É SOMENTE LEITURA · NÃO PODE SER CONTINUADO"
@@ -328,6 +352,7 @@ GET /customer/data-policy
   - "Compartilhar como texto" (futuro)
 
 ### Modal · apagar tudo (confirmação destrutiva)
+
 - Vaul-style sheet
 - Title Inter 22/700: "Apagar todo o histórico?"
 - Sub Inter 14/500 mute: "Vai sumir [N] conversas. Essa ação não tem volta — nem pra você nem pra Luna."
@@ -336,6 +361,7 @@ GET /customer/data-policy
   - `Cancelar` (outline)
 
 ### Modal · apagar 1 chat (confirmação leve)
+
 - Vaul-style sheet
 - Title Inter 18/700: "Apagar este chat?"
 - 2 CTAs:

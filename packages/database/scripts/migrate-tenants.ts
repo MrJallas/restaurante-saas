@@ -26,23 +26,12 @@ import { Client } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const DEFAULT_DATABASE_URL =
-  'postgresql://postgres:postgres@localhost:5434/restaurant_saas';
+const DEFAULT_DATABASE_URL = 'postgresql://postgres:postgres@localhost:5434/restaurant_saas';
 
-const MIGRATIONS_DIR = path.join(
-  __dirname,
-  '..',
-  'migrations',
-  'tenant-template',
-);
+const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations', 'tenant-template');
 
 // Schemas que não são tenants — pulamos.
-const SYSTEM_SCHEMAS = new Set([
-  'public',
-  'pg_catalog',
-  'information_schema',
-  'pg_toast',
-]);
+const SYSTEM_SCHEMAS = new Set(['public', 'pg_catalog', 'information_schema', 'pg_toast']);
 
 interface RunOptions {
   databaseUrl?: string;
@@ -73,7 +62,9 @@ export async function migrateTenants(options: RunOptions = {}): Promise<{
     );
     let tenants = rows.map((r) => r.schema_name).filter((s) => !SYSTEM_SCHEMAS.has(s));
     if (options.tenantFilter) {
-      tenants = tenants.filter((t) => t === options.tenantFilter || t.endsWith(`_${options.tenantFilter}`));
+      tenants = tenants.filter(
+        (t) => t === options.tenantFilter || t.endsWith(`_${options.tenantFilter}`),
+      );
     }
 
     if (tenants.length === 0) {
@@ -117,7 +108,11 @@ export async function migrateTenants(options: RunOptions = {}): Promise<{
       // `escalation_chains` (023) + `host_module_tables` proxies (035).
       // Se as 3 estiverem presentes, marca 001-035 como already-done.
       if (!tableExistedBefore) {
-        const { rows: probe } = await client.query<{ has_customers: boolean; has_escalation: boolean; has_host_module: boolean }>(
+        const { rows: probe } = await client.query<{
+          has_customers: boolean;
+          has_escalation: boolean;
+          has_host_module: boolean;
+        }>(
           `SELECT
              EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'customers') AS has_customers,
              EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'escalation_chains') AS has_escalation,
@@ -170,9 +165,7 @@ export async function migrateTenants(options: RunOptions = {}): Promise<{
           console.log(`[migrate-tenants] ${tenant} ← ${file}`);
         } catch (err) {
           await client.query('ROLLBACK');
-          throw new Error(
-            `Falha aplicando ${file} em ${tenant}: ${(err as Error).message}`,
-          );
+          throw new Error(`Falha aplicando ${file} em ${tenant}: ${(err as Error).message}`);
         }
       }
     }
@@ -183,10 +176,7 @@ export async function migrateTenants(options: RunOptions = {}): Promise<{
   }
 }
 
-async function tenantHasMigrationsTable(
-  client: Client,
-  _tenant: string,
-): Promise<boolean> {
+async function tenantHasMigrationsTable(client: Client, _tenant: string): Promise<boolean> {
   const { rows } = await client.query<{ exists: boolean }>(
     `SELECT EXISTS(
        SELECT 1 FROM information_schema.tables
@@ -197,7 +187,6 @@ async function tenantHasMigrationsTable(
   return Boolean(rows[0]?.exists);
 }
 
-
 // CLI entrypoint
 if (require.main === module) {
   const tenantFilter = process.argv[2];
@@ -205,9 +194,7 @@ if (require.main === module) {
     .then((res) => {
       const totalApplied = Object.values(res.applied).flat().length;
       const totalSkipped = Object.values(res.skipped).flat().length;
-      console.log(
-        `[migrate-tenants] OK · applied=${totalApplied} skipped=${totalSkipped}`,
-      );
+      console.log(`[migrate-tenants] OK · applied=${totalApplied} skipped=${totalSkipped}`);
     })
     .catch((err) => {
       console.error('[migrate-tenants] ERRO:', err);

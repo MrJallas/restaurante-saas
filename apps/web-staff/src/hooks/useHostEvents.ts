@@ -56,9 +56,7 @@ const DEFAULT_HOST_EVENTS: WsEventName[] = [
 
 function resolveWsUrl(): string | null {
   if (typeof window === 'undefined') return null;
-  const explicit =
-    (window as { __WS_URL__?: string }).__WS_URL__ ||
-    process.env.NEXT_PUBLIC_WS_URL;
+  const explicit = (window as { __WS_URL__?: string }).__WS_URL__ || process.env.NEXT_PUBLIC_WS_URL;
   if (explicit) return explicit;
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
   if (apiUrl) return apiUrl.replace(/\/?api\/?$/, '');
@@ -135,9 +133,7 @@ export function useHostEvents({
     }
 
     const subscribed =
-      eventsRef.current && eventsRef.current.length > 0
-        ? eventsRef.current
-        : DEFAULT_HOST_EVENTS;
+      eventsRef.current && eventsRef.current.length > 0 ? eventsRef.current : DEFAULT_HOST_EVENTS;
     for (const name of subscribed) {
       socket.on(name, (payload: unknown) => {
         if (!payload || typeof payload !== 'object') return;

@@ -13,7 +13,10 @@ interface PushProntoBarProps {
 }
 
 export const PushProntoBar: React.FC<PushProntoBarProps> = ({
-  tableLabel, items, time = 'agora', onTap,
+  tableLabel,
+  items,
+  time = 'agora',
+  onTap,
 }) => (
   <PushCardIOS
     tone="success"

@@ -63,7 +63,10 @@ function playAlertTones() {
     if (audioCtx.state === 'suspended') {
       // Autoplay policy: sem gesto prévio o resume() falha — toca assim
       // que o contexto destravar; engolir o reject mantém o catch externo.
-      audioCtx.resume().then(schedule).catch(() => undefined);
+      audioCtx
+        .resume()
+        .then(schedule)
+        .catch(() => undefined);
     } else {
       schedule();
     }
@@ -97,7 +100,11 @@ export interface WaiterDeliveryAlertsProps {
   dark?: boolean;
 }
 
-export function WaiterDeliveryAlerts({ tenantSlug, waiterId, dark = false }: WaiterDeliveryAlertsProps) {
+export function WaiterDeliveryAlerts({
+  tenantSlug,
+  waiterId,
+  dark = false,
+}: WaiterDeliveryAlertsProps) {
   const C = useG(dark);
   const router = useRouter();
   const pathname = usePathname();
@@ -188,8 +195,7 @@ export function WaiterDeliveryAlerts({ tenantSlug, waiterId, dark = false }: Wai
   if (total === 0) return null;
 
   const cards: Array<
-    | { kind: 'delivery'; delivery: PendingDelivery }
-    | { kind: 'call'; call: WaiterCallSummary }
+    { kind: 'delivery'; delivery: PendingDelivery } | { kind: 'call'; call: WaiterCallSummary }
   > = [
     ...visibleDeliveries.map((delivery) => ({ kind: 'delivery' as const, delivery })),
     ...visibleCalls.map((call) => ({ kind: 'call' as const, call })),
@@ -197,8 +203,7 @@ export function WaiterDeliveryAlerts({ tenantSlug, waiterId, dark = false }: Wai
   const shown = cards.slice(0, 3);
   const overflow = total - shown.length;
 
-  const dismiss = (id: string) =>
-    setDismissed((prev) => new Set(prev).add(id));
+  const dismiss = (id: string) => setDismissed((prev) => new Set(prev).add(id));
 
   return (
     <div
@@ -300,9 +305,7 @@ export function WaiterDeliveryAlerts({ tenantSlug, waiterId, dark = false }: Wai
               <button
                 type="button"
                 data-testid="delivery-alert-open"
-                onClick={() =>
-                  router.push(`/waiter/entrega/${d.order_id}?tenant=${tenantSlug}`)
-                }
+                onClick={() => router.push(`/waiter/entrega/${d.order_id}?tenant=${tenantSlug}`)}
                 style={{
                   all: 'unset',
                   cursor: 'pointer',
@@ -419,9 +422,7 @@ export function WaiterDeliveryAlerts({ tenantSlug, waiterId, dark = false }: Wai
               type="button"
               data-testid="call-alert-open"
               onClick={() =>
-                router.push(
-                  `/waiter/call/${call.id}?tenant=${tenantSlug}&type=${callType}`,
-                )
+                router.push(`/waiter/call/${call.id}?tenant=${tenantSlug}&type=${callType}`)
               }
               style={{
                 all: 'unset',

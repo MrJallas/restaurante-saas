@@ -65,25 +65,29 @@ Mesmo padrão das welcome messages (`renderTemplate()` com placeholders `{min}`,
 // fixtures/suggestions-pt-BR.json — bootstrap pra Redis
 {
   "pedido_atrasado": [
-    { "id": "p1", "icon": "clock",  "text": "Já fui verificar seu pedido na cozinha" },
-    { "id": "p2", "icon": "clock",  "text": "Saindo da cozinha em uns {min} min" },
-    { "id": "p3", "icon": "plate",  "text": "Pediu adiantar uma entrada enquanto isso?" },
-    { "id": "p4", "icon": "gift",   "text": "Que tal uma cortesia pela espera?",
-      "links_to": "mgr-compensate" }
+    { "id": "p1", "icon": "clock", "text": "Já fui verificar seu pedido na cozinha" },
+    { "id": "p2", "icon": "clock", "text": "Saindo da cozinha em uns {min} min" },
+    { "id": "p3", "icon": "plate", "text": "Pediu adiantar uma entrada enquanto isso?" },
+    {
+      "id": "p4",
+      "icon": "gift",
+      "text": "Que tal uma cortesia pela espera?",
+      "links_to": "mgr-compensate",
+    },
   ],
   "chamado_sem_resposta": [
-    { "id": "c1", "icon": "hand",  "text": "Estou indo aí em {min} min" },
-    { "id": "c2", "icon": "hand",  "text": "Manda o que precisa por aqui que adianto" },
-    { "id": "c3", "icon": "hand",  "text": "{garcom_nome} já tá indo na sua mesa" }
+    { "id": "c1", "icon": "hand", "text": "Estou indo aí em {min} min" },
+    { "id": "c2", "icon": "hand", "text": "Manda o que precisa por aqui que adianto" },
+    { "id": "c3", "icon": "hand", "text": "{garcom_nome} já tá indo na sua mesa" },
   ],
   "cliente_novo_aguardando": [
-    { "id": "n1", "icon": "hand",  "text": "Bem-vindo! Já vou aí" },
-    { "id": "n2", "icon": "plate", "text": "Posso sugerir nossa entrada da casa enquanto isso?" }
+    { "id": "n1", "icon": "hand", "text": "Bem-vindo! Já vou aí" },
+    { "id": "n2", "icon": "plate", "text": "Posso sugerir nossa entrada da casa enquanto isso?" },
   ],
   "pagamento_demorado": [
     { "id": "$1", "icon": "clock", "text": "Já levo a maquininha" },
-    { "id": "$2", "icon": "check", "text": "Pode pagar pelo app, é instantâneo: {link}" }
-  ]
+    { "id": "$2", "icon": "check", "text": "Pode pagar pelo app, é instantâneo: {link}" },
+  ],
 }
 ```
 
@@ -206,7 +210,7 @@ handleStaffMessageCreated(payload: AssistantMessage) {
 }
 ```
 
-Quando a sessão do garçom alvo está ativa (socket conectado), ele recebe via WS *em tempo real* + push. Sessão fechada ⇒ só push. Push usa som `staff_message_soft` (mais discreto que `pedido_pronto`) e respeita o estado `zone_pauses` da feature `zone-pause.md` — durante uma pausa ativa, push de manager-message é **silenciado** mas a mensagem ainda aparece na lista de Chamados.
+Quando a sessão do garçom alvo está ativa (socket conectado), ele recebe via WS _em tempo real_ + push. Sessão fechada ⇒ só push. Push usa som `staff_message_soft` (mais discreto que `pedido_pronto`) e respeita o estado `zone_pauses` da feature `zone-pause.md` — durante uma pausa ativa, push de manager-message é **silenciado** mas a mensagem ainda aparece na lista de Chamados.
 
 ### Read receipt · waiter abre a mensagem
 
@@ -218,6 +222,7 @@ POST /{slug}/staff/messages/:id/read
 ```
 
 Backend:
+
 1. `UPDATE assistant_messages SET read_at = NOW() WHERE id = :id AND to_staff_id = :auth_staff`
 2. Emite `manager.message.read { message_id, read_at }` pro socket do gerente (`manager:${from_staff_id}`)
 3. Frontend do gerente atualiza o status pill do `MContactStaffSheet` (sent state) de "Aguardando leitura…" mostarda → "Lido às 19:43" verde.
@@ -228,11 +233,11 @@ Backend:
 
 ### Eventos WS adicionais
 
-| Evento | Direção | Payload | Quando |
-|---|---|---|---|
-| `manager.message` | server → staff (alvo) | mensagem completa | gerente enviou + push enviado |
-| `manager.message.read` | server → manager | `{ message_id, read_at }` | staff alvo abriu detail OU "Marcou como lido" |
-| `manager.message.replied` | server → manager | `{ message_id, reply_message_id, content }` | staff alvo respondeu (round-trip · vira nova row em `assistant_messages`) |
+| Evento                    | Direção               | Payload                                     | Quando                                                                    |
+| ------------------------- | --------------------- | ------------------------------------------- | ------------------------------------------------------------------------- |
+| `manager.message`         | server → staff (alvo) | mensagem completa                           | gerente enviou + push enviado                                             |
+| `manager.message.read`    | server → manager      | `{ message_id, read_at }`                   | staff alvo abriu detail OU "Marcou como lido"                             |
+| `manager.message.replied` | server → manager      | `{ message_id, reply_message_id, content }` | staff alvo respondeu (round-trip · vira nova row em `assistant_messages`) |
 
 ### Telemetria · adicional ao 5.6
 
@@ -333,11 +338,11 @@ O `POST /{slug}/staff/messages` do V9 continua existindo — apenas ganha cálcu
 
 ### WS events · estendidos + novos
 
-| Evento | Direção | Payload | Quando |
-|---|---|---|---|
-| `message.received` (estendido) | server → staff alvo | mensagem completa + `thread_id` | qualquer mensagem nova entra na caixa |
-| `message.read` (NOVO V10) | server → staff emissor | `{ message_id, thread_id, read_at, by: { staff_id } }` | destinatário abriu thread + bubble entrou em viewport |
-| `thread.archived` (NOVO V10) | server → staff dono | `{ thread_id, archived_at }` | usuário arquivou thread (eco pro próprio device pra sync multi-device) |
+| Evento                         | Direção                | Payload                                                | Quando                                                                 |
+| ------------------------------ | ---------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------- |
+| `message.received` (estendido) | server → staff alvo    | mensagem completa + `thread_id`                        | qualquer mensagem nova entra na caixa                                  |
+| `message.read` (NOVO V10)      | server → staff emissor | `{ message_id, thread_id, read_at, by: { staff_id } }` | destinatário abriu thread + bubble entrou em viewport                  |
+| `thread.archived` (NOVO V10)   | server → staff dono    | `{ thread_id, archived_at }`                           | usuário arquivou thread (eco pro próprio device pra sync multi-device) |
 
 `manager.message`, `manager.message.read` e `manager.message.replied` (V9 · seção 5.7) **viram aliases** de `message.received` / `message.read` / `message.received` — devices V9 continuam funcionando, novos devices preferem os nomes genéricos.
 
@@ -347,16 +352,19 @@ V10 muda o ponto de leitura: V9 marcava como lido quando o garçom abria `Screen
 
 ```ts
 // frontend · IntersectionObserver na lista de bubbles
-const obs = new IntersectionObserver((entries) => {
-  for (const e of entries) {
-    if (!e.isIntersecting) continue;
-    const id = e.target.dataset.messageId;
-    const msg = messages.find(m => m.id === id);
-    if (!msg || msg.read_at || msg.from_role === 'self') continue;
-    if (Date.now() - new Date(msg.created_at).getTime() > 86_400_000) continue; // > 24h skip
-    fetch(`/staff/messages/${id}/read`, { method: 'POST' });
-  }
-}, { threshold: 0.6 });
+const obs = new IntersectionObserver(
+  (entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      const id = e.target.dataset.messageId;
+      const msg = messages.find((m) => m.id === id);
+      if (!msg || msg.read_at || msg.from_role === 'self') continue;
+      if (Date.now() - new Date(msg.created_at).getTime() > 86_400_000) continue; // > 24h skip
+      fetch(`/staff/messages/${id}/read`, { method: 'POST' });
+    }
+  },
+  { threshold: 0.6 },
+);
 ```
 
 Servidor por sua vez agrupa reads numa janela de 200ms antes de emitir o `message.read` pro emissor — evita ruído de WS quando 8 mensagens entram em viewport ao mesmo tempo. O emissor recebe um único event com array `[message_id, ...]`.
@@ -386,13 +394,13 @@ A tela isolada do V9 fica deprecated. Push de `manager-message` agora carrega `d
 
 `POST /{slug}/courtesies` (já documentado em cliente/server-notes.md) **continua existindo**, só muda quem chama:
 
-| Antes (removido) | Agora |
-|---|---|
-| ✗ Painel · barra "Agir agora" · 3º card "Cortesia" | (removido) |
-| ✗ Cards de alerta · ação "Cortesia mesa" | substituído por "Contactar cliente" |
-| ✓ Eu › Cortesias (histórico + criar manualmente) | mantido |
-| ✓ MoreSheet de alerta · 3 pontinhos · "Mandar cortesia" | NOVO — ação terciária |
-| ✓ Sheet "Contactar cliente" · chip "Quer uma cortesia pela espera?" | NOVO — entrada contextual |
+| Antes (removido)                                                    | Agora                               |
+| ------------------------------------------------------------------- | ----------------------------------- |
+| ✗ Painel · barra "Agir agora" · 3º card "Cortesia"                  | (removido)                          |
+| ✗ Cards de alerta · ação "Cortesia mesa"                            | substituído por "Contactar cliente" |
+| ✓ Eu › Cortesias (histórico + criar manualmente)                    | mantido                             |
+| ✓ MoreSheet de alerta · 3 pontinhos · "Mandar cortesia"             | NOVO — ação terciária               |
+| ✓ Sheet "Contactar cliente" · chip "Quer uma cortesia pela espera?" | NOVO — entrada contextual           |
 
 **Garantia de schema:** o tipo `'message'` foi removido de `ScreenManagerCompensateClient.types`. Cortesia = freebie material (`dessert · drink · couvert · discount`). Comunicação pura sem brinde fica no fluxo separado de `/staff/messages`. Isso simplifica o backend — `courtesies.category` não precisa lidar com "mensagem sem item".
 
@@ -400,11 +408,11 @@ A tela isolada do V9 fica deprecated. Push de `manager-message` agora carrega `d
 
 ## REMOÇÕES (decisão produto · não voltam pro app sem nova decisão)
 
-| Feature | Tabela / endpoint impactado | O que fazer |
-|---|---|---|
-| Pausa de garçom (telas + push) | sem schema próprio · só uso de `staff_users.is_paused` em runtime | manter a coluna `is_paused` no DB, só remover endpoints `POST /staff/:id/pause` e `POST /staff/:id/resume` da exposição pública. NÃO dropar coluna — pode reaparecer. |
-| Watcher de QR / Segurança | `session_audit_logs`, `pending_review`, `blocked_ips` | manter intactos (são features defensivas independentes do UI). Só remover as rotas `GET /manager/security/*` e `GET /manager/security/audit`. Reaparecem em `prototypes/seguranca-qr/` quando a decisão de produto vier. |
-| Análise de reserva (recepcionista revisando draft do bot) | nenhum schema novo · era só UI sobre `reservations` | bot do WhatsApp escreve direto em `reservations` quando captura nome+telefone+CPF+data+hora obrigatórios. Sem fluxo de aprovação. Endpoint `GET /reservations/drafts` deixa de existir. |
+| Feature                                                   | Tabela / endpoint impactado                                       | O que fazer                                                                                                                                                                                                              |
+| --------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Pausa de garçom (telas + push)                            | sem schema próprio · só uso de `staff_users.is_paused` em runtime | manter a coluna `is_paused` no DB, só remover endpoints `POST /staff/:id/pause` e `POST /staff/:id/resume` da exposição pública. NÃO dropar coluna — pode reaparecer.                                                    |
+| Watcher de QR / Segurança                                 | `session_audit_logs`, `pending_review`, `blocked_ips`             | manter intactos (são features defensivas independentes do UI). Só remover as rotas `GET /manager/security/*` e `GET /manager/security/audit`. Reaparecem em `prototypes/seguranca-qr/` quando a decisão de produto vier. |
+| Análise de reserva (recepcionista revisando draft do bot) | nenhum schema novo · era só UI sobre `reservations`               | bot do WhatsApp escreve direto em `reservations` quando captura nome+telefone+CPF+data+hora obrigatórios. Sem fluxo de aprovação. Endpoint `GET /reservations/drafts` deixa de existir.                                  |
 
 ### Bot WhatsApp · contrato dos campos obrigatórios
 
@@ -425,16 +433,16 @@ Se algum obrigatório ficar em branco, bot pergunta de novo. Bot só insere em `
 
 (somam-se aos da `cliente/server-notes.md`)
 
-| Evento | Direção | Payload | Quando |
-|---|---|---|---|
-| `staff.message.delivered` | server → staff | `{ message_id, delivered_at }` | cliente abriu o app + leu a bubble (driver: visibilitychange) |
-| `staff.message.read` | server → staff | `{ message_id, read_at }` | cliente respondeu OU permaneceu 3+ s na tela com a bubble visível |
-| `manager.message` | server → staff | mensagem completa | gerente enviou direto pra outro funcionário (V9 · ver 5.7) |
-| `manager.message.read` | server → manager | `{ message_id, read_at }` | staff alvo abriu detail (V9 · alias de `message.read` no V10) |
-| `manager.message.replied` | server → manager | `{ message_id, reply_message_id, content }` | staff alvo respondeu (V9 · round-trip) |
-| `message.received` | server → staff alvo | mensagem completa + `thread_id` | qualquer mensagem nova entra na thread (V10 · ver 5.7-bis) |
-| `message.read` | server → staff emissor | `{ message_ids[], thread_id, read_at, by: { staff_id } }` | bubbles entraram em viewport · agrupado em janela de 200ms (V10) |
-| `thread.archived` | server → staff dono | `{ thread_id, archived_at }` | usuário arquivou thread · eco multi-device (V10) |
+| Evento                    | Direção                | Payload                                                   | Quando                                                            |
+| ------------------------- | ---------------------- | --------------------------------------------------------- | ----------------------------------------------------------------- |
+| `staff.message.delivered` | server → staff         | `{ message_id, delivered_at }`                            | cliente abriu o app + leu a bubble (driver: visibilitychange)     |
+| `staff.message.read`      | server → staff         | `{ message_id, read_at }`                                 | cliente respondeu OU permaneceu 3+ s na tela com a bubble visível |
+| `manager.message`         | server → staff         | mensagem completa                                         | gerente enviou direto pra outro funcionário (V9 · ver 5.7)        |
+| `manager.message.read`    | server → manager       | `{ message_id, read_at }`                                 | staff alvo abriu detail (V9 · alias de `message.read` no V10)     |
+| `manager.message.replied` | server → manager       | `{ message_id, reply_message_id, content }`               | staff alvo respondeu (V9 · round-trip)                            |
+| `message.received`        | server → staff alvo    | mensagem completa + `thread_id`                           | qualquer mensagem nova entra na thread (V10 · ver 5.7-bis)        |
+| `message.read`            | server → staff emissor | `{ message_ids[], thread_id, read_at, by: { staff_id } }` | bubbles entraram em viewport · agrupado em janela de 200ms (V10)  |
+| `thread.archived`         | server → staff dono    | `{ thread_id, archived_at }`                              | usuário arquivou thread · eco multi-device (V10)                  |
 
 Os primeiros 2 populam o estado "Aguardando leitura..." no Frame C do MContactClientSheet. Os 3 do meio (`manager.message` família) populam o sent-state do MContactStaffSheet (★ V9 ★). Os 3 últimos (`message.*` + `thread.archived`) sustentam a Caixa de Mensagens completa do V10 — read receipts em viewport-based, sync de threads multi-device.
 

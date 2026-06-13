@@ -50,9 +50,7 @@ export function useTableMerge() {
   // Holds the promise resolver while the overlay is open. Refs (not state)
   // because we don't want to re-render every time it flips, AND we need the
   // identity stable across renders so the awaiting promise resolves.
-  const pendingResolveRef = useRef<
-    ((call: ToolCallEnvelope) => void) | null
-  >(null);
+  const pendingResolveRef = useRef<((call: ToolCallEnvelope) => void) | null>(null);
   // Holds the original call so we can enrich it with the selected table.
   const pendingCallRef = useRef<ToolCallEnvelope | null>(null);
 
@@ -66,9 +64,7 @@ export function useTableMerge() {
    *    a table from the overlay
    */
   const handleToolCall = useCallback(
-    (
-      call: ToolCallEnvelope,
-    ): ToolCallEnvelope | Promise<ToolCallEnvelope> | null => {
+    (call: ToolCallEnvelope): ToolCallEnvelope | Promise<ToolCallEnvelope> | null => {
       if (call.name !== 'request_table_merge') return null;
       if (call.arguments?.targetTable) return call; // already targeted
       pendingCallRef.current = call;
@@ -88,26 +84,25 @@ export function useTableMerge() {
    * pending promise from `handleToolCall` with the enriched envelope and
    * closes the overlay.
    */
-  const selectTable = useCallback((targetTable: {
-    num: number;
-    sessionId?: string;
-    label?: string;
-  }) => {
-    const original = pendingCallRef.current;
-    const resolve = pendingResolveRef.current;
-    if (!original || !resolve) return;
-    resolve({
-      name: 'request_table_merge',
-      arguments: {
-        ...(original.arguments ?? {}),
-        targetTable: targetTable.num,
-        targetTableSessionId: targetTable.sessionId,
-        targetTableLabel: targetTable.label,
-      },
-    });
-    pendingCallRef.current = null;
-    pendingResolveRef.current = null;
-  }, []);
+  const selectTable = useCallback(
+    (targetTable: { num: number; sessionId?: string; label?: string }) => {
+      const original = pendingCallRef.current;
+      const resolve = pendingResolveRef.current;
+      if (!original || !resolve) return;
+      resolve({
+        name: 'request_table_merge',
+        arguments: {
+          ...(original.arguments ?? {}),
+          targetTable: targetTable.num,
+          targetTableSessionId: targetTable.sessionId,
+          targetTableLabel: targetTable.label,
+        },
+      });
+      pendingCallRef.current = null;
+      pendingResolveRef.current = null;
+    },
+    [],
+  );
 
   /**
    * Customer dismissed the overlay without picking. Resolve the pending

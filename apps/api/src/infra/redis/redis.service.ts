@@ -46,9 +46,7 @@ export class RedisService implements OnModuleDestroy {
    * passarem (GET → GET → INSERT → INSERT → SET → SET overwrite).
    */
   async setNX(key: string, value: string, ttlSeconds: number): Promise<boolean> {
-    const result = await this.timed(() =>
-      this.client.set(key, value, 'EX', ttlSeconds, 'NX'),
-    );
+    const result = await this.timed(() => this.client.set(key, value, 'EX', ttlSeconds, 'NX'));
     return result === 'OK';
   }
 

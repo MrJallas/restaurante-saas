@@ -18,7 +18,12 @@ interface PushTableMergeInfoProps {
 }
 
 export const PushTableMergeInfo: React.FC<PushTableMergeInfoProps> = ({
-  originTable, targetTable, originHostName, combinedPartySize, time = 'agora', onTap,
+  originTable,
+  targetTable,
+  originHostName,
+  combinedPartySize,
+  time = 'agora',
+  onTap,
 }) => (
   <PushCardIOS
     tone="info"

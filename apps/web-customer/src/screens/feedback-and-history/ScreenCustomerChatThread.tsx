@@ -21,8 +21,18 @@ interface ScreenCustomerChatThreadProps {
 
 const WEEKDAYS_PT = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'];
 const MONTHS_PT = [
-  'JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN',
-  'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ',
+  'JAN',
+  'FEV',
+  'MAR',
+  'ABR',
+  'MAI',
+  'JUN',
+  'JUL',
+  'AGO',
+  'SET',
+  'OUT',
+  'NOV',
+  'DEZ',
 ];
 
 /**
@@ -83,10 +93,7 @@ function groupMessagesByDay(messages: ChatMessageDto[]): DayGroup[] {
  * Tool calls render as a collapsed `ToolCallIndicator` so the user sees the
  * audit trail without overwhelming the conversation flow.
  */
-export function ScreenCustomerChatThread({
-  slug,
-  threadId,
-}: ScreenCustomerChatThreadProps) {
+export function ScreenCustomerChatThread({ slug, threadId }: ScreenCustomerChatThreadProps) {
   const session = useSession();
   const router = useRouter();
   // P0: delete depende de customerId; o thread visualizado tambem so faz
@@ -107,10 +114,7 @@ export function ScreenCustomerChatThread({
         if (!cancelled) setMessages(list);
       } catch (err) {
         if (cancelled) return;
-        if (
-          err instanceof ApiRequestError &&
-          (err.statusCode === 404 || err.statusCode === 410)
-        ) {
+        if (err instanceof ApiRequestError && (err.statusCode === 404 || err.statusCode === 410)) {
           setMissingThread(true);
           setMessages([]);
           return;
@@ -138,9 +142,7 @@ export function ScreenCustomerChatThread({
       router.replace(`/${slug}/chat-history`);
     } catch (err) {
       const message =
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Não consegui apagar essa conversa agora.';
+        err instanceof ApiRequestError ? err.message : 'Não consegui apagar essa conversa agora.';
       setError(message);
       setDeleting(false);
     }
@@ -160,9 +162,7 @@ export function ScreenCustomerChatThread({
     >
       <div className="flex flex-1 flex-col px-[22px] pb-10 pt-3">
         <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-[18px] font-semibold tracking-[-0.02em] text-ink">
-            Conversa antiga
-          </h1>
+          <h1 className="text-[18px] font-semibold tracking-[-0.02em] text-ink">Conversa antiga</h1>
           {!missingThread && (
             <button
               type="button"
@@ -181,9 +181,7 @@ export function ScreenCustomerChatThread({
           </div>
         )}
 
-        {loading && (
-          <div className="text-center text-[13px] text-mute">Carregando…</div>
-        )}
+        {loading && <div className="text-center text-[13px] text-mute">Carregando…</div>}
 
         {!loading && missingThread && (
           <div className="rounded-[14px] border border-border-soft bg-surface px-4 py-10 text-center">
@@ -191,8 +189,7 @@ export function ScreenCustomerChatThread({
               Essa conversa não está mais disponível
             </div>
             <div className="mb-5 text-[13px] leading-[1.5] text-mute">
-              Ela pode ter sido apagada por você ou removida automaticamente
-              depois de 30 dias.
+              Ela pode ter sido apagada por você ou removida automaticamente depois de 30 dias.
             </div>
             <PillButton
               variant="filled"
@@ -228,7 +225,9 @@ export function ScreenCustomerChatThread({
             <PillButton
               variant="filled"
               fullWidth
-              onClick={() => router.push(`/${slug}/assistente?threadId=${encodeURIComponent(threadId)}`)}
+              onClick={() =>
+                router.push(`/${slug}/assistente?threadId=${encodeURIComponent(threadId)}`)
+              }
             >
               Continuar nessa conversa
             </PillButton>
@@ -248,8 +247,8 @@ export function ScreenCustomerChatThread({
           Apagar essa conversa?
         </h2>
         <p className="mb-6 text-[14px] leading-[1.5] text-mute">
-          Vai sumir {messages.length}{' '}
-          {messages.length === 1 ? 'mensagem' : 'mensagens'} · não tem volta.
+          Vai sumir {messages.length} {messages.length === 1 ? 'mensagem' : 'mensagens'} · não tem
+          volta.
         </p>
         <div className="flex flex-col gap-2.5">
           <PillButton
@@ -291,10 +290,24 @@ type ToolCategory =
  * 'info' (cinza) pra nomes não-canônicos. Mantém os 2 lugares em sync.
  */
 function categorizeToolName(name: string): ToolCategory {
-  if (name === 'view_menu' || name === 'search_dish' || name === 'check_allergens' || name === 'compare_dishes') return 'menu';
+  if (
+    name === 'view_menu' ||
+    name === 'search_dish' ||
+    name === 'check_allergens' ||
+    name === 'compare_dishes'
+  )
+    return 'menu';
   if (name === 'add_to_order' || name === 'view_order' || name === 'place_order') return 'order';
-  if (name === 'call_waiter' || name === 'send_complaint' || name === 'send_message_to_manager') return 'staff';
-  if (name === 'request_bill' || name === 'split_bill' || name === 'pay_individual' || name === 'pay_full' || name === 'open_payment_screen') return 'payment';
+  if (name === 'call_waiter' || name === 'send_complaint' || name === 'send_message_to_manager')
+    return 'staff';
+  if (
+    name === 'request_bill' ||
+    name === 'split_bill' ||
+    name === 'pay_individual' ||
+    name === 'pay_full' ||
+    name === 'open_payment_screen'
+  )
+    return 'payment';
   if (name === 'lgpd_data_request' || name === 'lgpd_notice') return 'lgpd';
   if (name === 'delete_chat' || name === 'delete_all_chats') return 'destructive';
   if (name === 'request_table_merge' || name === 'late_arrival') return 'session';
@@ -313,11 +326,7 @@ function ChatHistoryMessage({ msg }: { msg: ChatMessageDto }) {
   }
   if (msg.role === 'manager') {
     return (
-      <ManagerBubble
-        name="Renata"
-        role="Gerente"
-        when={formatBubbleTime(msg.createdAt)}
-      >
+      <ManagerBubble name="Renata" role="Gerente" when={formatBubbleTime(msg.createdAt)}>
         {msg.content}
       </ManagerBubble>
     );

@@ -69,10 +69,7 @@ export class MenuController {
     }
     const trimmed = query.trim();
     if (trimmed.length > 50) {
-      throw new HttpException(
-        'Busca muito longa. Use até 50 caracteres.',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException('Busca muito longa. Use até 50 caracteres.', HttpStatus.BAD_REQUEST);
     }
 
     await this.assertSearchRateLimit(this.searchClientKey(req));

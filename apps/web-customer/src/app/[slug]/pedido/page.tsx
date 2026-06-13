@@ -11,10 +11,7 @@ import { useTableSocket } from '../../../hooks/useTableSocket';
 import { AppShell } from '../../../components/layout/AppShell';
 import { PillButton } from '../../../components/ui/PillButton';
 import { Row } from '../../../components/ui/Row';
-import {
-  ORDER_STATUS_COLORS,
-  ORDER_STATUS_LABELS,
-} from '../../../lib/orderStatus';
+import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from '../../../lib/orderStatus';
 
 interface OrderItemApi {
   id: string;
@@ -154,10 +151,7 @@ export default function PedidoPage() {
     () => reload(),
   );
 
-  const activeOrders = useMemo(
-    () => orders.filter((o) => o.status !== 'cancelled'),
-    [orders],
-  );
+  const activeOrders = useMemo(() => orders.filter((o) => o.status !== 'cancelled'), [orders]);
 
   const flatItems = useMemo(
     () =>
@@ -190,21 +184,21 @@ export default function PedidoPage() {
     )[0];
   }, [activeOrders]);
 
-  const statusLabel = latestOrder ? STATUS_LABELS[latestOrder.status] ?? latestOrder.status : '';
-  const statusDotClass = latestOrder ? STATUS_COLORS[latestOrder.status] ?? 'bg-mute' : '';
+  const statusLabel = latestOrder ? (STATUS_LABELS[latestOrder.status] ?? latestOrder.status) : '';
+  const statusDotClass = latestOrder ? (STATUS_COLORS[latestOrder.status] ?? 'bg-mute') : '';
   const latestKitchenOrder = useMemo(
     () =>
-      activeOrders.find((order) =>
-        !['cancelled', 'canceled', 'delivered', 'pending_confirmation'].includes(order.status),
+      activeOrders.find(
+        (order) =>
+          !['cancelled', 'canceled', 'delivered', 'pending_confirmation'].includes(order.status),
       ) ?? null,
     [activeOrders],
   );
   const currentProgressIndex = latestKitchenOrder
-    ? STATUS_INDEX[latestKitchenOrder.status] ?? 0
+    ? (STATUS_INDEX[latestKitchenOrder.status] ?? 0)
     : 0;
   const latestSummary =
-    latestKitchenOrder?.items.map((item) => `${item.quantity}× ${item.name}`).join(' · ') ??
-    '';
+    latestKitchenOrder?.items.map((item) => `${item.quantity}× ${item.name}`).join(' · ') ?? '';
 
   if (loading) {
     return (

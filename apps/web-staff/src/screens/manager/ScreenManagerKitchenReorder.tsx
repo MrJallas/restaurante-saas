@@ -67,13 +67,15 @@ const heroByState = {
 } as const;
 
 function initials(label: string): string {
-  return label
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase() || 'CZ';
+  return (
+    label
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((p) => p[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || 'CZ'
+  );
 }
 
 function mapQueueOrder(order: KitchenQueueOrder): QueueItem {
@@ -118,7 +120,8 @@ export function ScreenManagerKitchenReorder({
 
   useEffect(() => {
     let alive = true;
-    api.kitchen.queue()
+    api.kitchen
+      .queue()
       .then((orders) => {
         if (!alive) return;
         const mapped = orders.map(mapQueueOrder);
@@ -126,9 +129,12 @@ export function ScreenManagerKitchenReorder({
         setSelected((prev) => {
           if (Object.keys(prev).length > 0) return prev;
           const next: Record<string, boolean> = {};
-          mapped.filter((q) => q.late).slice(0, 3).forEach((q) => {
-            next[q.id] = true;
-          });
+          mapped
+            .filter((q) => q.late)
+            .slice(0, 3)
+            .forEach((q) => {
+              next[q.id] = true;
+            });
           return next;
         });
         const firstLate = mapped.find((q) => q.late);
@@ -152,26 +158,27 @@ export function ScreenManagerKitchenReorder({
 
   const lateCount = queue.filter((q) => q.late).length;
   const heroBase = heroByState[state];
-  const hero = state === 'select'
-    ? {
-        ...heroBase,
-        title: `Fila com ${queue.length} pedidos · ${lateCount} ${lateCount === 1 ? 'passou' : 'passaram'} da meta`,
-      }
-    : state === 'accepted' && response?.status === 'next'
+  const hero =
+    state === 'select'
       ? {
           ...heroBase,
-          label: 'Cozinha vai pegar em seguida',
-          title: 'Pedidos entram logo após o preparo atual',
-          meta: response.response_note ?? 'A confirmação é real e veio da cozinha.',
+          title: `Fila com ${queue.length} pedidos · ${lateCount} ${lateCount === 1 ? 'passou' : 'passaram'} da meta`,
         }
-      : state === 'accepted' && response?.status === 'accepted'
+      : state === 'accepted' && response?.status === 'next'
         ? {
             ...heroBase,
-            label: 'Cozinha aceitou',
-            title: 'Pedidos foram puxados para o topo',
+            label: 'Cozinha vai pegar em seguida',
+            title: 'Pedidos entram logo após o preparo atual',
             meta: response.response_note ?? 'A confirmação é real e veio da cozinha.',
           }
-    : heroBase;
+        : state === 'accepted' && response?.status === 'accepted'
+          ? {
+              ...heroBase,
+              label: 'Cozinha aceitou',
+              title: 'Pedidos foram puxados para o topo',
+              meta: response.response_note ?? 'A confirmação é real e veio da cozinha.',
+            }
+          : heroBase;
   const selectedItems = queue.filter((q) => selected[q.id]);
 
   useEffect(() => {
@@ -186,7 +193,8 @@ export function ScreenManagerKitchenReorder({
           setState('accepted');
         }
       } catch (err) {
-        if (!cancelled) setErrorMsg(err instanceof Error ? err.message : 'Erro ao ler resposta da cozinha.');
+        if (!cancelled)
+          setErrorMsg(err instanceof Error ? err.message : 'Erro ao ler resposta da cozinha.');
       }
     };
     poll();
@@ -306,9 +314,7 @@ export function ScreenManagerKitchenReorder({
                 Fila atual · toque pra selecionar
               </div>
               {loading && (
-                <div style={{ padding: 18, color: C.faint, fontSize: 13 }}>
-                  Carregando fila…
-                </div>
+                <div style={{ padding: 18, color: C.faint, fontSize: 13 }}>Carregando fila…</div>
               )}
               {!loading && queue.length === 0 && (
                 <div style={{ padding: 18, color: C.faint, fontSize: 13 }}>
@@ -363,9 +369,18 @@ export function ScreenManagerKitchenReorder({
                           gap: 8,
                         }}
                       >
-                        <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>
+                        <div
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 700,
+                            color: C.ink,
+                            letterSpacing: -0.2,
+                          }}
+                        >
                           Mesa {p.table}{' '}
-                          <span style={{ color: C.faint, fontWeight: 600, fontSize: 12 }}>· #{p.id.slice(0, 8)}</span>
+                          <span style={{ color: C.faint, fontWeight: 600, fontSize: 12 }}>
+                            · #{p.id.slice(0, 8)}
+                          </span>
                         </div>
                         {p.late ? (
                           <MPill tone="danger" dark={dark}>
@@ -410,7 +425,9 @@ export function ScreenManagerKitchenReorder({
                         {p.waiterName} · meta {p.meta} min
                       </div>
                       {p.priorityReason && (
-                        <div style={{ fontSize: 11, color: '#7A3010', fontWeight: 700, marginTop: 4 }}>
+                        <div
+                          style={{ fontSize: 11, color: '#7A3010', fontWeight: 700, marginTop: 4 }}
+                        >
                           Já priorizado · {p.priorityReason}
                         </div>
                       )}
@@ -508,7 +525,9 @@ export function ScreenManagerKitchenReorder({
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>
                     Mesa {p.table}{' '}
-                    <span style={{ color: C.faint, fontWeight: 600, fontSize: 12 }}>· #{p.id.slice(0, 8)}</span>
+                    <span style={{ color: C.faint, fontWeight: 600, fontSize: 12 }}>
+                      · #{p.id.slice(0, 8)}
+                    </span>
                   </div>
                   <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, marginTop: 3 }}>
                     {p.items}
@@ -582,7 +601,12 @@ export function ScreenManagerKitchenReorder({
           </GButton>
         )}
         {state === 'accepted' && (
-          <GButton dark={dark} full kind="primary" onClick={() => router.push(`/manager/operacoes?slug=${tenantSlug}`)}>
+          <GButton
+            dark={dark}
+            full
+            kind="primary"
+            onClick={() => router.push(`/manager/operacoes?slug=${tenantSlug}`)}
+          >
             Voltar pra Operação
           </GButton>
         )}

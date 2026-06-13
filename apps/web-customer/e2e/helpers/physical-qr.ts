@@ -8,14 +8,10 @@ import { QR_TEST_TABLES, type TableCode } from './qr';
 
 export const DEFAULT_SLUG = 'restaurant_dev';
 export const OTHER_SLUG = 'restaurant_e2e_other';
-export const API_BASE_URL =
-  process.env.E2E_API_BASE_URL ?? 'http://localhost:3001/api';
-export const CUSTOMER_BASE_URL =
-  process.env.E2E_BASE_URL ?? 'http://localhost:3003';
-export const STAFF_BASE_URL =
-  process.env.E2E_STAFF_BASE_URL ?? 'http://localhost:3002';
-export const STAFF_API_KEY =
-  process.env.E2E_STAFF_API_KEY ?? 'dev-staff-api-key-change-in-prod';
+export const API_BASE_URL = process.env.E2E_API_BASE_URL ?? 'http://localhost:3001/api';
+export const CUSTOMER_BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3003';
+export const STAFF_BASE_URL = process.env.E2E_STAFF_BASE_URL ?? 'http://localhost:3002';
+export const STAFF_API_KEY = process.env.E2E_STAFF_API_KEY ?? 'dev-staff-api-key-change-in-prod';
 
 const QR_SECRETS: Record<TableCode, string> = {
   QRTEST91: 'qrtest91-secret-fixed',
@@ -150,14 +146,7 @@ export function psqlJson<T>(selectSql: string): T[] {
 export function mongoEval(script: string): string {
   return execFileSync(
     'docker',
-    [
-      'exec',
-      'restaurant-mongodb',
-      'mongosh',
-      '--quiet',
-      '--eval',
-      script,
-    ],
+    ['exec', 'restaurant-mongodb', 'mongosh', '--quiet', '--eval', script],
     { encoding: 'utf8' },
   ).trim();
 }
@@ -264,9 +253,7 @@ export function resetQrTables(
   `);
 }
 
-export async function resolveQr(
-  tableCode: TableCode = 'QRTEST91',
-): Promise<ResolvedQr> {
+export async function resolveQr(tableCode: TableCode = 'QRTEST91'): Promise<ResolvedQr> {
   const token = QR_TEST_TABLES[tableCode].publicToken;
   const response = await fetch(`${API_BASE_URL}/qr/${token}`, {
     redirect: 'manual',
@@ -301,8 +288,7 @@ export async function initSession(
     timestamp: overrides.timestamp ?? qr.ts,
   };
   if (overrides.accessToken !== null) {
-    body.accessToken =
-      overrides.accessToken === undefined ? qr.accessToken : overrides.accessToken;
+    body.accessToken = overrides.accessToken === undefined ? qr.accessToken : overrides.accessToken;
   }
   const response = await fetch(`${API_BASE_URL}/${overrides.slug ?? qr.slug}/session/init`, {
     method: 'POST',
@@ -340,7 +326,12 @@ export async function welcomeCustomer(input: {
     body: JSON.stringify({
       name: input.name,
       cpf: input.cpf,
-      location: input.location ?? { status: 'granted', latitude: -23.56, longitude: -46.64, accuracyMeters: 12 },
+      location: input.location ?? {
+        status: 'granted',
+        latitude: -23.56,
+        longitude: -46.64,
+        accuracyMeters: 12,
+      },
     }),
   });
   const payload = await response.json().catch(() => ({}));
@@ -377,7 +368,9 @@ export async function scanAndWelcome(input: {
   });
   expect(welcome.status).toBe(201);
   if (!welcome.body.customerId || !welcome.body.visitId || !welcome.recognitionCookie) {
-    throw new Error(`welcome did not return expected customer/cookie: ${JSON.stringify(welcome.body)}`);
+    throw new Error(
+      `welcome did not return expected customer/cookie: ${JSON.stringify(welcome.body)}`,
+    );
   }
   return {
     qr,
@@ -397,7 +390,9 @@ export function extractCookie(setCookie: string | null, name: string): string | 
   return match?.[1] ?? null;
 }
 
-export async function staffByRole(role: 'manager' | 'waiter' | 'host' = 'manager'): Promise<StaffRow> {
+export async function staffByRole(
+  role: 'manager' | 'waiter' | 'host' = 'manager',
+): Promise<StaffRow> {
   const preferred = psqlJson<StaffRow>(
     `SELECT id, name, role
        FROM restaurant_dev.staff
@@ -472,7 +467,9 @@ export async function rejectScanRequest(id: string, reason: string, staff?: Staf
   });
 }
 
-export function activeSessions(tableCode: TableCode): Array<{ id: string; host_customer_id: string | null }> {
+export function activeSessions(
+  tableCode: TableCode,
+): Array<{ id: string; host_customer_id: string | null }> {
   return psqlJson(
     `SELECT ts.id, ts.host_customer_id
        FROM restaurant_dev.table_sessions ts
@@ -750,10 +747,7 @@ export async function ensureOtherTenant(): Promise<void> {
       applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
-  const migrationsDir = join(
-    __dirname,
-    '../../../../packages/database/migrations/tenant-template',
-  );
+  const migrationsDir = join(__dirname, '../../../../packages/database/migrations/tenant-template');
   const migrationFiles = readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql'))
     .sort();

@@ -10,14 +10,16 @@ interface QRPatternProps {
  * QR fake determin\u00edstico — o c\u00e1lculo de celulas \u00e9 O(441) e recalcular a cada
  * tick do contador na tela de Pix custa caro sem raz\u00e3o. Memo resolve.
  */
-export const QRPattern = memo(function QRPattern({ seedString = 'pix', className = '' }: QRPatternProps) {
+export const QRPattern = memo(function QRPattern({
+  seedString = 'pix',
+  className = '',
+}: QRPatternProps) {
   const size = 21;
   let seedHash = 0;
   for (let i = 0; i < seedString.length; i++) {
     seedHash = (seedHash * 31 + seedString.charCodeAt(i)) & 0xffff;
   }
-  const bit = (i: number, j: number) =>
-    ((i * 73 + j * 41 + i * j * 13 + seedHash) % 7) < 3;
+  const bit = (i: number, j: number) => (i * 73 + j * 41 + i * j * 13 + seedHash) % 7 < 3;
 
   const cells: Array<[number, number]> = [];
   for (let i = 0; i < size; i++) {
@@ -44,12 +46,7 @@ export const QRPattern = memo(function QRPattern({ seedString = 'pix', className
       aria-label="QR Code"
     >
       {cells.map(([i, j]) => {
-        if (
-          (i < 7 && j < 7) ||
-          (i < 7 && j > size - 8) ||
-          (i > size - 8 && j < 7)
-        )
-          return null;
+        if ((i < 7 && j < 7) || (i < 7 && j > size - 8) || (i > size - 8 && j < 7)) return null;
         return <rect key={`${i}-${j}`} x={j} y={i} width={1} height={1} fill="#000" />;
       })}
       <Corner ox={0} oy={0} />

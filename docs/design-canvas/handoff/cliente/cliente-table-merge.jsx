@@ -39,17 +39,38 @@ const fM = ({ label, screen, note }) => {
   const noteLines = (note || '').length;
   const captionH = note ? 24 + Math.ceil(noteLines / 56) * 18 + 28 : 0;
   return (
-    <DCArtboard key={'v16c-' + label} id={'v16c-' + label}
+    <DCArtboard
+      key={'v16c-' + label}
+      id={'v16c-' + label}
       label={`${label} · iOS`}
-      width={414} height={844 + captionH + 24}
-      style={{ background: '#f0eee9', borderRadius: 4 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 12px', gap: 18 }}>
+      width={414}
+      height={844 + captionH + 24}
+      style={{ background: '#f0eee9', borderRadius: 4 }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          padding: '0 12px',
+          gap: 18,
+        }}
+      >
         {screen}
         {note && (
-          <div style={{
-            marginTop: 14, maxWidth: 420, fontSize: 12, color: '#6b6b6b', lineHeight: 1.5,
-            fontFamily: FONT, letterSpacing: -0.05,
-          }}>{note}</div>
+          <div
+            style={{
+              marginTop: 14,
+              maxWidth: 420,
+              fontSize: 12,
+              color: '#6b6b6b',
+              lineHeight: 1.5,
+              fontFamily: FONT,
+              letterSpacing: -0.05,
+            }}
+          >
+            {note}
+          </div>
         )}
       </div>
     </DCArtboard>
@@ -60,17 +81,38 @@ const fMA = ({ label, screen, note, platform = 'Android' }) => {
   const noteLines = (note || '').length;
   const captionH = note ? 24 + Math.ceil(noteLines / 56) * 18 + 28 : 0;
   return (
-    <DCArtboard key={'v16c-' + label} id={'v16c-' + label}
+    <DCArtboard
+      key={'v16c-' + label}
+      id={'v16c-' + label}
       label={`${label} · ${platform}`}
-      width={414} height={844 + captionH + 24}
-      style={{ background: '#f0eee9', borderRadius: 4 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 12px', gap: 18 }}>
+      width={414}
+      height={844 + captionH + 24}
+      style={{ background: '#f0eee9', borderRadius: 4 }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          padding: '0 12px',
+          gap: 18,
+        }}
+      >
         {screen}
         {note && (
-          <div style={{
-            marginTop: 14, maxWidth: 420, fontSize: 12, color: '#6b6b6b', lineHeight: 1.5,
-            fontFamily: FONT, letterSpacing: -0.05,
-          }}>{note}</div>
+          <div
+            style={{
+              marginTop: 14,
+              maxWidth: 420,
+              fontSize: 12,
+              color: '#6b6b6b',
+              lineHeight: 1.5,
+              fontFamily: FONT,
+              letterSpacing: -0.05,
+            }}
+          >
+            {note}
+          </div>
         )}
       </div>
     </DCArtboard>
@@ -83,32 +125,52 @@ const fMA = ({ label, screen, note, platform = 'Android' }) => {
 const ChatShell = ({ table = 'Mesa 14', restaurant = 'Trattoria Luna', children, scrollPill }) => (
   <>
     <TopBar table={table} restaurant={restaurant} />
-    <div style={{
-      flex: 1, overflow: 'auto', position: 'relative',
-      padding: '8px 22px 24px',
-      display: 'flex', flexDirection: 'column', gap: 16,
-    }}>
+    <div
+      style={{
+        flex: 1,
+        overflow: 'auto',
+        position: 'relative',
+        padding: '8px 22px 24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+      }}
+    >
       {children}
 
       {scrollPill}
 
       <div style={{ flex: 1 }} />
 
-      <div style={{
-        marginTop: 8,
-        padding: '10px 14px',
-        background: C.surface,
-        border: `1px solid ${C.borderSoft}`,
-        borderRadius: 999,
-        display: 'flex', alignItems: 'center', gap: 10,
-        color: C.faint, fontSize: 14,
-      }}>
+      <div
+        style={{
+          marginTop: 8,
+          padding: '10px 14px',
+          background: C.surface,
+          border: `1px solid ${C.borderSoft}`,
+          borderRadius: 999,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          color: C.faint,
+          fontSize: 14,
+        }}
+      >
         <span style={{ flex: 1 }}>Pergunte alguma coisa…</span>
-        <span style={{
-          width: 32, height: 32, borderRadius: 16,
-          background: C.ink, color: '#fff',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>{Ico.send(14, '#fff')}</span>
+        <span
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 16,
+            background: C.ink,
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {Ico.send(14, '#fff')}
+        </span>
       </div>
     </div>
   </>
@@ -123,8 +185,11 @@ const ChatShell = ({ table = 'Mesa 14', restaurant = 'Trattoria Luna', children,
 //   - chips só aparecem após texto completar
 // ─────────────────────────────────────────────────────────────
 const MergeTypewriterBubble = ({
-  fromTable = 14, fromName = 'Caleb', fromParty = 4, ourParty = 2,
-  state = 'typing-mid',         // 'typing-mid' | 'complete'
+  fromTable = 14,
+  fromName = 'Caleb',
+  fromParty = 4,
+  ourParty = 2,
+  state = 'typing-mid', // 'typing-mid' | 'complete'
   showChips = false,
 }) => {
   const fullText =
@@ -136,50 +201,77 @@ const MergeTypewriterBubble = ({
 
   const showText = state === 'complete' ? fullText : partial;
   const showCursor = state !== 'complete';
-  const isUrgent = !showChips;            // border-left mostarda só durante decisão pendente
+  const isUrgent = !showChips; // border-left mostarda só durante decisão pendente
 
   return (
-    <div style={{
-      background: '#fff',
-      border: `1px solid ${C.borderSoft}`,
-      borderLeft: isUrgent ? `4px solid ${C.warning}` : `1px solid ${C.borderSoft}`,
-      borderRadius: 12,
-      padding: '12px 14px 14px',
-      animation: 'cMergeBubbleEnter 280ms cubic-bezier(.4,0,.2,1) both',
-    }}>
+    <div
+      style={{
+        background: '#fff',
+        border: `1px solid ${C.borderSoft}`,
+        borderLeft: isUrgent ? `4px solid ${C.warning}` : `1px solid ${C.borderSoft}`,
+        borderRadius: 12,
+        padding: '12px 14px 14px',
+        animation: 'cMergeBubbleEnter 280ms cubic-bezier(.4,0,.2,1) both',
+      }}
+    >
       {/* Eyebrow */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <span style={{
-          width: 6, height: 6, borderRadius: 3, background: C.warning,
-          animation: isUrgent ? 'cWarnPulse 1.6s ease-in-out infinite' : undefined,
-        }} />
-        <span style={{
-          fontFamily: MONO, fontSize: 9.5, fontWeight: 700,
-          letterSpacing: 1.2, textTransform: 'uppercase',
-          color: C.warning,
-        }}>Pedido da Mesa {fromTable} · agora</span>
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: 3,
+            background: C.warning,
+            animation: isUrgent ? 'cWarnPulse 1.6s ease-in-out infinite' : undefined,
+          }}
+        />
+        <span
+          style={{
+            fontFamily: MONO,
+            fontSize: 9.5,
+            fontWeight: 700,
+            letterSpacing: 1.2,
+            textTransform: 'uppercase',
+            color: C.warning,
+          }}
+        >
+          Pedido da Mesa {fromTable} · agora
+        </span>
       </div>
 
       {/* Texto progressivo · sans serif, conversational */}
-      <div style={{
-        fontSize: 15, lineHeight: 1.5, color: C.ink, letterSpacing: -0.05,
-      }}>
+      <div
+        style={{
+          fontSize: 15,
+          lineHeight: 1.5,
+          color: C.ink,
+          letterSpacing: -0.05,
+        }}
+      >
         {showText}
         {showCursor && (
-          <span style={{
-            display: 'inline-block', width: 2, height: 18,
-            background: C.ink, marginLeft: 2, verticalAlign: '-3px',
-            animation: 'cursor-blink 1s infinite',
-          }} />
+          <span
+            style={{
+              display: 'inline-block',
+              width: 2,
+              height: 18,
+              background: C.ink,
+              marginLeft: 2,
+              verticalAlign: '-3px',
+              animation: 'cursor-blink 1s infinite',
+            }}
+          />
         )}
       </div>
 
       {/* Chips só após texto completar */}
       {showChips && (
-        <div style={{
-          marginTop: 12,
-          animation: 'cChipsFade 220ms ease-out 80ms both',
-        }}>
+        <div
+          style={{
+            marginTop: 12,
+            animation: 'cChipsFade 220ms ease-out 80ms both',
+          }}
+        >
           <ContextualChips
             chips={[
               { label: 'Aceitar pedido', primary: true },
@@ -208,18 +300,35 @@ const MergeTypewriterBubble = ({
 //   ao tap leva pro bubble novo (auto-scroll explícito)
 // ─────────────────────────────────────────────────────────────
 const ScrollPill = ({ fromTable = 14 }) => (
-  <div style={{
-    position: 'sticky', bottom: 0, alignSelf: 'center',
-    display: 'inline-flex', alignItems: 'center', gap: 8,
-    padding: '8px 14px', borderRadius: 999,
-    background: C.ink, color: '#fff',
-    boxShadow: '0 6px 18px rgba(0,0,0,0.18)',
-    fontFamily: FONT, fontSize: 12.5, fontWeight: 600,
-    letterSpacing: -0.05,
-    animation: 'cPillSlide 200ms ease-out both',
-  }}>
+  <div
+    style={{
+      position: 'sticky',
+      bottom: 0,
+      alignSelf: 'center',
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 8,
+      padding: '8px 14px',
+      borderRadius: 999,
+      background: C.ink,
+      color: '#fff',
+      boxShadow: '0 6px 18px rgba(0,0,0,0.18)',
+      fontFamily: FONT,
+      fontSize: 12.5,
+      fontWeight: 600,
+      letterSpacing: -0.05,
+      animation: 'cPillSlide 200ms ease-out both',
+    }}
+  >
     <svg width="12" height="12" viewBox="0 0 12 12">
-      <path d="M6 2v8M2 7l4 4 4-4" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      <path
+        d="M6 2v8M2 7l4 4 4-4"
+        stroke="#fff"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
     </svg>
     Pedido novo da Mesa {fromTable}
     <style>{`
@@ -238,12 +347,18 @@ const ScreenOverlayMapIOS = () => (
   <IOSFrame>
     <TopBar table="Mesa 14" restaurant="Trattoria Luna" />
     {/* Chat skeleton por baixo · simula estado prévio */}
-    <div style={{
-      flex: 1, overflow: 'hidden',
-      padding: '8px 22px 24px',
-      display: 'flex', flexDirection: 'column', gap: 16,
-      filter: 'blur(.4px)', opacity: 0.7,
-    }}>
+    <div
+      style={{
+        flex: 1,
+        overflow: 'hidden',
+        padding: '8px 22px 24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        filter: 'blur(.4px)',
+        opacity: 0.7,
+      }}
+    >
       <CustomerBubble when="20:32">quero juntar com a mesa do lado</CustomerBubble>
       <ToolCallIndicator name="request_table_merge" category="staff" />
       <AssistantBlock label="Assistente">
@@ -261,12 +376,18 @@ const ScreenOverlayMapIOS = () => (
 const ScreenOverlayMapAndroid = () => (
   <AndroidFrame>
     <TopBar table="Mesa 14" restaurant="Trattoria Luna" />
-    <div style={{
-      flex: 1, overflow: 'hidden',
-      padding: '8px 22px 24px',
-      display: 'flex', flexDirection: 'column', gap: 16,
-      filter: 'blur(.4px)', opacity: 0.7,
-    }}>
+    <div
+      style={{
+        flex: 1,
+        overflow: 'hidden',
+        padding: '8px 22px 24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        filter: 'blur(.4px)',
+        opacity: 0.7,
+      }}
+    >
       <CustomerBubble when="20:32">quero juntar com a mesa do lado</CustomerBubble>
       <ToolCallIndicator name="request_table_merge" category="staff" />
       <AssistantBlock label="Assistente">
@@ -287,30 +408,63 @@ const ScreenOverlayMapAndroid = () => (
 const PushMergeReceiverIOS = () => (
   <IOSFrame style={{ background: '#0a0a0a' }}>
     <div style={{ position: 'absolute', inset: 0, top: 44, bottom: 8 }}>
-      <div style={{
-        position: 'absolute', inset: 0,
-        background: 'linear-gradient(160deg, #1d1d1f 0%, #131314 60%, #0a0a0a 100%)',
-        color: '#fff', display: 'flex', flexDirection: 'column',
-      }}>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(160deg, #1d1d1f 0%, #131314 60%, #0a0a0a 100%)',
+          color: '#fff',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         {/* lockscreen clock */}
-        <div style={{
-          textAlign: 'center', color: '#fff', paddingTop: 60,
-          fontFamily: '-apple-system, "SF Pro Display", system-ui',
-        }}>
+        <div
+          style={{
+            textAlign: 'center',
+            color: '#fff',
+            paddingTop: 60,
+            fontFamily: '-apple-system, "SF Pro Display", system-ui',
+          }}
+        >
           <div style={{ fontSize: 21, fontWeight: 500, opacity: 0.95, letterSpacing: 0.3 }}>
             Quinta-feira, 7 de maio
           </div>
-          <div style={{
-            fontSize: 96, fontWeight: 200, lineHeight: '0.95',
-            letterSpacing: -3, marginTop: 4, fontVariantNumeric: 'tabular-nums',
-          }}>20:32</div>
+          <div
+            style={{
+              fontSize: 96,
+              fontWeight: 200,
+              lineHeight: '0.95',
+              letterSpacing: -3,
+              marginTop: 4,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            20:32
+          </div>
         </div>
         {/* glass quick-action stubs · flashlight + camera */}
-        <div style={{ display: 'flex', gap: 12, padding: '20px 16px 24px', justifyContent: 'center' }}>
-          <div style={{ width: 156, height: 64, borderRadius: 14,
-            background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(20px)' }} />
-          <div style={{ width: 156, height: 64, borderRadius: 14,
-            background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(20px)' }} />
+        <div
+          style={{ display: 'flex', gap: 12, padding: '20px 16px 24px', justifyContent: 'center' }}
+        >
+          <div
+            style={{
+              width: 156,
+              height: 64,
+              borderRadius: 14,
+              background: 'rgba(255,255,255,0.18)',
+              backdropFilter: 'blur(20px)',
+            }}
+          />
+          <div
+            style={{
+              width: 156,
+              height: 64,
+              borderRadius: 14,
+              background: 'rgba(255,255,255,0.18)',
+              backdropFilter: 'blur(20px)',
+            }}
+          />
         </div>
 
         <div style={{ flex: 1 }} />
@@ -318,40 +472,104 @@ const PushMergeReceiverIOS = () => (
         {/* push banner · glass · ink-on-white com glifo mesa-juntada */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingBottom: 110 }}>
           <div style={{ margin: '0 12px', position: 'relative' }}>
-            <div style={{
-              position: 'relative', borderRadius: 18, overflow: 'hidden',
-              background: 'rgba(255,255,255,0.7)',
-              backdropFilter: 'blur(20px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-              boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.06), 0 6px 22px rgba(0,0,0,0.18)',
-            }}>
+            <div
+              style={{
+                position: 'relative',
+                borderRadius: 18,
+                overflow: 'hidden',
+                background: 'rgba(255,255,255,0.7)',
+                backdropFilter: 'blur(20px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.06), 0 6px 22px rgba(0,0,0,0.18)',
+              }}
+            >
               <div style={{ display: 'flex', padding: '12px 14px 14px', gap: 12 }}>
                 {/* ink-on-ink tile com glifo mesa-juntada (2 quadrados encadeados) */}
-                <div style={{
-                  width: 38, height: 38, borderRadius: 9, flexShrink: 0,
-                  background: '#0a0a0a', color: '#fff',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  position: 'relative',
-                }}>
+                <div
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 9,
+                    flexShrink: 0,
+                    background: '#0a0a0a',
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    position: 'relative',
+                  }}
+                >
                   <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                    <rect x="2" y="2" width="7" height="7" rx="1.4" stroke="#fff" strokeWidth="1.6"/>
-                    <rect x="9" y="9" width="7" height="7" rx="1.4" stroke="#fff" strokeWidth="1.6"/>
+                    <rect
+                      x="2"
+                      y="2"
+                      width="7"
+                      height="7"
+                      rx="1.4"
+                      stroke="#fff"
+                      strokeWidth="1.6"
+                    />
+                    <rect
+                      x="9"
+                      y="9"
+                      width="7"
+                      height="7"
+                      rx="1.4"
+                      stroke="#fff"
+                      strokeWidth="1.6"
+                    />
                   </svg>
-                  <span style={{
-                    position: 'absolute', top: -3, right: -3,
-                    width: 12, height: 12, borderRadius: 6, background: '#0a0a0a',
-                    border: '2px solid rgba(255,255,255,0.9)',
-                  }} />
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: -3,
+                      right: -3,
+                      width: 12,
+                      height: 12,
+                      borderRadius: 6,
+                      background: '#0a0a0a',
+                      border: '2px solid rgba(255,255,255,0.9)',
+                    }}
+                  />
                 </div>
-                <div style={{ flex: 1, minWidth: 0,
-                  fontFamily: '-apple-system, system-ui', color: '#000' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontFamily: '-apple-system, system-ui',
+                    color: '#000',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'baseline',
+                    }}
+                  >
                     <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: -0.2 }}>
                       Mesa 14 quer juntar com a sua
                     </div>
-                    <div style={{ fontSize: 13, color: 'rgba(60,60,67,0.6)', flexShrink: 0, marginLeft: 8 }}>agora</div>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: 'rgba(60,60,67,0.6)',
+                        flexShrink: 0,
+                        marginLeft: 8,
+                      }}
+                    >
+                      agora
+                    </div>
                   </div>
-                  <div style={{ fontSize: 15, lineHeight: '20px', color: '#000', marginTop: 1, letterSpacing: -0.2 }}>
+                  <div
+                    style={{
+                      fontSize: 15,
+                      lineHeight: '20px',
+                      color: '#000',
+                      marginTop: 1,
+                      letterSpacing: -0.2,
+                    }}
+                  >
                     Caleb · 4 pessoas — toca pra responder
                   </div>
                 </div>
@@ -359,10 +577,18 @@ const PushMergeReceiverIOS = () => (
             </div>
           </div>
         </div>
-        <div style={{
-          position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)',
-          width: 139, height: 5, borderRadius: 100, background: 'rgba(255,255,255,0.7)',
-        }} />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 8,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 139,
+            height: 5,
+            borderRadius: 100,
+            background: 'rgba(255,255,255,0.7)',
+          }}
+        />
       </div>
     </div>
   </IOSFrame>
@@ -382,7 +608,10 @@ const ScreenTypewriterMid = () => (
 
       {/* Bubble nova chega no fim · com border-left mostarda + typewriter mid */}
       <MergeTypewriterBubble
-        fromTable={14} fromName="Caleb" fromParty={4} ourParty={2}
+        fromTable={14}
+        fromName="Caleb"
+        fromParty={4}
+        ourParty={2}
         state="typing-mid"
         showChips={false}
       />
@@ -409,7 +638,10 @@ const ScreenTypewriterCompleteWithPill = () => (
 
       {/* Bubble completa com chips ativos */}
       <MergeTypewriterBubble
-        fromTable={14} fromName="Caleb" fromParty={4} ourParty={2}
+        fromTable={14}
+        fromName="Caleb"
+        fromParty={4}
+        ourParty={2}
         state="complete"
         showChips={true}
       />
@@ -424,40 +656,71 @@ const ScreenHostApproveMerge = () => (
   <IOSFrame>
     <TopBar table="Mesa 15" restaurant="Trattoria Luna" leftIcon="back" rightIcon={null} />
 
-    <div style={{
-      flex: 1, overflow: 'auto',
-      padding: '8px 22px 22px',
-      display: 'flex', flexDirection: 'column',
-    }}>
-      <MonoLabel size={10} color={C.faint}>Mesas 14 + 15 · junção</MonoLabel>
+    <div
+      style={{
+        flex: 1,
+        overflow: 'auto',
+        padding: '8px 22px 22px',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <MonoLabel size={10} color={C.faint}>
+        Mesas 14 + 15 · junção
+      </MonoLabel>
 
-      <div style={{
-        marginTop: 10,
-        fontSize: 22, fontWeight: 700, lineHeight: 1.2,
-        color: C.ink, letterSpacing: -0.4,
-      }}>
+      <div
+        style={{
+          marginTop: 10,
+          fontSize: 22,
+          fontWeight: 700,
+          lineHeight: 1.2,
+          color: C.ink,
+          letterSpacing: -0.4,
+        }}
+      >
         <b>Caleb (Mesa 14)</b> quer juntar com a sua mesa
       </div>
 
-      <div style={{
-        marginTop: 8,
-        fontSize: 14, fontWeight: 500, color: C.mute,
-        lineHeight: 1.5, letterSpacing: -0.05,
-      }}>
+      <div
+        style={{
+          marginTop: 8,
+          fontSize: 14,
+          fontWeight: 500,
+          color: C.mute,
+          lineHeight: 1.5,
+          letterSpacing: -0.05,
+        }}
+      >
         Vão virar uma mesa só com <b>6 pessoas</b> · uma comanda só · uma conta só.
       </div>
 
       {/* Bloco · sua mesa */}
-      <div style={{
-        marginTop: 22, padding: '14px 14px',
-        background: C.surface, border: `1px solid ${C.borderSoft}`, borderRadius: 14,
-      }}>
+      <div
+        style={{
+          marginTop: 22,
+          padding: '14px 14px',
+          background: C.surface,
+          border: `1px solid ${C.borderSoft}`,
+          borderRadius: 14,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-          <MonoLabel size={10} color={C.mute}>Sua mesa · 15</MonoLabel>
-          <span style={{
-            fontFamily: MONO, fontSize: 9.5, color: C.faint,
-            fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
-          }}>2 pessoas</span>
+          <MonoLabel size={10} color={C.mute}>
+            Sua mesa · 15
+          </MonoLabel>
+          <span
+            style={{
+              fontFamily: MONO,
+              fontSize: 9.5,
+              color: C.faint,
+              fontWeight: 700,
+              letterSpacing: 1,
+              textTransform: 'uppercase',
+            }}
+          >
+            2 pessoas
+          </span>
         </div>
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <PersonChipMerge name="Marina" you />
@@ -466,16 +729,31 @@ const ScreenHostApproveMerge = () => (
       </div>
 
       {/* Bloco · mesa que quer juntar */}
-      <div style={{
-        marginTop: 12, padding: '14px 14px',
-        background: '#fff', border: `1.3px solid ${C.ink}`, borderRadius: 14,
-      }}>
+      <div
+        style={{
+          marginTop: 12,
+          padding: '14px 14px',
+          background: '#fff',
+          border: `1.3px solid ${C.ink}`,
+          borderRadius: 14,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-          <MonoLabel size={10} color={C.ink}>Mesa que quer juntar · 14</MonoLabel>
-          <span style={{
-            fontFamily: MONO, fontSize: 9.5, color: C.faint,
-            fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
-          }}>4 pessoas</span>
+          <MonoLabel size={10} color={C.ink}>
+            Mesa que quer juntar · 14
+          </MonoLabel>
+          <span
+            style={{
+              fontFamily: MONO,
+              fontSize: 9.5,
+              color: C.faint,
+              fontWeight: 700,
+              letterSpacing: 1,
+              textTransform: 'uppercase',
+            }}
+          >
+            4 pessoas
+          </span>
         </div>
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <PersonChipMerge name="Caleb" host />
@@ -504,21 +782,43 @@ const PersonChipMerge = ({ name, you = false, host = false, size = 36 }) => {
   const initial = (name || '?').trim().charAt(0).toUpperCase();
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{
-        width: size, height: size, borderRadius: size / 2,
-        background: you ? C.ink : '#e8e6e0', color: you ? '#fff' : C.ink,
-        border: you ? 'none' : `1px solid ${C.borderSoft}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: FONT, fontSize: size >= 40 ? 14 : 12, fontWeight: 700,
-        letterSpacing: -0.4, flexShrink: 0,
-      }}>{initial}</div>
+      <div
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          background: you ? C.ink : '#e8e6e0',
+          color: you ? '#fff' : C.ink,
+          border: you ? 'none' : `1px solid ${C.borderSoft}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: FONT,
+          fontSize: size >= 40 ? 14 : 12,
+          fontWeight: 700,
+          letterSpacing: -0.4,
+          flexShrink: 0,
+        }}
+      >
+        {initial}
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: C.ink, letterSpacing: -0.1 }}>{name}</span>
+        <span style={{ fontSize: 14, fontWeight: 600, color: C.ink, letterSpacing: -0.1 }}>
+          {name}
+        </span>
         {(you || host) && (
-          <span style={{
-            fontFamily: MONO, fontSize: 9.5, fontWeight: 700, color: C.faint,
-            letterSpacing: 1, textTransform: 'uppercase',
-          }}>{you ? 'Você · host' : 'Host da mesa'}</span>
+          <span
+            style={{
+              fontFamily: MONO,
+              fontSize: 9.5,
+              fontWeight: 700,
+              color: C.faint,
+              letterSpacing: 1,
+              textTransform: 'uppercase',
+            }}
+          >
+            {you ? 'Você · host' : 'Host da mesa'}
+          </span>
         )}
       </div>
     </div>
@@ -540,30 +840,45 @@ const ScreenPostMerge = () => (
       {/* System divider · não é AI nem manager · é evento */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
         <span style={{ flex: 1, height: 1, background: C.borderSoft }} />
-        <MonoLabel size={9.5} color={C.faint}>Mesas 14 + 15 juntaram · 20:34</MonoLabel>
+        <MonoLabel size={9.5} color={C.faint}>
+          Mesas 14 + 15 juntaram · 20:34
+        </MonoLabel>
         <span style={{ flex: 1, height: 1, background: C.borderSoft }} />
       </div>
 
       {/* Bubble especial pós-junção · success-toned */}
-      <div style={{
-        background: C.successWash,
-        border: `1px solid ${C.success}`,
-        borderRadius: 12,
-        padding: '14px 16px',
-        animation: 'cMergeSuccess 320ms cubic-bezier(.4,0,.2,1) both',
-      }}>
+      <div
+        style={{
+          background: C.successWash,
+          border: `1px solid ${C.success}`,
+          borderRadius: 12,
+          padding: '14px 16px',
+          animation: 'cMergeSuccess 320ms cubic-bezier(.4,0,.2,1) both',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: 14,
-            background: C.success, color: '#fff',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
-          }}>{Ico.check(16, '#fff')}</div>
-          <MonoLabel size={10} color={C.success}>Mesas juntadas</MonoLabel>
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              background: C.success,
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            {Ico.check(16, '#fff')}
+          </div>
+          <MonoLabel size={10} color={C.success}>
+            Mesas juntadas
+          </MonoLabel>
         </div>
         <div style={{ fontSize: 15, lineHeight: 1.5, color: C.ink, letterSpacing: -0.05 }}>
-          Agora vocês são <b>6 pessoas</b> em uma comanda só · uma conta só.
-          Marina vai aparecer aqui no chat junto com vocês.
+          Agora vocês são <b>6 pessoas</b> em uma comanda só · uma conta só. Marina vai aparecer
+          aqui no chat junto com vocês.
         </div>
       </div>
 
@@ -596,21 +911,31 @@ const ScreenPostReject = () => (
       </AssistantBlock>
 
       {/* Bubble da IA com a recusa · sem border mostarda · neutra */}
-      <div style={{
-        background: '#fff',
-        border: `1px solid ${C.borderSoft}`,
-        borderRadius: 12,
-        padding: '14px 16px',
-      }}>
-        <MonoLabel size={9.5} color={C.faint} style={{ marginBottom: 8 }}>Assistente · agora</MonoLabel>
+      <div
+        style={{
+          background: '#fff',
+          border: `1px solid ${C.borderSoft}`,
+          borderRadius: 12,
+          padding: '14px 16px',
+        }}
+      >
+        <MonoLabel size={9.5} color={C.faint} style={{ marginBottom: 8 }}>
+          Assistente · agora
+        </MonoLabel>
         <div style={{ fontSize: 15, lineHeight: 1.5, color: C.ink, letterSpacing: -0.05 }}>
           Marina preferiu não juntar agora · sem stress, vocês ficam separados mesmo.
         </div>
-        <div style={{
-          marginTop: 10,
-          fontFamily: MONO, fontSize: 9.5, fontWeight: 700,
-          letterSpacing: 1.2, textTransform: 'uppercase', color: C.faint,
-        }}>
+        <div
+          style={{
+            marginTop: 10,
+            fontFamily: MONO,
+            fontSize: 9.5,
+            fontWeight: 700,
+            letterSpacing: 1.2,
+            textTransform: 'uppercase',
+            color: C.faint,
+          }}
+        >
           · Você pode tentar de novo em 20 min
         </div>
       </div>
@@ -644,9 +969,8 @@ const ScreenCooldownReattempt = () => (
 
       {/* LLM · resposta canned ao 429 · não chama tool */}
       <AssistantBlock label="Assistente">
-        A Mesa 15 disse que prefere não juntar agora · vamos esperar uns{' '}
-        <b>15 min</b> antes de tentar de novo? Ou quer chamar a recepcionista
-        pra te ajudar presencialmente?
+        A Mesa 15 disse que prefere não juntar agora · vamos esperar uns <b>15 min</b> antes de
+        tentar de novo? Ou quer chamar a recepcionista pra te ajudar presencialmente?
       </AssistantBlock>
 
       <ContextualChips
@@ -658,15 +982,25 @@ const ScreenCooldownReattempt = () => (
       />
 
       {/* sub-info discreto · countdown do cooldown */}
-      <div style={{
-        marginTop: 4,
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '8px 12px', borderRadius: 100,
-        background: C.surface, border: `1px solid ${C.borderSoft}`,
-        fontFamily: MONO, fontSize: 9.5, fontWeight: 700,
-        letterSpacing: 0.6, textTransform: 'uppercase', color: C.mute,
-        alignSelf: 'flex-start',
-      }}>
+      <div
+        style={{
+          marginTop: 4,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 12px',
+          borderRadius: 100,
+          background: C.surface,
+          border: `1px solid ${C.borderSoft}`,
+          fontFamily: MONO,
+          fontSize: 9.5,
+          fontWeight: 700,
+          letterSpacing: 0.6,
+          textTransform: 'uppercase',
+          color: C.mute,
+          alignSelf: 'flex-start',
+        }}
+      >
         <span style={{ width: 6, height: 6, borderRadius: 3, background: C.faint }} />
         Cooldown M14 → M15 · 14 min 32 s restantes
       </div>

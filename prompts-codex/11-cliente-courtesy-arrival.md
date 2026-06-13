@@ -67,7 +67,7 @@ Shape sugerido:
     notes: string | null;
     createdAt: string;
     respondedAt: string | null;
-  }>
+  }>;
 }
 ```
 

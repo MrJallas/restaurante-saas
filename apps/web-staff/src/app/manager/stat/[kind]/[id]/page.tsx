@@ -2,10 +2,7 @@
 
 import { Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import {
-  ScreenManagerStatDetail,
-  type StatKind,
-} from '../../../../../screens/manager';
+import { ScreenManagerStatDetail, type StatKind } from '../../../../../screens/manager';
 
 function StatInner() {
   const route = useParams<{ kind: string; id: string }>();
@@ -22,7 +19,9 @@ function StatInner() {
 
 export default function ManagerStatDetailPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}>
+    <Suspense
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}
+    >
       <StatInner />
     </Suspense>
   );

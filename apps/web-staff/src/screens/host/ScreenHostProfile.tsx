@@ -82,7 +82,15 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
     [router, searchParams],
   );
   const initials =
-    hostInitials ?? (hostName ? hostName.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase() : 'EU');
+    hostInitials ??
+    (hostName
+      ? hostName
+          .split(' ')
+          .map((p) => p[0])
+          .slice(0, 2)
+          .join('')
+          .toUpperCase()
+      : 'EU');
 
   return (
     <div
@@ -106,7 +114,18 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
             alignItems: 'center',
           }}
         >
-          <h1 style={{ flex: 1, margin: 0, fontSize: 18, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>Eu</h1>
+          <h1
+            style={{
+              flex: 1,
+              margin: 0,
+              fontSize: 18,
+              fontWeight: 700,
+              color: C.ink,
+              letterSpacing: -0.2,
+            }}
+          >
+            Eu
+          </h1>
           <GIconBtn
             dark={dark}
             icon={Icon.bell(20)}
@@ -146,7 +165,9 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
             {initials}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: C.ink, letterSpacing: -0.3 }}>{hostName}</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: C.ink, letterSpacing: -0.3 }}>
+              {hostName}
+            </div>
             <div style={{ fontSize: 12, color: C.faint, marginTop: 3, fontWeight: 600 }}>
               {roleLabel} · {shift}
             </div>
@@ -205,7 +226,15 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
                 border: `1px solid ${C.borderSoft}`,
               }}
             >
-              <div style={{ fontSize: 11, color: C.faint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: C.faint,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.4,
+                }}
+              >
                 Suas liberações no turno
               </div>
               <div
@@ -219,9 +248,13 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
                 }}
               >
                 {tablesReleasedThisShift}
-                <span style={{ fontSize: 14, color: C.faint, fontWeight: 600, marginLeft: 6 }}>mesas</span>
+                <span style={{ fontSize: 14, color: C.faint, fontWeight: 600, marginLeft: 6 }}>
+                  mesas
+                </span>
               </div>
-              {(reservationsThisShift != null || walkinsThisShift != null || avgWaitMin != null) && (
+              {(reservationsThisShift != null ||
+                walkinsThisShift != null ||
+                avgWaitMin != null) && (
                 <div style={{ fontSize: 11.5, color: '#1E8C5A', marginTop: 4, fontWeight: 700 }}>
                   ↑{' '}
                   {[
@@ -233,8 +266,17 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
                     .join(' · ')}
                 </div>
               )}
-              <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6, fontWeight: 400, lineHeight: 1.4 }}>
-                Só o que você liberou desde {shiftStartedAt}. Histórico do dia inteiro fica em Avisos &gt; resumo.
+              <div
+                style={{
+                  fontSize: 10.5,
+                  color: C.faint,
+                  marginTop: 6,
+                  fontWeight: 400,
+                  lineHeight: 1.4,
+                }}
+              >
+                Só o que você liberou desde {shiftStartedAt}. Histórico do dia inteiro fica em
+                Avisos &gt; resumo.
               </div>
             </div>
           </div>
@@ -300,7 +342,15 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
           >
             Sair do app
           </button>
-          <div style={{ fontSize: 10.5, color: C.faint, textAlign: 'center', marginTop: 10, lineHeight: 1.5 }}>
+          <div
+            style={{
+              fontSize: 10.5,
+              color: C.faint,
+              textAlign: 'center',
+              marginTop: 10,
+              lineHeight: 1.5,
+            }}
+          >
             Versão {appVersion} · build {buildDate}
             {establishment && (
               <>
@@ -403,11 +453,26 @@ function ActionRow({
         {icon}
       </div>
       <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: danger ? '#A12626' : C.ink, letterSpacing: -0.1 }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: danger ? '#A12626' : C.ink,
+            letterSpacing: -0.1,
+          }}
+        >
           {lbl}
         </div>
         {sub && (
-          <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, fontWeight: 500, lineHeight: 1.3 }}>
+          <div
+            style={{
+              fontSize: 11.5,
+              color: C.faint,
+              marginTop: 2,
+              fontWeight: 500,
+              lineHeight: 1.3,
+            }}
+          >
             {sub}
           </div>
         )}

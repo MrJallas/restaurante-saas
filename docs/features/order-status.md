@@ -4,14 +4,14 @@
 
 ## Estados
 
-| Estado | Significado | Quem cria/transiciona |
-|---|---|---|
-| `pending_confirmation` | Cliente acabou de criar o pedido. Janela de 15s pra cancelar antes da cozinha ver. | Cliente (POST /orders) |
-| `received` | Pedido confirmado, cozinha vê no KDS coluna NOVOS. | Cliente (PATCH /orders/:id/confirm) ou sweep auto-confirm |
-| `in_progress` | Cozinha começou a preparar. Aparece na coluna PREPARANDO. | Cozinha (PATCH /orders/:id/status) |
-| `ready` | Saiu da cozinha, pronto pra entrega. Aparece na coluna PRONTOS. | Cozinha |
-| `delivered` | Garçom entregou na mesa. Trigger pro rating prompt em ~13min. | Cozinha ou garçom |
-| `cancelled` | Pedido cancelado em qualquer ponto. Terminal. | Cliente, cozinha ou staff |
+| Estado                 | Significado                                                                        | Quem cria/transiciona                                     |
+| ---------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `pending_confirmation` | Cliente acabou de criar o pedido. Janela de 15s pra cancelar antes da cozinha ver. | Cliente (POST /orders)                                    |
+| `received`             | Pedido confirmado, cozinha vê no KDS coluna NOVOS.                                 | Cliente (PATCH /orders/:id/confirm) ou sweep auto-confirm |
+| `in_progress`          | Cozinha começou a preparar. Aparece na coluna PREPARANDO.                          | Cozinha (PATCH /orders/:id/status)                        |
+| `ready`                | Saiu da cozinha, pronto pra entrega. Aparece na coluna PRONTOS.                    | Cozinha                                                   |
+| `delivered`            | Garçom entregou na mesa. Trigger pro rating prompt em ~13min.                      | Cozinha ou garçom                                         |
+| `cancelled`            | Pedido cancelado em qualquer ponto. Terminal.                                      | Cliente, cozinha ou staff                                 |
 
 ## Aliases legacy (forward-compat)
 

@@ -32,17 +32,38 @@ const fD = ({ label, screen, note }) => {
   const noteLines = (note || '').length;
   const captionH = note ? 24 + Math.ceil(noteLines / 56) * 18 + 28 : 0;
   return (
-    <DCArtboard key={'v20-drawer-' + label} id={'v20-drawer-' + label}
+    <DCArtboard
+      key={'v20-drawer-' + label}
+      id={'v20-drawer-' + label}
       label={`${label} · iOS`}
-      width={414} height={844 + captionH + 24}
-      style={{ background: '#f0eee9', borderRadius: 4 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 12px', gap: 18 }}>
+      width={414}
+      height={844 + captionH + 24}
+      style={{ background: '#f0eee9', borderRadius: 4 }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          padding: '0 12px',
+          gap: 18,
+        }}
+      >
         {screen}
         {note && (
-          <div style={{
-            marginTop: 14, maxWidth: 420, fontSize: 12, color: C.mute, lineHeight: 1.5,
-            fontFamily: FONT, letterSpacing: -0.05,
-          }}>{note}</div>
+          <div
+            style={{
+              marginTop: 14,
+              maxWidth: 420,
+              fontSize: 12,
+              color: C.mute,
+              lineHeight: 1.5,
+              fontFamily: FONT,
+              letterSpacing: -0.05,
+            }}
+          >
+            {note}
+          </div>
         )}
       </div>
     </DCArtboard>
@@ -53,43 +74,77 @@ const fD = ({ label, screen, note }) => {
 // DrawerLink · row de nav primária ou secundária
 // ─────────────────────────────────────────────────────────────
 const DrawerLink = ({ icon, label, sub, active = false, badge, small = false }) => (
-  <div style={{
-    display: 'flex', alignItems: 'center', gap: 14,
-    padding: small ? '10px 22px' : '14px 22px',
-    borderLeft: `3px solid ${active ? C.ink : 'transparent'}`,
-    background: active ? C.surface : 'transparent',
-  }}>
-    <div style={{
-      width: small ? 28 : 34, height: small ? 28 : 34,
-      borderRadius: small ? 14 : 17,
-      border: `1.2px solid ${C.ink}`,
-      flexShrink: 0,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: FONT, fontSize: small ? 12 : 14, color: C.ink, fontWeight: 500,
-    }}>{icon}</div>
+  <div
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 14,
+      padding: small ? '10px 22px' : '14px 22px',
+      borderLeft: `3px solid ${active ? C.ink : 'transparent'}`,
+      background: active ? C.surface : 'transparent',
+    }}
+  >
+    <div
+      style={{
+        width: small ? 28 : 34,
+        height: small ? 28 : 34,
+        borderRadius: small ? 14 : 17,
+        border: `1.2px solid ${C.ink}`,
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: FONT,
+        fontSize: small ? 12 : 14,
+        color: C.ink,
+        fontWeight: 500,
+      }}
+    >
+      {icon}
+    </div>
     <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{
-        fontSize: small ? 13 : 15, fontWeight: 500, color: C.ink,
-        letterSpacing: -0.12,
-      }}>{label}</div>
+      <div
+        style={{
+          fontSize: small ? 13 : 15,
+          fontWeight: 500,
+          color: C.ink,
+          letterSpacing: -0.12,
+        }}
+      >
+        {label}
+      </div>
       {sub && (
-        <div style={{
-          marginTop: 1, fontSize: 11, color: C.mute,
-          letterSpacing: -0.02,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>{sub}</div>
+        <div
+          style={{
+            marginTop: 1,
+            fontSize: 11,
+            color: C.mute,
+            letterSpacing: -0.02,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {sub}
+        </div>
       )}
     </div>
     {badge && (
-      <span style={{
-        background: C.ink, color: '#fff',
-        padding: '2px 8px', borderRadius: 999,
-        fontFamily: FONT, fontSize: 10, fontWeight: 600,
-      }}>{badge}</span>
+      <span
+        style={{
+          background: C.ink,
+          color: '#fff',
+          padding: '2px 8px',
+          borderRadius: 999,
+          fontFamily: FONT,
+          fontSize: 10,
+          fontWeight: 600,
+        }}
+      >
+        {badge}
+      </span>
     )}
-    {!badge && !small && (
-      <span style={{ fontSize: 14, color: C.faint }}>›</span>
-    )}
+    {!badge && !small && <span style={{ fontSize: 14, color: C.faint }}>›</span>}
   </div>
 );
 
@@ -101,60 +156,112 @@ const DrawerLink = ({ icon, label, sub, active = false, badge, small = false }) 
 const MenuDrawerV20 = ({ withAssistantCTA = true, isHost = true }) => (
   <IOSFrame style={{ background: 'rgba(0,0,0,0.35)' }}>
     {/* Backdrop · simulado · drawer ancorado à direita */}
-    <div style={{
-      position: 'absolute', inset: 0,
-      background: 'rgba(0,0,0,0.35)',
-      animation: 'cDrawerBackdrop 220ms ease-out both',
-    }} />
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'rgba(0,0,0,0.35)',
+        animation: 'cDrawerBackdrop 220ms ease-out both',
+      }}
+    />
 
-    <aside style={{
-      position: 'absolute', right: 0, top: 0, bottom: 0,
-      width: 300,
-      background: C.bg, color: C.ink,
-      borderLeft: `1.5px solid ${C.ink}`,
-      boxShadow: '-20px 0 60px rgba(0,0,0,0.25)',
-      display: 'flex', flexDirection: 'column',
-      animation: 'cDrawerSlide 280ms cubic-bezier(.4,0,.2,1) both',
-    }}>
+    <aside
+      style={{
+        position: 'absolute',
+        right: 0,
+        top: 0,
+        bottom: 0,
+        width: 300,
+        background: C.bg,
+        color: C.ink,
+        borderLeft: `1.5px solid ${C.ink}`,
+        boxShadow: '-20px 0 60px rgba(0,0,0,0.25)',
+        display: 'flex',
+        flexDirection: 'column',
+        animation: 'cDrawerSlide 280ms cubic-bezier(.4,0,.2,1) both',
+      }}
+    >
       {/* HEADER · pt-12 pra que botão close fique abaixo do Dynamic Island */}
-      <div style={{
-        padding: '48px 22px 22px',
-        borderBottom: `1px solid ${C.borderSoft}`,
-      }}>
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-          marginBottom: 14,
-        }}>
+      <div
+        style={{
+          padding: '48px 22px 22px',
+          borderBottom: `1px solid ${C.borderSoft}`,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            marginBottom: 14,
+          }}
+        >
           <div style={{ flex: 1, minWidth: 0 }}>
-            <MonoLabel size={11} color={C.mute}>Mesa 14 · Trattoria Luna</MonoLabel>
-            <div style={{
-              fontSize: 20, fontWeight: 600, color: C.ink,
-              letterSpacing: -0.4, marginTop: 4,
-            }}>Olá, Caleb</div>
+            <MonoLabel size={11} color={C.mute}>
+              Mesa 14 · Trattoria Luna
+            </MonoLabel>
+            <div
+              style={{
+                fontSize: 20,
+                fontWeight: 600,
+                color: C.ink,
+                letterSpacing: -0.4,
+                marginTop: 4,
+              }}
+            >
+              Olá, Caleb
+            </div>
             {isHost && (
               <div style={{ marginTop: 4 }}>
-                <MonoLabel size={9.5} color={C.mute}>Você · host</MonoLabel>
+                <MonoLabel size={9.5} color={C.mute}>
+                  Você · host
+                </MonoLabel>
               </div>
             )}
           </div>
-          <button style={{
-            width: 34, height: 34, borderRadius: 17,
-            border: `1.2px solid ${C.ink}`, background: 'transparent',
-            color: C.ink, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 18, lineHeight: 1, padding: 0, flexShrink: 0,
-          }} aria-label="Fechar menu">×</button>
+          <button
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 17,
+              border: `1.2px solid ${C.ink}`,
+              background: 'transparent',
+              color: C.ink,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 18,
+              lineHeight: 1,
+              padding: 0,
+              flexShrink: 0,
+            }}
+            aria-label="Fechar menu"
+          >
+            ×
+          </button>
         </div>
 
         {/* StatusPill em row · alinha MenuDrawer.tsx:144-149 */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '8px 12px', borderRadius: 10,
-          border: `1px solid ${C.borderSoft}`, background: C.surface,
-        }}>
-          <span style={{
-            width: 6, height: 6, borderRadius: 3, background: C.success,
-          }} />
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 12px',
+            borderRadius: 10,
+            border: `1px solid ${C.borderSoft}`,
+            background: C.surface,
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: 3,
+              background: C.success,
+            }}
+          />
           <span style={{ fontSize: 11, color: C.mute, letterSpacing: -0.02 }}>
             Sessão ativa · 3 pessoas na mesa
           </span>
@@ -162,24 +269,44 @@ const MenuDrawerV20 = ({ withAssistantCTA = true, isHost = true }) => (
 
         {/* CTA "Voltar ao assistente" · só na variante A */}
         {withAssistantCTA && (
-          <a style={{
-            marginTop: 12,
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '12px 14px', borderRadius: 12,
-            border: `1.3px solid ${C.ink}`, background: C.ink, color: C.bg,
-            textDecoration: 'none',
-          }}>
+          <a
+            style={{
+              marginTop: 12,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: `1.3px solid ${C.ink}`,
+              background: C.ink,
+              color: C.bg,
+              textDecoration: 'none',
+            }}
+          >
             <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{
-                width: 26, height: 26, borderRadius: 13,
-                border: `1.2px solid ${C.bg}`,
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 13,
-              }}>✦</span>
-              <span style={{
-                fontSize: 13, fontWeight: 600,
-                letterSpacing: -0.008 * 13,
-              }}>Voltar ao assistente</span>
+              <span
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 13,
+                  border: `1.2px solid ${C.bg}`,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 13,
+                }}
+              >
+                ✦
+              </span>
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  letterSpacing: -0.008 * 13,
+                }}
+              >
+                Voltar ao assistente
+              </span>
             </span>
             <span style={{ fontSize: 14 }}>›</span>
           </a>
@@ -187,59 +314,100 @@ const MenuDrawerV20 = ({ withAssistantCTA = true, isHost = true }) => (
       </div>
 
       {/* NAV PRIMÁRIA */}
-      <div style={{
-        flex: 1, overflow: 'auto', padding: '14px 0',
-      }}>
+      <div
+        style={{
+          flex: 1,
+          overflow: 'auto',
+          padding: '14px 0',
+        }}
+      >
         <DrawerLink icon="☰" label="Cardápio" sub="Explorar pratos e bebidas" />
         <DrawerLink icon="◉" label="Meu pedido" sub="2 itens · R$ 92,00" />
-        <DrawerLink icon="⊞" label="Pedido da mesa" sub="Comanda compartilhada · 7 itens" badge="3 novos" />
         <DrawerLink
-          icon="✦" label="Assistente IA" sub="Sugestões e dúvidas"
+          icon="⊞"
+          label="Pedido da mesa"
+          sub="Comanda compartilhada · 7 itens"
+          badge="3 novos"
+        />
+        <DrawerLink
+          icon="✦"
+          label="Assistente IA"
+          sub="Sugestões e dúvidas"
           active={!withAssistantCTA}
         />
         <DrawerLink icon="◔" label="Chamar garçom" sub="Pedir atendimento" />
         <DrawerLink icon="$" label="Pagar conta" sub="Fechar a conta" />
 
         {/* divider hairline */}
-        <div style={{
-          margin: '14px 22px', height: 1, background: C.borderSoft,
-        }} />
+        <div
+          style={{
+            margin: '14px 22px',
+            height: 1,
+            background: C.borderSoft,
+          }}
+        />
 
         {/* NAV SECUNDÁRIA */}
         <DrawerLink icon="↺" label="Trocar perfil" sub="Entrar com outro nome" small />
         <DrawerLink icon="?" label="Ajuda" small />
 
         {/* SAIR DA MESA · button danger destacado · sem chevron */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 14,
-          padding: '10px 22px',
-          borderLeft: `3px solid transparent`,
-          color: C.danger,
-        }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: 14,
-            border: `1.2px solid ${C.danger}`,
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            padding: '10px 22px',
+            borderLeft: `3px solid transparent`,
             color: C.danger,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: FONT, fontSize: 12, fontWeight: 500,
-            flexShrink: 0,
-          }}>→</div>
-          <div style={{
-            fontSize: 13, fontWeight: 500, color: C.danger,
-            letterSpacing: -0.008 * 13,
-          }}>Sair da mesa</div>
+          }}
+        >
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              border: `1.2px solid ${C.danger}`,
+              color: C.danger,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: FONT,
+              fontSize: 12,
+              fontWeight: 500,
+              flexShrink: 0,
+            }}
+          >
+            →
+          </div>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 500,
+              color: C.danger,
+              letterSpacing: -0.008 * 13,
+            }}
+          >
+            Sair da mesa
+          </div>
           {/* sem chevron · não é navegação */}
         </div>
       </div>
 
       {/* FOOTER */}
-      <div style={{
-        padding: '14px 22px 28px',
-        borderTop: `1px solid ${C.borderSoft}`,
-        textAlign: 'center', color: C.faint,
-        fontFamily: FONT, fontSize: 10, lineHeight: 1.5,
-      }}>
-        Sessão iniciada às 19:42<br/>
+      <div
+        style={{
+          padding: '14px 22px 28px',
+          borderTop: `1px solid ${C.borderSoft}`,
+          textAlign: 'center',
+          color: C.faint,
+          fontFamily: FONT,
+          fontSize: 10,
+          lineHeight: 1.5,
+        }}
+      >
+        Sessão iniciada às 19:42
+        <br />
         v1.0 · Trattoria Luna
       </div>
     </aside>

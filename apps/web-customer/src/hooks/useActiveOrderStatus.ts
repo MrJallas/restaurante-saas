@@ -72,9 +72,7 @@ export function useActiveOrderStatus(
   const active = useMemo<ActiveOrderStatus | null>(() => {
     const candidate = [...orders]
       .filter((o) => ACTIVE_SET.has(o.status))
-      .sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      )[0];
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
     if (!candidate) return null;
     return {
       orderId: candidate.id,

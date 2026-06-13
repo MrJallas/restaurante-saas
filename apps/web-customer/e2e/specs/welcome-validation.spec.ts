@@ -21,25 +21,21 @@ test.describe('Welcome — personalizacao obrigatoria', () => {
 
   test('modal nao oferece "Continuar sem personalizacao"', async ({ page }) => {
     await page.goto(buildMesaUrl(), { waitUntil: 'networkidle' });
-    await expect(
-      page.getByRole('heading', { name: WELCOME_HEADING }),
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible({
+      timeout: 30_000,
+    });
 
     // O bypass anonimo nao deve mais existir — UX obriga nome+CPF.
-    await expect(
-      page.getByRole('button', { name: /Continuar sem personaliza/i }),
-    ).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Continuar sem personaliza/i })).toHaveCount(0);
     // tambem nao pode estar como link (caso alguem mude tag no futuro).
-    await expect(
-      page.getByText(/Continuar sem personaliza/i),
-    ).toHaveCount(0);
+    await expect(page.getByText(/Continuar sem personaliza/i)).toHaveCount(0);
   });
 
   test('Continuar fica disabled ate nome+CPF validos', async ({ page }) => {
     await page.goto(buildMesaUrl(), { waitUntil: 'networkidle' });
-    await expect(
-      page.getByRole('heading', { name: WELCOME_HEADING }),
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible({
+      timeout: 30_000,
+    });
 
     const continueBtn = page.getByRole('button', { name: /^Continuar$/ });
     await expect(continueBtn).toBeDisabled();
@@ -77,12 +73,8 @@ test.describe('Mesa — erros amigaveis', () => {
     });
 
     // O texto cru do class-validator NAO deve aparecer pro usuario.
-    await expect(
-      page.getByText(/hmacSignature should not be empty/i),
-    ).toHaveCount(0);
-    await expect(
-      page.getByText(/timestamp should not be empty/i),
-    ).toHaveCount(0);
+    await expect(page.getByText(/hmacSignature should not be empty/i)).toHaveCount(0);
+    await expect(page.getByText(/timestamp should not be empty/i)).toHaveCount(0);
   });
 });
 
@@ -92,7 +84,9 @@ test.describe('Mesa — troca silenciosa de mesa', () => {
     await context.clearCookies();
   });
 
-  test('escanear QR de QRTEST92 com sessao ativa de QRTEST91 invalida e re-inicia', async ({ page }) => {
+  test('escanear QR de QRTEST92 com sessao ativa de QRTEST91 invalida e re-inicia', async ({
+    page,
+  }) => {
     // Inicia sessao em QRTEST91.
     await liberateQrTestTable({ tableCode: 'QRTEST91' });
     await page.goto(buildMesaUrl({ tableCode: 'QRTEST91' }), {
@@ -140,9 +134,7 @@ test.describe('Assistente — falsos positivos de pedido', () => {
     await context.clearCookies();
   });
 
-  test('"tudo bem" depois de prato sugerido NAO dispara pedido fake', async ({
-    page,
-  }) => {
+  test('"tudo bem" depois de prato sugerido NAO dispara pedido fake', async ({ page }) => {
     await liberateQrTestTable();
     await page.goto(buildMesaUrl(), { waitUntil: 'networkidle' });
     const welcome = page.getByRole('heading', { name: WELCOME_HEADING });
@@ -190,13 +182,11 @@ test.describe('Welcome — capitalizeName nao deforma input', () => {
     await context.clearCookies();
   });
 
-  test('digitar "da silva" preserva o que o usuario escreveu enquanto digita', async ({
-    page,
-  }) => {
+  test('digitar "da silva" preserva o que o usuario escreveu enquanto digita', async ({ page }) => {
     await page.goto(buildMesaUrl(), { waitUntil: 'networkidle' });
-    await expect(
-      page.getByRole('heading', { name: WELCOME_HEADING }),
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible({
+      timeout: 30_000,
+    });
 
     const nome = page.getByPlaceholder('Seu nome');
     await nome.fill('joao da silva');

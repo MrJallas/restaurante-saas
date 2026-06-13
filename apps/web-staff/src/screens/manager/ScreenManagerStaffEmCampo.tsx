@@ -143,7 +143,9 @@ export function ScreenManagerStaffEmCampo({ dark, tenantSlug }: ScreenManagerSta
           >
             {offCount > 0 ? `${offCount} fora` : 'todos no turno'}
           </div>
-          <div style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}>
+          <div
+            style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}
+          >
             {inFieldCount} funcionários ativos no turno
             {offCount > 0 ? ` · ${offCount} esperado mas ausente.` : '.'}
           </div>
@@ -173,21 +175,33 @@ export function ScreenManagerStaffEmCampo({ dark, tenantSlug }: ScreenManagerSta
             C={C}
             filled
             icon={Icon.bell(13)}
-            onClick={() => router.push(slugQs ? `/manager/mensagens/nova?slug=${slugQs}` : '/manager/mensagens/nova')}
+            onClick={() =>
+              router.push(
+                slugQs ? `/manager/mensagens/nova?slug=${slugQs}` : '/manager/mensagens/nova',
+              )
+            }
           >
             Avisar quem ainda não logou
           </ActionPill>
           <ActionPill
             C={C}
             icon={Icon.clock(13)}
-            onClick={() => router.push(slugQs ? `/manager/equipe/turnos?slug=${slugQs}` : '/manager/equipe/turnos')}
+            onClick={() =>
+              router.push(
+                slugQs ? `/manager/equipe/turnos?slug=${slugQs}` : '/manager/equipe/turnos',
+              )
+            }
           >
             Marcar folga retroativa
           </ActionPill>
           <ActionPill
             C={C}
             icon={Icon.user(13)}
-            onClick={() => router.push(slugQs ? `/manager/equipe/turnos?slug=${slugQs}` : '/manager/equipe/turnos')}
+            onClick={() =>
+              router.push(
+                slugQs ? `/manager/equipe/turnos?slug=${slugQs}` : '/manager/equipe/turnos',
+              )
+            }
           >
             Substituir por outro funcionário
           </ActionPill>

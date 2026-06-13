@@ -22,10 +22,7 @@ import type { CookieOptions } from 'express';
  *
  * Round 21 §F — bug isReturning false via Cloudflare Tunnel.
  */
-export function getSecureCookieOptions(
-  req: Request,
-  base: CookieOptions = {},
-): CookieOptions {
+export function getSecureCookieOptions(req: Request, base: CookieOptions = {}): CookieOptions {
   const isHttps =
     req.secure ||
     req.headers['x-forwarded-proto'] === 'https' ||

@@ -50,7 +50,7 @@ const config: Config = {
       },
       transitionTimingFunction: {
         // Curva oficial do canvas para morph chip→input (Apple Music card)
-        'liquid': 'cubic-bezier(0.4, 0, 0.2, 1)',
+        liquid: 'cubic-bezier(0.4, 0, 0.2, 1)',
       },
     },
   },

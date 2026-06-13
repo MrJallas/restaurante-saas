@@ -1,8 +1,4 @@
-export type ScanVerificationStatus =
-  | 'pending'
-  | 'approved'
-  | 'rejected'
-  | 'expired';
+export type ScanVerificationStatus = 'pending' | 'approved' | 'rejected' | 'expired';
 
 export type CustomerLocationStatus =
   | 'unknown'

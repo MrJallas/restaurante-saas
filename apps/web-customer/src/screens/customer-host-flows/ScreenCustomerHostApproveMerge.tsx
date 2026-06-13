@@ -5,10 +5,7 @@ import { useRouter } from 'next/navigation';
 import { PillButton } from '../../components/ui/PillButton';
 import { useSession } from '../../hooks/useSession';
 import { useCustomerHostEvents } from '../../hooks/useCustomerHostEvents';
-import {
-  approveTableMerge,
-  rejectTableMerge,
-} from '../../lib/api/customer-host';
+import { approveTableMerge, rejectTableMerge } from '../../lib/api/customer-host';
 import { TypewriterBubble } from './TypewriterBubble';
 import type { TableMergeRequestDto } from '@restaurant/shared-types';
 
@@ -70,10 +67,7 @@ export function ScreenCustomerHostApproveMerge({
     sessionId,
     customerId,
     onEvent: (event) => {
-      if (
-        event.type === 'table_merge.rejected' &&
-        event.payload.requestId === request.id
-      ) {
+      if (event.type === 'table_merge.rejected' && event.payload.requestId === request.id) {
         setAutoExpired(true);
       }
       if (
@@ -128,8 +122,7 @@ export function ScreenCustomerHostApproveMerge({
     <main className="flex min-h-dvh flex-col bg-bg">
       <div className="flex flex-1 flex-col px-[22px] pb-6 pt-[max(env(safe-area-inset-top),20px)]">
         <p className="mb-3 text-[10px] font-bold uppercase tracking-[1.2px] text-faint">
-          Mesas {request.originTableNumber} + {request.targetTableNumber} ·
-          junção
+          Mesas {request.originTableNumber} + {request.targetTableNumber} · junção
           {secondsLeft != null && !autoExpired && ` · ${secondsLeft} s`}
         </p>
 
@@ -141,8 +134,8 @@ export function ScreenCustomerHostApproveMerge({
         </h1>
 
         <p className="mt-2 text-[14px] font-medium leading-[1.5] tracking-[-0.05px] text-mute">
-          Vão virar uma mesa só com <b>{totalParty} pessoas</b>. Depois vocês
-          escolhem se juntam as comandas ou seguem separados.
+          Vão virar uma mesa só com <b>{totalParty} pessoas</b>. Depois vocês escolhem se juntam as
+          comandas ou seguem separados.
         </p>
 
         <div className="mt-4">
@@ -161,8 +154,7 @@ export function ScreenCustomerHostApproveMerge({
               Sua mesa · {request.targetTableNumber}
             </span>
             <span className="text-[9.5px] font-bold uppercase tracking-[1px] text-faint">
-              {request.targetPartySize}{' '}
-              {request.targetPartySize === 1 ? 'pessoa' : 'pessoas'}
+              {request.targetPartySize} {request.targetPartySize === 1 ? 'pessoa' : 'pessoas'}
             </span>
           </div>
           <ul className="mt-3 flex flex-col gap-2.5">
@@ -173,9 +165,7 @@ export function ScreenCustomerHostApproveMerge({
             ) : (
               <li className="text-[12px] text-faint">
                 {request.targetPartySize}{' '}
-                {request.targetPartySize === 1
-                  ? 'pessoa nessa mesa'
-                  : 'pessoas nessa mesa'}
+                {request.targetPartySize === 1 ? 'pessoa nessa mesa' : 'pessoas nessa mesa'}
               </li>
             )}
           </ul>
@@ -188,16 +178,11 @@ export function ScreenCustomerHostApproveMerge({
               Mesa que quer juntar · {request.originTableNumber}
             </span>
             <span className="text-[9.5px] font-bold uppercase tracking-[1px] text-faint">
-              {request.originPartySize}{' '}
-              {request.originPartySize === 1 ? 'pessoa' : 'pessoas'}
+              {request.originPartySize} {request.originPartySize === 1 ? 'pessoa' : 'pessoas'}
             </span>
           </div>
           <ul className="mt-3 flex flex-col gap-2.5">
-            <PersonRow
-              key="origin-host"
-              name={originHost}
-              sub="Host da mesa"
-            />
+            <PersonRow key="origin-host" name={originHost} sub="Host da mesa" />
             {theirPartyNames
               .filter((n) => n !== originHost)
               .map((name, i) => (
@@ -261,9 +246,7 @@ function PersonRow({
       <span
         aria-hidden
         className={`flex shrink-0 items-center justify-center rounded-full text-[12px] font-bold tracking-[-0.4px] ${
-          you
-            ? 'bg-ink text-white'
-            : 'border border-border-soft bg-[#e8e6e0] text-ink'
+          you ? 'bg-ink text-white' : 'border border-border-soft bg-[#e8e6e0] text-ink'
         }`}
         style={{
           width: size,
@@ -274,9 +257,7 @@ function PersonRow({
         {initial}
       </span>
       <div className="flex flex-col gap-0.5">
-        <span className="text-[14px] font-semibold tracking-[-0.1px] text-ink">
-          {name}
-        </span>
+        <span className="text-[14px] font-semibold tracking-[-0.1px] text-ink">{name}</span>
         {subLine && (
           <span className="text-[9.5px] font-bold uppercase tracking-[1px] text-faint">
             {subLine}

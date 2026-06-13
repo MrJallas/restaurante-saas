@@ -27,10 +27,13 @@ const PROBLEM_TYPES = [
   { id: 'outro', label: 'Outro' },
 ] as const;
 
-type ProblemId = typeof PROBLEM_TYPES[number]['id'];
+type ProblemId = (typeof PROBLEM_TYPES)[number]['id'];
 
 export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps> = ({
-  tenantSlug, initialTable = 1, onClose, onSent,
+  tenantSlug,
+  initialTable = 1,
+  onClose,
+  onSent,
 }) => {
   const dark = false;
   const C = useG(dark);
@@ -66,8 +69,13 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
     return (
       <div
         style={{
-          width: '100%', height: '100vh', background: C.surface, color: C.ink,
-          fontFamily: G_FONT, display: 'flex', flexDirection: 'column',
+          width: '100%',
+          height: '100vh',
+          background: C.surface,
+          color: C.ink,
+          fontFamily: G_FONT,
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
         <GAppHeader
@@ -77,20 +85,34 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
         />
         <div
           style={{
-            flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', padding: '40px 24px', textAlign: 'center', gap: 14,
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '40px 24px',
+            textAlign: 'center',
+            gap: 14,
           }}
         >
           <div
             style={{
-              width: 64, height: 64, borderRadius: 16, background: C.successBg, color: C.success,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 64,
+              height: 64,
+              borderRadius: 16,
+              background: C.successBg,
+              color: C.success,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
             {Icon.check(32)}
           </div>
           <div style={{ fontSize: 20, fontWeight: 800, color: C.ink }}>Reportado pra gerente</div>
-          <div style={{ fontSize: 14, color: C.mute, fontWeight: 500, lineHeight: 1.5, maxWidth: 280 }}>
+          <div
+            style={{ fontSize: 14, color: C.mute, fontWeight: 500, lineHeight: 1.5, maxWidth: 280 }}
+          >
             Vamos cuidar disso. Enquanto isso, use <b>Inserir manualmente</b>.
           </div>
         </div>
@@ -101,8 +123,13 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
   return (
     <div
       style={{
-        width: '100%', height: '100vh', background: C.surface, color: C.ink,
-        fontFamily: G_FONT, display: 'flex', flexDirection: 'column',
+        width: '100%',
+        height: '100vh',
+        background: C.surface,
+        color: C.ink,
+        fontFamily: G_FONT,
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       <GAppHeader
@@ -115,16 +142,23 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
         <div
           style={{
             fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
-            fontSize: 9.5, fontWeight: 800, letterSpacing: 1.2,
-            textTransform: 'uppercase', color: accent,
+            fontSize: 9.5,
+            fontWeight: 800,
+            letterSpacing: 1.2,
+            textTransform: 'uppercase',
+            color: accent,
           }}
         >
           REPORTAR QR
         </div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: C.ink, marginTop: 6, letterSpacing: -0.3 }}>
+        <div
+          style={{ fontSize: 18, fontWeight: 700, color: C.ink, marginTop: 6, letterSpacing: -0.3 }}
+        >
           Qual a mesa com QR ilegível?
         </div>
-        <div style={{ fontSize: 13, color: C.mute, marginTop: 6, fontWeight: 500, lineHeight: 1.5 }}>
+        <div
+          style={{ fontSize: 13, color: C.mute, marginTop: 6, fontWeight: 500, lineHeight: 1.5 }}
+        >
           O gerente vai ver agora · enquanto isso, use{' '}
           <span style={{ fontWeight: 700, color: C.ink }}>Inserir manualmente</span>.
         </div>
@@ -134,17 +168,25 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
           <div
             style={{
               fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
-              fontSize: 9.5, fontWeight: 800, letterSpacing: 1.2,
-              textTransform: 'uppercase', color: C.faint, marginBottom: 8,
+              fontSize: 9.5,
+              fontWeight: 800,
+              letterSpacing: 1.2,
+              textTransform: 'uppercase',
+              color: C.faint,
+              marginBottom: 8,
             }}
           >
             NÚMERO DA MESA
           </div>
           <div
             style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              border: `1.5px solid ${C.ink}`, borderRadius: 14,
-              padding: '6px 8px', background: C.bg,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              border: `1.5px solid ${C.ink}`,
+              borderRadius: 14,
+              padding: '6px 8px',
+              background: C.bg,
             }}
           >
             <button
@@ -152,18 +194,29 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
               aria-label="Diminuir"
               onClick={() => setTable((t) => Math.max(1, t - 1))}
               style={{
-                all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
-                width: 44, height: 44, borderRadius: 10,
-                background: C.surface, color: C.ink,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                all: 'unset',
+                cursor: 'pointer',
+                boxSizing: 'border-box',
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                background: C.surface,
+                color: C.ink,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
               {Icon.minus(20)}
             </button>
             <div
               style={{
-                fontSize: 32, fontWeight: 800, color: C.ink, letterSpacing: -1,
-                fontVariantNumeric: 'tabular-nums', lineHeight: 1,
+                fontSize: 32,
+                fontWeight: 800,
+                color: C.ink,
+                letterSpacing: -1,
+                fontVariantNumeric: 'tabular-nums',
+                lineHeight: 1,
               }}
             >
               {table}
@@ -173,10 +226,17 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
               aria-label="Aumentar"
               onClick={() => setTable((t) => t + 1)}
               style={{
-                all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
-                width: 44, height: 44, borderRadius: 10,
-                background: C.surface, color: C.ink,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                all: 'unset',
+                cursor: 'pointer',
+                boxSizing: 'border-box',
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                background: C.surface,
+                color: C.ink,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
               {Icon.plus(20)}
@@ -189,8 +249,12 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
           <div
             style={{
               fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
-              fontSize: 9.5, fontWeight: 800, letterSpacing: 1.2,
-              textTransform: 'uppercase', color: C.faint, marginBottom: 8,
+              fontSize: 9.5,
+              fontWeight: 800,
+              letterSpacing: 1.2,
+              textTransform: 'uppercase',
+              color: C.faint,
+              marginBottom: 8,
             }}
           >
             TIPO DO PROBLEMA
@@ -204,9 +268,12 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
                   type="button"
                   onClick={() => setProblem(p.id)}
                   style={{
-                    all: 'unset', cursor: 'pointer',
-                    padding: '8px 14px', borderRadius: 100,
-                    fontSize: 13, fontWeight: 600,
+                    all: 'unset',
+                    cursor: 'pointer',
+                    padding: '8px 14px',
+                    borderRadius: 100,
+                    fontSize: 13,
+                    fontWeight: 600,
                     background: active ? C.ink : 'transparent',
                     color: active ? C.bg : C.ink,
                     border: `1.5px solid ${active ? C.ink : C.borderSoft}`,
@@ -224,8 +291,12 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
           <div
             style={{
               fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
-              fontSize: 9.5, fontWeight: 800, letterSpacing: 1.2,
-              textTransform: 'uppercase', color: C.faint, marginBottom: 8,
+              fontSize: 9.5,
+              fontWeight: 800,
+              letterSpacing: 1.2,
+              textTransform: 'uppercase',
+              color: C.faint,
+              marginBottom: 8,
             }}
           >
             DESCRIÇÃO · OPCIONAL
@@ -236,19 +307,30 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
             placeholder="O que rolou? (ex: QR borrado, descolou da mesa…)"
             rows={4}
             style={{
-              width: '100%', boxSizing: 'border-box',
-              fontFamily: G_FONT, fontSize: 14, color: C.ink,
-              padding: '12px 14px', borderRadius: 12,
-              border: `1.3px solid ${C.borderSoft}`, background: C.bg,
-              resize: 'vertical', outline: 'none',
+              width: '100%',
+              boxSizing: 'border-box',
+              fontFamily: G_FONT,
+              fontSize: 14,
+              color: C.ink,
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: `1.3px solid ${C.borderSoft}`,
+              background: C.bg,
+              resize: 'vertical',
+              outline: 'none',
             }}
           />
           <div
             style={{
-              marginTop: 6, display: 'flex', justifyContent: 'flex-end',
+              marginTop: 6,
+              display: 'flex',
+              justifyContent: 'flex-end',
               fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
-              fontSize: 9.5, fontWeight: 700, letterSpacing: 0.7,
-              textTransform: 'uppercase', color: C.faint,
+              fontSize: 9.5,
+              fontWeight: 700,
+              letterSpacing: 0.7,
+              textTransform: 'uppercase',
+              color: C.faint,
             }}
           >
             {description.length} / 200
@@ -264,13 +346,23 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
               if (url) setPhotoUrl(url);
             }}
             style={{
-              all: 'unset', cursor: 'pointer', boxSizing: 'border-box', width: '100%',
-              padding: '12px 14px', borderRadius: 12,
-              border: `1.3px dashed ${C.borderSoft}`, background: C.bg,
-              fontSize: 13, color: C.mute, fontWeight: 600, textAlign: 'center',
+              all: 'unset',
+              cursor: 'pointer',
+              boxSizing: 'border-box',
+              width: '100%',
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: `1.3px dashed ${C.borderSoft}`,
+              background: C.bg,
+              fontSize: 13,
+              color: C.mute,
+              fontWeight: 600,
+              textAlign: 'center',
             }}
           >
-            {photoUrl ? `Foto adicionada · ${photoUrl.slice(0, 30)}…` : '+ Adicionar foto (opcional)'}
+            {photoUrl
+              ? `Foto adicionada · ${photoUrl.slice(0, 30)}…`
+              : '+ Adicionar foto (opcional)'}
           </button>
         </div>
 
@@ -278,9 +370,13 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
           <div
             role="alert"
             style={{
-              marginTop: 14, padding: '10px 12px', borderRadius: 10,
-              background: C.dangerBg, color: C.danger,
-              fontSize: 13, fontWeight: 600,
+              marginTop: 14,
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: C.dangerBg,
+              color: C.danger,
+              fontSize: 13,
+              fontWeight: 600,
             }}
           >
             {error}
@@ -293,9 +389,13 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
           // P1 #20: safe-area no rodape do CTA; antes a action bar
           // ficava parcialmente embaixo do home-indicator do iOS.
           padding: '14px 22px max(env(safe-area-inset-bottom), 18px)',
-          display: 'flex', flexDirection: 'column', gap: 8,
-          borderTop: `1px solid ${C.borderFaint}`, background: C.bg,
-          position: 'sticky', bottom: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          borderTop: `1px solid ${C.borderFaint}`,
+          background: C.bg,
+          position: 'sticky',
+          bottom: 0,
         }}
       >
         <button
@@ -303,11 +403,20 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
           onClick={submit}
           disabled={submitting}
           style={{
-            all: 'unset', cursor: submitting ? 'wait' : 'pointer', boxSizing: 'border-box',
-            padding: '0 16px', height: 50, borderRadius: 12,
-            background: C.ink, color: '#fff',
-            fontSize: 15, fontWeight: 700, letterSpacing: -0.1,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            all: 'unset',
+            cursor: submitting ? 'wait' : 'pointer',
+            boxSizing: 'border-box',
+            padding: '0 16px',
+            height: 50,
+            borderRadius: 12,
+            background: C.ink,
+            color: '#fff',
+            fontSize: 15,
+            fontWeight: 700,
+            letterSpacing: -0.1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             opacity: submitting ? 0.6 : 1,
           }}
         >
@@ -317,9 +426,13 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
           type="button"
           onClick={onClose}
           style={{
-            all: 'unset', cursor: 'pointer',
+            all: 'unset',
+            cursor: 'pointer',
             padding: '12px 16px',
-            fontSize: 13, color: C.mute, fontWeight: 600, textAlign: 'center',
+            fontSize: 13,
+            color: C.mute,
+            fontWeight: 600,
+            textAlign: 'center',
           }}
         >
           Cancelar

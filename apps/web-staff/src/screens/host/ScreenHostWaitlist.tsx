@@ -30,7 +30,10 @@ function partyMatchesFilter(party: number, filter: PartyFilter): boolean {
 }
 
 export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
-  tenantSlug, onBack, onOpenEntry, onTabChange,
+  tenantSlug,
+  onBack,
+  onOpenEntry,
+  onTabChange,
 }) => {
   const { dark } = useStaffTheme();
   const C = useG(dark);
@@ -89,8 +92,13 @@ export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
   return (
     <div
       style={{
-        width: '100%', height: '100vh', background: C.surface, color: C.ink,
-        fontFamily: G_FONT, display: 'flex', flexDirection: 'column',
+        width: '100%',
+        height: '100vh',
+        background: C.surface,
+        color: C.ink,
+        fontFamily: G_FONT,
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       <GAppHeader
@@ -109,7 +117,10 @@ export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
       />
 
       <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px 80px' }}>
-        <div data-hide-scrollbar style={{ display: 'flex', gap: 8, marginBottom: 14, overflowX: 'auto' }}>
+        <div
+          data-hide-scrollbar
+          style={{ display: 'flex', gap: 8, marginBottom: 14, overflowX: 'auto' }}
+        >
           {PARTY_FILTERS.map((f) => {
             const active = f === filter;
             return (
@@ -118,9 +129,12 @@ export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
                 type="button"
                 onClick={() => setFilter(f)}
                 style={{
-                  all: 'unset', cursor: 'pointer',
-                  padding: '7px 12px', borderRadius: 100,
-                  fontSize: 12, fontWeight: 700,
+                  all: 'unset',
+                  cursor: 'pointer',
+                  padding: '7px 12px',
+                  borderRadius: 100,
+                  fontSize: 12,
+                  fontWeight: 700,
                   border: `1px solid ${active ? C.ink : C.borderSoft}`,
                   background: active ? C.ink : C.bg,
                   color: active ? C.bg : C.ink,
@@ -145,17 +159,28 @@ export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
                 type="button"
                 onClick={() => onOpenEntry?.(entry.id)}
                 style={{
-                  all: 'unset', cursor: 'pointer', boxSizing: 'border-box',
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '12px 14px', borderRadius: 14,
-                  background: C.bg, border: `1.5px solid ${C.borderSoft}`,
+                  all: 'unset',
+                  cursor: 'pointer',
+                  boxSizing: 'border-box',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '12px 14px',
+                  borderRadius: 14,
+                  background: C.bg,
+                  border: `1.5px solid ${C.borderSoft}`,
                 }}
               >
                 <div
                   style={{
-                    width: 50, height: 50, borderRadius: 12,
-                    background: C.ink, color: C.bg,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: 50,
+                    height: 50,
+                    borderRadius: 12,
+                    background: C.ink,
+                    color: C.bg,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     flexShrink: 0,
                   }}
                 >
@@ -171,8 +196,11 @@ export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
                 </div>
                 <div
                   style={{
-                    fontSize: 11, fontWeight: 700, color: C.warn,
-                    fontVariantNumeric: 'tabular-nums', flexShrink: 0,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: C.warn,
+                    fontVariantNumeric: 'tabular-nums',
+                    flexShrink: 0,
                   }}
                 >
                   {entry.wait_minutes} min
@@ -186,79 +214,113 @@ export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
 
       {showAdd && (
         <DragSheet onClose={() => setShowAdd(false)} C={C}>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>Adicionar à fila</div>
-            <input
-              placeholder="Nome ou referência"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+          <div style={{ fontSize: 18, fontWeight: 700 }}>Adicionar à fila</div>
+          <input
+            placeholder="Nome ou referência"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            style={{
+              fontFamily: G_FONT,
+              fontSize: 14,
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: `1.5px solid ${C.borderSoft}`,
+              outline: 'none',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setParty((p) => Math.max(1, p - 1))}
               style={{
-                fontFamily: G_FONT, fontSize: 14, padding: '12px 14px',
-                borderRadius: 12, border: `1.5px solid ${C.borderSoft}`, outline: 'none',
+                all: 'unset',
+                cursor: 'pointer',
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                background: C.surface,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
-            />
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => setParty((p) => Math.max(1, p - 1))}
-                style={{
-                  all: 'unset', cursor: 'pointer',
-                  width: 44, height: 44, borderRadius: 10,
-                  background: C.surface,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                {Icon.minus(20)}
-              </button>
-              <div
-                style={{
-                  flex: 1, fontSize: 28, fontWeight: 800, textAlign: 'center',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  border: `1.5px solid ${C.borderSoft}`, borderRadius: 12,
-                }}
-              >
-                {party}
-              </div>
-              <button
-                type="button"
-                onClick={() => setParty((p) => p + 1)}
-                style={{
-                  all: 'unset', cursor: 'pointer',
-                  width: 44, height: 44, borderRadius: 10,
-                  background: C.surface,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                {Icon.plus(20)}
-              </button>
+            >
+              {Icon.minus(20)}
+            </button>
+            <div
+              style={{
+                flex: 1,
+                fontSize: 28,
+                fontWeight: 800,
+                textAlign: 'center',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: `1.5px solid ${C.borderSoft}`,
+                borderRadius: 12,
+              }}
+            >
+              {party}
             </div>
-            <input
-              placeholder="Telefone (opcional)"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+            <button
+              type="button"
+              onClick={() => setParty((p) => p + 1)}
               style={{
-                fontFamily: G_FONT, fontSize: 14, padding: '12px 14px',
-                borderRadius: 12, border: `1.5px solid ${C.borderSoft}`, outline: 'none',
+                all: 'unset',
+                cursor: 'pointer',
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                background: C.surface,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
-            />
-            <input
-              placeholder="Observação (opcional)"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              style={{
-                fontFamily: G_FONT, fontSize: 14, padding: '12px 14px',
-                borderRadius: 12, border: `1.5px solid ${C.borderSoft}`, outline: 'none',
-              }}
-            />
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <GButton kind="secondary" dark={dark} onClick={() => setShowAdd(false)}>
-                Cancelar
+            >
+              {Icon.plus(20)}
+            </button>
+          </div>
+          <input
+            placeholder="Telefone (opcional)"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            style={{
+              fontFamily: G_FONT,
+              fontSize: 14,
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: `1.5px solid ${C.borderSoft}`,
+              outline: 'none',
+            }}
+          />
+          <input
+            placeholder="Observação (opcional)"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            style={{
+              fontFamily: G_FONT,
+              fontSize: 14,
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: `1.5px solid ${C.borderSoft}`,
+              outline: 'none',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <GButton kind="secondary" dark={dark} onClick={() => setShowAdd(false)}>
+              Cancelar
+            </GButton>
+            <div style={{ flex: 1 }}>
+              <GButton
+                kind="primary"
+                full
+                dark={dark}
+                onClick={add}
+                disabled={!name.trim() || submitting}
+              >
+                {submitting ? 'Adicionando...' : 'Adicionar à fila'}
               </GButton>
-              <div style={{ flex: 1 }}>
-                <GButton kind="primary" full dark={dark} onClick={add} disabled={!name.trim() || submitting}>
-                  {submitting ? 'Adicionando...' : 'Adicionar à fila'}
-                </GButton>
-              </div>
             </div>
+          </div>
         </DragSheet>
       )}
 

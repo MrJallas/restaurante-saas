@@ -41,7 +41,10 @@ interface WaiterLoad {
   over: boolean;
 }
 
-export function ScreenManagerStaffCargaMedia({ dark, tenantSlug }: ScreenManagerStaffCargaMediaProps) {
+export function ScreenManagerStaffCargaMedia({
+  dark,
+  tenantSlug,
+}: ScreenManagerStaffCargaMediaProps) {
   const C = useG(!!dark);
   const router = useRouter();
   const params = useSearchParams();
@@ -92,16 +95,15 @@ export function ScreenManagerStaffCargaMedia({ dark, tenantSlug }: ScreenManager
 
   const heroStr = heroNum > 0 ? heroNum.toFixed(1).replace('.', ',') : '—';
   const heroAccent = variant === 'above' ? '#A12626' : C.ink;
-  const subColor =
-    variant === 'above' ? '#A12626' : variant === 'below' ? '#1E8C5A' : C.faint;
+  const subColor = variant === 'above' ? '#A12626' : variant === 'below' ? '#1E8C5A' : C.faint;
   const subText =
     variant === 'above'
       ? '· ACIMA DA META · REALOCAR'
       : variant === 'below'
-      ? '· FOLGADO'
-      : variant === 'within'
-      ? '· DENTRO DA META'
-      : '· SEM DADOS';
+        ? '· FOLGADO'
+        : variant === 'within'
+          ? '· DENTRO DA META'
+          : '· SEM DADOS';
 
   // Render-time `new Date()` causa hydration mismatch (server em UTC,
   // client em Brasília). Placeholder no SSR, atualiza após mount.
@@ -117,19 +119,20 @@ export function ScreenManagerStaffCargaMedia({ dark, tenantSlug }: ScreenManager
 
   // Mock histórico — 4 medições da última hora.
   // TODO(round19): wire real histogram endpoint.
-  const history = variant === 'above'
-    ? [
-        { t: '15:42', v: '4,1', peak: false, now: false },
-        { t: '16:42', v: '4,8', peak: false, now: false },
-        { t: '17:42', v: '5,0', peak: true, now: false },
-        { t: '18:42', v: heroStr, peak: false, now: true },
-      ]
-    : [
-        { t: '15:42', v: '4,1', peak: false, now: false },
-        { t: '16:42', v: '3,8', peak: false, now: false },
-        { t: '17:42', v: '4,3', peak: true, now: false },
-        { t: '18:42', v: heroStr, peak: false, now: true },
-      ];
+  const history =
+    variant === 'above'
+      ? [
+          { t: '15:42', v: '4,1', peak: false, now: false },
+          { t: '16:42', v: '4,8', peak: false, now: false },
+          { t: '17:42', v: '5,0', peak: true, now: false },
+          { t: '18:42', v: heroStr, peak: false, now: true },
+        ]
+      : [
+          { t: '15:42', v: '4,1', peak: false, now: false },
+          { t: '16:42', v: '3,8', peak: false, now: false },
+          { t: '17:42', v: '4,3', peak: true, now: false },
+          { t: '18:42', v: heroStr, peak: false, now: true },
+        ];
 
   return (
     <div
@@ -196,8 +199,11 @@ export function ScreenManagerStaffCargaMedia({ dark, tenantSlug }: ScreenManager
           >
             {subText}
           </div>
-          <div style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}>
-            Cada garçom atende <b style={{ color: C.ink, fontWeight: 700 }}>{heroStr}</b> mesas em média · meta menor que {META}.
+          <div
+            style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}
+          >
+            Cada garçom atende <b style={{ color: C.ink, fontWeight: 700 }}>{heroStr}</b> mesas em
+            média · meta menor que {META}.
           </div>
         </div>
 
@@ -300,21 +306,33 @@ export function ScreenManagerStaffCargaMedia({ dark, tenantSlug }: ScreenManager
                 C={C}
                 filled
                 icon={Icon.table(13)}
-                onClick={() => router.push(slugQs ? `/manager/equipe/sobrecarga?slug=${slugQs}` : '/manager/equipe/sobrecarga')}
+                onClick={() =>
+                  router.push(
+                    slugQs
+                      ? `/manager/equipe/sobrecarga?slug=${slugQs}`
+                      : '/manager/equipe/sobrecarga',
+                  )
+                }
               >
                 Realocar mesas
               </ActionPill>
               <ActionPill
                 C={C}
                 icon={Icon.pause(13)}
-                onClick={() => router.push(slugQs ? `/manager/pausa-zona?slug=${slugQs}` : '/manager/pausa-zona')}
+                onClick={() =>
+                  router.push(slugQs ? `/manager/pausa-zona?slug=${slugQs}` : '/manager/pausa-zona')
+                }
               >
                 Pausar pedidos novos por 5 min
               </ActionPill>
               <ActionPill
                 C={C}
                 icon={Icon.user(13)}
-                onClick={() => router.push(slugQs ? `/manager/equipe/turnos?slug=${slugQs}` : '/manager/equipe/turnos')}
+                onClick={() =>
+                  router.push(
+                    slugQs ? `/manager/equipe/turnos?slug=${slugQs}` : '/manager/equipe/turnos',
+                  )
+                }
               >
                 Ajustar reforço no turno
               </ActionPill>
@@ -330,7 +348,6 @@ export function ScreenManagerStaffCargaMedia({ dark, tenantSlug }: ScreenManager
       </div>
 
       <MBottomNav active="staff" dark={dark} onTo={(r) => router.push(r)} />
-
     </div>
   );
 }
@@ -401,7 +418,9 @@ function DistributionRow({ C, waiter }: { C: ReturnType<typeof useG>; waiter: Wa
         }}
       >
         {waiter.tables}{' '}
-        <span style={{ color: C.faint, fontWeight: 700, fontSize: 10, letterSpacing: 0.5 }}>MESAS</span>
+        <span style={{ color: C.faint, fontWeight: 700, fontSize: 10, letterSpacing: 0.5 }}>
+          MESAS
+        </span>
       </div>
     </div>
   );
@@ -490,7 +509,9 @@ function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.
       >
         Como esse número é calculado
       </div>
-      <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>{children}</div>
+      <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>
+        {children}
+      </div>
     </div>
   );
 }

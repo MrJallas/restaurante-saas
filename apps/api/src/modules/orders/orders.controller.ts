@@ -405,9 +405,7 @@ export class OrdersController {
     // anterior engolia tudo).
     const rawStaffId = req.headers['x-staff-id'];
     const hasStaffIdHeader = typeof rawStaffId === 'string' && rawStaffId.trim().length > 0;
-    const staffId = hasStaffIdHeader
-      ? await this.callerResolver.requireActiveStaffId(req)
-      : null;
+    const staffId = hasStaffIdHeader ? await this.callerResolver.requireActiveStaffId(req) : null;
     return this.ordersService.callWaiterForOrder(orderId, slug, staffId);
   }
 

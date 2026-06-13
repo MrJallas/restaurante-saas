@@ -37,13 +37,9 @@ function cooldownFromError(err: ApiRequestError): MergeCooldownDto {
     stringFromBody(body, 'cooldownEndsAt') ??
     new Date(Date.now() + Math.max(retryAfterSeconds ?? 600, 60) * 1000).toISOString();
   const originTable =
-    numberFromBody(body, 'originTable') ??
-    numberFromBody(body, 'originTableNumber') ??
-    0;
+    numberFromBody(body, 'originTable') ?? numberFromBody(body, 'originTableNumber') ?? 0;
   const targetTable =
-    numberFromBody(body, 'targetTable') ??
-    numberFromBody(body, 'targetTableNumber') ??
-    0;
+    numberFromBody(body, 'targetTable') ?? numberFromBody(body, 'targetTableNumber') ?? 0;
   return {
     originTable,
     targetTable,
@@ -59,10 +55,7 @@ function cooldownFromError(err: ApiRequestError): MergeCooldownDto {
     cooldownEndsAt,
     retryAfterSeconds: retryAfterSeconds ?? undefined,
     code: stringFromBody(body, 'code') ?? undefined,
-    message:
-      stringFromBody(body, 'message_user') ??
-      stringFromBody(body, 'message') ??
-      err.message,
+    message: stringFromBody(body, 'message_user') ?? stringFromBody(body, 'message') ?? err.message,
     message_user: stringFromBody(body, 'message_user') ?? undefined,
   };
 }
@@ -128,13 +121,10 @@ export async function approveLateArrival(
   input: { customerId?: string; staffId?: string; slug?: string } = {},
 ): Promise<LateArrivalRequestDto> {
   const slug = input.slug ?? getSlugFromPath();
-  return apiPost<LateArrivalRequestDto>(
-    `/${slug}/late-arrival-requests/${id}/approve`,
-    {
-      customerId: input.customerId,
-      staffId: input.staffId,
-    },
-  );
+  return apiPost<LateArrivalRequestDto>(`/${slug}/late-arrival-requests/${id}/approve`, {
+    customerId: input.customerId,
+    staffId: input.staffId,
+  });
 }
 
 /**
@@ -146,14 +136,11 @@ export async function rejectLateArrival(
   input: { customerId?: string; staffId?: string; reason?: string; slug?: string } = {},
 ): Promise<LateArrivalRequestDto> {
   const slug = input.slug ?? getSlugFromPath();
-  return apiPost<LateArrivalRequestDto>(
-    `/${slug}/late-arrival-requests/${id}/reject`,
-    {
-      customerId: input.customerId,
-      staffId: input.staffId,
-      reason: input.reason,
-    },
-  );
+  return apiPost<LateArrivalRequestDto>(`/${slug}/late-arrival-requests/${id}/reject`, {
+    customerId: input.customerId,
+    staffId: input.staffId,
+    reason: input.reason,
+  });
 }
 
 // ─── Table merge ─────────────────────────────────────────────────────────────
@@ -184,18 +171,15 @@ export async function createTableMergeRequest(input: {
 }): Promise<TableMergeCreateResult> {
   const slug = input.slug ?? getSlugFromPath();
   try {
-    const request = await apiPost<TableMergeRequestDto>(
-      `/${slug}/table-merge-requests`,
-      {
-        sourceTableSessionId: input.sourceTableSessionId,
-        targetTableSessionId: input.targetTableSessionId,
-        targetTableNumber: input.targetTableNumber,
-        targetTableLabel: input.targetTableLabel,
-        requestingCustomerId: input.requestingCustomerId,
-        targetCustomerId: input.targetCustomerId,
-        message: input.message,
-      },
-    );
+    const request = await apiPost<TableMergeRequestDto>(`/${slug}/table-merge-requests`, {
+      sourceTableSessionId: input.sourceTableSessionId,
+      targetTableSessionId: input.targetTableSessionId,
+      targetTableNumber: input.targetTableNumber,
+      targetTableLabel: input.targetTableLabel,
+      requestingCustomerId: input.requestingCustomerId,
+      targetCustomerId: input.targetCustomerId,
+      message: input.message,
+    });
     return { ok: true, request };
   } catch (err) {
     if (err instanceof ApiRequestError && err.statusCode === 429) {
@@ -215,12 +199,9 @@ export async function approveTableMerge(
   input: { decidedByCustomerId?: string; slug?: string } = {},
 ): Promise<TableMergeRequestDto> {
   const slug = input.slug ?? getSlugFromPath();
-  return apiPost<TableMergeRequestDto>(
-    `/${slug}/table-merge-requests/${id}/approve`,
-    {
-      decidedByCustomerId: input.decidedByCustomerId,
-    },
-  );
+  return apiPost<TableMergeRequestDto>(`/${slug}/table-merge-requests/${id}/approve`, {
+    decidedByCustomerId: input.decidedByCustomerId,
+  });
 }
 
 /** `POST /:slug/table-merge-requests/:id/reject` — triggers cooldown server-side. */

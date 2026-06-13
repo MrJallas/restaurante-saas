@@ -31,10 +31,7 @@ export interface NewSessionOpts {
  *
  * Retorna assim que a home estiver visivel (botao "Chamar garçom" presente).
  */
-export async function newSession(
-  page: Page,
-  opts: NewSessionOpts = {},
-): Promise<void> {
+export async function newSession(page: Page, opts: NewSessionOpts = {}): Promise<void> {
   const slug = opts.slug ?? 'restaurant_dev';
   const tableCode = opts.tableCode ?? 'QRTEST91';
   const name = opts.name ?? TEST_NAME;
@@ -85,11 +82,7 @@ export async function newSession(
  * esta visivel (ou seja: chame `newSession` em vez disso pra logica
  * geral).
  */
-export async function welcomeAs(
-  page: Page,
-  name = TEST_NAME,
-  cpf = TEST_CPF,
-): Promise<void> {
+export async function welcomeAs(page: Page, name = TEST_NAME, cpf = TEST_CPF): Promise<void> {
   // Selectors por placeholder sao mais estaveis que `nth(N)` — em iPhone
   // 14 emul, `nth(1)` as vezes falhava num re-render mid-fill. Placeholders
   // sao unicos no modal (`Seu nome`, `000.000.000-00`).
@@ -102,9 +95,7 @@ export async function welcomeAs(
   await page.getByPlaceholder('Seu nome').pressSequentially(name, { delay: 20 });
   await page.getByPlaceholder('000.000.000-00').pressSequentially(cpf, { delay: 20 });
   // Espera o botão sair de disabled (canSubmit reflete inputs válidos).
-  await expect(
-    page.getByRole('button', { name: /Continuar/ }),
-  ).toBeEnabled({ timeout: 5_000 });
+  await expect(page.getByRole('button', { name: /Continuar/ })).toBeEnabled({ timeout: 5_000 });
   await page.getByRole('button', { name: /Continuar|Processando/ }).click();
   await expect(
     page.getByRole('heading', {
@@ -130,7 +121,5 @@ export async function openDrawer(page: Page): Promise<void> {
  */
 export async function closeDrawer(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Fechar menu' }).click();
-  await expect(
-    page.getByRole('link', { name: /Cardápio/ }),
-  ).toBeHidden({ timeout: 3000 });
+  await expect(page.getByRole('link', { name: /Cardápio/ })).toBeHidden({ timeout: 3000 });
 }

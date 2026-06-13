@@ -13,7 +13,17 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
@@ -100,18 +110,12 @@ export class ShiftsController {
   }
 
   @Patch('assignments/:id/move')
-  async moveMember(
-    @Param('id') id: string,
-    @Body() dto: MoveMemberDto,
-  ) {
+  async moveMember(@Param('id') id: string, @Body() dto: MoveMemberDto) {
     return this.service.moveMember(id, dto.toShiftId);
   }
 
   @Patch('assignments/:id/overtime')
-  async overtime(
-    @Param('id') id: string,
-    @Body() dto: OvertimeDto,
-  ) {
+  async overtime(@Param('id') id: string, @Body() dto: OvertimeDto) {
     return this.service.setOvertime(id, dto.minutes);
   }
 

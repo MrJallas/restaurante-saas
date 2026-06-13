@@ -28,15 +28,13 @@ describe('QrCodeService', () => {
     });
 
     it('rejects a token signed with another secret', () => {
-      expect(
-        service.validateDailyAccessToken(tableCode, token, 'wrong-secret', today),
-      ).toBe(false);
+      expect(service.validateDailyAccessToken(tableCode, token, 'wrong-secret', today)).toBe(false);
     });
 
     it('rejects a malformed signature', () => {
-      expect(
-        service.validateDailyAccessToken(tableCode, '2026-05-18.bad', secret, today),
-      ).toBe(false);
+      expect(service.validateDailyAccessToken(tableCode, '2026-05-18.bad', secret, today)).toBe(
+        false,
+      );
     });
   });
 
@@ -48,12 +46,7 @@ describe('QrCodeService', () => {
       try {
         expect(service.validateHmac(tableCode, hmac, ts, secret)).toBe(true);
         expect(
-          service.validateHmac(
-            tableCode,
-            hmac,
-            `${today.getTime() - 31 * 60 * 1000}`,
-            secret,
-          ),
+          service.validateHmac(tableCode, hmac, `${today.getTime() - 31 * 60 * 1000}`, secret),
         ).toBe(false);
       } finally {
         nowSpy.mockRestore();

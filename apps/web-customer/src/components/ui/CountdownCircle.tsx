@@ -12,7 +12,11 @@ interface CountdownCircleProps {
  * Circulo animado de contagem regressiva. Props primitivas — `memo` padrao
  * corta render quando `seconds` nao mudou (ex.: parent repinta por outro motivo).
  */
-export const CountdownCircle = memo(function CountdownCircle({ seconds, total, size = 58 }: CountdownCircleProps) {
+export const CountdownCircle = memo(function CountdownCircle({
+  seconds,
+  total,
+  size = 58,
+}: CountdownCircleProps) {
   const radius = (size - 4) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = Math.max(0, Math.min(1, (total - seconds) / total));

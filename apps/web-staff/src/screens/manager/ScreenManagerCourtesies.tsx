@@ -102,14 +102,12 @@ export function ScreenManagerCourtesies({
   const slug =
     tenantSlug ??
     (typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('slug') ?? undefined
+      ? (new URLSearchParams(window.location.search).get('slug') ?? undefined)
       : undefined) ??
     process.env.NEXT_PUBLIC_TENANT_SLUG ??
     'demo';
 
-  const [records, setRecords] = useState<CourtesyRecord[] | null>(
-    recordsOverride ?? null,
-  );
+  const [records, setRecords] = useState<CourtesyRecord[] | null>(recordsOverride ?? null);
   const [loading, setLoading] = useState<boolean>(!recordsOverride);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -169,7 +167,12 @@ export function ScreenManagerCourtesies({
         }}
         role="tablist"
       >
-        <MTab dark={dark} active={tab === 'history'} count={totalToday} onClick={() => goToTab('history')}>
+        <MTab
+          dark={dark}
+          active={tab === 'history'}
+          count={totalToday}
+          onClick={() => goToTab('history')}
+        >
           Histórico
         </MTab>
         <MTab dark={dark} active={tab === 'new'} onClick={() => goToTab('new')}>
@@ -177,7 +180,9 @@ export function ScreenManagerCourtesies({
         </MTab>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', minHeight: 0, paddingBottom: tab === 'new' ? 0 : 24 }}>
+      <div
+        style={{ flex: 1, overflow: 'auto', minHeight: 0, paddingBottom: tab === 'new' ? 0 : 24 }}
+      >
         {tab === 'history' ? (
           loading ? (
             <div
@@ -253,11 +258,7 @@ export function ScreenManagerCourtesies({
         </div>
       )}
 
-      <MBottomNav
-        active="me"
-        dark={dark}
-        onTo={(r) => router.push(r)}
-      />
+      <MBottomNav active="me" dark={dark} onTo={(r) => router.push(r)} />
     </div>
   );
 }
@@ -346,8 +347,7 @@ function NewTab({ C }: { C: ReturnType<typeof useG> }) {
           lineHeight: 1.45,
         }}
       >
-        Escolha uma mesa e mande um mimo — sobremesa, drink, desconto ou só
-        uma mensagem.
+        Escolha uma mesa e mande um mimo — sobremesa, drink, desconto ou só uma mensagem.
       </div>
     </div>
   );
@@ -370,8 +370,8 @@ function KpiTile({
     tone === 'success'
       ? { bg: '#EFF5EC', border: '#C0DEC9', fg: '#0F5A37' }
       : tone === 'warn'
-      ? { bg: '#FFF7E6', border: '#F0DCB6', fg: '#7A4D10' }
-      : { bg: '#ffffff', border: '#e5e5e5', fg: '#0a0a0a' };
+        ? { bg: '#FFF7E6', border: '#F0DCB6', fg: '#7A4D10' }
+        : { bg: '#ffffff', border: '#e5e5e5', fg: '#0a0a0a' };
   return (
     <div
       style={{

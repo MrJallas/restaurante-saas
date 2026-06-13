@@ -14,14 +14,14 @@ Multi-tenant restaurant platform: customer mobile menu, waiter tools, KDS kitche
 
 ## Ports
 
-| Service       | Port |
-| ------------- | ---- |
-| PostgreSQL    | 5434 |
-| Redis         | 6380 |
-| API           | 3001 |
-| web-staff     | 3002 |
-| web-customer  | 3003 |
-| ai-service    | 8000 |
+| Service      | Port |
+| ------------ | ---- |
+| PostgreSQL   | 5434 |
+| Redis        | 6380 |
+| API          | 3001 |
+| web-staff    | 3002 |
+| web-customer | 3003 |
+| ai-service   | 8000 |
 
 ## Prerequisites
 
@@ -134,14 +134,14 @@ This is recorded on each order via `billing_mode` ∈ `{table, individual}` and 
 
 ## Sprints
 
-| Sprint | Focus                                | Branch                             |
-| ------ | ------------------------------------ | ---------------------------------- |
-| 0      | Monorepo + infra                     | `sprint-0/setup`                   |
-| 1      | Auth + QR + tenant middleware        | `sprint-1/auth-qr`                 |
-| 2      | Home + welcome pool + call waiter    | `sprint-2/home-call`               |
-| 3      | Menu + orders + billing mode         | `sprint-3/cardapio-pedido`         |
-| 4      | KDS + WebSocket + waiter alerts      | `sprint-4/kds-websocket-garcom`    |
-| 5      | AI assistant (guardrails + LLM)      | `sprint-5/assistente-ia`           |
-| 6      | Payment + feedback                   | `sprint-6/pagamento-feedback`      |
-| 7      | Owner dashboard + promotions         | `sprint-7/dashboard-promocoes`     |
-| 8      | Staff management + health + deploy   | `sprint-8/staff-deploy`            |
+| Sprint | Focus                              | Branch                          |
+| ------ | ---------------------------------- | ------------------------------- |
+| 0      | Monorepo + infra                   | `sprint-0/setup`                |
+| 1      | Auth + QR + tenant middleware      | `sprint-1/auth-qr`              |
+| 2      | Home + welcome pool + call waiter  | `sprint-2/home-call`            |
+| 3      | Menu + orders + billing mode       | `sprint-3/cardapio-pedido`      |
+| 4      | KDS + WebSocket + waiter alerts    | `sprint-4/kds-websocket-garcom` |
+| 5      | AI assistant (guardrails + LLM)    | `sprint-5/assistente-ia`        |
+| 6      | Payment + feedback                 | `sprint-6/pagamento-feedback`   |
+| 7      | Owner dashboard + promotions       | `sprint-7/dashboard-promocoes`  |
+| 8      | Staff management + health + deploy | `sprint-8/staff-deploy`         |

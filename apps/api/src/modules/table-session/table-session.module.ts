@@ -11,12 +11,7 @@ import { QrCodeService } from './qr-code.service';
 @Module({
   // Round 12 (B-NEW-62): CallerResolverModule pra resolver hostCustomerId
   // do cookie em vez de aceitar via body em decideJoinRequest.
-  imports: [
-    TenantModule,
-    WebsocketModule,
-    CallerResolverModule,
-    ScanVerificationModule,
-  ],
+  imports: [TenantModule, WebsocketModule, CallerResolverModule, ScanVerificationModule],
   controllers: [TableSessionController, TableController],
   providers: [TableSessionService, QrCodeService],
   exports: [TableSessionService, QrCodeService],

@@ -46,9 +46,7 @@ export function ScreenCustomerComplaintCompose({
   // bouncamos pro /identify em vez de deixar o submit-button disabled
   // sem CTA visivel.
   const ready = useRequireCustomerId(slug);
-  const [problemType, setProblemType] = useState<ComplaintProblemType | null>(
-    null,
-  );
+  const [problemType, setProblemType] = useState<ComplaintProblemType | null>(null);
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,8 +60,7 @@ export function ScreenCustomerComplaintCompose({
     }
   }, [session.isValid, router, slug]);
 
-  const canSubmit =
-    !!problemType && text.trim().length > 0 && !submitting && !!session.customerId;
+  const canSubmit = !!problemType && text.trim().length > 0 && !submitting && !!session.customerId;
 
   const handleSubmit = async () => {
     if (!canSubmit || !session.customerId || !problemType) return;
@@ -118,8 +115,7 @@ export function ScreenCustomerComplaintCompose({
           Reportar um problema
         </h1>
         <p className="mb-5 text-[14px] leading-[1.45] text-mute">
-          Conta o que aconteceu · vou passar pra Renata. Costuma responder em
-          ~2 min.
+          Conta o que aconteceu · vou passar pra Renata. Costuma responder em ~2 min.
         </p>
 
         <div className="mb-2 text-[10px] font-semibold uppercase tracking-[1.5px] text-mute">
@@ -162,12 +158,8 @@ export function ScreenCustomerComplaintCompose({
           className="w-full resize-none rounded-[14px] border border-border-soft bg-surface px-4 py-3.5 text-[15px] leading-[1.45] text-ink outline-none placeholder:text-faint focus-within:border-ink/40"
         />
         <div className="mt-1.5 flex items-center justify-between">
-          <span className="text-[11px] text-faint">
-            Foto opcional (em breve)
-          </span>
-          <span className="font-mono text-[10px] tabular-nums text-faint">
-            {text.length}/2000
-          </span>
+          <span className="text-[11px] text-faint">Foto opcional (em breve)</span>
+          <span className="font-mono text-[10px] tabular-nums text-faint">{text.length}/2000</span>
         </div>
 
         {error && (
@@ -177,12 +169,7 @@ export function ScreenCustomerComplaintCompose({
         )}
 
         <div className="mt-6 flex flex-col gap-2.5">
-          <PillButton
-            variant="filled"
-            fullWidth
-            disabled={!canSubmit}
-            onClick={handleSubmit}
-          >
+          <PillButton variant="filled" fullWidth disabled={!canSubmit} onClick={handleSubmit}>
             {submitting ? 'Enviando…' : 'Enviar pra Renata'}
           </PillButton>
           <PillButton

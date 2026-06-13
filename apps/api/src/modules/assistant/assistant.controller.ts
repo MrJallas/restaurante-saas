@@ -168,10 +168,7 @@ export class AssistantController {
    */
   @Post('staff-to-customer')
   @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
-  async staffToCustomer(
-    @Body() dto: StaffToCustomerDto,
-    @Tenant() tenantId: string,
-  ) {
+  async staffToCustomer(@Body() dto: StaffToCustomerDto, @Tenant() tenantId: string) {
     return this.assistantService.sendStaffToCustomer({
       tableSessionId: dto.tableSessionId,
       message: dto.message,

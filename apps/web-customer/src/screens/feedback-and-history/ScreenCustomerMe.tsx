@@ -162,9 +162,7 @@ export function ScreenCustomerMe({ slug, restaurantName = '' }: ScreenCustomerMe
               <span className="text-mute"> · {session.participants.length} pessoas</span>
             )}
           </div>
-          {session.participants.some(
-            (p) => p.customerId === session.customerId && p.isHost,
-          ) && (
+          {session.participants.some((p) => p.customerId === session.customerId && p.isHost) && (
             <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-ink px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.6px] text-bg">
               <span>★</span> Anfitriã da mesa
             </div>

@@ -47,18 +47,11 @@ export const MenuItemRow = memo(function MenuItemRow({ item, compact, onClick }:
             />
           </span>
         ) : (
-          <FoodPlaceholder
-            label="foto"
-            height={84}
-            className="w-[84px]"
-            rounded="rounded-[12px]"
-          />
+          <FoodPlaceholder label="foto" height={84} className="w-[84px]" rounded="rounded-[12px]" />
         ))}
       <div className="min-w-0 flex-1">
         <div className="mb-[3px] flex items-baseline justify-between gap-2.5">
-          <div className="truncate text-[15px] font-semibold tracking-[-0.01em]">
-            {item.name}
-          </div>
+          <div className="truncate text-[15px] font-semibold tracking-[-0.01em]">{item.name}</div>
           <div className="shrink-0 whitespace-nowrap text-[14px] font-semibold tabular-nums">
             R$ {price}
           </div>

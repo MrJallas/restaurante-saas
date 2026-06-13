@@ -71,9 +71,7 @@ class CustomerWelcomeDto {
 
   @IsString()
   @IsNotEmpty()
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.replace(/\D/g, '') : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/\D/g, '') : value))
   @MinLength(11)
   @MaxLength(11)
   @Matches(/^\d{11}$/, { message: 'cpf must be 11 digits' })
@@ -106,9 +104,7 @@ class CustomerIdentifyDto {
 
   @IsString()
   @IsNotEmpty()
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.replace(/\D/g, '') : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/\D/g, '') : value))
   @MinLength(11)
   @MaxLength(11)
   @Matches(/^\d{11}$/, { message: 'cpf must be 11 digits' })
@@ -152,11 +148,7 @@ export class CustomersController {
 
     let result;
     try {
-      result = await this.customersService.identify(
-        dto.cpf,
-        dto.name,
-        dto.currentSessionId,
-      );
+      result = await this.customersService.identify(dto.cpf, dto.name, dto.currentSessionId);
     } catch (err) {
       // Conta falhas pro mesmo limite — atacante não bypassa testando
       // formats inválidos pra mapear espaço CPF.
@@ -165,13 +157,17 @@ export class CustomersController {
     }
     await this.bumpIdentifyAttempts(ipKey);
 
-    res.cookie('recognition_token', result.recognitionToken, getSecureCookieOptions(req as Request, {
-      // Round 9 (B-NEW-37): secure flag em prod com TLS. Round 21 §F:
-      // getSecureCookieOptions detecta HTTPS via req.secure ou
-      // X-Forwarded-Proto (Cloudflare Tunnel, proxy reverso) — Safari iOS
-      // exige secure:true + sameSite:'none' quando origem é HTTPS.
-      maxAge: RECOGNITION_COOKIE_MAX_AGE,
-    }));
+    res.cookie(
+      'recognition_token',
+      result.recognitionToken,
+      getSecureCookieOptions(req as Request, {
+        // Round 9 (B-NEW-37): secure flag em prod com TLS. Round 21 §F:
+        // getSecureCookieOptions detecta HTTPS via req.secure ou
+        // X-Forwarded-Proto (Cloudflare Tunnel, proxy reverso) — Safari iOS
+        // exige secure:true + sameSite:'none' quando origem é HTTPS.
+        maxAge: RECOGNITION_COOKIE_MAX_AGE,
+      }),
+    );
 
     // recognitionToken NÃO retornado no body.
     return {
@@ -284,8 +280,7 @@ export class CustomersController {
     const token = req.cookies?.recognition_token ?? null;
     if (!customerId && token) {
       customerId =
-        (await this.customersService.resolveByRecognitionToken(token))?.customerId ??
-        null;
+        (await this.customersService.resolveByRecognitionToken(token))?.customerId ?? null;
     }
     if (!customerId) {
       throw new HttpException(
@@ -293,10 +288,7 @@ export class CustomersController {
         HttpStatus.UNAUTHORIZED,
       );
     }
-    return this.customersService.getLastVisitItems(
-      customerId,
-      session.sessionId,
-    );
+    return this.customersService.getLastVisitItems(customerId, session.sessionId);
   }
 
   /**
@@ -320,7 +312,8 @@ export class CustomersController {
   async welcome(
     @Body() dto: CustomerWelcomeDto,
     @Session() session: SessionData,
-    @Req() req: {
+    @Req()
+    req: {
       ip?: string;
       cookies?: Record<string, string>;
       headers: Record<string, string | string[]>;
@@ -335,40 +328,44 @@ export class CustomersController {
     try {
       result = await this.customersService.welcome(
         dto.name,
-      dto.cpf,
-      session.sessionId,
-      callerRecognitionToken,
-      dto.location,
-    );
+        dto.cpf,
+        session.sessionId,
+        callerRecognitionToken,
+        dto.location,
+      );
     } catch (err) {
       await this.bumpWelcomeAttempts(ipKey);
       throw err;
     }
     await this.bumpWelcomeAttempts(ipKey);
 
-    res.cookie('recognition_token', result.recognitionToken, getSecureCookieOptions(req as Request, {
-      // Round 9 (B-NEW-37): secure flag em prod com TLS. Round 21 §F:
-      // getSecureCookieOptions detecta HTTPS via req.secure ou
-      // X-Forwarded-Proto (Cloudflare Tunnel, proxy reverso) — Safari iOS
-      // exige secure:true + sameSite:'none' quando origem é HTTPS.
-      maxAge: RECOGNITION_COOKIE_MAX_AGE,
-    }));
+    res.cookie(
+      'recognition_token',
+      result.recognitionToken,
+      getSecureCookieOptions(req as Request, {
+        // Round 9 (B-NEW-37): secure flag em prod com TLS. Round 21 §F:
+        // getSecureCookieOptions detecta HTTPS via req.secure ou
+        // X-Forwarded-Proto (Cloudflare Tunnel, proxy reverso) — Safari iOS
+        // exige secure:true + sameSite:'none' quando origem é HTTPS.
+        maxAge: RECOGNITION_COOKIE_MAX_AGE,
+      }),
+    );
 
     // Round 7 (B-NEW-28): recognitionToken NÃO retornado no body —
-     // só vai pelo cookie HttpOnly. Antes: XSS no customer-side App
-     // lia `result.recognitionToken` e abria conta dele em qualquer
-     // mesa do tenant. Mesma fix do /identify (round 6).
-     return {
-       customerId: result.customerId,
-       name: result.name,
-       isReturning: result.isReturning,
-       totalVisits: result.totalVisits,
-       lastVisitSummary: result.lastVisitSummary,
-       visitId: result.visitId,
-       wasReclaim: result.wasReclaim,
-       locationCheck: result.locationCheck,
-     };
-   }
+    // só vai pelo cookie HttpOnly. Antes: XSS no customer-side App
+    // lia `result.recognitionToken` e abria conta dele em qualquer
+    // mesa do tenant. Mesma fix do /identify (round 6).
+    return {
+      customerId: result.customerId,
+      name: result.name,
+      isReturning: result.isReturning,
+      totalVisits: result.totalVisits,
+      lastVisitSummary: result.lastVisitSummary,
+      visitId: result.visitId,
+      wasReclaim: result.wasReclaim,
+      locationCheck: result.locationCheck,
+    };
+  }
 
   @Post('recognize')
   @UseGuards(SessionGuard)
@@ -378,25 +375,24 @@ export class CustomersController {
     @Req() req: { cookies?: Record<string, string> },
     @Res({ passthrough: true }) res: Response,
   ) {
-    const token =
-      dto.recognitionToken ?? req.cookies?.recognition_token ?? null;
+    const token = dto.recognitionToken ?? req.cookies?.recognition_token ?? null;
     if (!token) {
       return { recognized: false };
     }
 
-    const result = await this.customersService.recognize(
-      token,
-      session.sessionId,
-      dto.location,
-    );
+    const result = await this.customersService.recognize(token, session.sessionId, dto.location);
 
-    res.cookie('recognition_token', result.recognitionToken, getSecureCookieOptions(req as Request, {
-      // Round 9 (B-NEW-37): secure flag em prod com TLS. Round 21 §F:
-      // getSecureCookieOptions detecta HTTPS via req.secure ou
-      // X-Forwarded-Proto (Cloudflare Tunnel, proxy reverso) — Safari iOS
-      // exige secure:true + sameSite:'none' quando origem é HTTPS.
-      maxAge: RECOGNITION_COOKIE_MAX_AGE,
-    }));
+    res.cookie(
+      'recognition_token',
+      result.recognitionToken,
+      getSecureCookieOptions(req as Request, {
+        // Round 9 (B-NEW-37): secure flag em prod com TLS. Round 21 §F:
+        // getSecureCookieOptions detecta HTTPS via req.secure ou
+        // X-Forwarded-Proto (Cloudflare Tunnel, proxy reverso) — Safari iOS
+        // exige secure:true + sameSite:'none' quando origem é HTTPS.
+        maxAge: RECOGNITION_COOKIE_MAX_AGE,
+      }),
+    );
 
     // Round 7 (B-NEW-28): recognitionToken NÃO retornado no body —
     // só via cookie HttpOnly. Mesmo fix do welcome/identify.

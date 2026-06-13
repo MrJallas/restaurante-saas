@@ -15,10 +15,20 @@ interface BadgeProps {
   pulse?: boolean;
 }
 
-export const GBadge: React.FC<BadgeProps> = ({ tone = 'ink', children, dark = false, dot, pulse }) => {
+export const GBadge: React.FC<BadgeProps> = ({
+  tone = 'ink',
+  children,
+  dark = false,
+  dot,
+  pulse,
+}) => {
   const C = useG(dark);
   const map: Record<Tone, { bg: string; fg: string; bd: string }> = {
-    ink: { bg: dark ? `${C.ink}22` : '#0a0a0a', fg: dark ? C.ink : '#fff', bd: dark ? C.ink : '#0a0a0a' },
+    ink: {
+      bg: dark ? `${C.ink}22` : '#0a0a0a',
+      fg: dark ? C.ink : '#fff',
+      bd: dark ? C.ink : '#0a0a0a',
+    },
     danger: { bg: C.dangerBg, fg: C.danger, bd: C.danger },
     success: { bg: C.successBg, fg: C.success, bd: C.success },
     info: { bg: C.infoBg, fg: C.info, bd: C.info },
@@ -29,16 +39,27 @@ export const GBadge: React.FC<BadgeProps> = ({ tone = 'ink', children, dark = fa
   return (
     <span
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: '4px 10px', borderRadius: 100, fontSize: 11,
-        letterSpacing: 0.6, textTransform: 'uppercase', fontWeight: 600,
-        background: t.bg, color: t.fg, border: `1px solid ${t.bd}`,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '4px 10px',
+        borderRadius: 100,
+        fontSize: 11,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        fontWeight: 600,
+        background: t.bg,
+        color: t.fg,
+        border: `1px solid ${t.bd}`,
       }}
     >
       {dot && (
         <span
           style={{
-            width: 7, height: 7, borderRadius: 4, background: 'currentColor',
+            width: 7,
+            height: 7,
+            borderRadius: 4,
+            background: 'currentColor',
             animation: pulse ? 'gPulse 1.4s infinite' : 'none',
           }}
         />
@@ -60,7 +81,14 @@ interface ButtonProps {
 }
 
 export const GButton: React.FC<ButtonProps> = ({
-  children, full, kind = 'primary', dark = false, icon, onClick, type = 'button', disabled,
+  children,
+  full,
+  kind = 'primary',
+  dark = false,
+  icon,
+  onClick,
+  type = 'button',
+  disabled,
 }) => {
   const C = useG(dark);
   const styles = {
@@ -77,13 +105,24 @@ export const GButton: React.FC<ButtonProps> = ({
       onClick={onClick}
       disabled={disabled}
       style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        gap: 8, padding: '14px 20px', borderRadius: 14,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        padding: '14px 20px',
+        borderRadius: 14,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.55 : 1,
-        fontFamily: G_FONT, fontSize: 15, fontWeight: 600, letterSpacing: -0.1,
-        background: s.bg, color: s.fg, border: `1.5px solid ${s.bd}`,
-        width: full ? '100%' : 'auto', minHeight: 48, textAlign: 'center',
+        fontFamily: G_FONT,
+        fontSize: 15,
+        fontWeight: 600,
+        letterSpacing: -0.1,
+        background: s.bg,
+        color: s.fg,
+        border: `1.5px solid ${s.bd}`,
+        width: full ? '100%' : 'auto',
+        minHeight: 48,
+        textAlign: 'center',
       }}
     >
       {icon}
@@ -105,7 +144,9 @@ export const GAppHeader: React.FC<AppHeaderProps> = ({ left, title, right, dark 
   return (
     <div
       style={{
-        display: 'flex', alignItems: 'center', gap: 12,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
         padding: '14px 16px 12px',
         borderBottom: `1px solid ${C.borderFaint}`,
         background: C.bg,
@@ -113,12 +154,18 @@ export const GAppHeader: React.FC<AppHeaderProps> = ({ left, title, right, dark 
     >
       <div style={{ width: 40 }}>{left}</div>
       <div style={{ flex: 1, textAlign: 'center' }}>
-        <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: -0.3, color: C.ink }}>{title}</div>
+        <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: -0.3, color: C.ink }}>
+          {title}
+        </div>
         {sub && (
           <div
             style={{
-              fontSize: 11, color: C.mute, letterSpacing: 0.4,
-              textTransform: 'uppercase', fontWeight: 600, marginTop: 2,
+              fontSize: 11,
+              color: C.mute,
+              letterSpacing: 0.4,
+              textTransform: 'uppercase',
+              fontWeight: 600,
+              marginTop: 2,
             }}
           >
             {sub}
@@ -138,7 +185,13 @@ interface IconBtnProps {
   ariaLabel?: string;
 }
 
-export const GIconBtn: React.FC<IconBtnProps> = ({ icon, dark = false, badge, onClick, ariaLabel }) => {
+export const GIconBtn: React.FC<IconBtnProps> = ({
+  icon,
+  dark = false,
+  badge,
+  onClick,
+  ariaLabel,
+}) => {
   const C = useG(dark);
   return (
     <button
@@ -146,23 +199,40 @@ export const GIconBtn: React.FC<IconBtnProps> = ({ icon, dark = false, badge, on
       onClick={onClick}
       aria-label={ariaLabel}
       style={{
-        all: 'unset', cursor: onClick ? 'pointer' : 'default',
-        width: 40, height: 40, borderRadius: 12,
-        border: `1.2px solid ${C.borderSoft}`, color: C.ink,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        position: 'relative', background: C.bg, boxSizing: 'border-box',
+        all: 'unset',
+        cursor: onClick ? 'pointer' : 'default',
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        border: `1.2px solid ${C.borderSoft}`,
+        color: C.ink,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative',
+        background: C.bg,
+        boxSizing: 'border-box',
       }}
     >
       {icon}
       {badge && (
         <span
           style={{
-            position: 'absolute', top: -4, right: -4,
-            minWidth: 18, height: 18, borderRadius: 9,
-            background: C.danger, color: '#fff',
-            fontSize: 10, fontWeight: 700,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '0 5px', border: `2px solid ${C.bg}`,
+            position: 'absolute',
+            top: -4,
+            right: -4,
+            minWidth: 18,
+            height: 18,
+            borderRadius: 9,
+            background: C.danger,
+            color: '#fff',
+            fontSize: 10,
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0 5px',
+            border: `2px solid ${C.bg}`,
           }}
         >
           {badge}
@@ -184,10 +254,20 @@ interface BottomNavProps {
 }
 
 export const GBottomNav: React.FC<BottomNavProps> = ({
-  active = 'home', dark = false, onNewEntry = () => {}, onTabChange, callsBadge = 0,
+  active = 'home',
+  dark = false,
+  onNewEntry = () => {},
+  onTabChange,
+  callsBadge = 0,
 }) => {
   const C = useG(dark);
-  const items: Array<{ id: NavId; label: string; icon: (s: number) => React.ReactElement; badge?: number; action?: 'newEntry' }> = [
+  const items: Array<{
+    id: NavId;
+    label: string;
+    icon: (s: number) => React.ReactElement;
+    badge?: number;
+    action?: 'newEntry';
+  }> = [
     { id: 'home', label: 'Mesas', icon: Icon.table },
     { id: 'calls', label: 'Chamados', icon: Icon.bell, badge: callsBadge || undefined },
     { id: 'scan', label: 'Novo', icon: Icon.qr, action: 'newEntry' },
@@ -197,8 +277,10 @@ export const GBottomNav: React.FC<BottomNavProps> = ({
   return (
     <div
       style={{
-        borderTop: `1px solid ${C.borderFaint}`, background: C.bg,
-        display: 'flex', justifyContent: 'space-around',
+        borderTop: `1px solid ${C.borderFaint}`,
+        background: C.bg,
+        display: 'flex',
+        justifyContent: 'space-around',
         // P1 #20: iOS Safari home-indicator (~34px) escondia os icones.
         // env() respeita o notch · 14px e o baseline em devices sem.
         padding: '8px 4px max(env(safe-area-inset-bottom), 14px)',
@@ -214,9 +296,15 @@ export const GBottomNav: React.FC<BottomNavProps> = ({
             type="button"
             onClick={onClick}
             style={{
-              all: 'unset', cursor: 'pointer',
-              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-              gap: 3, padding: '6px 2px', position: 'relative',
+              all: 'unset',
+              cursor: 'pointer',
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 3,
+              padding: '6px 2px',
+              position: 'relative',
               color: isActive ? C.ink : C.faint,
             }}
           >
@@ -225,11 +313,19 @@ export const GBottomNav: React.FC<BottomNavProps> = ({
               {it.badge !== undefined && it.badge > 0 && (
                 <span
                   style={{
-                    position: 'absolute', top: -3, right: -6,
-                    minWidth: 16, height: 16, borderRadius: 8,
-                    background: C.danger, color: '#fff',
-                    fontSize: 10, fontWeight: 700,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    position: 'absolute',
+                    top: -3,
+                    right: -6,
+                    minWidth: 16,
+                    height: 16,
+                    borderRadius: 8,
+                    background: C.danger,
+                    color: '#fff',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     padding: '0 4px',
                   }}
                 >
@@ -243,8 +339,14 @@ export const GBottomNav: React.FC<BottomNavProps> = ({
             {isActive && (
               <span
                 style={{
-                  position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-                  width: 28, height: 2, borderRadius: 1, background: C.ink,
+                  position: 'absolute',
+                  top: 0,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: 28,
+                  height: 2,
+                  borderRadius: 1,
+                  background: C.ink,
                 }}
               />
             )}
@@ -268,11 +370,20 @@ interface HostBottomNavProps {
 }
 
 export const HBottomNav: React.FC<HostBottomNavProps> = ({
-  active = 'tables', dark = false, onTabChange,
-  waitlistBadge = 0, reservaBadge = 0, inboxBadge = 0,
+  active = 'tables',
+  dark = false,
+  onTabChange,
+  waitlistBadge = 0,
+  reservaBadge = 0,
+  inboxBadge = 0,
 }) => {
   const C = useG(dark);
-  const items: Array<{ id: HostNavId; label: string; icon: (s: number) => React.ReactElement; badge?: number }> = [
+  const items: Array<{
+    id: HostNavId;
+    label: string;
+    icon: (s: number) => React.ReactElement;
+    badge?: number;
+  }> = [
     { id: 'tables', label: 'Mesas', icon: Icon.table },
     { id: 'waitlist', label: 'Espera', icon: Icon.list, badge: waitlistBadge || undefined },
     { id: 'reserva', label: 'Reservas', icon: Icon.clock, badge: reservaBadge || undefined },
@@ -282,8 +393,10 @@ export const HBottomNav: React.FC<HostBottomNavProps> = ({
   return (
     <div
       style={{
-        borderTop: `1px solid ${C.borderFaint}`, background: C.bg,
-        display: 'flex', justifyContent: 'space-around',
+        borderTop: `1px solid ${C.borderFaint}`,
+        background: C.bg,
+        display: 'flex',
+        justifyContent: 'space-around',
         // P1 #20: iOS Safari home-indicator (~34px) escondia os icones.
         // env() respeita o notch · 14px e o baseline em devices sem.
         padding: '8px 4px max(env(safe-area-inset-bottom), 14px)',
@@ -297,9 +410,15 @@ export const HBottomNav: React.FC<HostBottomNavProps> = ({
             type="button"
             onClick={() => onTabChange?.(it.id)}
             style={{
-              all: 'unset', cursor: 'pointer',
-              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-              gap: 3, padding: '6px 2px', position: 'relative',
+              all: 'unset',
+              cursor: 'pointer',
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 3,
+              padding: '6px 2px',
+              position: 'relative',
               color: isActive ? C.ink : C.faint,
             }}
           >
@@ -308,11 +427,19 @@ export const HBottomNav: React.FC<HostBottomNavProps> = ({
               {it.badge !== undefined && it.badge > 0 && (
                 <span
                   style={{
-                    position: 'absolute', top: -3, right: -6,
-                    minWidth: 16, height: 16, borderRadius: 8,
-                    background: C.danger, color: '#fff',
-                    fontSize: 10, fontWeight: 700,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    position: 'absolute',
+                    top: -3,
+                    right: -6,
+                    minWidth: 16,
+                    height: 16,
+                    borderRadius: 8,
+                    background: C.danger,
+                    color: '#fff',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     padding: '0 4px',
                   }}
                 >
@@ -326,8 +453,14 @@ export const HBottomNav: React.FC<HostBottomNavProps> = ({
             {isActive && (
               <span
                 style={{
-                  position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-                  width: 28, height: 2, borderRadius: 1, background: C.ink,
+                  position: 'absolute',
+                  top: 0,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: 28,
+                  height: 2,
+                  borderRadius: 1,
+                  background: C.ink,
                 }}
               />
             )}

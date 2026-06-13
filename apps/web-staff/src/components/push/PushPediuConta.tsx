@@ -18,7 +18,11 @@ function fmtBRL(cents: number): string {
 }
 
 export const PushPediuConta: React.FC<PushPediuContaProps> = ({
-  tableLabel, totalCents, partySize, time = 'agora', onTap,
+  tableLabel,
+  totalCents,
+  partySize,
+  time = 'agora',
+  onTap,
 }) => (
   <PushCardIOS
     tone="info"

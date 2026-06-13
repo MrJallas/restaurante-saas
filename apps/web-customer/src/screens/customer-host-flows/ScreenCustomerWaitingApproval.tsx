@@ -147,9 +147,7 @@ export function ScreenCustomerWaitingApproval({
         case 'late_arrival.rejected': {
           if (mode !== 'late-arrival') return;
           if (requestId && event.payload.requestId !== requestId) return;
-          setState(
-            event.payload.reason === 'host_timeout' ? 'expired' : 'rejected',
-          );
+          setState(event.payload.reason === 'host_timeout' ? 'expired' : 'rejected');
           break;
         }
         case 'late_arrival.expired': {
@@ -171,9 +169,7 @@ export function ScreenCustomerWaitingApproval({
         case 'table_merge.rejected': {
           if (mode === 'late-arrival') return;
           if (requestId && event.payload.requestId !== requestId) return;
-          setState(
-            event.payload.rejectedBy === 'timeout' ? 'expired' : 'rejected',
-          );
+          setState(event.payload.rejectedBy === 'timeout' ? 'expired' : 'rejected');
           break;
         }
         case 'merge.cooldown_started': {
@@ -187,8 +183,7 @@ export function ScreenCustomerWaitingApproval({
           }
           setCooldown({
             cooldownEndsAt: event.payload.cooldownEndsAt ?? event.payload.expiresAt,
-            targetTableNumber:
-              event.payload.targetTableNumber ?? event.payload.targetTable ?? null,
+            targetTableNumber: event.payload.targetTableNumber ?? event.payload.targetTable ?? null,
             message: null,
           });
           setState('cooldown');
@@ -242,12 +237,9 @@ export function ScreenCustomerWaitingApproval({
   }, [state, escalated, secondsLeft, mode]);
 
   const hero = useMemo(() => {
-    if (state === 'approved')
-      return mode === 'late-arrival' ? 'Aprovado!' : 'Mesas juntadas!';
+    if (state === 'approved') return mode === 'late-arrival' ? 'Aprovado!' : 'Mesas juntadas!';
     if (state === 'expired')
-      return mode === 'late-arrival'
-        ? 'Sem resposta da mesa'
-        : 'Sem resposta da outra mesa';
+      return mode === 'late-arrival' ? 'Sem resposta da mesa' : 'Sem resposta da outra mesa';
     if (state === 'rejected')
       return mode === 'late-arrival' ? 'Entrada não autorizada' : 'Mesas separadas';
     return 'Esperando aprovação';
@@ -351,11 +343,7 @@ export function ScreenCustomerWaitingApproval({
           {/* CTAs · variam por estado · agora colados no bloco central
               em vez de empurrados ao bottom (V20 canon). */}
           {state === 'waiting' && (
-            <PillButton
-              variant="outline"
-              onClick={cancelMergeRequest}
-              className="mt-7"
-            >
+            <PillButton variant="outline" onClick={cancelMergeRequest} className="mt-7">
               {cancelBusy ? 'Cancelando…' : 'Cancelar pedido'}
             </PillButton>
           )}
@@ -408,12 +396,7 @@ function Pulse() {
       <div className="flex h-14 w-14 items-center justify-center rounded-full border-[1.4px] border-ink bg-white">
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
           <circle cx="11" cy="11" r="9" stroke="currentColor" strokeWidth="1.4" />
-          <path
-            d="M11 6v5l3 2"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-          />
+          <path d="M11 6v5l3 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
       </div>
       <style>{`

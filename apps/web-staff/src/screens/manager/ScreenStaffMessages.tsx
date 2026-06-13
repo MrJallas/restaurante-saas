@@ -72,9 +72,7 @@ export function ScreenStaffMessages({ dark, tenantSlug, managerId }: ScreenStaff
         api.customerInbox.listThreads(),
       ]);
       setThreads(staffRes.status === 'fulfilled' ? staffRes.value : []);
-      setCustomerThreads(
-        customerRes.status === 'fulfilled' ? customerRes.value : [],
-      );
+      setCustomerThreads(customerRes.status === 'fulfilled' ? customerRes.value : []);
     } finally {
       setLoading(false);
     }
@@ -88,15 +86,19 @@ export function ScreenStaffMessages({ dark, tenantSlug, managerId }: ScreenStaff
   // badge stays in sync when another device marks a thread as read.
   // Round 22: `staff_messages.customer_replied` é o evento emitido pelo
   // appendOutbound quando o customer manda via `send_message_to_manager`.
-  useManagerEvents(tenantSlug, (e) => {
-    if (
-      e.event === 'staff_message.received' ||
-      e.event === 'staff_message.read' ||
-      e.event === 'staff_messages.customer_replied'
-    ) {
-      refresh();
-    }
-  }, { enabled: !!resolvedManagerId, staffId: resolvedManagerId });
+  useManagerEvents(
+    tenantSlug,
+    (e) => {
+      if (
+        e.event === 'staff_message.received' ||
+        e.event === 'staff_message.read' ||
+        e.event === 'staff_messages.customer_replied'
+      ) {
+        refresh();
+      }
+    },
+    { enabled: !!resolvedManagerId, staffId: resolvedManagerId },
+  );
 
   const totalUnread =
     threads.reduce((s, t) => s + t.unreadCount, 0) +
@@ -116,7 +118,14 @@ export function ScreenStaffMessages({ dark, tenantSlug, managerId }: ScreenStaff
       <MTopBar
         dark={dark}
         title="Mensagens"
-        left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.push('/manager')} ariaLabel="Voltar" />}
+        left={
+          <GIconBtn
+            dark={dark}
+            icon={Icon.back(20)}
+            onClick={() => router.push('/manager')}
+            ariaLabel="Voltar"
+          />
+        }
         right={
           <GIconBtn
             dark={dark}
@@ -421,10 +430,7 @@ export function ScreenStaffMessageCompose({
     if (s.id === myStaffId) return false;
     const q = query.trim().toLowerCase();
     if (!q) return true;
-    return (
-      s.name.toLowerCase().includes(q) ||
-      roleLabel(s.role).toLowerCase().includes(q)
-    );
+    return s.name.toLowerCase().includes(q) || roleLabel(s.role).toLowerCase().includes(q);
   });
 
   const send = async () => {
@@ -437,11 +443,14 @@ export function ScreenStaffMessageCompose({
     setSending(true);
     setError('');
     try {
-      const msg = await api.staffMessages.send({
-        recipientStaffId: selected.id,
-        subject: selected.name,
-        body: content,
-      }, { staffId: myStaffId });
+      const msg = await api.staffMessages.send(
+        {
+          recipientStaffId: selected.id,
+          subject: selected.name,
+          body: content,
+        },
+        { staffId: myStaffId },
+      );
       router.replace(
         `/manager/mensagens/${encodeURIComponent(msg.threadId)}?slug=${tenantSlug}&staffId=${encodeURIComponent(myStaffId)}`,
       );
@@ -466,7 +475,14 @@ export function ScreenStaffMessageCompose({
       <MTopBar
         dark={dark}
         title="Nova conversa"
-        left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.back()} ariaLabel="Voltar" />}
+        left={
+          <GIconBtn
+            dark={dark}
+            icon={Icon.back(20)}
+            onClick={() => router.back()}
+            ariaLabel="Voltar"
+          />
+        }
       />
 
       <div style={{ padding: '14px 16px 8px' }}>
@@ -564,7 +580,15 @@ export function ScreenStaffMessageCompose({
                   >
                     {person.name}
                   </span>
-                  <span style={{ display: 'block', marginTop: 2, fontSize: 11.5, color: C.mute, fontWeight: 600 }}>
+                  <span
+                    style={{
+                      display: 'block',
+                      marginTop: 2,
+                      fontSize: 11.5,
+                      color: C.mute,
+                      fontWeight: 600,
+                    }}
+                  >
                     {roleLabel(person.role)}
                   </span>
                 </span>
@@ -610,46 +634,46 @@ export function ScreenStaffMessageCompose({
           }}
         >
           <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value.slice(0, 2000))}
-          placeholder={
-            selected ? `Mensagem para ${selected.name}` : 'Escolha alguém para começar'
-          }
-          disabled={!selected}
-          rows={1}
-          style={{
-            flex: 1,
-            minHeight: 42,
-            maxHeight: 110,
-            resize: 'vertical',
-            borderRadius: 14,
-            border: `1px solid ${C.borderSoft}`,
-            background: C.bg,
-            color: C.ink,
-            fontFamily: G_FONT,
-            fontSize: 14,
-            outline: 'none',
-            padding: '11px 12px',
-          }}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value.slice(0, 2000))}
+            placeholder={
+              selected ? `Mensagem para ${selected.name}` : 'Escolha alguém para começar'
+            }
+            disabled={!selected}
+            rows={1}
+            style={{
+              flex: 1,
+              minHeight: 42,
+              maxHeight: 110,
+              resize: 'vertical',
+              borderRadius: 14,
+              border: `1px solid ${C.borderSoft}`,
+              background: C.bg,
+              color: C.ink,
+              fontFamily: G_FONT,
+              fontSize: 14,
+              outline: 'none',
+              padding: '11px 12px',
+            }}
           />
           <button
-          type="button"
-          onClick={send}
-          disabled={!selected || !draft.trim() || sending}
-          aria-label="Criar conversa"
-          style={{
-            all: 'unset',
-            cursor: !selected || !draft.trim() || sending ? 'not-allowed' : 'pointer',
-            width: 42,
-            height: 42,
-            borderRadius: '50%',
-            background: !selected || !draft.trim() || sending ? C.borderSoft : C.ink,
-            color: !selected || !draft.trim() || sending ? C.faint : C.bg,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
+            type="button"
+            onClick={send}
+            disabled={!selected || !draft.trim() || sending}
+            aria-label="Criar conversa"
+            style={{
+              all: 'unset',
+              cursor: !selected || !draft.trim() || sending ? 'not-allowed' : 'pointer',
+              width: 42,
+              height: 42,
+              borderRadius: '50%',
+              background: !selected || !draft.trim() || sending ? C.borderSoft : C.ink,
+              color: !selected || !draft.trim() || sending ? C.faint : C.bg,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
           >
             {Icon.arrow(20)}
           </button>
@@ -730,10 +754,7 @@ export function ScreenStaffMessageThread({
   useManagerEvents(
     tenantSlug,
     (event) => {
-      if (
-        event.event !== 'staff_message.received'
-        && event.event !== 'staff_message.read'
-      ) {
+      if (event.event !== 'staff_message.received' && event.event !== 'staff_message.read') {
         return;
       }
       if (getStaffEventThreadId(event.payload) === threadId) {
@@ -749,10 +770,13 @@ export function ScreenStaffMessageThread({
     setSending(true);
     setError('');
     try {
-      const msg = await api.staffMessages.send({
-        threadId,
-        body: content,
-      }, myStaffId ? { staffId: myStaffId } : undefined);
+      const msg = await api.staffMessages.send(
+        {
+          threadId,
+          body: content,
+        },
+        myStaffId ? { staffId: myStaffId } : undefined,
+      );
       setMessages((prev) => [...prev, msg]);
       setDraft('');
     } catch (err) {
@@ -762,10 +786,7 @@ export function ScreenStaffMessageThread({
     }
   };
 
-  const decideShiftEnd = async (
-    requestId: string,
-    decision: 'approved' | 'rejected',
-  ) => {
+  const decideShiftEnd = async (requestId: string, decision: 'approved' | 'rejected') => {
     if (pendingDecisionId) return;
     setPendingDecisionId(requestId);
     setError('');
@@ -793,7 +814,14 @@ export function ScreenStaffMessageThread({
       <MTopBar
         dark={dark}
         title="Conversa"
-        left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.back()} ariaLabel="Voltar" />}
+        left={
+          <GIconBtn
+            dark={dark}
+            icon={Icon.back(20)}
+            onClick={() => router.back()}
+            ariaLabel="Voltar"
+          />
+        }
       />
       <div
         style={{
@@ -825,19 +853,19 @@ export function ScreenStaffMessageThread({
             const isMine = m.fromRole === 'staff' && !!myStaffId && m.staffId === myStaffId;
             const content = m.content ?? (m as unknown as { body?: string }).body ?? '';
             const shiftEndRequestId = extractShiftEndRequestId(content);
-            const hasLaterTokenlessDecision = messages
-              .slice(index + 1)
-              .some((message) => {
-                const laterContent =
-                  message.content ?? (message as unknown as { body?: string }).body ?? '';
-                return hasShiftEndDecision(laterContent) && !extractShiftEndRequestId(laterContent);
-              });
+            const hasLaterTokenlessDecision = messages.slice(index + 1).some((message) => {
+              const laterContent =
+                message.content ?? (message as unknown as { body?: string }).body ?? '';
+              return hasShiftEndDecision(laterContent) && !extractShiftEndRequestId(laterContent);
+            });
             const shiftEndRequestDecided =
               !!shiftEndRequestId &&
               (decidedShiftEndRequests.has(shiftEndRequestId) || hasLaterTokenlessDecision);
             const visibleContent = cleanSystemToken(content);
             const createdAt =
-              m.createdAt ?? (m as unknown as { sentAt?: string }).sentAt ?? new Date().toISOString();
+              m.createdAt ??
+              (m as unknown as { sentAt?: string }).sentAt ??
+              new Date().toISOString();
             return (
               <div
                 key={m.id}
@@ -863,7 +891,11 @@ export function ScreenStaffMessageThread({
                     opacity: 0.7,
                   }}
                 >
-                  {m.staffName ?? (m.fromRole === 'staff' ? 'Staff' : 'Cliente')} · {new Date(createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                  {m.staffName ?? (m.fromRole === 'staff' ? 'Staff' : 'Cliente')} ·{' '}
+                  {new Date(createdAt).toLocaleTimeString('pt-BR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
                 </div>
                 <div>{visibleContent}</div>
                 {shiftEndRequestId && !shiftEndRequestDecided && (
@@ -953,43 +985,43 @@ export function ScreenStaffMessageThread({
           }}
         >
           <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value.slice(0, 2000))}
-          placeholder="Responder..."
-          rows={1}
-          style={{
-            flex: 1,
-            minHeight: 42,
-            maxHeight: 110,
-            resize: 'vertical',
-            borderRadius: 14,
-            border: `1px solid ${C.borderSoft}`,
-            background: C.bg,
-            color: C.ink,
-            fontFamily: G_FONT,
-            fontSize: 14,
-            outline: 'none',
-            padding: '11px 12px',
-          }}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value.slice(0, 2000))}
+            placeholder="Responder..."
+            rows={1}
+            style={{
+              flex: 1,
+              minHeight: 42,
+              maxHeight: 110,
+              resize: 'vertical',
+              borderRadius: 14,
+              border: `1px solid ${C.borderSoft}`,
+              background: C.bg,
+              color: C.ink,
+              fontFamily: G_FONT,
+              fontSize: 14,
+              outline: 'none',
+              padding: '11px 12px',
+            }}
           />
           <button
-          type="button"
-          onClick={send}
-          disabled={!draft.trim() || sending}
-          aria-label="Enviar resposta"
-          style={{
-            all: 'unset',
-            cursor: !draft.trim() || sending ? 'not-allowed' : 'pointer',
-            width: 42,
-            height: 42,
-            borderRadius: '50%',
-            background: !draft.trim() || sending ? C.borderSoft : C.ink,
-            color: !draft.trim() || sending ? C.faint : C.bg,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
+            type="button"
+            onClick={send}
+            disabled={!draft.trim() || sending}
+            aria-label="Enviar resposta"
+            style={{
+              all: 'unset',
+              cursor: !draft.trim() || sending ? 'not-allowed' : 'pointer',
+              width: 42,
+              height: 42,
+              borderRadius: '50%',
+              background: !draft.trim() || sending ? C.borderSoft : C.ink,
+              color: !draft.trim() || sending ? C.faint : C.bg,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
           >
             {Icon.arrow(20)}
           </button>
@@ -1065,7 +1097,14 @@ export function ScreenCustomerStaffMessageThread({
       <MTopBar
         dark={dark}
         title="Mensagem do cliente"
-        left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.back()} ariaLabel="Voltar" />}
+        left={
+          <GIconBtn
+            dark={dark}
+            icon={Icon.back(20)}
+            onClick={() => router.back()}
+            ariaLabel="Voltar"
+          />
+        }
       />
       <div
         style={{
@@ -1120,7 +1159,11 @@ export function ScreenCustomerStaffMessageThread({
                     opacity: 0.7,
                   }}
                 >
-                  {isStaff ? m.fromName ?? 'Staff' : 'Cliente'} · {new Date(m.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                  {isStaff ? (m.fromName ?? 'Staff') : 'Cliente'} ·{' '}
+                  {new Date(m.createdAt).toLocaleTimeString('pt-BR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
                 </div>
                 <div>{m.content}</div>
               </div>
@@ -1163,43 +1206,43 @@ export function ScreenCustomerStaffMessageThread({
           }}
         >
           <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value.slice(0, 2000))}
-          placeholder="Responder ao cliente..."
-          rows={1}
-          style={{
-            flex: 1,
-            minHeight: 42,
-            maxHeight: 110,
-            resize: 'vertical',
-            borderRadius: 14,
-            border: `1px solid ${C.borderSoft}`,
-            background: C.bg,
-            color: C.ink,
-            fontFamily: G_FONT,
-            fontSize: 14,
-            outline: 'none',
-            padding: '11px 12px',
-          }}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value.slice(0, 2000))}
+            placeholder="Responder ao cliente..."
+            rows={1}
+            style={{
+              flex: 1,
+              minHeight: 42,
+              maxHeight: 110,
+              resize: 'vertical',
+              borderRadius: 14,
+              border: `1px solid ${C.borderSoft}`,
+              background: C.bg,
+              color: C.ink,
+              fontFamily: G_FONT,
+              fontSize: 14,
+              outline: 'none',
+              padding: '11px 12px',
+            }}
           />
           <button
-          type="button"
-          onClick={send}
-          disabled={!draft.trim() || sending}
-          aria-label="Enviar resposta"
-          style={{
-            all: 'unset',
-            cursor: !draft.trim() || sending ? 'not-allowed' : 'pointer',
-            width: 42,
-            height: 42,
-            borderRadius: '50%',
-            background: !draft.trim() || sending ? C.borderSoft : C.ink,
-            color: !draft.trim() || sending ? C.faint : C.bg,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
+            type="button"
+            onClick={send}
+            disabled={!draft.trim() || sending}
+            aria-label="Enviar resposta"
+            style={{
+              all: 'unset',
+              cursor: !draft.trim() || sending ? 'not-allowed' : 'pointer',
+              width: 42,
+              height: 42,
+              borderRadius: '50%',
+              background: !draft.trim() || sending ? C.borderSoft : C.ink,
+              color: !draft.trim() || sending ? C.faint : C.bg,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
           >
             {Icon.arrow(20)}
           </button>

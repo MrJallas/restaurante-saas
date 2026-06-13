@@ -56,15 +56,10 @@ export async function runAssistantHistoryAssertions(): Promise<void> {
     {} as unknown as import('../../infra/redis/redis.service').RedisService,
   );
 
-  const history = await service.getHistoryWithToolCalls(
-    tableSessionId,
-    customerId,
-  );
+  const history = await service.getHistoryWithToolCalls(tableSessionId, customerId);
 
   if (capturedParams[0] !== tableSessionId || capturedParams[1] !== customerId) {
-    throw new Error(
-      `assistant history params mismatch: ${JSON.stringify(capturedParams)}`,
-    );
+    throw new Error(`assistant history params mismatch: ${JSON.stringify(capturedParams)}`);
   }
   if (!capturedSql.includes('LEFT JOIN staff')) {
     throw new Error('assistant history no longer resolves staff metadata.');
@@ -93,9 +88,7 @@ export async function runAssistantHistoryAssertions(): Promise<void> {
     throw new Error(`staffRole label was not resolved: ${staffMessage.staffRole}`);
   }
 
-  const emptyUser = history.find(
-    (m) => m.role === 'user' && m.content.trim().length === 0,
-  );
+  const emptyUser = history.find((m) => m.role === 'user' && m.content.trim().length === 0);
   if (emptyUser) {
     throw new Error('assistant history emitted an empty user bubble.');
   }

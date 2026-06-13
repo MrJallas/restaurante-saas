@@ -139,9 +139,7 @@ export function ScreenWaiterDeliveryDetail({
     }
     const cols = Math.max(...positioned.map((t) => t.map_x as number)) + 1;
     const rows = Math.max(...positioned.map((t) => t.map_y as number)) + 1;
-    const zoneNames = Array.from(
-      new Set(positioned.map((t) => t.zone_name ?? SEM_ZONA)),
-    );
+    const zoneNames = Array.from(new Set(positioned.map((t) => t.zone_name ?? SEM_ZONA)));
     return { positioned, cols, rows, zoneNames };
   }, [tables, delivery]);
 
@@ -253,11 +251,10 @@ export function ScreenWaiterDeliveryDetail({
                 lineHeight: 1.5,
               }}
             >
-              {loadError ?? (
-                deliveredOk
+              {loadError ??
+                (deliveredOk
                   ? 'Entrega confirmada.'
-                  : 'Entrega não encontrada — pode já ter sido concluída ou cancelada.'
-              )}
+                  : 'Entrega não encontrada — pode já ter sido concluída ou cancelada.')}
             </div>
           </div>
         ) : (
@@ -333,7 +330,8 @@ export function ScreenWaiterDeliveryDetail({
                     fontWeight: 600,
                   }}
                 >
-                  {Icon.user(14)} Levado por {delivery.claimed_by_name ?? 'outro garçom'} · confirme se foi você quem entregou
+                  {Icon.user(14)} Levado por {delivery.claimed_by_name ?? 'outro garçom'} · confirme
+                  se foi você quem entregou
                 </div>
               )}
             </div>
@@ -474,7 +472,10 @@ export function ScreenWaiterDeliveryDetail({
                       mesa da entrega
                     </span>
                     {floorPlan.zoneNames.map((zn, i) => (
-                      <span key={zn} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <span
+                        key={zn}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                      >
                         <span
                           style={{
                             width: 10,

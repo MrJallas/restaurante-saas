@@ -171,7 +171,9 @@ export function ScreenManagerOpsCriticos({ dark, tenantSlug }: ScreenManagerOpsC
           >
             {items.length > 0 ? '· RESOLVER AGORA' : '· TUDO NO RITMO'}
           </div>
-          <div style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}>
+          <div
+            style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}
+          >
             {items.length > 0
               ? `${items.length} alertas com cliente esperando além da meta.`
               : 'Sem alertas críticos nesse momento.'}
@@ -187,7 +189,11 @@ export function ScreenManagerOpsCriticos({ dark, tenantSlug }: ScreenManagerOpsC
                   key={a.id}
                   C={C}
                   alert={a}
-                  onAction0={() => router.push(`/manager?slug=${tenantSlug}&replyComplaint=${encodeURIComponent(a.id)}`)}
+                  onAction0={() =>
+                    router.push(
+                      `/manager?slug=${tenantSlug}&replyComplaint=${encodeURIComponent(a.id)}`,
+                    )
+                  }
                   onAction1={() => resolveComplaint(a.id)}
                 />
               ))}
@@ -198,7 +204,9 @@ export function ScreenManagerOpsCriticos({ dark, tenantSlug }: ScreenManagerOpsC
               <ActionPill
                 C={C}
                 icon={Icon.bell(13)}
-                onClick={() => router.push(slugQs ? `/manager/mensagens?slug=${slugQs}` : '/manager/mensagens')}
+                onClick={() =>
+                  router.push(slugQs ? `/manager/mensagens?slug=${slugQs}` : '/manager/mensagens')
+                }
               >
                 Avisar todos os garçons da praça
               </ActionPill>
@@ -208,8 +216,8 @@ export function ScreenManagerOpsCriticos({ dark, tenantSlug }: ScreenManagerOpsC
 
         <div style={{ height: 18 }} />
         <Formula C={C}>
-          Pedidos ou chamados que <b>excederam a meta de tempo</b> · meta varia por tipo (12 min cozinha · 5 min
-          chamado · etc).
+          Pedidos ou chamados que <b>excederam a meta de tempo</b> · meta varia por tipo (12 min
+          cozinha · 5 min chamado · etc).
         </Formula>
       </div>
 
@@ -425,7 +433,9 @@ function Formula({ C, children }: { C: ReturnType<typeof useG>; children: React.
       >
         Como esse número é calculado
       </div>
-      <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>{children}</div>
+      <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, lineHeight: 1.55 }}>
+        {children}
+      </div>
     </div>
   );
 }

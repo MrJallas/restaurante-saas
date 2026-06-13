@@ -18,7 +18,9 @@ function CustomerThreadInner() {
 
 export default function ManagerCustomerMessageThreadPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando...</div>}>
+    <Suspense
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando...</div>}
+    >
       <CustomerThreadInner />
     </Suspense>
   );

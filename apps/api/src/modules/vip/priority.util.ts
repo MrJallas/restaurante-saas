@@ -1,8 +1,4 @@
-import type {
-  Priority,
-  PriorityCallInput,
-  SessionFlag,
-} from '@restaurant/shared-types';
+import type { Priority, PriorityCallInput, SessionFlag } from '@restaurant/shared-types';
 
 /** Saturation thresholds — kept locally to avoid leaking config across modules. */
 const HIGH_THRESHOLD = 0.8;
@@ -23,10 +19,7 @@ export interface StationLoad {
  *
  * `flags` is the set on `table_sessions.flags` (text[]) for the source table.
  */
-export function priorityOf(
-  call: PriorityCallInput,
-  loads: Record<string, StationLoad>,
-): Priority {
+export function priorityOf(call: PriorityCallInput, loads: Record<string, StationLoad>): Priority {
   const flags: SessionFlag[] = call.flags ?? [];
 
   // Absolute overrides first — VIP/allergy outrank saturation always.
@@ -48,10 +41,7 @@ export function priorityOf(
  * Tie-break ordering for multiple `high` calls. Lower index = higher priority.
  * Returns negative when `a` should come before `b`, positive when after.
  */
-export function compareHighCalls(
-  a: PriorityCallInput,
-  b: PriorityCallInput,
-): number {
+export function compareHighCalls(a: PriorityCallInput, b: PriorityCallInput): number {
   const aFlags = a.flags ?? [];
   const bFlags = b.flags ?? [];
 

@@ -187,7 +187,12 @@ export function OverlaySalonMap({
           className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full border border-border-soft bg-bg text-ink hover:bg-surface"
         >
           <svg width="13" height="13" viewBox="0 0 18 18" fill="none" aria-hidden>
-            <path d="M5 5l8 8M13 5l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            <path
+              d="M5 5l8 8M13 5l-8 8"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
           </svg>
         </button>
 
@@ -289,7 +294,9 @@ function SalonTableCell({ table, isSelected, onTap }: SalonTableCellProps) {
           {table.num}
         </div>
         <div className="font-mono text-[8.5px] font-bold uppercase leading-tight tracking-[1.1px] opacity-90">
-          Você tá<br />aqui
+          Você tá
+          <br />
+          aqui
         </div>
       </div>
     );
@@ -331,7 +338,13 @@ function SalonTableCell({ table, isSelected, onTap }: SalonTableCellProps) {
         {isSelected && (
           <div className="flex h-4 w-4 items-center justify-center rounded-full bg-ink text-white">
             <svg width="10" height="10" viewBox="0 0 18 18" fill="none" aria-hidden>
-              <path d="M3.5 9.5l3.5 3.5L14 5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+              <path
+                d="M3.5 9.5l3.5 3.5L14 5"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
           </div>
         )}

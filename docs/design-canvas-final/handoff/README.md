@@ -23,19 +23,19 @@ Telas de monitoramento (Kitchen Display System) para serem exibidas em TVs na co
 type OrderStatus = 'novo' | 'preparando' | 'atrasado' | 'pronto';
 
 type KitchenItem = {
-  q: number;          // quantidade
-  n: string;          // nome do prato
+  q: number; // quantidade
+  n: string; // nome do prato
   note: string | null; // observação livre digitada pelo cliente
-  alert?: boolean;    // se true → observação destacada em vermelho (alergia, restrição grave)
+  alert?: boolean; // se true → observação destacada em vermelho (alergia, restrição grave)
   station: 'entradas' | 'massas' | 'grelha' | 'sobremesas';
 };
 
 type BarItem = { q: number; n: string; note: string | null };
 
 type Order = {
-  id: string;         // ex: '#0142' — identificador curto, fácil de gritar
-  table: string;      // ex: 'Mesa 12' ou 'Balcão 02'
-  when: string;       // 'HH:MM' de quando foi recebido
+  id: string; // ex: '#0142' — identificador curto, fácil de gritar
+  table: string; // ex: 'Mesa 12' ou 'Balcão 02'
+  when: string; // 'HH:MM' de quando foi recebido
   elapsedMin: number; // minutos decorridos desde o recebimento (calcular no cliente)
   status: OrderStatus;
   items: KitchenItem[] | BarItem[];
@@ -73,12 +73,12 @@ const isLate = order.status === 'preparando' && elapsedMin > 12;
 
 O texto e a ação **mudam conforme o status**:
 
-| Status | Texto | Ação esperada (PATCH /orders/:id) |
-|---|---|---|
-| `novo` | ▶ **Iniciar preparo** | `{ status: 'preparando', startedBy: <userId>, startedAt: <now> }` |
-| `preparando` / `atrasado` | **Marcar pronto** | `{ status: 'pronto', readyAt: <now> }` |
-| `pronto` (cozinha) | ✓ **Servir agora** | `{ status: 'servido', servedAt: <now> }` → some do KDS |
-| `pronto` (bar) | ✓ **Entregar** | idem |
+| Status                    | Texto                 | Ação esperada (PATCH /orders/:id)                                 |
+| ------------------------- | --------------------- | ----------------------------------------------------------------- |
+| `novo`                    | ▶ **Iniciar preparo** | `{ status: 'preparando', startedBy: <userId>, startedAt: <now> }` |
+| `preparando` / `atrasado` | **Marcar pronto**     | `{ status: 'pronto', readyAt: <now> }`                            |
+| `pronto` (cozinha)        | ✓ **Servir agora**    | `{ status: 'servido', servedAt: <now> }` → some do KDS            |
+| `pronto` (bar)            | ✓ **Entregar**        | idem                                                              |
 
 ### Botão `⋯` (três pontos) — menu de ações secundárias
 
@@ -109,7 +109,7 @@ Cliques errados são frequentes em ambiente de cozinha (mãos molhadas, pressa, 
 ### Estratégia: undo de 5 segundos + histórico
 
 1. Quando o cozinheiro clica em **Iniciar preparo** / **Marcar pronto** / **Servir agora**, a transição acontece imediatamente, mas:
-   - Aparece um **toast/snackbar** no canto inferior: *"Pedido #0142 iniciado · **Desfazer** (5s)"*
+   - Aparece um **toast/snackbar** no canto inferior: _"Pedido #0142 iniciado · **Desfazer** (5s)"_
    - Durante 5 segundos, clicar em "Desfazer" reverte o status sem registrar penalidade
    - Após 5s, o snackbar some e o evento é "consolidado"
 
@@ -120,12 +120,12 @@ Cliques errados são frequentes em ambiente de cozinha (mãos molhadas, pressa, 
 
 ### Regras de transição reversa
 
-| De | Pode voltar para | Observação |
-|---|---|---|
-| `preparando` | `novo` | Reverte `startedAt` e `startedBy` |
-| `pronto` | `preparando` | Reverte `readyAt`. Comum: cozinheiro percebeu que faltou um item |
-| `servido` | `pronto` | Pedido reaparece no KDS. Garçom errou de mesa |
-| `cancelado` | (estado anterior) | Apenas gerente pode reverter cancelamento |
+| De           | Pode voltar para  | Observação                                                       |
+| ------------ | ----------------- | ---------------------------------------------------------------- |
+| `preparando` | `novo`            | Reverte `startedAt` e `startedBy`                                |
+| `pronto`     | `preparando`      | Reverte `readyAt`. Comum: cozinheiro percebeu que faltou um item |
+| `servido`    | `pronto`          | Pedido reaparece no KDS. Garçom errou de mesa                    |
+| `cancelado`  | (estado anterior) | Apenas gerente pode reverter cancelamento                        |
 
 ### O que **não** deve ser revertível
 
@@ -134,7 +134,7 @@ Cliques errados são frequentes em ambiente de cozinha (mãos molhadas, pressa, 
 
 ### Multi-usuário
 
-Mais de uma pessoa pode estar mexendo na mesma TV (ou em TVs diferentes da mesma cozinha). Use **optimistic locking** ou **last-write-wins** com um pequeno banner se outro usuário alterou o pedido nos últimos 2s: *"Rodrigo iniciou este pedido há 1s"*.
+Mais de uma pessoa pode estar mexendo na mesma TV (ou em TVs diferentes da mesma cozinha). Use **optimistic locking** ou **last-write-wins** com um pequeno banner se outro usuário alterou o pedido nos últimos 2s: _"Rodrigo iniciou este pedido há 1s"_.
 
 ---
 
@@ -155,7 +155,7 @@ setInterval(() => forceRerender(), 30000);
 // 3. Ações do usuário fazem PATCH otimista + emitem via WebSocket
 async function updateOrderStatus(orderId, newStatus) {
   // optimistic update local
-  setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+  setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o)));
   // envia ao backend
   try {
     await fetch(`/api/orders/${orderId}`, {
@@ -185,6 +185,7 @@ order_paused     — congelar contador
 ## Comportamentos extras sugeridos
 
 ### Som + flash
+
 - **Pedido novo** entrou: bipe curto + flash branco no card por 500ms
 - **Pedido vira atrasado**: alarme sutil (bipe duplo) — não tocar repetidamente, só uma vez por transição
 - **Pedido pronto há mais de 5min sem ser servido**: alarme — está esfriando
@@ -192,16 +193,20 @@ order_paused     — congelar contador
 Volume e ativação devem ser configuráveis (cozinha barulhenta vs. bar mais silencioso).
 
 ### Auto-arquivar
+
 - Pedidos `servido` somem do KDS após 10s (animação fade-out)
 - Histórico fica disponível em `/kds/history` (tela separada, não documentada aqui)
 
 ### Filtro por estação (cozinha)
+
 Acima do grid, adicionar chips de estação (`Todas · Massas · Grelha · Entradas · Sobremesas`). Útil quando há mais de uma TV na cozinha — uma para cada estação.
 
 ### Modo noturno
+
 Inverter para fundo escuro (`#0a0a0a`) e cards com bordas claras. Útil em ambientes com pouca luz onde o branco brilha demais.
 
 ### Drag-and-drop para reordenar prioridade
+
 Permitir que o gerente arraste cards para reordenar — útil quando uma mesa VIP precisa ser priorizada.
 
 ---

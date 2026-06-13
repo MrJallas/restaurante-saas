@@ -36,8 +36,7 @@ function StaffEditInner() {
   const route = useParams<{ id: string }>();
   const params = useSearchParams();
   const dark = params.get('dark') === '1';
-  const slug =
-    params.get('slug') || process.env.NEXT_PUBLIC_TENANT_SLUG || 'demo';
+  const slug = params.get('slug') || process.env.NEXT_PUBLIC_TENANT_SLUG || 'demo';
   const staffId = route?.id ?? '';
 
   const [seed, setSeed] = useState<StaffFormSeed | null>(null);
@@ -72,9 +71,7 @@ function StaffEditInner() {
   }, [slug, staffId]);
 
   if (loading) {
-    return (
-      <div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>
-    );
+    return <div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>;
   }
   if (!seed) {
     return (
@@ -98,9 +95,7 @@ function StaffEditInner() {
 export default function ManagerStaffEditPage() {
   return (
     <Suspense
-      fallback={
-        <div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>
-      }
+      fallback={<div style={{ padding: 24, fontFamily: 'Inter, sans-serif' }}>Carregando…</div>}
     >
       <StaffEditInner />
     </Suspense>

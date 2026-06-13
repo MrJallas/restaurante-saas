@@ -14,6 +14,7 @@ Você é o orquestrador de uma rodada de correção. O E2E anterior terminou com
 **Sua tarefa:** disparar 6 subagentes em **paralelo** (single message com 6 Agent tool calls, todos com `run_in_background=true`). Cada subagent recebe um prompt self-contained, cria branch própria `fix/<scope>`, implementa, roda validação local e abre PR. Depois você merge-os sequencialmente na ordem 1→2→3→4→5→6 (essa é a ordem de risco — 1 destrava os outros).
 
 **Convenções obrigatórias** (passar pra cada subagent):
+
 - Branch: `fix/<scope>` a partir de `main` atualizado.
 - Commit/PR: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
 - Validação local antes do PR: `npm run lint`, `npx tsc --noEmit -p <tsconfig do app afetado>`, `cd <app> && npx next build` quando aplicável; pra ai-service, `python -m pytest`.
@@ -31,10 +32,12 @@ Você é o orquestrador de uma rodada de correção. O E2E anterior terminou com
 Implementa estes 5 fixes pequenos no mesmo PR:
 
 1. **CORS missing :3002** (P0 #1) — adiciona `http://localhost:3002` em `CORS_ORIGINS` (env do `apps/api`). Conferir `apps/api/.env.example` e atualizar também. Validar com:
+
    ```
    curl -i -X OPTIONS http://localhost:3001/api/restaurant_dev/zone-pauses \
      -H "Origin: http://localhost:3002" -H "Access-Control-Request-Method: GET"
    ```
+
    Esperado: `204` com `Access-Control-Allow-Origin: http://localhost:3002`.
 
 2. **MONGO_URL vs MONGODB_URI** (P0 #3) — em `apps/api/src/modules/chat-history/mongo.service.ts` (ou onde a conexão Mongo é criada), aceitar **fallback**: `process.env.MONGODB_URI ?? process.env.MONGO_URL`. Não remover MONGO_URL pra não quebrar dev existente. Atualizar `.env.example`.
@@ -57,6 +60,7 @@ PR title: `fix(integration): CORS + Mongo env + staff-role header + KDS guard (P
 **P0 #2** — `useManagerEvents`, `useWaiterEvents`, `useHostEvents` (em `apps/web-staff/src/hooks/`) hoje usam raw `WebSocket` em `ws://...:3001/ws` (404). API serve Socket.IO em `/socket.io/`. Reescreva os 3 hooks usando `socket.io-client`.
 
 Requisitos:
+
 - Reusar `EventsGateway` server-side (`apps/api/src/events/events.gateway.ts`) — não mudar contrato de eventos.
 - Auth: passar `staffId`/`tenantSlug` no `auth` do socket connect.
 - Reconnect com backoff (defaults do socket.io-client basta).
@@ -78,6 +82,7 @@ PR title: `fix(web-staff): migrate WS hooks from raw to socket.io-client + add s
 **P0 #4** — `qr.query()` em UPDATE/DELETE do `pg` retorna `[rows, affectedCount]`, não `rows[]` direto. 7 endpoints fazem destructuring errado.
 
 Endpoints afetados (encontre cada um e corrige):
+
 - `complaints/:id/respond` — `apps/api/src/modules/complaints/complaints.service.ts`
 - `zone-pauses/:id/end` — `apps/api/src/modules/zone-pause/`
 - `late-arrival-requests/:id/approve` — `apps/api/src/modules/late-arrival/`
@@ -86,6 +91,7 @@ Endpoints afetados (encontre cada um e corrige):
 - 2 outros — fazer `grep -rn "qr.query" apps/api/src/modules/` e auditar todos os UPDATE/DELETE.
 
 Padrão correto:
+
 ```ts
 const result = await qr.query(`UPDATE ... RETURNING *`);
 const rows = result[0]; // não `const [rows] = result` — confere com runtime
@@ -132,7 +138,7 @@ PR title: `fix(ai-service): tool invocation + 4 tool paths + api_client wire + c
 
 Resolver 1 P0 + 3 P1:
 
-1. **P0 #13 Customer guard ausente** — telas que dependem de `customerId` mostram mensagem passiva "Faça login na próxima visita" em vez de redirecionar. Adicionar guard que `router.replace(\`/${slug}/identify\`)` quando `!session.customerId` em:
+1. **P0 #13 Customer guard ausente** — telas que dependem de `customerId` mostram mensagem passiva "Faça login na próxima visita" em vez de redirecionar. Adicionar guard que `router.replace(\`/${slug}/identify\`)`quando`!session.customerId` em:
    - `ScreenCustomerChatHistory` (`apps/web-customer/src/screens/feedback-and-history/ScreenCustomerChatHistory.tsx:183`)
    - `/{slug}/complaints` (lista) — `apps/web-customer/src/app/[slug]/complaints/page.tsx`
    - `/{slug}/orders/[orderId]/rating`

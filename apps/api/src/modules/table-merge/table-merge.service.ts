@@ -1,10 +1,4 @@
-import {
-  Injectable,
-  HttpException,
-  HttpStatus,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, Logger, Optional } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -236,9 +230,7 @@ export class TableMergeService {
       throw new HttpException(payload, HttpStatus.TOO_MANY_REQUESTS);
     }
 
-    const ttl = new Date(
-      Date.now() + REQUEST_TTL_SECONDS * 1000,
-    ).toISOString();
+    const ttl = new Date(Date.now() + REQUEST_TTL_SECONDS * 1000).toISOString();
 
     const rows = (await this.tenantConn.query(
       `INSERT INTO table_merge_requests
@@ -284,9 +276,7 @@ export class TableMergeService {
     return result;
   }
 
-  private async resolveSessionById(
-    sessionId: string,
-  ): Promise<SessionResolution | null> {
+  private async resolveSessionById(sessionId: string): Promise<SessionResolution | null> {
     const rows = (await this.tenantConn.query(
       `SELECT
          ts.id AS session_id,
@@ -366,10 +356,7 @@ export class TableMergeService {
     retryAfterSeconds: number,
   ): string {
     const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
-    const target =
-      details.targetTableNumber > 0
-        ? ` com a mesa ${details.targetTableNumber}`
-        : '';
+    const target = details.targetTableNumber > 0 ? ` com a mesa ${details.targetTableNumber}` : '';
     return `Essa tentativa${target} entrou em pausa. Tente de novo em ${minutes} min.`;
   }
 
@@ -404,7 +391,8 @@ export class TableMergeService {
           ? Number(input.targetTableNumber)
           : typeof input.targetTableLabel === 'number'
             ? input.targetTableLabel
-            : typeof input.targetTableLabel === 'string' && /^\d+$/.test(input.targetTableLabel.trim())
+            : typeof input.targetTableLabel === 'string' &&
+                /^\d+$/.test(input.targetTableLabel.trim())
               ? Number(input.targetTableLabel)
               : null;
     const targetLabel =
@@ -603,12 +591,7 @@ export class TableMergeService {
     return result;
   }
 
-  async reject(
-    id: string,
-    decidedByCustomerId?: string,
-    reason?: string,
-    slug?: string,
-  ) {
+  async reject(id: string, decidedByCustomerId?: string, reason?: string, slug?: string) {
     // Round 14 (P1-NEW-3): host check espelhando approve. Antes
     // qualquer customer (mesmo non-host de uma das mesas) rejeitava o
     // request unilateralmente, instalando cooldown de 10min que
@@ -677,9 +660,7 @@ export class TableMergeService {
       // dropadas no próximo release após confirmar zero callers.
       const sourceId = row.source_table_session_id as string;
       const targetId = row.target_table_session_id as string;
-      const cooldownExpires = new Date(
-        Date.now() + COOLDOWN_MINUTES * 60 * 1000,
-      ).toISOString();
+      const cooldownExpires = new Date(Date.now() + COOLDOWN_MINUTES * 60 * 1000).toISOString();
 
       const cooldownRows = (await tx.query(
         `INSERT INTO table_merge_cooldowns
@@ -778,10 +759,7 @@ export class TableMergeService {
     slug?: string,
   ) {
     if (input.sourceTableSessionId === input.targetTableSessionId) {
-      throw new HttpException(
-        'Nao da pra juntar a mesa com ela mesma.',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException('Nao da pra juntar a mesa com ela mesma.', HttpStatus.BAD_REQUEST);
     }
     if (!input.reason || !input.reason.trim()) {
       throw new HttpException(
@@ -799,11 +777,9 @@ export class TableMergeService {
         [input.sourceTableSessionId, input.targetTableSessionId],
       )) as Array<{ id: string; host_customer_id: string | null }>;
       const sourceHost =
-        sessionRows.find((r) => r.id === input.sourceTableSessionId)
-          ?.host_customer_id ?? null;
+        sessionRows.find((r) => r.id === input.sourceTableSessionId)?.host_customer_id ?? null;
       const targetHost =
-        sessionRows.find((r) => r.id === input.targetTableSessionId)
-          ?.host_customer_id ?? null;
+        sessionRows.find((r) => r.id === input.targetTableSessionId)?.host_customer_id ?? null;
 
       // 2. Cria escalation_chain pra audit (steps jsonb append).
       const chainStep = {
@@ -898,9 +874,7 @@ export class TableMergeService {
       params.push(filters.status === 'timeout' ? 'expired' : filters.status);
     }
     if (filters.tableSessionId) {
-      where.push(
-        `(mr.source_table_session_id = $${i} OR mr.target_table_session_id = $${i})`,
-      );
+      where.push(`(mr.source_table_session_id = $${i} OR mr.target_table_session_id = $${i})`);
       params.push(filters.tableSessionId);
       i++;
     }
@@ -928,9 +902,7 @@ export class TableMergeService {
               LEFT JOIN customers tgt_c ON tgt_c.id = tgt_ts.host_customer_id
                  ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
                  ORDER BY mr.created_at DESC LIMIT 100`;
-    const rows = (await this.tenantConn.query(sql, params)) as Array<
-      Record<string, unknown>
-    >;
+    const rows = (await this.tenantConn.query(sql, params)) as Array<Record<string, unknown>>;
     return rows.map((r) => this.mapRow(r));
   }
 
@@ -963,10 +935,7 @@ export class TableMergeService {
       [id],
     )) as Array<Record<string, unknown>>;
     if (!rows.length) {
-      throw new HttpException(
-        'Pedido de juncao nao encontrado.',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Pedido de juncao nao encontrado.', HttpStatus.NOT_FOUND);
     }
     return this.mapRow(rows[0]);
   }
@@ -978,8 +947,7 @@ export class TableMergeService {
       targetTableSessionId: row.target_table_session_id as string,
       requestingCustomerId: row.requesting_customer_id as string,
       targetCustomerId: (row.target_customer_id as string | null) ?? null,
-      decidedByCustomerId:
-        (row.decided_by_customer_id as string | null) ?? null,
+      decidedByCustomerId: (row.decided_by_customer_id as string | null) ?? null,
       status: row.status as string,
       originTableNumber: Number(row.origin_table_number ?? 0),
       targetTableNumber: Number(row.target_table_number ?? 0),

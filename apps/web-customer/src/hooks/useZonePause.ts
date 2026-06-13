@@ -58,9 +58,8 @@ export function useZonePause(
           `/${slug}/zone-pauses?active=true`,
         );
         const list = Array.isArray(data) ? data : (data.items ?? []);
-        const first = list.find(
-          (p) => p && p.endsAt && new Date(p.endsAt).getTime() > Date.now(),
-        ) ?? null;
+        const first =
+          list.find((p) => p && p.endsAt && new Date(p.endsAt).getTime() > Date.now()) ?? null;
         if (!cancelled) setPause(first);
       } catch {
         // 401/403/network — silenciamos. ETA fallback ja e o do BE

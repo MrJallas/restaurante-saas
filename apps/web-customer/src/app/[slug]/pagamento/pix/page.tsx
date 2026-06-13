@@ -22,7 +22,9 @@ interface PaymentData {
 function formatCountdown(ms: number): string {
   if (ms <= 0) return '00:00';
   const total = Math.floor(ms / 1000);
-  const m = Math.floor(total / 60).toString().padStart(2, '0');
+  const m = Math.floor(total / 60)
+    .toString()
+    .padStart(2, '0');
   const s = (total % 60).toString().padStart(2, '0');
   return `${m}:${s}`;
 }
@@ -149,9 +151,7 @@ export default function PagamentoPixPage() {
           <div className="mb-1 text-[11px] font-semibold uppercase tracking-[1.5px] text-mute">
             Aguardando pagamento
           </div>
-          <div className="text-[24px] font-semibold tracking-[-0.02em]">
-            Escaneie o QR Code
-          </div>
+          <div className="text-[24px] font-semibold tracking-[-0.02em]">Escaneie o QR Code</div>
           <div className="mt-1 text-[13px] text-mute text-pretty">
             Abra o app do seu banco e aponte a câmera para o código.
           </div>
@@ -170,8 +170,7 @@ export default function PagamentoPixPage() {
           <div className="mb-4 flex items-center justify-center gap-1.5 text-[12px] text-mute">
             <span className="h-2 w-2 animate-blink rounded-full bg-ink" />
             <span>
-              Código expira em{' '}
-              <b className="text-ink tabular-nums">{remaining}</b>
+              Código expira em <b className="text-ink tabular-nums">{remaining}</b>
             </span>
           </div>
         )}
@@ -198,9 +197,7 @@ export default function PagamentoPixPage() {
               <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-[1px] text-mute">
                 Copia e cola
               </div>
-              <div className="truncate font-mono text-[11px] text-ink">
-                {copyCode}
-              </div>
+              <div className="truncate font-mono text-[11px] text-ink">{copyCode}</div>
             </div>
             <button
               type="button"

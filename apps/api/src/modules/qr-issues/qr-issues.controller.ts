@@ -1,22 +1,9 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  Post,
-  Query,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { IsIn, IsInt, IsOptional, IsString, IsUrl, Min } from 'class-validator';
 import type { Request } from 'express';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
-import {
-  QrIssueRow,
-  QrIssueStatus,
-  QrIssuesService,
-} from './qr-issues.service';
+import { QrIssueRow, QrIssueStatus, QrIssuesService } from './qr-issues.service';
 
 class QrIssueReportDto {
   @IsOptional()
@@ -54,10 +41,7 @@ export class QrIssuesController {
   @Post()
   @HttpCode(201)
   @UseGuards(StaffOrSessionGuard)
-  async report(
-    @Body() dto: QrIssueReportDto,
-    @Req() req: Request,
-  ): Promise<QrIssueRow> {
+  async report(@Body() dto: QrIssueReportDto, @Req() req: Request): Promise<QrIssueRow> {
     const reporterStaffId = this.callerResolver.tryGetStaffId(req);
     return this.service.create(dto, reporterStaffId);
   }
