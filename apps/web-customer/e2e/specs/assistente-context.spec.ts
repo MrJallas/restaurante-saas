@@ -201,6 +201,9 @@ test('chip/frase direta: rule-layer sem LLM com UX de IA (indicador + chips coer
   page,
 }) => {
   await newSession(page, { tableCode: 'QRTEST91' });
+  // Pedido ativo NESTA sessão (o newSession pre-release fecha a sessão do
+  // teste anterior) — necessário pra faixa de status fixa do chat.
+  await createConfirmedOrder(page);
   await page.goto(`/${SLUG}/assistente`, { waitUntil: 'networkidle' });
 
   const input = page.getByPlaceholder('Pergunte alguma coisa...');

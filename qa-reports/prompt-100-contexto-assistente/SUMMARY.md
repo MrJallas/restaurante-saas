@@ -60,25 +60,42 @@ Data: 2026-06-12 · Ambiente: stack docker dev (repo base em detached checkout d
   (iPhone 14/WebKit) antes e depois do fix.
 - `landing-eyebrow.png` — print único da landing com eyebrow de status.
 
+## Rodada 2 (2026-06-12, decisões do Caleb sobre os riscos da rodada 1)
+
+1. **Identidade por participante no WS (1-b, aprovada)** — gateway resolve
+   o cookie httpOnly `recognition_token` no handshake customer e define o
+   customerId da conexão (fallback: payload compartilhado). De quebra
+   caçamos uma CORRIDA PRÉ-EXISTENTE: o Socket.IO entrega `join:*` antes
+   do handleConnection async terminar — `join:customer` era rejeitado
+   lendo dados vazios e `join:session` entrava em room SEM auth (buraco
+   de segurança). Fix: `client.data.authReady` aguardado em todos os
+   joins + guard de authType. E2E agora cobre o caso forte: gerente
+   responde o HOST (não é o último attach) e só ele recebe.
+2. **Chips sem cache stale** — chave do pool com fingerprint dos DEFAULTS
+   (continuation + smart-suggestions + seeds): mudou código, refletiu na
+   hora.
+3. **Validação de alergia com LM Studio (qwen3-coder-30b)** — ver
+   `allergy-validation.md`: roteamento 100%; 2 fixes reais saíram dela
+   (allergens faltando no seed; filtro determinístico de glúten passou a
+   IGNORAR o texto do LLM — o modelo recomendou item com glúten declarado).
+   Guarda nova `_DIETARY_RESTRICTION_RE`: restrição alimentar nunca cai
+   no recommend genérico do rule-layer.
+4. **Faixa de status fixa no chat** (`order-status-strip`, sticky, mono
+   canon) — pedido do Caleb; ToolCallIndicator e eyebrow por bolha
+   continuam.
+5. **Sim iOS (parcial)** — geofence (2 prompts + retry) ✓, reconhecimento
+   por cookie ("Ana Pereira") ✓, home com os chips contextuais novos ✓
+   (`sim-ios-home-chips.png`). Varredura das demais telas interrompida
+   por reboot da máquina — cobertas pelo Playwright WebKit (iphone-14).
+
 ## Riscos restantes / pendências
 
-- **Realtime privado em mesa multi-cliente (pergunta aberta pro Caleb)**:
-  o token de sessão é compartilhado pela mesa e o payload Redis guarda UM
-  customerId (último welcome/identify). `join:customer` só autentica o
-  último attachado — um destinatário "antigo" recebe a resposta privada
-  do gerente no reload (history filtrado), mas pode não receber a bubble
-  em realtime. Resolver de verdade pede credencial por participante no
-  handshake WS (ex.: recognition_token). Registrado no MEMORY.md.
-- **Pools de chips com TTL 1h no Redis**: mudanças nos DEFAULTS do
-  continuation.py só aparecem no stack após flush de `continuation:*` ou
-  expiração do TTL (registrado no MEMORY.md).
-- **Negativas do regex validadas sem LLM local**: as 8 frases de
-  raciocínio foram comprovadamente roteadas pra rota LLM (503 sem
-  provider). A QUALIDADE da resposta do LLM pra essas frases não foi
-  re-validada nesta rodada (LM Studio desligado) — comportamento do
-  roteamento está coberto pela bateria pytest.
-- **Eyebrow em modo chat**: aparece nas bubbles de IA com tool dispatch
-  (canon "Assistente · agora" substituído pelo status quando há pedido
-  ativo). Bubbles de texto puro sem tool seguem sem eyebrow — mesmo
-  comportamento de antes.
+- **Vocabulário canônico de alérgenos** (allergy-validation.md): seed
+  mistura `leite`/`lactose`, `egg`/`ovo`; filtro determinístico cobre só
+  glúten. Estender quando houver enum canônico no cadastro do cardápio.
+- **Alergia a crustáceo vs peixe**: LLM recomenda peixe com ressalva
+  ("tem peixe, mas não camarão") — decidir se a regra de produto deve ser
+  mais conservadora.
+- **Eyebrow em modo chat**: bolhas de texto puro sem tool seguem sem
+  eyebrow (a faixa fixa nova cobre o status o tempo todo).
 

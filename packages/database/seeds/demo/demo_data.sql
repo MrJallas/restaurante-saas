@@ -130,16 +130,19 @@ ON CONFLICT (cpf) WHERE cpf IS NOT NULL DO UPDATE
 
 -- === Menu items ===
 -- (category ids from default_categories seed; fetch by name)
-INSERT INTO menu_items (category_id, name, short_description, long_description, price_cents, tags, ingredients, prep_time_minutes, is_featured, sort_order)
+-- Allergens declarados (achado da validacao de alergia 2026-06-12 com LLM:
+-- itens com gluten/lactose obvios estavam SEM allergens e entravam na
+-- recomendacao "sem gluten declarado" — o dado e a fronteira de seguranca).
+INSERT INTO menu_items (category_id, name, short_description, long_description, price_cents, tags, allergens, ingredients, prep_time_minutes, is_featured, sort_order)
 SELECT c.id, 'Bruschetta de Tomate', 'Pao italiano com tomate e manjericao',
        'Fatias de pao italiano tostadas cobertas com tomate fresco, manjericao e azeite extra virgem.',
-       1890, ARRAY['vegetariano'], ARRAY['pao','tomate','manjericao','azeite'], 10, true, 1
+       1890, ARRAY['vegetariano'], ARRAY['gluten'], ARRAY['pao','tomate','manjericao','azeite'], 10, true, 1
 FROM menu_categories c WHERE c.name = 'Entradas';
 
-INSERT INTO menu_items (category_id, name, short_description, long_description, price_cents, tags, ingredients, prep_time_minutes, sort_order)
+INSERT INTO menu_items (category_id, name, short_description, long_description, price_cents, tags, allergens, ingredients, prep_time_minutes, sort_order)
 SELECT c.id, 'Bolinho de Bacalhau', '6 unidades, crocante por fora',
        'Bolinhos tradicionais portugueses de bacalhau com batata, servidos com molho tartaro.',
-       2490, ARRAY['peixe'], ARRAY['bacalhau','batata','ovo','cebola'], 15, 2
+       2490, ARRAY['peixe'], ARRAY['gluten','peixe','ovo'], ARRAY['bacalhau','batata','ovo','cebola'], 15, 2
 FROM menu_categories c WHERE c.name = 'Entradas';
 
 INSERT INTO menu_items (category_id, name, short_description, long_description, price_cents, tags, allergens, ingredients, prep_time_minutes, is_featured, sort_order)
@@ -177,8 +180,8 @@ SELECT c.id, 'Pudim da Casa', 'Calda caramelizada', 'Pudim de leite condensado t
        1590, ARRAY['classico','doce'], ARRAY['leite','ovo'], ARRAY['leite condensado','ovo','acucar'], 5, true, 1
 FROM menu_categories c WHERE c.name = 'Sobremesas';
 
-INSERT INTO menu_items (category_id, name, short_description, price_cents, tags, ingredients, prep_time_minutes, sort_order)
-SELECT c.id, 'Brownie com Sorvete', 'Chocolate quente + baunilha', 1890, ARRAY['doce','quente'], ARRAY['chocolate','sorvete'], 8, 2
+INSERT INTO menu_items (category_id, name, short_description, price_cents, tags, allergens, ingredients, prep_time_minutes, sort_order)
+SELECT c.id, 'Brownie com Sorvete', 'Chocolate quente + baunilha', 1890, ARRAY['doce','quente'], ARRAY['gluten','lactose','ovo'], ARRAY['chocolate','sorvete'], 8, 2
 FROM menu_categories c WHERE c.name = 'Sobremesas';
 
 -- === Promotions ===

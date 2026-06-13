@@ -698,13 +698,19 @@ function enrichRecommendationToolCalls(
     return { response, toolCalls };
   }
 
-  const alreadySpecific = extractLinkedItems(response, menuItems, toolCalls).length > 0;
-  if (alreadySpecific) {
-    return { response, toolCalls };
-  }
-
   const category = inferRecommendationCategory(message, toolCalls[idx]);
   const dietary = inferRecommendationDietary(message, toolCalls[idx]);
+
+  // SEGURANÇA ALIMENTAR (validação com LLM local, 2026-06-12): com
+  // restrição dietary ativa a lista É SEMPRE re-gerada do filtro
+  // determinístico por allergens — o LLM citou "Bruschetta, é sem
+  // glúten!" mesmo com `gluten` declarado no prompt, e o atalho
+  // `alreadySpecific` deixava esse texto passar intacto. Modelo não tem
+  // voto em recomendação pra alérgico; o dado declarado decide.
+  const alreadySpecific = extractLinkedItems(response, menuItems, toolCalls).length > 0;
+  if (alreadySpecific && !dietary) {
+    return { response, toolCalls };
+  }
   const candidates = menuItems.filter(
     (item) =>
       menuItemMatchesRecommendationCategory(item, category) &&

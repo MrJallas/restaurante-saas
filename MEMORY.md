@@ -537,9 +537,35 @@ claude/compassionate-haslett-5b2f60 — regras novas que ficam):
   re-libera. A derivacao PULA consumidos e cai pro proximo da hierarquia.
 - Chips: mapa kind→chips vive no BACKEND (pools de continuation.py +
   chips das tools). DEFAULT_SUGGESTIONS do FE são so fallback e todos os
-  payloads resolvem no rule-layer sem LLM. ATENCAO: pools sao seedados no
-  Redis com TTL 1h (`continuation:<tenant>:<segment>`) — mudou DEFAULTS,
-  flush `continuation:*` ou espere o TTL pra ver no stack.
+  payloads resolvem no rule-layer sem LLM. Cache do pool NAO fica stale
+  (decisao Caleb 2026-06-12): a chave do Redis carrega fingerprint dos
+  DEFAULTS (`continuation:<tenant>:<segment>:<sha>`; idem
+  `smart-sug:...`) — mudou o codigo, re-seed na primeira leitura; chaves
+  antigas morrem pelo TTL de 1h. Seeds (scripts/seed_*.py) usam o mesmo
+  `_key()`.
+- SEGURANCA ALIMENTAR (decisao Caleb 2026-06-12, validado com LLM local):
+  recomendacao com restricao/alergia ("sem camarao", "sem lactose",
+  "vegano", "alergico"...) NUNCA resolve no rule-layer generico
+  (`_DIETARY_RESTRICTION_RE` manda pro LLM, que recebe allergens por
+  item). E no apps/api, com dietary ativo (gluten_free hoje) a resposta e
+  SEMPRE re-gerada do filtro deterministico por allergens — o atalho
+  `alreadySpecific` deixava o texto do LLM passar e o qwen3-coder-30b
+  recomendou item COM gluten declarado ("Bruschetta, e sem gluten!").
+  Modelo nao tem voto em alergia; o dado declarado decide. Pendencias
+  registradas em qa-reports/prompt-100-contexto-assistente/
+  allergy-validation.md: vocabulario canonico de alergenos (seed mistura
+  leite/lactose, egg/ovo) e estender o filtro deterministico alem de
+  gluten quando houver enum canonico. Seeds de demo ganharam allergens
+  que faltavam (Bruschetta/Bolinho/Brownie) — dado e a fronteira de
+  seguranca.
+- Faixa de status FIXA no chat do assistente (decisao Caleb 2026-06-12):
+  com pedido ativo, strip sticky `order-status-strip` no topo do
+  transcript (mesmo conteudo da eyebrow, mono canon); ToolCallIndicator e
+  eyebrow por bolha continuam.
+- .env local: LLM_BASE_URL deve ser `http://host.docker.internal:1234/v1`
+  (default do compose) — IP de LAN hardcoded quebra quando a rede muda
+  (achado 2026-06-12: apontava pra 192.168.0.56 morta e TODA rota LLM
+  caia no fallback 503).
 - Rule-layer sem LLM: o contrato e a guarda `_is_direct_phrase` (≤6
   palavras, sem negacao) + a bateria
   services/ai-service/tests/test_rule_layer_phrases.py. TODA regra nova
@@ -552,14 +578,25 @@ claude/compassionate-haslett-5b2f60 — regras novas que ficam):
   `assistant.staff_message_received` vai SO pro room
   `customer:<toCustomerId>`; GET /assistant/history filtra staff msgs por
   destinatario (legado customer_id NULL continua visivel pra mesa).
-- LIMITACAO CONHECIDA (pergunta aberta pro Caleb): o token de sessao e
-  COMPARTILHADO pela mesa (token == tableSessionId) e o payload Redis
-  `session:<id>` guarda UM customerId (ultimo welcome/identify via
-  attachCustomerToSession). `join:customer` so autentica o ULTIMO
-  attachado — destinatario "antigo" da mesa recebe a resposta privada no
-  reload (history) mas pode nao receber em realtime. Resolver de verdade
-  exige credencial por participante no handshake WS (ex.:
-  recognition_token) — decisao de produto pendente.
+- RESOLVIDO em 2026-06-12 (evolucao 1-b aprovada pelo Caleb): identidade
+  por PARTICIPANTE no WS. O gateway le o cookie httpOnly
+  `recognition_token` (individual por cliente; browser manda sozinho no
+  upgrade — cookie ignora porta) no handshake customer e resolve o
+  customerId REAL no schema do tenant (cache redis
+  `recognition_customer:<schema>:<token>` 5min); fallback continua o
+  payload compartilhado `session:<id>`. Cada participante entra no
+  proprio room `customer:<id>` e recebe a resposta privada do gerente em
+  realtime — e2e cobre o caso forte (mensagem pro HOST, que NAO e o
+  ultimo attach do payload). customerSocket manda withCredentials no
+  polling.
+- CORRIDA DO HANDSHAKE WS (achado 2026-06-12, pre-existente): o Socket.IO
+  entrega `join:*` ASSIM que a conexao abre, sem esperar o
+  handleConnection async — `join:customer` era rejeitado lendo
+  client.data ainda vazio, e `join:session` ENTRAVA em room sem auth
+  nenhuma (curto-circuito dos checks por tipo com authType undefined).
+  Fix: `client.data.authReady` (promise do handshake) aguardada em TODOS
+  os handlers de join + guard explicito de authType no join:session. As
+  rejeicoes de join:customer agora sao logadas server-side (warn).
 - Socket do customer e COMPARTILHADO:
   `apps/web-customer/src/lib/customerSocket.ts` (refcount + linger 5s +
   retry pos 'io server disconnect'). NAO criar `io()` novo em hook/page
