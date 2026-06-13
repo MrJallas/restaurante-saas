@@ -122,6 +122,9 @@ test.describe('P2-3 — acknowledgeCall CAS race', () => {
 
   test('5 parallel acknowledges produce 1 waiter name in DB', async () => {
     psql(`DELETE FROM waiter_calls WHERE status IN ('pending','acknowledged')`);
+    // O acknowledge exige x-staff-id de um staff ATIVO (requireActiveStaffId —
+    // hardening de auditoria: registra QUEM atendeu). Resolve um do seed.
+    const staffId = psql(`SELECT id FROM staff WHERE is_active = true LIMIT 1`);
     const token = await getSessionToken();
     const createRes = await fetch(`${API}/waiter-calls`, {
       method: 'POST',
@@ -135,7 +138,11 @@ test.describe('P2-3 — acknowledgeCall CAS race', () => {
       waiters.map((name) =>
         fetch(`${API}/waiter-calls/${callId}/acknowledge`, {
           method: 'POST',
-          headers: { 'x-staff-key': STAFF_KEY, 'content-type': 'application/json' },
+          headers: {
+            'x-staff-key': STAFF_KEY,
+            'x-staff-id': staffId,
+            'content-type': 'application/json',
+          },
           body: JSON.stringify({ waiterName: name }),
         }),
       ),
@@ -451,7 +458,13 @@ async function welcomeCustomer(
     }),
   });
   if (!res.ok) throw new Error(`welcomeCustomer failed: ${res.status} ${await res.text()}`);
-  return (await res.json()) as { customerId: string; recognitionToken: string; visitId: string };
+  const body = (await res.json()) as { customerId: string; visitId: string };
+  // Nesta branch o recognition_token é httpOnly cookie e NÃO vem no body (por
+  // segurança — evita exfiltração via XSS). Extrai do Set-Cookie pra passar
+  // como x-recognition-token nas ações de host (mesmo que physical-qr.ts faz).
+  const setCookie = res.headers.get('set-cookie') ?? '';
+  const recognitionToken = setCookie.match(/recognition_token=([^;]+)/)?.[1] ?? '';
+  return { customerId: body.customerId, recognitionToken, visitId: body.visitId };
 }
 
 // P0-X7-3: Host forgery — attacker cannot approve/reject via forged hostCustomerId

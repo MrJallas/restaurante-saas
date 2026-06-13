@@ -772,6 +772,30 @@ export class OrdersService {
   }
 
   /**
+   * Lazy sweep com THROTTLE por tenant: incrementa `sweep:auto-confirm:<slug>`
+   * no Redis e só executa o sweep de fato no 1º hit da janela de 5s. Reads de
+   * orders são frequentes (as TVs fazem polling do _kds); sem throttle cada GET
+   * disparava um sweep completo. Fail-open: se o Redis cair, faz o sweep direto
+   * (não bloqueia o KDS por cache miss). A chave é tenant-scoped (slug) pra não
+   * vazar entre schemas.
+   */
+  private async sweepAutoConfirmThrottled(): Promise<string[]> {
+    const tenant = this.tenantConn.getTenantSlug() ?? 'unknown';
+    const key = `sweep:auto-confirm:${tenant}`;
+    try {
+      const counter = await this.redis.incr(key);
+      if (counter === 1) {
+        await this.redis.expire(key, 5);
+      } else {
+        return []; // sweep recente nesta janela — skip
+      }
+    } catch {
+      // Redis indisponível — cai no sweep direto abaixo.
+    }
+    return this.sweepAutoConfirm();
+  }
+
+  /**
    * Sweep job: promote any `pending_confirmation` order whose window has
    * elapsed. Returns the list of promoted order ids so the scheduler can log.
    */
@@ -1108,7 +1132,7 @@ export class OrdersService {
     // needing @nestjs/schedule for the common case — the kitchen dashboard
     // polls every few seconds, so expired orders never sit silent for
     // long. External cron can still hit POST /_sweep-auto-confirm below.
-    await this.sweepAutoConfirm().catch(() => undefined);
+    await this.sweepAutoConfirmThrottled().catch(() => undefined);
 
     let sql = `
       SELECT o.id, o.status, o.billing_mode, o.total_cents, o.notes, o.visit_id, o.created_at,
@@ -1172,7 +1196,7 @@ export class OrdersService {
    * session view so the kitchen never sees a stale `pending_confirmation`.
    */
   async getActiveOrdersForTenant() {
-    await this.sweepAutoConfirm().catch(() => undefined);
+    await this.sweepAutoConfirmThrottled().catch(() => undefined);
 
     return this.tenantConn.query(
       `
@@ -1231,7 +1255,7 @@ export class OrdersService {
    * entrega ativa remove o pedido da TV para evitar chamada duplicada.
    */
   async getActiveOrdersForKds(station: 'kitchen' | 'bar') {
-    await this.sweepAutoConfirm().catch(() => undefined);
+    await this.sweepAutoConfirmThrottled().catch(() => undefined);
 
     const normalizedCategoryName = 'LOWER(TRIM(mc.name))';
     const itemPredicate =
@@ -1327,7 +1351,7 @@ export class OrdersService {
   }
 
   async getKitchenQueue(): Promise<KitchenQueueItem[]> {
-    await this.sweepAutoConfirm().catch(() => undefined);
+    await this.sweepAutoConfirmThrottled().catch(() => undefined);
 
     return this.tenantConn.query(
       `
