@@ -15,7 +15,13 @@ const VALID_REASONS = new Set([
   'other',
 ]);
 
-const ACTIVE_STATUSES = ['pending', 'acknowledged', 'accepted', 'enroute'];
+// "Ativo" tem que casar EXATAMENTE com o predicado do índice único parcial
+// `waiter_calls_one_active_per_session` (migration 057) e do ON CONFLICT do
+// createCall. 'accepted'/'enroute' nunca são escritos nesta tabela (são
+// vocabulário de pedido/handoff) — fora daqui pra não abrir footgun: se algo
+// um dia gravar esses status, a garantia de 1-ativo-por-mesa do índice não os
+// cobriria e createCall reabriria a corrida de chamado duplicado.
+const ACTIVE_STATUSES = ['pending', 'acknowledged'];
 
 export interface CreateWaiterCallOptions {
   reason?: string;

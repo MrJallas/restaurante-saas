@@ -783,11 +783,11 @@ export class OrdersService {
     const tenant = this.tenantConn.getTenantSlug() ?? 'unknown';
     const key = `sweep:auto-confirm:${tenant}`;
     try {
-      const counter = await this.redis.incr(key);
-      if (counter === 1) {
-        await this.redis.expire(key, 5);
-      } else {
-        return []; // sweep recente nesta janela — skip
+      // INCR+EXPIRE atômico: nunca deixa a chave órfã sem TTL (que suprimiria
+      // o sweep deste tenant pra sempre). counter>1 = sweep recente → skip.
+      const counter = await this.redis.incrWithExpiry(key, 5);
+      if (counter > 1) {
+        return [];
       }
     } catch {
       // Redis indisponível — cai no sweep direto abaixo.

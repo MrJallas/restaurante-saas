@@ -672,9 +672,11 @@ claude/compassionate-haslett-5b2f60 — regras novas que ficam):
   menu_item `8ebe30e2…` Picanha em "Pratos Principais", customer Maria Silva
   cpf 52998224725). `session/init` M01/M02 exige `accessToken` diario (HMAC
   `qr-access:${code}:${YYYY-MM-DD}` com o `tables.qr_hmac_secret`) + HMAC
-  `${code}:${ts}`; M01_SECRET/M02_SECRET lidos do DB em runtime (nunca
-  congelar o segredo do seed). `/customer/welcome` exige `location` granted
-  (senao 403); geofence em settings (lat/lng NULL = desligada).
+  `${code}:${ts}`; M01_SECRET/M02_SECRET ficam HARDCODED nos specs e o
+  `ensureTvFixtures` sincroniza `tables.qr_hmac_secret` com esse valor
+  (idempotente) — por isso o HMAC/accessToken validam em qualquer DB.
+  `/customer/welcome` exige `location` granted (senao 403); geofence em
+  settings (lat/lng NULL = desligada).
 - Contratos novos/confirmados (backend):
   - `GET /:slug/orders/_kds`: RedisThrottleGuard 200/60s por IP REAL do peer
     (ignora XFF/X-Real-IP), chave `throttle:orders_kds:<ip>`, fail-open.
@@ -696,7 +698,9 @@ claude/compassionate-haslett-5b2f60 — regras novas que ficam):
 - Flaky conhecidos (passam isolados; recuperam no retry): P1-X7-3 (welcome
   rate-limit 30 paralelos), P2-X7-1 (feedbacks dedup), P1-2 (payments CAS) —
   corrida sob carga, nao bug.
-- Pendencia menor: cleanups dos testes round-5 (cpf 50000000*) nao deletam
-  `scan_verification_requests` antes de `DELETE FROM customers` → FK warning
-  no stderr + acumulo de customer rows (nao quebra os testes; idempotente via
-  returning-customer). Limpar com purge FK-safe se incomodar.
+- Teardown de customers de teste: usar `purgeTvTestCustomers(cpfWhere)` do
+  `tv-fixtures.ts` (ordem FK-safe: scan_verification_requests → feedbacks →
+  order_ratings → session_participants → host NULL → visits → customers).
+  `scan_verification_requests.customer_id` é NOT NULL sem ON DELETE CASCADE
+  (migration 049), então sair ANTES de customers — senão `DELETE customers`
+  estoura 23503 e vaza row. Os cleanups round-5 já foram migrados pro helper.

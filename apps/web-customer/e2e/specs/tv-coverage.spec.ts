@@ -4,6 +4,7 @@ import {
   ensureTvFixtures,
   clearWelcomeAndThrottleLocks,
   dailyAccessToken,
+  purgeTvTestCustomers,
 } from '../helpers/tv-fixtures';
 import { resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
@@ -507,7 +508,7 @@ test.describe('P0-X7-3 — host forgery blocked', () => {
       /* no-op */
     }
     try {
-      psql(`DELETE FROM customers WHERE cpf IN ('50000000132','50000000213')`);
+      purgeTvTestCustomers(`cpf IN ('50000000132','50000000213')`);
     } catch {
       /* no-op */
     }
@@ -587,7 +588,7 @@ test.describe('P0-X7-1/2 — feedbacks IDOR blocked', () => {
       /* no-op */
     }
     try {
-      psql(`DELETE FROM customers WHERE cpf IN ('50000000302','50000000485')`);
+      purgeTvTestCustomers(`cpf IN ('50000000302','50000000485')`);
     } catch {
       /* no-op */
     }
@@ -620,7 +621,7 @@ test.describe('P0-X7-1/2 — feedbacks IDOR blocked', () => {
       /* no-op */
     }
     try {
-      psql(`DELETE FROM customers WHERE cpf IN ('50000000302','50000000485')`);
+      purgeTvTestCustomers(`cpf IN ('50000000302','50000000485')`);
     } catch {
       /* no-op */
     }
@@ -713,7 +714,7 @@ test.describe('P1-X7-3 — /customer/welcome rate-limited', () => {
       /* no-op */
     }
     try {
-      psql(`DELETE FROM customers WHERE name LIKE 'QA-R5-Flood%'`);
+      purgeTvTestCustomers(`name LIKE 'QA-R5-Flood%'`);
     } catch {
       /* no-op */
     }
@@ -766,7 +767,7 @@ test.describe('P2-X7-1 — feedbacks dedup race', () => {
       /* no-op */
     }
     try {
-      psql(`DELETE FROM customers WHERE cpf = '50000000566'`);
+      purgeTvTestCustomers(`cpf = '50000000566'`);
     } catch {
       /* no-op */
     }
@@ -849,7 +850,7 @@ test.describe('P2-X7-2 — payments dedup race', () => {
       /* no-op */
     }
     try {
-      psql(`DELETE FROM customers WHERE cpf = '50000000647'`);
+      purgeTvTestCustomers(`cpf = '50000000647'`);
     } catch {
       /* no-op */
     }
@@ -929,7 +930,7 @@ test.describe('P2-X7-4 — decideJoinRequest CAS', () => {
       /* no-op */
     }
     try {
-      psql(`DELETE FROM customers WHERE cpf IN ('50000000728','50000000809')`);
+      purgeTvTestCustomers(`cpf IN ('50000000728','50000000809')`);
     } catch {
       /* no-op */
     }

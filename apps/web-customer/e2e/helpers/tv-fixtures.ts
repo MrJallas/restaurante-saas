@@ -130,6 +130,32 @@ export function clearWelcomeAndThrottleLocks(): void {
 }
 
 /**
+ * Teardown FK-safe de customers de teste por predicado de CPF/nome.
+ * `scan_verification_requests.customer_id` é NOT NULL sem ON DELETE CASCADE
+ * (migration 049) e essas rows são criadas pelo welcome (upsertParticipant →
+ * ensureForParticipant em participantes pendentes). Por isso PRECISAM sair
+ * ANTES de `customers` — senão o `DELETE FROM customers` estoura 23503 e, com
+ * o try/catch no-op dos cleanups, vaza customer + scan rows no DB
+ * compartilhado a cada run (achado da auditoria de pendências).
+ *
+ * `cpfWhere` é uma cláusula booleana sobre `customers` — ex.:
+ * `"cpf IN ('5...','5...')"` ou `"name LIKE 'QA-R5-Flood%'"`.
+ */
+export function purgeTvTestCustomers(cpfWhere: string): void {
+  const sel = `SELECT id FROM customers WHERE ${cpfWhere}`;
+  psqlExec(`
+    DELETE FROM scan_verification_requests WHERE customer_id IN (${sel});
+    DELETE FROM feedbacks WHERE customer_id IN (${sel})
+       OR visit_id IN (SELECT id FROM visits WHERE customer_id IN (${sel}));
+    DELETE FROM order_ratings WHERE customer_id IN (${sel});
+    DELETE FROM session_participants WHERE customer_id IN (${sel});
+    UPDATE table_sessions SET host_customer_id = NULL WHERE host_customer_id IN (${sel});
+    DELETE FROM visits WHERE customer_id IN (${sel});
+    DELETE FROM customers WHERE ${cpfWhere};
+  `);
+}
+
+/**
  * Cria/garante (idempotente) os fixtures de UUID fixo que tv-kds e
  * tv-coverage assumem pré-existentes. Seguro pra rodar em qualquer DB
  * de dev com a seed demo padrão (categorias "Pratos Principais"/"Bebidas").

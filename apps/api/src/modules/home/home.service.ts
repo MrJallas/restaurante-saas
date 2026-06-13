@@ -135,7 +135,7 @@ export class HomeService {
     // fail the whole request when the Python service is down.
     let continuationMessage: HomeData['continuationMessage'];
     try {
-      const aiUrl = process.env.AI_SERVICE_URL || 'http://localhost:8001';
+      const aiUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
       const inferred = await this.inferContinuationKind({
         sessionId,
         customerId,

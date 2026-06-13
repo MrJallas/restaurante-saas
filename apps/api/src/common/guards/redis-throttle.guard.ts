@@ -18,8 +18,10 @@ import { RedisService } from '../../infra/redis/redis.service';
  *  - Conta pelo IP REAL do peer TCP (`req.socket.remoteAddress`). NÃO confia
  *    em `X-Forwarded-For` / `X-Real-IP`: o cliente pode rotacioná-los pra
  *    burlar o limite (P1-4 / P3-NEW exercitam exatamente esse bypass).
- *  - INCR atômico + EXPIRE só na 1ª request da janela → o contador reflete
- *    exatamente o nº de requests na janela (P3-2 valida counter == nº calls).
+ *  - INCR+EXPIRE ATÔMICO via Lua (redis.incrWithExpiry): EXPIRE só na 1ª
+ *    request da janela, num único round-trip → o contador reflete o nº de
+ *    requests na janela (P3-2 valida counter == nº calls) e nunca deixa a
+ *    chave órfã sem TTL (que 429aria o IP pra sempre).
  *  - Fail-open: se o Redis falhar, LIBERA. Um rate-limiter nunca deve
  *    derrubar a API; melhor perder o limite momentaneamente que dar 5xx.
  *
@@ -39,10 +41,7 @@ export class RedisThrottleGuard implements CanActivate {
     const key = `throttle:orders_kds:${this.realIp(request)}`;
 
     try {
-      const count = await this.redis.incr(key);
-      if (count === 1) {
-        await this.redis.expire(key, this.windowSeconds);
-      }
+      const count = await this.redis.incrWithExpiry(key, this.windowSeconds);
       if (count > this.limit) {
         throw new HttpException(
           {

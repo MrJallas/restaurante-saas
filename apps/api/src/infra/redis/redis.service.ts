@@ -64,6 +64,24 @@ export class RedisService implements OnModuleDestroy {
     return this.timed(() => this.client.incr(key));
   }
 
+  /**
+   * INCR + EXPIRE-na-1ª-request ATÔMICO via Lua. Fecha a janela em que o
+   * INCR sobe mas o EXPIRE falha (hiccup do Redis) e a chave fica ÓRFÃ sem
+   * TTL — um fixed-window que nunca reseta e poderia 429ar um IP / suprimir
+   * o sweep de um tenant pra sempre. Devolve o contador pós-incremento.
+   */
+  async incrWithExpiry(key: string, ttlSeconds: number): Promise<number> {
+    return this.timed(async () => {
+      const result = await this.client.eval(
+        "local c = redis.call('incr', KEYS[1]); if c == 1 then redis.call('expire', KEYS[1], ARGV[1]) end; return c",
+        1,
+        key,
+        String(ttlSeconds),
+      );
+      return Number(result);
+    });
+  }
+
   async lpop(key: string): Promise<string | null> {
     return this.timed(() => this.client.lpop(key));
   }
