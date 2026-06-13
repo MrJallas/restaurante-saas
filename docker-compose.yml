@@ -69,6 +69,7 @@ services:
       mongodb:
         condition: service_healthy
     environment:
+      NODE_OPTIONS: --max-old-space-size=4096
       NODE_ENV: development
       PORT: 3001
       DATABASE_HOST: postgres

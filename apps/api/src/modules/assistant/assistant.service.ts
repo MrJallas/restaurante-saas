@@ -747,20 +747,19 @@ function recommendationMessageForItems(
   context: {
     dietary?: 'gluten_free' | null;
     repeatName?: string | null;
+    favoriteName?: string | null;
     personalized?: boolean;
   } = {},
 ): string {
   const lines = items.map((item) => `- ${item.name} — ${formatCents(item.price_cents)}`);
   if (context.dietary === 'gluten_free') {
-    // Restrição manda na copy; a personalização ainda ordena os itens por
-    // baixo (repeat/parecido), mas o título sinaliza o filtro de segurança.
     return `Encontrei estas opções sem glúten declarado:\n${lines.join('\n')}`;
   }
-  // Recomendação personalizada por histórico (decisão Caleb 2026-06-13:
-  // "Mix: repetir + parecido"). Cliente retornante lidera com o item que
-  // já pediu; primeira vez cai no genérico.
   if (context.personalized && context.repeatName) {
-    return `Da última vez você curtiu ${context.repeatName}. Quer de novo, ou que tal:\n${lines.join('\n')}`;
+    return `Você costuma pedir ${context.repeatName} — gostaria de pedir novamente? Também separei estas:\n${lines.join('\n')}`;
+  }
+  if (context.personalized && context.favoriteName) {
+    return `Você costuma pedir ${context.favoriteName} — gostaria de pedir novamente? Veja também:\n${lines.join('\n')}`;
   }
   if (context.personalized) {
     return `Com base no que você já pediu, separei estas:\n${lines.join('\n')}`;
@@ -775,6 +774,14 @@ export interface ConsumptionHistoryItem {
   quantity?: number | null;
 }
 
+/** Item do `customer_consumption_summary.favorite_items` (agregação multi-visita). */
+export interface FavoriteItem {
+  name: string;
+  category: string;
+  orderCount: number;
+  totalQty: number;
+}
+
 function normalizeName(value: string): string {
   return value
     .toLowerCase()
@@ -784,42 +791,63 @@ function normalizeName(value: string): string {
 }
 
 /**
- * Re-ordena os candidatos pela "vibe" do último pedido do cliente
- * (decisão Caleb 2026-06-13). Mix repetir+parecido:
- *   1) itens que ele JÁ pediu (repeat — ainda no cardápio + passam nos
- *      filtros de categoria/alérgeno que vierem por cima);
- *   2) itens NOVOS nas mesmas categorias do último pedido (parecido);
- *   3) o resto (preenche se faltar).
- * `lastItems` vazio (primeira visita) → devolve a ordem original e
- * `repeat=null` → a copy cai no genérico. NÃO fura o filtro de alérgenos:
- * `candidates` já vem filtrado por dietary, então um repeat com o
- * alérgeno declarado simplesmente não está na lista.
+ * Re-ordena candidatos pelo histórico completo do cliente:
+ *   1) repeat do ÚLTIMO pedido (ainda no cardápio);
+ *   2) FAVORITOS recorrentes (multi-visita, orderCount≥2) ainda disponíveis
+ *      e que não são repeat do último pedido;
+ *   3) parecidos da mesma categoria do último pedido;
+ *   4) resto.
+ * `candidates` já vem filtrado por dietary — favorito com alérgeno
+ * declarado simplesmente não está na lista.
  */
 export function rankCandidatesByHistory(
   candidates: MenuItemRow[],
   lastItems: ConsumptionHistoryItem[],
-): { ordered: MenuItemRow[]; repeat: MenuItemRow | null; personalized: boolean } {
+  favoriteItems: FavoriteItem[] = [],
+): {
+  ordered: MenuItemRow[];
+  repeat: MenuItemRow | null;
+  favoriteName: string | null;
+  personalized: boolean;
+} {
   const valid = (lastItems ?? []).filter(
     (it) => it && typeof it.name === 'string' && it.name.trim().length > 0,
   );
-  if (valid.length === 0) {
-    return { ordered: candidates, repeat: null, personalized: false };
+  const validFavs = (favoriteItems ?? []).filter(
+    (it) => it && typeof it.name === 'string' && it.name.trim().length > 0 && it.orderCount >= 2,
+  );
+
+  if (valid.length === 0 && validFavs.length === 0) {
+    return { ordered: candidates, repeat: null, favoriteName: null, personalized: false };
   }
+
   const lastNames = new Set(valid.map((it) => normalizeName(it.name)));
   const lastCats = new Set(
     valid.map((it) => (it.category ? normalizeName(it.category) : '')).filter((c) => c.length > 0),
   );
+  const favNames = new Set(validFavs.map((it) => normalizeName(it.name)));
+
   const repeats = candidates.filter((c) => lastNames.has(normalizeName(c.name)));
+  const repeatNamesSet = new Set(repeats.map((c) => normalizeName(c.name)));
+
+  const favorites = candidates.filter(
+    (c) => favNames.has(normalizeName(c.name)) && !repeatNamesSet.has(normalizeName(c.name)),
+  );
+
+  const usedNames = new Set([...repeatNamesSet, ...favorites.map((c) => normalizeName(c.name))]);
+
   const similar = candidates.filter(
-    (c) => !lastNames.has(normalizeName(c.name)) && lastCats.has(normalizeName(c.category_name)),
+    (c) => !usedNames.has(normalizeName(c.name)) && lastCats.has(normalizeName(c.category_name)),
   );
   const rest = candidates.filter(
-    (c) => !lastNames.has(normalizeName(c.name)) && !lastCats.has(normalizeName(c.category_name)),
+    (c) => !usedNames.has(normalizeName(c.name)) && !lastCats.has(normalizeName(c.category_name)),
   );
+
   return {
-    ordered: [...repeats, ...similar, ...rest],
+    ordered: [...repeats, ...favorites, ...similar, ...rest],
     repeat: repeats[0] ?? null,
-    personalized: repeats.length > 0 || similar.length > 0,
+    favoriteName: favorites[0]?.name ?? null,
+    personalized: repeats.length > 0 || favorites.length > 0 || similar.length > 0,
   };
 }
 
@@ -829,6 +857,7 @@ function enrichRecommendationToolCalls(
   toolCalls: Array<Record<string, unknown>>,
   menuItems: MenuItemRow[],
   lastItems: ConsumptionHistoryItem[] = [],
+  favoriteItems: FavoriteItem[] = [],
 ): { response: string; toolCalls: Array<Record<string, unknown>> } {
   const idx = toolCalls.findIndex((tc) => tc.name === 'recommend_dish');
   if (idx === -1 || menuItems.length === 0) {
@@ -862,9 +891,7 @@ function enrichRecommendationToolCalls(
   const preferredCandidates =
     dietary && !category ? candidates.filter((item) => !isDrinkItem(item)) : candidates;
   const pickedSource = preferredCandidates.length >= 3 ? preferredCandidates : candidates;
-  // Mix repetir+parecido: re-ordena os candidatos pela vibe do último
-  // pedido. Primeira visita (lastItems vazio) → ordem original + genérico.
-  const ranked = rankCandidatesByHistory(pickedSource, lastItems);
+  const ranked = rankCandidatesByHistory(pickedSource, lastItems, favoriteItems);
   const picked = ranked.ordered.slice(0, 3);
   const items = picked.length > 0 ? picked : menuItems.slice(0, 3);
   if (items.length === 0) {
@@ -875,6 +902,7 @@ function enrichRecommendationToolCalls(
     dietary,
     personalized: ranked.personalized,
     repeatName: ranked.repeat?.name ?? null,
+    favoriteName: ranked.favoriteName,
   });
   const chips = items.map((item) => ({
     id: `recommend-${item.id}`,
@@ -1164,8 +1192,6 @@ export class AssistantService {
           ),
         ),
       );
-      // Histórico do último pedido (customer_consumption_summary) pra
-      // personalizar a recomendação genérica (decisão Caleb 2026-06-13).
       const lastItemsForRec: ConsumptionHistoryItem[] = Array.isArray(customerContext?.last_items)
         ? (customerContext!.last_items as unknown[]).flatMap((raw) => {
             if (!isPlainRecord(raw) || typeof raw.name !== 'string') return [];
@@ -1178,12 +1204,26 @@ export class AssistantService {
             ];
           })
         : [];
+      const favoriteItemsForRec: FavoriteItem[] = Array.isArray(customerContext?.favorite_items)
+        ? (customerContext!.favorite_items as unknown[]).flatMap((raw) => {
+            if (!isPlainRecord(raw) || typeof raw.name !== 'string') return [];
+            return [
+              {
+                name: raw.name as string,
+                category: typeof raw.category === 'string' ? raw.category : '',
+                orderCount: typeof raw.orderCount === 'number' ? raw.orderCount : 0,
+                totalQty: typeof raw.totalQty === 'number' ? raw.totalQty : 0,
+              },
+            ];
+          })
+        : [];
       const recommendationContext = enrichRecommendationToolCalls(
         message,
         result.response,
         normalizedToolsRaw,
         menuItems,
         lastItemsForRec,
+        favoriteItemsForRec,
       );
       const normalizedTools = recommendationContext.toolCalls;
       const assistantResponse = responseWithToolContext(
