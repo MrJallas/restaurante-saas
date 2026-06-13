@@ -818,7 +818,7 @@ export class HostService {
   async updateTableSessionMeta(
     tableNumber: number,
     body: { sessionId?: string; party?: number; note?: string; staffId?: string },
-    slug: string,
+    _slug: string,
   ): Promise<HostTableDto> {
     if (body.party == null && body.note == null) {
       throw new HttpException(

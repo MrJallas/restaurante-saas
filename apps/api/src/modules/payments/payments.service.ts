@@ -174,12 +174,10 @@ export class PaymentsService {
     const {
       tableSessionId,
       visitId,
-      mode,
       method,
       amountCents,
       splitMode,
       splitAllocations,
-      options,
     } = input;
 
     // Generate PIX payload only when method is `pix`. Antes, gerávamos
