@@ -676,15 +676,91 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 
 function recommendationMessageForItems(
   items: MenuItemRow[],
-  context: { dietary?: 'gluten_free' | null } = {},
+  context: {
+    dietary?: 'gluten_free' | null;
+    repeatName?: string | null;
+    personalized?: boolean;
+  } = {},
 ): string {
   const lines = items.map(
     (item) => `- ${item.name} — ${formatCents(item.price_cents)}`,
   );
   if (context.dietary === 'gluten_free') {
+    // Restrição manda na copy; a personalização ainda ordena os itens por
+    // baixo (repeat/parecido), mas o título sinaliza o filtro de segurança.
     return `Encontrei estas opções sem glúten declarado:\n${lines.join('\n')}`;
   }
+  // Recomendação personalizada por histórico (decisão Caleb 2026-06-13:
+  // "Mix: repetir + parecido"). Cliente retornante lidera com o item que
+  // já pediu; primeira vez cai no genérico.
+  if (context.personalized && context.repeatName) {
+    return `Da última vez você curtiu ${context.repeatName}. Quer de novo, ou que tal:\n${lines.join('\n')}`;
+  }
+  if (context.personalized) {
+    return `Com base no que você já pediu, separei estas:\n${lines.join('\n')}`;
+  }
   return `Eu iria nessas opções hoje:\n${lines.join('\n')}`;
+}
+
+/** Item do `customer_consumption_summary.last_items` (último pedido). */
+export interface ConsumptionHistoryItem {
+  name: string;
+  category?: string | null;
+  quantity?: number | null;
+}
+
+function normalizeName(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+/**
+ * Re-ordena os candidatos pela "vibe" do último pedido do cliente
+ * (decisão Caleb 2026-06-13). Mix repetir+parecido:
+ *   1) itens que ele JÁ pediu (repeat — ainda no cardápio + passam nos
+ *      filtros de categoria/alérgeno que vierem por cima);
+ *   2) itens NOVOS nas mesmas categorias do último pedido (parecido);
+ *   3) o resto (preenche se faltar).
+ * `lastItems` vazio (primeira visita) → devolve a ordem original e
+ * `repeat=null` → a copy cai no genérico. NÃO fura o filtro de alérgenos:
+ * `candidates` já vem filtrado por dietary, então um repeat com o
+ * alérgeno declarado simplesmente não está na lista.
+ */
+export function rankCandidatesByHistory(
+  candidates: MenuItemRow[],
+  lastItems: ConsumptionHistoryItem[],
+): { ordered: MenuItemRow[]; repeat: MenuItemRow | null; personalized: boolean } {
+  const valid = (lastItems ?? []).filter(
+    (it) => it && typeof it.name === 'string' && it.name.trim().length > 0,
+  );
+  if (valid.length === 0) {
+    return { ordered: candidates, repeat: null, personalized: false };
+  }
+  const lastNames = new Set(valid.map((it) => normalizeName(it.name)));
+  const lastCats = new Set(
+    valid
+      .map((it) => (it.category ? normalizeName(it.category) : ''))
+      .filter((c) => c.length > 0),
+  );
+  const repeats = candidates.filter((c) => lastNames.has(normalizeName(c.name)));
+  const similar = candidates.filter(
+    (c) =>
+      !lastNames.has(normalizeName(c.name)) &&
+      lastCats.has(normalizeName(c.category_name)),
+  );
+  const rest = candidates.filter(
+    (c) =>
+      !lastNames.has(normalizeName(c.name)) &&
+      !lastCats.has(normalizeName(c.category_name)),
+  );
+  return {
+    ordered: [...repeats, ...similar, ...rest],
+    repeat: repeats[0] ?? null,
+    personalized: repeats.length > 0 || similar.length > 0,
+  };
 }
 
 function enrichRecommendationToolCalls(
@@ -692,6 +768,7 @@ function enrichRecommendationToolCalls(
   response: string,
   toolCalls: Array<Record<string, unknown>>,
   menuItems: MenuItemRow[],
+  lastItems: ConsumptionHistoryItem[] = [],
 ): { response: string; toolCalls: Array<Record<string, unknown>> } {
   const idx = toolCalls.findIndex((tc) => tc.name === 'recommend_dish');
   if (idx === -1 || menuItems.length === 0) {
@@ -707,6 +784,12 @@ function enrichRecommendationToolCalls(
   // glúten!" mesmo com `gluten` declarado no prompt, e o atalho
   // `alreadySpecific` deixava esse texto passar intacto. Modelo não tem
   // voto em recomendação pra alérgico; o dado declarado decide.
+  //
+  // `alreadySpecific && !dietary` segue confiando no LLM SÓ quando ele
+  // respondeu uma pergunta específica nomeando pratos (ex.: "combina com
+  // vinho tinto?"). A recomendação GENÉRICA ("me indica algo", inclusive
+  // o rule-layer sem LLM) não nomeia prato → cai aqui e é personalizada
+  // pelo histórico (decisão Caleb 2026-06-13).
   const alreadySpecific = extractLinkedItems(response, menuItems, toolCalls).length > 0;
   if (alreadySpecific && !dietary) {
     return { response, toolCalls };
@@ -721,13 +804,20 @@ function enrichRecommendationToolCalls(
       ? candidates.filter((item) => !isDrinkItem(item))
       : candidates;
   const pickedSource = preferredCandidates.length >= 3 ? preferredCandidates : candidates;
-  const picked = pickedSource.slice(0, 3);
+  // Mix repetir+parecido: re-ordena os candidatos pela vibe do último
+  // pedido. Primeira visita (lastItems vazio) → ordem original + genérico.
+  const ranked = rankCandidatesByHistory(pickedSource, lastItems);
+  const picked = ranked.ordered.slice(0, 3);
   const items = picked.length > 0 ? picked : menuItems.slice(0, 3);
   if (items.length === 0) {
     return { response, toolCalls };
   }
 
-  const recommendationResponse = recommendationMessageForItems(items, { dietary });
+  const recommendationResponse = recommendationMessageForItems(items, {
+    dietary,
+    personalized: ranked.personalized,
+    repeatName: ranked.repeat?.name ?? null,
+  });
   const chips = items.map((item) => ({
     id: `recommend-${item.id}`,
     label: item.name,
@@ -1031,11 +1121,28 @@ export class AssistantService {
           ),
         ),
       );
+      // Histórico do último pedido (customer_consumption_summary) pra
+      // personalizar a recomendação genérica (decisão Caleb 2026-06-13).
+      const lastItemsForRec: ConsumptionHistoryItem[] = Array.isArray(
+        customerContext?.last_items,
+      )
+        ? (customerContext!.last_items as unknown[]).flatMap((raw) => {
+            if (!isPlainRecord(raw) || typeof raw.name !== 'string') return [];
+            return [
+              {
+                name: raw.name,
+                category: typeof raw.category === 'string' ? raw.category : null,
+                quantity: typeof raw.quantity === 'number' ? raw.quantity : null,
+              },
+            ];
+          })
+        : [];
       const recommendationContext = enrichRecommendationToolCalls(
         message,
         result.response,
         normalizedToolsRaw,
         menuItems,
+        lastItemsForRec,
       );
       const normalizedTools = recommendationContext.toolCalls;
       const assistantResponse = responseWithToolContext(

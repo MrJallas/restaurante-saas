@@ -581,6 +581,21 @@ claude/compassionate-haslett-5b2f60 — regras novas que ficam):
   com pedido ativo, strip sticky `order-status-strip` no topo do
   transcript (mesmo conteudo da eyebrow, mono canon); ToolCallIndicator e
   eyebrow por bolha continuam.
+- RECOMENDACAO PERSONALIZADA por historico (decisao Caleb 2026-06-13,
+  estilo "Mix: repetir + parecido"): recomendacao NAO pode ser generica —
+  retornante recebe ordenacao repeat-first (item do ultimo pedido) +
+  parecidos da mesma categoria; primeira visita (sem
+  customer_consumption_summary.last_items) cai no generico. Ponto unico:
+  `enrichRecommendationToolCalls` (rule-layer E LLM passam por la); nucleo
+  puro `rankCandidatesByHistory` exportado + testado
+  (recommendation-history.test.ts). So no caminho GENERICO
+  (alreadySpecific=false) — pergunta especifica do LLM continua intacta.
+  customerId vem do cookie recognition_token. BARREIRA DE ALERGENO
+  PRESERVADA: o ranking recebe candidatos ja filtrados por
+  categoria+dietary, entao item com alergeno declarado nunca vira repeat.
+  `favorite_items` no schema NUNCA e populado — o sinal real e `last_items`
+  (substituido a cada pedido com os itens do ultimo). Evidencia:
+  qa-reports/prompt-100-contexto-assistente/recomendacao-personalizada.md.
 - .env local: LLM_BASE_URL deve ser `http://host.docker.internal:1234/v1`
   (default do compose) — IP de LAN hardcoded quebra quando a rede muda
   (achado 2026-06-12: apontava pra 192.168.0.56 morta e TODA rota LLM
