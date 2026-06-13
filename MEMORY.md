@@ -659,3 +659,44 @@ claude/compassionate-haslett-5b2f60 — regras novas que ficam):
   customers:identify:* (locks de 15min de runs anteriores derrubam o
   newSession). PATCH /orders/:id/status NAO aceita in_transit (so o
   fluxo de entrega do garcom) — ready→delivered direto e valido.
+
+## Suite TV Reproduzivel + Round-5 Security (2026-06-13)
+
+- `apps/web-customer/e2e/specs/{tv-kds,tv-coverage}.spec.ts` agora 100% verde
+  e reproduzivel em qualquer DB. Validacao:
+  `npx playwright test tv-kds tv-coverage --workers=1 --retries=2` (serial
+  obrigatorio; CI ja tem `retries`). Stack docker dev de pe; base repo em
+  detached checkout serve o codigo testado.
+- Helper `e2e/helpers/tv-fixtures.ts` (`ensureTvFixtures` no beforeAll):
+  cria idempotente os UUIDs fixos (session `0d324208…`, order `aaaaaaa1…001`,
+  menu_item `8ebe30e2…` Picanha em "Pratos Principais", customer Maria Silva
+  cpf 52998224725). `session/init` M01/M02 exige `accessToken` diario (HMAC
+  `qr-access:${code}:${YYYY-MM-DD}` com o `tables.qr_hmac_secret`) + HMAC
+  `${code}:${ts}`; M01_SECRET/M02_SECRET lidos do DB em runtime (nunca
+  congelar o segredo do seed). `/customer/welcome` exige `location` granted
+  (senao 403); geofence em settings (lat/lng NULL = desligada).
+- Contratos novos/confirmados (backend):
+  - `GET /:slug/orders/_kds`: RedisThrottleGuard 200/60s por IP REAL do peer
+    (ignora XFF/X-Real-IP), chave `throttle:orders_kds:<ip>`, fail-open.
+  - `POST /orders/_sweep-auto-confirm`: StaffOnly (era StaffOrSession —
+    qualquer cliente forcava auto-confirm em massa). Sweep lazy throttled:
+    chave tenant-scoped `sweep:auto-confirm:<slug>`.
+  - `updateStatus` e CAS atomico + idempotente (perdedor da corrida → 200).
+  - `POST /feedbacks`: `visitId` obrigatorio (400) + checagem de dono da visit
+    (403 cross-session IDOR). `recognition_token` NUNCA volta no body (so
+    cookie httpOnly) — `welcomeCustomer` dos specs le do Set-Cookie.
+  - `callerResolver` aceita `recognition_token` por cookie OU header
+    `x-recognition-token` (acoes de host nao-browser). Nao enfraquece auth.
+  - waiter_calls: 1 chamado ativo por mesa via indice unico parcial
+    (migration 057, idempotente + dedupe). createCall = upsert atomico.
+    acknowledge usa o nome do staff AUTENTICADO (`x-staff-id`), nao o body.
+  - `decideJoinRequest`: CAS `AND status='pending'` + host check (403 forgery).
+- Feature recomendacao personalizada (assistant.service) veio do
+  compassionate-haslett `a5e8692` (cherry-pick).
+- Flaky conhecidos (passam isolados; recuperam no retry): P1-X7-3 (welcome
+  rate-limit 30 paralelos), P2-X7-1 (feedbacks dedup), P1-2 (payments CAS) —
+  corrida sob carga, nao bug.
+- Pendencia menor: cleanups dos testes round-5 (cpf 50000000*) nao deletam
+  `scan_verification_requests` antes de `DELETE FROM customers` → FK warning
+  no stderr + acumulo de customer rows (nao quebra os testes; idempotente via
+  returning-customer). Limpar com purge FK-safe se incomodar.
