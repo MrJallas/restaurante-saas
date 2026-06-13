@@ -524,12 +524,16 @@ export class TableSessionService {
     const tsCol = decision === 'approve' ? 'approved_at' : 'rejected_at';
     const approvedBy = decision === 'approve' ? requesterCustomerId : null;
 
+    // Round 5 (P2-X7-4): CAS com `status = 'pending'` — só decide quem ainda
+    // está pendente. Sob N approves concorrentes, só 1 flipa pending→approved
+    // (os outros casam 0 linhas); e re-decidir alguém já decidido vira no-op
+    // (idempotente), em vez de reverter approved↔rejected.
     await this.tenantConn.query(
       `UPDATE session_participants
        SET status = $3,
            ${tsCol} = now(),
            approved_by = COALESCE($4, approved_by)
-       WHERE table_session_id = $1 AND customer_id = $2`,
+       WHERE table_session_id = $1 AND customer_id = $2 AND status = 'pending'`,
       [tableSessionId, targetCustomerId, newStatus, approvedBy],
     );
 

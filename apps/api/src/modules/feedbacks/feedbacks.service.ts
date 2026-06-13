@@ -1,8 +1,8 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 
 export interface SubmitFeedbackInput {
-  visitId: string | null;
+  visitId: string;
   customerId: string | null;
   overallRating: number;
   foodRating?: number;
@@ -23,7 +23,18 @@ export class FeedbacksService {
    * visit_id ambos viam empty SELECT, ambos INSERTavam. Agora PG
    * rejeita o segundo com 23505 e traduzimos pra BadRequest amigável.
    */
-  async submitFeedback(input: SubmitFeedbackInput) {
+  async submitFeedback(input: SubmitFeedbackInput, tableSessionId: string) {
+    // Round 5 (P0-X7-1): IDOR — antes qualquer sessão postava feedback com
+    // o visitId de OUTRA sessão (só sabendo o UUID). Agora exige que a visit
+    // pertença à sessão de mesa do caller (vem do SessionGuard); senão 403.
+    const visitOwner = (await this.tenantConn.query(
+      `SELECT v.id FROM visits v WHERE v.id = $1 AND v.table_session_id = $2`,
+      [input.visitId, tableSessionId],
+    )) as { id: string }[];
+    if (!visitOwner.length) {
+      throw new ForbiddenException('Visit nao pertence a esta sessao.');
+    }
+
     let rows: { id: string; created_at: string }[];
     try {
       rows = (await this.tenantConn.query(

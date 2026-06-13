@@ -59,7 +59,16 @@ export class CallerResolverService {
 
   private extractToken(req: Request): string | null {
     const cookies = (req as Request & { cookies?: Record<string, string> }).cookies;
-    return cookies?.recognition_token ?? null;
+    if (cookies?.recognition_token) return cookies.recognition_token;
+    // Round 5 (P0-X7-3/P2-X7-4): aceita também o header `x-recognition-token`
+    // (clientes não-browser e ações host onde o token não vem como cookie).
+    // Seguro: o recognition_token é a própria credencial (UUID aleatório por
+    // customer) — aceitá-lo via header não enfraquece o httpOnly do cookie,
+    // pois um atacante continua sem conseguir LER o token de outro cliente.
+    const headers = req.headers as Record<string, string | string[] | undefined>;
+    const headerVal = headers['x-recognition-token'];
+    const headerToken = Array.isArray(headerVal) ? headerVal[0] : headerVal;
+    return headerToken ?? null;
   }
 
   /**

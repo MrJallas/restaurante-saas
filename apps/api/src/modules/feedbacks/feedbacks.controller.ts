@@ -2,6 +2,7 @@ import { Controller, Post, Get, Body, Query, Req, UseGuards } from '@nestjs/comm
 import type { Request } from 'express';
 import {
   IsString,
+  IsNotEmpty,
   IsOptional,
   IsInt,
   Min,
@@ -18,13 +19,13 @@ import { FeedbacksService } from './feedbacks.service';
 
 class SubmitFeedbackDto {
   /**
-   * Optional — anonymous feedback is allowed (e.g. the user skipped the
-   * CPF welcome). When present, the feedback is attached to the visit so
-   * staff dashboards can surface trends per customer.
+   * Round 5 (P1-X7-2): obrigatório. feedbacks.visit_id é NOT NULL no DB —
+   * antes `visitId` opcional virava null e estourava 23502 → 500. Agora o
+   * DTO rejeita ausência com 400 e o service valida ownership da visit.
    */
-  @IsOptional()
   @IsUUID()
-  visitId?: string;
+  @IsNotEmpty()
+  visitId!: string;
 
   @IsOptional()
   @IsUUID()
@@ -87,18 +88,25 @@ export class FeedbacksController {
    */
   @Post()
   @UseGuards(SessionGuard)
-  async submitFeedback(@Body() dto: SubmitFeedbackDto, @Req() req: Request) {
+  async submitFeedback(
+    @Body() dto: SubmitFeedbackDto,
+    @Req() req: Request,
+    @Session() session: SessionData,
+  ) {
     const callerCustomerId = await this.callerResolver.tryGetCustomerId(req);
-    return this.feedbacksService.submitFeedback({
-      visitId: dto.visitId ?? null,
-      customerId: callerCustomerId,
-      overallRating: dto.overallRating,
-      foodRating: dto.foodRating,
-      serviceRating: dto.serviceRating,
-      ambienceRating: dto.ambienceRating,
-      comment: dto.comment,
-      tags: dto.tags,
-    });
+    return this.feedbacksService.submitFeedback(
+      {
+        visitId: dto.visitId,
+        customerId: callerCustomerId,
+        overallRating: dto.overallRating,
+        foodRating: dto.foodRating,
+        serviceRating: dto.serviceRating,
+        ambienceRating: dto.ambienceRating,
+        comment: dto.comment,
+        tags: dto.tags,
+      },
+      session.sessionId,
+    );
   }
 
   @Get()

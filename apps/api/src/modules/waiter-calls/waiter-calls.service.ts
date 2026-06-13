@@ -54,46 +54,19 @@ export class WaiterCallsService {
 
     const tableInfo = sessions[0];
 
-    // If there's already an active call for this table, return it instead of
-    // opening another one. The customer UI shows the "Aguardando garçom"
-    // state until the call is cancelled or resolved.
-    const existing = (await this.tenantConn.query(
-      `SELECT id, status, reason FROM waiter_calls
-       WHERE table_session_id = $1 AND status = ANY($2)
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [tableSessionId, ACTIVE_STATUSES],
-    )) as { id: string; status: string; reason: string }[];
-
-    if (existing.length > 0) {
-      const current = existing[0];
-      const refreshed = (await this.tenantConn.query(
-        `SELECT id, status, reason, created_at, assigned_waiter_name, eta_minutes
-         FROM waiter_calls WHERE id = $1`,
-        [current.id],
-      )) as {
-        id: string;
-        status: string;
-        reason: string;
-        created_at: string;
-        assigned_waiter_name: string | null;
-        eta_minutes: number | null;
-      }[];
-      const r = refreshed[0];
-      return {
-        callId: r.id,
-        status: r.status,
-        reason: r.reason,
-        createdAt: r.created_at,
-        waiterName: r.assigned_waiter_name ?? undefined,
-        etaMinutes: r.eta_minutes ?? undefined,
-      };
-    }
-
+    // Round 5 (P2-2): cria OU retorna o chamado ativo de forma ATÔMICA. O
+    // índice único parcial `waiter_calls_one_active_per_session` (migration
+    // 057) garante no máximo 1 chamado ativo por mesa; sob N POSTs
+    // concorrentes todos resolvem na MESMA linha (mesmo callId) via
+    // ON CONFLICT, em vez do antigo SELECT-then-INSERT que corria e abria N
+    // chamados. A UI do cliente mostra "Aguardando garçom" até cancelar/resolver.
     const rows = (await this.tenantConn.query(
       `INSERT INTO waiter_calls (table_session_id, status, reason, customer_id, visit_id)
        VALUES ($1, 'pending', $2, $3, $4)
-       RETURNING id, status, reason, created_at, assigned_waiter_name, eta_minutes`,
+       ON CONFLICT (table_session_id) WHERE status IN ('pending', 'acknowledged')
+       DO UPDATE SET reason = EXCLUDED.reason
+       RETURNING id, status, reason, created_at, assigned_waiter_name, eta_minutes,
+                 (xmax = 0) AS was_inserted`,
       [
         tableSessionId,
         reason,
@@ -107,16 +80,21 @@ export class WaiterCallsService {
       created_at: string;
       assigned_waiter_name: string | null;
       eta_minutes: number | null;
+      was_inserted: boolean;
     }[];
 
     const call = rows[0];
 
-    this.eventsGateway.emitWaiterCall(slug, {
-      callId: call.id,
-      tableLabel: tableInfo.label,
-      tableCode: tableInfo.code,
-      reason: call.reason,
-    });
+    // Só emite o WS de "novo chamado" quando REALMENTE inseriu — um re-POST
+    // que caiu no ON CONFLICT não deve re-notificar o garçom.
+    if (call.was_inserted) {
+      this.eventsGateway.emitWaiterCall(slug, {
+        callId: call.id,
+        tableLabel: tableInfo.label,
+        tableCode: tableInfo.code,
+        reason: call.reason,
+      });
+    }
 
     return {
       callId: call.id,
