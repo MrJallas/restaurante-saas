@@ -32,7 +32,7 @@ import {
   type InProgressKind,
   type InProgressState,
 } from '../../components/manager';
-import { manager, staffRosterApi } from '../../lib/api/manager';
+import { manager, staffRosterApi, teamKpisApi } from '../../lib/api/manager';
 import { useManagerEvents } from '../../hooks/useManagerEvents';
 import type { ComplaintDto } from '@restaurant/shared-types';
 
@@ -59,19 +59,28 @@ function homeRelativeTs(iso: string): string {
 }
 
 // P1 #32 — empty until /staff loads. Empty-state copy below covers gap.
-const M_TEAM_FALLBACK: Array<{
-  id: number;
+//
+// Anti-placebo (P1-F do re-scan, 2026-07-04): as métricas por funcionário
+// não são mais fabricadas por índice do array. `avgRating`/`avgResponseMin`
+// vêm do GET /dashboard/team-kpis (avgRating dos últimos 7d via order_ratings,
+// avgResponseMin de waiter_calls acknowledged HOJE) e são `null` quando não há
+// dado real — a UI simplesmente omite o campo em vez de inventar número.
+// Removidos: `tables` (não há contagem por-staff real na home), `scaled` e a
+// pill "N sobrecarregado" (não existe sinal real de sobrecarga).
+type TeamMember = {
+  id: string;
   name: string;
   role: string;
   init: string;
   shift: string;
-  rating: number;
-  callsAvg: number;
-  tables: number;
-  scaled: number;
+  avgRating: number | null;
+  ratingsCount: number;
+  avgResponseMin: number | null;
   color: string;
   flag: 'in-call' | 'overload' | null;
-}> = [];
+};
+
+const M_TEAM_FALLBACK: TeamMember[] = [];
 
 const HOME_ROLE_PALETTE = ['#4F6BFF', '#E37D2F', '#7A4FBE', '#1E8C5A', '#C43A3A', '#0B7A8B'];
 
@@ -292,32 +301,44 @@ export function ScreenManagerHomeA({
     };
   }, [refreshAll]);
 
-  // Fetch staff list for shift section (P1 #14, #32)
+  // Fetch staff list + real per-staff KPIs for the shift section (P1 #14, #32,
+  // P1-F). team-kpis é ranqueado por staffId; casamos com o roster pelo id.
+  // Sem KPI real pro staff (ou endpoint fora), rating/tempo ficam null e a UI
+  // omite — nunca inventa (doutrina anti-placebo).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await staffRosterApi(tenantSlug).list();
-        if (cancelled || !data.length) return;
+        const [roster, kpis] = await Promise.all([
+          staffRosterApi(tenantSlug).list(),
+          teamKpisApi(tenantSlug)
+            .get()
+            .then((r) => r.team)
+            .catch(() => []),
+        ]);
+        if (cancelled || !roster.length) return;
+        const kpiByStaffId = new Map(kpis.map((k) => [k.staffId, k]));
         setTeam(
-          data.map((s, i) => ({
-            id: i + 1,
-            name: s.name,
-            role: s.role,
-            init: s.name
-              .split(' ')
-              .map((p) => p[0])
-              .slice(0, 2)
-              .join('')
-              .toUpperCase(),
-            shift: s.is_active ? 'on' : 'off',
-            rating: 4.5 + (i % 3) * 0.1,
-            callsAvg: 1.2 + (i % 4) * 0.3,
-            tables: Math.max(0, 7 - i),
-            scaled: i === 2 ? 2 : 0,
-            color: HOME_ROLE_PALETTE[i % HOME_ROLE_PALETTE.length],
-            flag: null,
-          })),
+          roster.map((s, i) => {
+            const k = kpiByStaffId.get(s.id);
+            return {
+              id: s.id,
+              name: s.name,
+              role: s.role,
+              init: s.name
+                .split(' ')
+                .map((p) => p[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase(),
+              shift: s.is_active ? 'on' : 'off',
+              avgRating: k?.avgRating ?? null,
+              ratingsCount: k?.ratingsCount ?? 0,
+              avgResponseMin: k?.avgResponseMinutes ?? null,
+              color: HOME_ROLE_PALETTE[i % HOME_ROLE_PALETTE.length],
+              flag: null,
+            };
+          }),
         );
       } catch {
         // keep fallback
@@ -352,7 +373,7 @@ export function ScreenManagerHomeA({
   });
 
   const onShift = team.filter((t) => t.shift === 'on');
-  const overloaded = onShift.filter((t) => t.scaled > 1).length;
+  // Sem sinal real de sobrecarga na home → sem pill "N sobrecarregado" (P1-F).
   const inCall = onShift.filter((t) => t.flag === 'in-call').length;
   const pauseOp = inProgress.find(
     (o) => o.kind === 'zone-pause-active' && o.zonePauseRemaining != null,
@@ -579,18 +600,11 @@ export function ScreenManagerHomeA({
           action="Ver mais →"
           onAction={() => router.push('/manager/equipe')}
         >
-          {(overloaded > 0 || inCall > 0) && (
+          {inCall > 0 && (
             <div style={{ padding: '0 16px 8px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {overloaded > 0 && (
-                <MPill tone="danger" dot dark={dark}>
-                  {overloaded} sobrecarregado{overloaded !== 1 && 's'}
-                </MPill>
-              )}
-              {inCall > 0 && (
-                <MPill tone="warn" dot dark={dark}>
-                  {inCall} em chamado
-                </MPill>
-              )}
+              <MPill tone="warn" dot dark={dark}>
+                {inCall} em chamado
+              </MPill>
             </div>
           )}
           <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -633,8 +647,8 @@ export function ScreenManagerHomeA({
                     </div>
                     <div style={{ fontSize: 11.5, color: C.faint, fontWeight: 500, marginTop: 1 }}>
                       {p.role}
-                      {p.tables > 0 && ` · ${p.tables} mesas`}
-                      {p.callsAvg > 0 && ` · ${p.callsAvg.toFixed(1).replace('.', ',')}m resposta`}
+                      {p.avgResponseMin != null &&
+                        ` · ${p.avgResponseMin.toFixed(1).replace('.', ',')}m resposta`}
                     </div>
                   </div>
                   {flag && (
@@ -642,16 +656,18 @@ export function ScreenManagerHomeA({
                       {flag.label}
                     </MPill>
                   )}
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: C.faint,
-                      fontWeight: 700,
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                  >
-                    ★ {p.rating}
-                  </div>
+                  {p.avgRating != null && p.ratingsCount > 0 && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: C.faint,
+                        fontWeight: 700,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      ★ {p.avgRating.toFixed(1).replace('.', ',')}
+                    </div>
+                  )}
                 </button>
               );
             })}
