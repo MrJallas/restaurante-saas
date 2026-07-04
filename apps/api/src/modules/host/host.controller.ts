@@ -65,9 +65,15 @@ export class HostController {
   }
 
   // ─── Inbox ───
+  /**
+   * `?limit` é parse manual (não DTO/400): valor não numérico equivale a
+   * omitir o param — cai no default 30 do HostInboxService. Clamp 1..100.
+   */
   @Get('inbox')
-  async inbox() {
-    return this.service.listInbox();
+  async inbox(@Query('limit') limitRaw?: string) {
+    const parsed = Number.parseInt(limitRaw ?? '', 10);
+    const limit = Number.isNaN(parsed) ? undefined : Math.min(100, Math.max(1, parsed));
+    return this.service.listInbox(limit);
   }
 
   // ─── Liberate ───
