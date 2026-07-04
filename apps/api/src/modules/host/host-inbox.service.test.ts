@@ -18,6 +18,7 @@
 import { HostService } from './host.service';
 import { HostInboxService } from './host-inbox.service';
 import { HostWaitlistService } from './host-waitlist.service';
+import { HostReservationsService } from './host-reservations.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 
 interface AssistAlertRow {
@@ -98,7 +99,12 @@ function fakeDb(sources: FakeSources = {}) {
 }
 
 function makeService(conn: TenantConnectionProvider) {
-  return new HostService(conn, new HostWaitlistService(conn), new HostInboxService(conn));
+  return new HostService(
+    conn,
+    new HostWaitlistService(conn),
+    new HostInboxService(conn),
+    new HostReservationsService(conn),
+  );
 }
 
 describe('Host inbox — characterization', () => {

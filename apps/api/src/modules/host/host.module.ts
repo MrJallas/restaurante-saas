@@ -9,6 +9,7 @@ import { HostController } from './host.controller';
 import { HostService } from './host.service';
 import { HostInboxService } from './host-inbox.service';
 import { HostWaitlistService } from './host-waitlist.service';
+import { HostReservationsService } from './host-reservations.service';
 
 /**
  * Staff-host module · backend de Mapa + Inbox + Liberate + Swap + VIP via
@@ -27,7 +28,13 @@ import { HostWaitlistService } from './host-waitlist.service';
   controllers: [HostController, HostAssistController],
   // Round 9 (B-NEW-33): HostOrManagerGuard registrado como provider pra
   // que Nest possa injetar TenantConnectionProvider (DI deps do guard).
-  providers: [HostService, HostInboxService, HostWaitlistService, HostOrManagerGuard],
+  providers: [
+    HostService,
+    HostInboxService,
+    HostWaitlistService,
+    HostReservationsService,
+    HostOrManagerGuard,
+  ],
   exports: [HostService],
 })
 export class HostModule {}

@@ -15,6 +15,7 @@ import { NotFoundException } from '@nestjs/common';
 import { HostService } from './host.service';
 import { HostInboxService } from './host-inbox.service';
 import { HostWaitlistService } from './host-waitlist.service';
+import { HostReservationsService } from './host-reservations.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 
 const ENTRY = 'ccccccc1-0000-4000-8000-000000000001';
@@ -68,7 +69,12 @@ function fakeDb(opts: { waiting?: FakeWaitlistRow[]; updateAffects?: number } = 
 }
 
 function makeService(conn: TenantConnectionProvider) {
-  return new HostService(conn, new HostWaitlistService(conn), new HostInboxService(conn));
+  return new HostService(
+    conn,
+    new HostWaitlistService(conn),
+    new HostInboxService(conn),
+    new HostReservationsService(conn),
+  );
 }
 
 describe('Host waitlist — characterization', () => {
