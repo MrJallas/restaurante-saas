@@ -18,13 +18,22 @@ export class OrderRatingsService {
     rating: number;
     comment?: string;
   }) {
-    // ON CONFLICT do nothing — UNIQUE(order_id) enforces idempotency. We then
-    // SELECT to know whether the row was new or pre-existing.
+    // A UNIQUE(order_id) é compartilhada com a row do PROMPT que o
+    // `delivered` cria (rating NULL, submitted_at NULL) — então a resposta
+    // real do cliente é uma TRANSIÇÃO DE ESTADO (completar o prompt), não
+    // uma duplicata. O guard `submitted_at IS NULL` dentro do DO UPDATE é
+    // o que mantém a idempotência: re-avaliação não sobrescreve.
     const inserted = (await this.tenantConn.query(
       `INSERT INTO order_ratings (order_id, customer_id, visit_id, rating,
                                   prompted_at, submitted_at, comment)
        VALUES ($1, $2, $3, $4, now(), now(), $5)
-       ON CONFLICT (order_id) DO NOTHING
+       ON CONFLICT (order_id) DO UPDATE
+          SET rating = EXCLUDED.rating,
+              comment = EXCLUDED.comment,
+              customer_id = COALESCE(order_ratings.customer_id, EXCLUDED.customer_id),
+              visit_id = COALESCE(order_ratings.visit_id, EXCLUDED.visit_id),
+              submitted_at = now()
+        WHERE order_ratings.submitted_at IS NULL
        RETURNING *`,
       [input.orderId, input.customerId, input.visitId ?? null, input.rating, input.comment ?? null],
     )) as Array<Record<string, unknown>>;
