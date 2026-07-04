@@ -88,7 +88,6 @@ export default function PagamentoDividirPage() {
     [orders],
   );
 
-  const subtotalCents = items.reduce((s, it) => s + it.subtotalCents, 0);
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 
   // Decisão Caleb 2026-07-04: o rateio é CANÔNICO no backend — o preview
