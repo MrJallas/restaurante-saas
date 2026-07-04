@@ -319,7 +319,16 @@ export class StaffMessagesService {
           AND t.shift_id = sh.id
           AND t.closed_at IS NULL
           AND (
-            t.work_date < current_date
+            t.work_date < current_date - 1
+            OR (
+              -- Ontem: turno normal já acabou ontem; turno OVERNIGHT
+              -- (start > end) atravessa a meia-noite e só fecha quando o
+              -- relógio passa do fim (ex.: 23h–06h fecha às 06h de hoje).
+              -- Antes, t.work_date < current_date fechava a thread do
+              -- grupo às 00h, NO MEIO do turno.
+              t.work_date = current_date - 1
+              AND (sh.time_start <= sh.time_end OR localtime >= sh.time_end)
+            )
             OR (
               t.work_date = current_date
               AND sh.time_end > sh.time_start
@@ -338,12 +347,27 @@ export class StaffMessagesService {
          FROM staff_shift_assignments a
          JOIN staff_shifts sh ON sh.id = a.shift_id
         WHERE a.staff_id = $1
-          AND a.work_date = current_date
           AND a.removed_at IS NULL
           AND (
-            (sh.time_start < sh.time_end AND localtime >= sh.time_start AND localtime < sh.time_end)
-            OR (sh.time_start > sh.time_end AND (localtime >= sh.time_start OR localtime < sh.time_end))
-            OR (sh.time_start = sh.time_end)
+            (
+              a.work_date = current_date
+              AND (
+                (sh.time_start < sh.time_end AND localtime >= sh.time_start AND localtime < sh.time_end)
+                -- Overnight (start > end) com assignment de HOJE: ativo só
+                -- no trecho PRÉ-meia-noite. O braço antigo (localtime <
+                -- time_end) ligava o turno de hoje à 01h, antes de começar.
+                OR (sh.time_start > sh.time_end AND localtime >= sh.time_start)
+                OR (sh.time_start = sh.time_end)
+              )
+            )
+            OR (
+              -- Trecho PÓS-meia-noite do overnight: o assignment é de
+              -- ONTEM (a.work_date = current_date não casava e o garçom
+              -- era recrutado no dia errado / caía da thread às 00h).
+              a.work_date = current_date - 1
+              AND sh.time_start > sh.time_end
+              AND localtime < sh.time_end
+            )
           )`,
       [staffId],
     )) as Array<{

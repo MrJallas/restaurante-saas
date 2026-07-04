@@ -96,6 +96,17 @@ export class WaiterCallsController {
   }
 
   /**
+   * Detalhe do chamado pro GARÇOM (tela ScreenWaiterCallDetail): mesa real
+   * + conta real da sessão com taxa. StaffOnly — o GET :callId de cima é
+   * do customer (SessionGuard + scope da própria mesa).
+   */
+  @Get(':callId/staff-detail')
+  @UseGuards(StaffOnlyGuard)
+  async getCallStaffDetail(@Param('callId') callId: string) {
+    return this.waiterCallsService.getCallStaffDetail(callId);
+  }
+
+  /**
    * Customer cancels their own pending call (SW2 "Cancelar chamado").
    * Only valid while status is still `pending`.
    */

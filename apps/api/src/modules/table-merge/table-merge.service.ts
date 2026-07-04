@@ -781,32 +781,9 @@ export class TableMergeService {
       const targetHost =
         sessionRows.find((r) => r.id === input.targetTableSessionId)?.host_customer_id ?? null;
 
-      // 2. Cria escalation_chain pra audit (steps jsonb append).
-      const chainStep = {
-        kind: 'staff_override',
-        staff_id: input.staffId,
-        reason: input.reason,
-        at: new Date().toISOString(),
-      };
-      const chainRows = (await tx.query(
-        `INSERT INTO escalation_chains (type, context, current_step, status,
-                                         steps, resolved_at, resolved_by)
-         VALUES ('table_merge', $1::jsonb, 1, 'approved', $2::jsonb,
-                 now(), $3)
-         RETURNING id`,
-        [
-          JSON.stringify({
-            sourceTableSessionId: input.sourceTableSessionId,
-            targetTableSessionId: input.targetTableSessionId,
-            override: true,
-          }),
-          JSON.stringify([chainStep]),
-          `staff:${input.staffId}`,
-        ],
-      )) as Array<{ id: string }>;
-
-      // 3. Cria request `approved` direto. ttl_expires_at no passado pra
-      // marcar que não tá esperando timeout — já decidido.
+      // 2. Cria request `approved` direto. ttl_expires_at no passado pra
+      // marcar que não tá esperando timeout — já decidido. A chain de
+      // audit vem depois (source_id dela aponta pro request).
       const ttl = new Date(Date.now() - 1000).toISOString();
       const reqRows = unwrapRows<Record<string, unknown>>(
         await tx.query(
@@ -814,11 +791,10 @@ export class TableMergeService {
              (source_table_session_id, target_table_session_id,
               requesting_customer_id, target_customer_id,
               decided_by_customer_id, status, message, ttl_expires_at,
-              decided_at, approved_by_a_at, approved_by_b_at,
-              escalation_chain_id)
+              decided_at, approved_by_a_at, approved_by_b_at)
            VALUES ($1, $2,
                    COALESCE($3, '00000000-0000-0000-0000-000000000000'::uuid),
-                   $4, NULL, 'approved', $5, $6, now(), now(), now(), $7)
+                   $4, NULL, 'approved', $5, $6, now(), now(), now())
            RETURNING *`,
           [
             input.sourceTableSessionId,
@@ -827,10 +803,41 @@ export class TableMergeService {
             targetHost,
             `STAFF OVERRIDE · ${input.reason}`,
             ttl,
-            chainRows[0].id,
           ],
         ),
       );
+
+      // 3. Chain de audit com as colunas REAIS (migrations 023+034) — o
+      // INSERT antigo usava type/context/current_step/status/resolved_at/
+      // resolved_by, que não existem: TODO forceMerge estourava 42703/500.
+      // Fechada no ato (completed_at=now()): é registro de override, não
+      // cascata viva.
+      const chainStep = {
+        kind: 'staff_override',
+        staff_id: input.staffId,
+        reason: input.reason,
+        at: new Date().toISOString(),
+      };
+      const chainRows = (await tx.query(
+        `INSERT INTO escalation_chains
+           (kind, source_id, level, current_assignee_role,
+            current_assignee_staff_id, steps, completed_at, resolution_notes)
+         VALUES ('table_merge', $1::uuid, 1, 'manager', $2::uuid,
+                 $3::jsonb, now(), $4)
+         RETURNING id`,
+        [
+          reqRows[0].id,
+          input.staffId,
+          JSON.stringify([chainStep]),
+          `STAFF OVERRIDE · ${input.reason}`,
+        ],
+      )) as Array<{ id: string }>;
+
+      await tx.query(`UPDATE table_merge_requests SET escalation_chain_id = $1 WHERE id = $2`, [
+        chainRows[0].id,
+        reqRows[0].id,
+      ]);
+      reqRows[0].escalation_chain_id = chainRows[0].id;
 
       // 4. Limpar cooldowns ativos entre o par (em qualquer direção) —
       // override deve permitir mesmo em retry agressivo.

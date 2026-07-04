@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { BillingService } from '../billing/billing.service';
 import { EventsGateway } from '../websocket/events.gateway';
 
 /** Whitelist kept in-sync with WaiterCallReason in packages/shared-types. */
@@ -24,6 +25,7 @@ export class WaiterCallsService {
   constructor(
     private readonly tenantConn: TenantConnectionProvider,
     private readonly eventsGateway: EventsGateway,
+    private readonly billing: BillingService,
   ) {}
 
   async createCall(tableSessionId: string, slug: string, options: CreateWaiterCallOptions = {}) {
@@ -172,6 +174,72 @@ export class WaiterCallsService {
       cancelledAt: call.cancelled_at,
       waiterName: call.assigned_waiter_name ?? undefined,
       etaMinutes: call.eta_minutes ?? undefined,
+    };
+  }
+
+  /**
+   * Detalhe do chamado pro STAFF (auditoria 2026-07-03): a tela do garçom
+   * era placebo (R$ 612,40 hardcoded — maquininha com valor errado). Aqui
+   * vai a mesa REAL e a conta REAL da sessão inteira (todos os billing
+   * modes: é o fechamento presencial), com a MESMA taxa do POST /payments.
+   */
+  async getCallStaffDetail(callId: string) {
+    const rows = (await this.tenantConn.query(
+      `SELECT wc.id, wc.status, wc.reason, wc.created_at, wc.acknowledged_at,
+              wc.resolved_at, wc.cancelled_at, wc.assigned_waiter_name,
+              wc.eta_minutes, wc.table_session_id,
+              t.label AS table_label, t.code AS table_code
+         FROM waiter_calls wc
+         JOIN table_sessions ts ON ts.id = wc.table_session_id
+         JOIN tables t ON t.id = ts.table_id
+        WHERE wc.id = $1`,
+      [callId],
+    )) as Array<{
+      id: string;
+      status: string;
+      reason: string;
+      created_at: string;
+      acknowledged_at: string | null;
+      resolved_at: string | null;
+      cancelled_at: string | null;
+      assigned_waiter_name: string | null;
+      eta_minutes: number | null;
+      table_session_id: string;
+      table_label: string;
+      table_code: string;
+    }>;
+    if (!rows.length) {
+      throw new NotFoundException('Chamado nao encontrado.');
+    }
+    const call = rows[0];
+
+    const sumRows = (await this.tenantConn.query(
+      `SELECT COALESCE(SUM(total_cents), 0) AS total
+         FROM orders
+        WHERE table_session_id = $1
+          AND status NOT IN ('cancelled', 'pending_confirmation')`,
+      [call.table_session_id],
+    )) as Array<{ total: unknown }>;
+    const bill = await this.billing.computeTotals(Number(sumRows[0]?.total ?? 0));
+
+    return {
+      callId: call.id,
+      status: call.status,
+      reason: call.reason,
+      createdAt: call.created_at,
+      acknowledgedAt: call.acknowledged_at,
+      resolvedAt: call.resolved_at,
+      cancelledAt: call.cancelled_at,
+      waiterName: call.assigned_waiter_name ?? undefined,
+      etaMinutes: call.eta_minutes ?? undefined,
+      tableLabel: call.table_label,
+      tableCode: call.table_code,
+      bill: {
+        subtotalCents: bill.subtotalCents,
+        serviceFeePct: bill.serviceFeePct,
+        serviceFeeCents: bill.serviceFeeCents,
+        totalCents: bill.totalCents,
+      },
     };
   }
 
