@@ -1,12 +1,18 @@
 'use client';
 
 // ScreenHostTurnosHistorico — histórico de turnos passados do host.
-// Mostra liberações, reservas, walk-ins e espera média por turno. Mock
-// data até o backend ter o endpoint; cada row expande pra detalhe inline.
+// Mostra liberações, reservas, walk-ins e espera média por turno.
 //
-// TODO(round19): wire GET /:slug/host/turnos-history — hoje só renderiza
-// mock fixo. Cada row já está pronta pra receber payload real (mesmo
-// shape).
+// Não há endpoint de turnos por-host ainda. O único log de turno real é
+// `manager_shift_logs` (migration 059), que é dado FINANCEIRO do salão
+// (vendas, ticket médio) — NÃO tem os campos do host (liberações,
+// reservas, walk-ins, espera). Ligar o host nele mostraria receita do
+// salão a um recepcionista e ainda deixaria os KPIs do host vazios.
+//
+// Doutrina anti-placebo: sem fonte real, renderiza empty state honesto —
+// nunca mock apresentado como dado real. Quando o backend expor
+// GET /:slug/host/turnos-history (mesmo shape de ShiftEntry), o pai passa
+// `shifts` e a lista popula sozinha.
 
 import * as React from 'react';
 import { useMemo, useState } from 'react';
@@ -27,124 +33,14 @@ interface ShiftEntry {
   avgWaitMin: number;
 }
 
-// Mock 10 turnos (D-1 ate D-10). Padroniza turno noite (17h-23h).
-const MOCK_SHIFTS: ShiftEntry[] = [
-  {
-    id: 's-1',
-    date: '2026-05-09',
-    weekday: 'Sex',
-    startedAt: '17:00',
-    endedAt: '23:14',
-    tablesReleased: 28,
-    reservations: 14,
-    walkins: 6,
-    avgWaitMin: 8,
-  },
-  {
-    id: 's-2',
-    date: '2026-05-08',
-    weekday: 'Qui',
-    startedAt: '17:02',
-    endedAt: '22:51',
-    tablesReleased: 22,
-    reservations: 11,
-    walkins: 4,
-    avgWaitMin: 6,
-  },
-  {
-    id: 's-3',
-    date: '2026-05-07',
-    weekday: 'Qua',
-    startedAt: '17:00',
-    endedAt: '22:34',
-    tablesReleased: 19,
-    reservations: 9,
-    walkins: 3,
-    avgWaitMin: 5,
-  },
-  {
-    id: 's-4',
-    date: '2026-05-06',
-    weekday: 'Ter',
-    startedAt: '17:05',
-    endedAt: '22:20',
-    tablesReleased: 17,
-    reservations: 8,
-    walkins: 3,
-    avgWaitMin: 4,
-  },
-  {
-    id: 's-5',
-    date: '2026-05-05',
-    weekday: 'Seg',
-    startedAt: '17:01',
-    endedAt: '22:10',
-    tablesReleased: 15,
-    reservations: 6,
-    walkins: 2,
-    avgWaitMin: 4,
-  },
-  {
-    id: 's-6',
-    date: '2026-05-04',
-    weekday: 'Dom',
-    startedAt: '11:30',
-    endedAt: '16:45',
-    tablesReleased: 24,
-    reservations: 12,
-    walkins: 9,
-    avgWaitMin: 12,
-  },
-  {
-    id: 's-7',
-    date: '2026-05-03',
-    weekday: 'Sáb',
-    startedAt: '17:00',
-    endedAt: '23:38',
-    tablesReleased: 32,
-    reservations: 18,
-    walkins: 8,
-    avgWaitMin: 14,
-  },
-  {
-    id: 's-8',
-    date: '2026-05-02',
-    weekday: 'Sex',
-    startedAt: '17:00',
-    endedAt: '23:05',
-    tablesReleased: 27,
-    reservations: 13,
-    walkins: 7,
-    avgWaitMin: 9,
-  },
-  {
-    id: 's-9',
-    date: '2026-05-01',
-    weekday: 'Qui',
-    startedAt: '17:00',
-    endedAt: '23:18',
-    tablesReleased: 30,
-    reservations: 15,
-    walkins: 8,
-    avgWaitMin: 11,
-  },
-  {
-    id: 's-10',
-    date: '2026-04-30',
-    weekday: 'Qua',
-    startedAt: '17:02',
-    endedAt: '22:40',
-    tablesReleased: 21,
-    reservations: 10,
-    walkins: 4,
-    avgWaitMin: 7,
-  },
-];
-
 interface ScreenHostTurnosHistoricoProps {
   onBack?: () => void;
   onTabChange?: (tab: string) => void;
-  /** Override pra testes; em produção vem do hook futuro. */
+  /**
+   * Turnos reais do host. Sem endpoint por-host ainda (ver header), então
+   * o default é vazio e a tela mostra empty state honesto. Quando o
+   * backend expuser a fonte real, o pai passa `shifts`.
+   */
   shifts?: ShiftEntry[];
 }
 
@@ -156,7 +52,7 @@ function formatDateBr(iso: string): string {
 export const ScreenHostTurnosHistorico: React.FC<ScreenHostTurnosHistoricoProps> = ({
   onBack,
   onTabChange,
-  shifts = MOCK_SHIFTS,
+  shifts = [],
 }) => {
   const { dark } = useStaffTheme();
   const C = useG(dark);
@@ -203,56 +99,59 @@ export const ScreenHostTurnosHistorico: React.FC<ScreenHostTurnosHistoricoProps>
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0, paddingBottom: 24 }}>
-        {/* Hero KPI */}
-        <div style={{ padding: '16px 16px 0' }}>
-          <div
-            style={{
-              padding: 16,
-              borderRadius: 12,
-              background: C.bg,
-              border: `1px solid ${C.borderSoft}`,
-            }}
-          >
+        {/* Hero KPI — só aparece quando há turnos reais. Sem dados, o
+            empty state honesto abaixo é o único conteúdo. */}
+        {sorted.length > 0 && (
+          <div style={{ padding: '16px 16px 0' }}>
             <div
               style={{
-                fontSize: 11,
-                color: C.faint,
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: 0.4,
+                padding: 16,
+                borderRadius: 12,
+                background: C.bg,
+                border: `1px solid ${C.borderSoft}`,
               }}
             >
-              No histórico
-            </div>
-            <div
-              style={{
-                fontSize: 30,
-                fontWeight: 800,
-                color: C.ink,
-                letterSpacing: -0.6,
-                marginTop: 4,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {sorted.length}
-              <span style={{ fontSize: 14, color: C.faint, fontWeight: 600, marginLeft: 6 }}>
-                {sorted.length === 1 ? 'turno' : 'turnos'}
-              </span>
-            </div>
-            <div
-              style={{
-                fontSize: 10.5,
-                color: C.faint,
-                marginTop: 6,
-                fontWeight: 400,
-                lineHeight: 1.4,
-              }}
-            >
-              Toque num turno pra ver detalhes. Os números refletem só as suas ações como
-              recepcionista — não o salão inteiro.
+              <div
+                style={{
+                  fontSize: 11,
+                  color: C.faint,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.4,
+                }}
+              >
+                No histórico
+              </div>
+              <div
+                style={{
+                  fontSize: 30,
+                  fontWeight: 800,
+                  color: C.ink,
+                  letterSpacing: -0.6,
+                  marginTop: 4,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {sorted.length}
+                <span style={{ fontSize: 14, color: C.faint, fontWeight: 600, marginLeft: 6 }}>
+                  {sorted.length === 1 ? 'turno' : 'turnos'}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: 10.5,
+                  color: C.faint,
+                  marginTop: 6,
+                  fontWeight: 400,
+                  lineHeight: 1.4,
+                }}
+              >
+                Toque num turno pra ver detalhes. Os números refletem só as suas ações como
+                recepcionista — não o salão inteiro.
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Lista turnos */}
         <div style={{ padding: '16px 16px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -368,12 +267,14 @@ export const ScreenHostTurnosHistorico: React.FC<ScreenHostTurnosHistoricoProps>
               style={{
                 fontSize: 13,
                 color: C.faint,
-                padding: '24px 4px',
+                padding: '48px 16px',
                 textAlign: 'center',
                 fontWeight: 500,
+                lineHeight: 1.5,
               }}
             >
-              Nenhum turno fechado ainda. Volte aqui no fim do primeiro expediente.
+              Nenhum turno registrado ainda. O histórico dos seus turnos aparece aqui assim que o
+              expediente começar a ser registrado.
             </div>
           )}
         </div>
