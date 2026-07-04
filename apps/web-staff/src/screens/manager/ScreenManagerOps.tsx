@@ -27,7 +27,7 @@ import {
   MAvatar,
   MQuickActionsBar,
 } from '../../components/manager';
-import { manager, type AlertRow } from '../../lib/api/manager';
+import { manager, type AlertRow, type FunnelStage } from '../../lib/api/manager';
 import { listTablesOverview } from '../../lib/api/waiter';
 
 export type OpsTab = 'alerts' | 'map' | 'funnel';
@@ -70,29 +70,6 @@ function toOpsAlert(row: AlertRow): OpsAlert {
   };
 }
 
-// DEMO explícito — backend do funil (round19) não existe; selo na UI.
-const DEMO_FUNNEL = [
-  { stage: 'Pedido lançado', median: 0.3, p95: 0.8, count: 142, ok: true, note: '' },
-  { stage: 'Confirmado', median: 0.2, p95: 0.5, count: 142, ok: true, note: '' },
-  {
-    stage: 'Em preparo',
-    median: 14,
-    p95: 28,
-    count: 138,
-    ok: false,
-    note: 'Cozinha sobrecarregada às 19h',
-  },
-  { stage: 'Pronto', median: 0.5, p95: 1.2, count: 134, ok: true, note: '' },
-  {
-    stage: 'Entregue na mesa',
-    median: 6,
-    p95: 14,
-    count: 130,
-    ok: false,
-    note: 'Pratos esfriando na pass',
-  },
-];
-
 interface MapTable {
   n: number;
   st: 'ok' | 'warn' | 'crit' | 'free';
@@ -117,12 +94,17 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
 
   const [alerts, setAlerts] = useState<OpsAlert[]>([]);
   const [tables, setTables] = useState<MapTable[]>([]);
+  const [funnel, setFunnel] = useState<FunnelStage[]>([]);
   const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     let stop = false;
-    Promise.all([api.alerts.list({ status: 'open' }), listTablesOverview(tenantSlug)])
-      .then(([alertRows, tableRows]) => {
+    Promise.all([
+      api.alerts.list({ status: 'open' }),
+      listTablesOverview(tenantSlug),
+      api.funnel.get(),
+    ])
+      .then(([alertRows, tableRows, funnelRes]) => {
         if (stop) return;
         setAlerts(alertRows.map(toOpsAlert));
         setTables(
@@ -131,6 +113,7 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
             st: t.occupied ? ('ok' as const) : ('free' as const),
           })),
         );
+        setFunnel(funnelRes.stages);
         setLoadError(false);
       })
       .catch(() => {
@@ -266,7 +249,7 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
           />
         )}
         {active === 'map' && <OpsMap dark={dark} tables={tables} />}
-        {active === 'funnel' && <OpsFunnel dark={dark} stages={DEMO_FUNNEL} />}
+        {active === 'funnel' && <OpsFunnel dark={dark} stages={funnel} />}
 
         <style jsx global>{`
           @keyframes gPulse {
@@ -801,40 +784,36 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
 }
 
 // ─── FUNIL sub-tab ───────────────────────────────────────────────
-function OpsFunnel({ dark, stages }: { dark?: boolean; stages: typeof DEMO_FUNNEL }) {
+function OpsFunnel({ dark, stages }: { dark?: boolean; stages: FunnelStage[] }) {
   const C = useG(!!dark);
-  const max = Math.max(...stages.map((s) => s.median), 1);
+  const max = Math.max(...stages.map((s) => s.medianMinutes), 1);
   return (
     <div style={{ padding: 16 }}>
       <div
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '4px 10px',
-          borderRadius: 100,
-          border: `1px solid ${C.borderSoft}`,
-          color: C.faint,
-          fontSize: 10,
-          fontWeight: 800,
-          letterSpacing: 1,
-          textTransform: 'uppercase',
-          fontFamily: MONO_FONT,
-          marginBottom: 10,
-        }}
-      >
-        Dados de demonstração
-      </div>
-      <div
         style={{ fontSize: 12, color: C.faint, fontWeight: 500, marginBottom: 14, lineHeight: 1.5 }}
       >
-        Tempo médio em cada etapa do pedido (exemplo ilustrativo — métricas reais em construção).{' '}
+        Tempo mediano em cada etapa do pedido HOJE (fonte: histórico real de transições).{' '}
         <span style={{ color: '#C43A3A', fontWeight: 700 }}>Vermelho</span> = passou da meta ·{' '}
         <span style={{ color: C.ink, fontWeight: 700 }}>preto</span> = no ritmo.
       </div>
 
+      {stages.length === 0 && (
+        <div
+          style={{
+            padding: '24px 20px',
+            textAlign: 'center',
+            border: `1.5px dashed ${C.borderSoft}`,
+            borderRadius: 14,
+            color: C.faint,
+            fontSize: 12.5,
+            fontWeight: 500,
+          }}
+        >
+          Sem pedidos hoje ainda — o funil aparece com o primeiro pedido do dia.
+        </div>
+      )}
       {stages.map((s, i) => {
-        const pct = (s.median / max) * 100;
+        const pct = (s.medianMinutes / max) * 100;
         return (
           <div key={i} style={{ marginBottom: 16 }}>
             <div
@@ -858,7 +837,7 @@ function OpsFunnel({ dark, stages }: { dark?: boolean; stages: typeof DEMO_FUNNE
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {s.median} min
+                  {s.medianMinutes} min
                 </div>
                 <div
                   style={{
@@ -868,7 +847,7 @@ function OpsFunnel({ dark, stages }: { dark?: boolean; stages: typeof DEMO_FUNNE
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  pior caso {s.p95} min
+                  pior caso {s.p95Minutes} min
                 </div>
               </div>
             </div>

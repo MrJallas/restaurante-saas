@@ -5,6 +5,85 @@ import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 export class DashboardService {
   constructor(private readonly tenantConn: TenantConnectionProvider) {}
 
+  /**
+   * Funil real do dia (decisão Caleb 2026-07-04, gate 1D): tempos por
+   * etapa vindos da order_status_history; "acima da meta" só quando há
+   * kitchen_eta configurado — sem meta, sem julgamento inventado.
+   */
+  async getOrderFunnel(): Promise<{
+    stages: Array<{
+      stage: string;
+      count: number;
+      medianMinutes: number;
+      p95Minutes: number;
+      ok: boolean;
+      note: string;
+    }>;
+  }> {
+    const rows = (await this.tenantConn.query(
+      `WITH h AS (
+         SELECT order_id, to_status, created_at
+           FROM order_status_history
+          WHERE created_at >= current_date
+       ),
+       deltas AS (
+         SELECT p.stage, p.ord,
+                EXTRACT(EPOCH FROM (b.created_at - a.created_at)) AS secs
+           FROM (VALUES
+                  ('Confirmação', 'pending_confirmation', 'received', 1),
+                  ('Fila da cozinha', 'received', 'in_progress', 2),
+                  ('Em preparo', 'in_progress', 'ready', 3),
+                  ('Pronto → mesa', 'ready', 'delivered', 4)
+                ) AS p(stage, from_st, to_st, ord)
+           JOIN h a ON a.to_status = p.from_st
+           JOIN h b ON b.order_id = a.order_id AND b.to_status = p.to_st
+          WHERE b.created_at >= a.created_at
+       )
+       SELECT stage, ord,
+              COUNT(*)::int AS count,
+              ROUND((percentile_cont(0.5) WITHIN GROUP (ORDER BY secs) / 60)::numeric, 1) AS median_min,
+              ROUND((percentile_cont(0.95) WITHIN GROUP (ORDER BY secs) / 60)::numeric, 1) AS p95_min
+         FROM deltas
+        GROUP BY stage, ord
+        ORDER BY ord`,
+      [],
+    )) as Array<{
+      stage: string;
+      ord: number;
+      count: unknown;
+      median_min: unknown;
+      p95_min: unknown;
+    }>;
+
+    const etaRows = (await this.tenantConn.query(
+      `SELECT kitchen_eta_max_minutes FROM settings LIMIT 1`,
+      [],
+    )) as Array<{ kitchen_eta_max_minutes: number | null }>;
+    const kitchenEtaMax = Number(etaRows[0]?.kitchen_eta_max_minutes ?? NaN);
+
+    return {
+      stages: rows.map((r) => {
+        // pg devolve numeric/ROUND como STRING — coerção obrigatória
+        // (gotcha da fatia 1A: '790' + 79 = '79079').
+        const medianMinutes = Number(r.median_min) || 0;
+        const p95Minutes = Number(r.p95_min) || 0;
+        const overKitchenTarget =
+          r.stage === 'Em preparo' &&
+          Number.isFinite(kitchenEtaMax) &&
+          kitchenEtaMax > 0 &&
+          medianMinutes > kitchenEtaMax;
+        return {
+          stage: r.stage,
+          count: Number(r.count) || 0,
+          medianMinutes,
+          p95Minutes,
+          ok: !overKitchenTarget,
+          note: overKitchenTarget ? `Mediana acima da meta da cozinha (${kitchenEtaMax} min)` : '',
+        };
+      }),
+    };
+  }
+
   async getOverview() {
     // Today's stats
     const todayOrders = (await this.tenantConn.query(

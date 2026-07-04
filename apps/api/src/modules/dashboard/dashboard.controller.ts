@@ -24,6 +24,11 @@ export class DashboardController {
     return Math.min(n, max);
   }
 
+  @Get('funnel')
+  async getOrderFunnel() {
+    return this.dashboardService.getOrderFunnel();
+  }
+
   @Get('overview')
   async getOverview() {
     return this.dashboardService.getOverview();

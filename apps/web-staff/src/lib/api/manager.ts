@@ -357,6 +357,20 @@ export interface AlertRow {
   created_at: string;
 }
 
+export interface FunnelStage {
+  stage: string;
+  count: number;
+  medianMinutes: number;
+  p95Minutes: number;
+  ok: boolean;
+  note: string;
+}
+
+/** Funil real do dia (order_status_history) — decisão Caleb 2026-07-04. */
+export const funnelApi = (slug: string) => ({
+  get: () => staffGet<{ stages: FunnelStage[] }>(`/${slug}/dashboard/funnel`),
+});
+
 export const alertsApi = (slug: string) => ({
   list: (
     params: { sev?: AlertSeverity | 'all'; status?: AlertStatus | 'all'; limit?: number } = {},
@@ -762,6 +776,7 @@ export function manager(slug: string) {
     shifts: shiftsApi(slug),
     assistant: assistantApi(slug),
     alerts: alertsApi(slug),
+    funnel: funnelApi(slug),
     account: managerAccountApi(slug),
     kitchen: kitchenApi(slug),
     orderTimeline: {
