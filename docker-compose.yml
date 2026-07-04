@@ -69,7 +69,11 @@ services:
       mongodb:
         condition: service_healthy
     environment:
-      NODE_OPTIONS: --max-old-space-size=4096
+      # 6144 pressupõe VM do Docker Desktop com >=12GB (MemoryMiB). Com a VM
+      # em 6GB o watch do nest estourava o heap de 4GB em sequências de
+      # recompile (OOM recorrente 2026-07-04: health 000, processo-pai do
+      # watch vivo, RestartCount=0).
+      NODE_OPTIONS: --max-old-space-size=6144
       NODE_ENV: development
       PORT: 3001
       DATABASE_HOST: postgres
