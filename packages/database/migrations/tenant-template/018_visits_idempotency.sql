@@ -26,8 +26,15 @@ END $$;
 -- One visit per customer per session
 DO $$
 BEGIN
+  -- conrelid escopa ao visits DO SCHEMA ATUAL. Sem isso, o nome da
+  -- constraint (único por schema no PG, mas o SELECT varria TODOS) fazia o
+  -- EXISTS achar a constraint de OUTRO tenant → o ADD era pulado e o 2º
+  -- tenant em diante ficava SEM a UNIQUE (welcome/join quebrava com 42P10
+  -- no ON CONFLICT). Achado do re-scan 2026-07-04, P0 do beta multi-tenant.
   IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'visits_session_customer_unique'
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'visits_session_customer_unique'
+       AND conrelid = 'visits'::regclass
   ) THEN
     ALTER TABLE visits ADD CONSTRAINT visits_session_customer_unique
       UNIQUE (table_session_id, customer_id);
