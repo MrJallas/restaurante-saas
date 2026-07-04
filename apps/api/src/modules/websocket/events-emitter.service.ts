@@ -13,9 +13,17 @@
  *
  * Comportamento congelado por events-emitter.characterization.test.ts
  * (verde antes E depois da extração, sem edição no teste).
+ *
+ * M4 (timeline): os emits cujo wire tem kind no WIRE_EVENT_TO_TIMELINE_KIND
+ * ganham um `this.tap?.record(wire, payload, slug)` APÓS os emits — tap
+ * fire-and-forget e fail-open (TimelineTapService), rooms/wire/payload
+ * intocados. O tap é @Optional(): testes que instanciam o service (ou o
+ * gateway via design:paramtypes) sem DI continuam funcionando com tap
+ * undefined (optional chaining vira no-op).
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import type { Server } from 'socket.io';
+import { TimelineTapService } from '../session-timeline/timeline-tap.service';
 import type {
   WsEscalationCreated,
   WsEscalationAdvanced,
@@ -58,6 +66,8 @@ import type {
 export class EventsEmitterService {
   private server!: Server;
 
+  constructor(@Optional() private readonly tap?: TimelineTapService) {}
+
   /** Chamado pelo EventsGateway.afterInit com o Server real do socket.io. */
   bindServer(server: Server) {
     this.server = server;
@@ -92,6 +102,13 @@ export class EventsEmitterService {
       ...extra,
       timestamp: new Date().toISOString(),
     });
+
+    // M4 (timeline): tap fire-and-forget, mesmo shape emitido acima.
+    this.tap?.record(
+      'order:status',
+      { orderId, status, tableLabel, ...extra, timestamp: new Date().toISOString() },
+      slug,
+    );
   }
 
   emitNewOrder(slug: string, orderData: Record<string, unknown>) {
@@ -127,6 +144,13 @@ export class EventsEmitterService {
       ...extra,
       timestamp: new Date().toISOString(),
     });
+
+    // M4 (timeline): tap fire-and-forget, mesmo shape emitido acima.
+    this.tap?.record(
+      'order:claimed',
+      { orderId, claimedBy, ...extra, timestamp: new Date().toISOString() },
+      slug,
+    );
   }
 
   emitOrderHandoffCalled(
@@ -155,6 +179,9 @@ export class EventsEmitterService {
     } else {
       this.server.to(`tenant:${slug}:waiter`).emit('order:handoff_called', payload);
     }
+
+    // M4 (timeline): tap fire-and-forget.
+    this.tap?.record('order:handoff_called', payload, slug);
   }
 
   emitKitchenReorder(
@@ -242,6 +269,9 @@ export class EventsEmitterService {
       ...callData,
       timestamp: new Date().toISOString(),
     });
+
+    // M4 (timeline): tap fire-and-forget, mesmo shape emitido acima.
+    this.tap?.record('waiter:call', { ...callData, timestamp: new Date().toISOString() }, slug);
   }
 
   /**
@@ -267,6 +297,13 @@ export class EventsEmitterService {
       ...extra,
       timestamp: new Date().toISOString(),
     });
+
+    // M4 (timeline): tap fire-and-forget, mesmo shape emitido acima.
+    this.tap?.record(
+      'waiter:acknowledged',
+      { callId, tableSessionId: sessionId, ...extra, timestamp: new Date().toISOString() },
+      slug,
+    );
   }
 
   emitToSession(sessionId: string, event: string, data: unknown) {
@@ -379,6 +416,8 @@ export class EventsEmitterService {
       this.server.to(`customer:${hostCustomerId}`).emit('late_arrival.created', payload);
     }
     this.server.to(`customer:${payload.requesterCustomerId}`).emit('late_arrival.created', payload);
+    // M4 (timeline): tap fire-and-forget.
+    this.tap?.record('late_arrival.created', payload, slug);
   }
 
   /**
@@ -391,6 +430,8 @@ export class EventsEmitterService {
       .to(`customer:${payload.requesterCustomerId}`)
       .emit('late_arrival.approved', payload);
     this.server.to(`session:${payload.tableSessionId}`).emit('late_arrival.approved', payload);
+    // M4 (timeline): tap fire-and-forget.
+    this.tap?.record('late_arrival.approved', payload, slug);
   }
 
   /**
@@ -401,6 +442,8 @@ export class EventsEmitterService {
     this.server
       .to(`customer:${payload.requesterCustomerId}`)
       .emit('late_arrival.rejected', payload);
+    // M4 (timeline): tap fire-and-forget.
+    this.tap?.record('late_arrival.rejected', payload, slug);
   }
 
   /**
@@ -468,6 +511,8 @@ export class EventsEmitterService {
     }
     this.server.to(`session:${payload.originSessionId}`).emit('table_merge.created', payload);
     this.server.to(`session:${payload.targetSessionId}`).emit('table_merge.created', payload);
+    // M4 (timeline): tap fire-and-forget (dono = sessão de origem).
+    this.tap?.record('table_merge.created', payload, slug);
   }
 
   /**
@@ -483,6 +528,8 @@ export class EventsEmitterService {
     this.server.to(`tenant:${slug}`).emit('table_merge.approved', payload);
     this.server.to(`session:${originSessionId}`).emit('table_merge.approved', payload);
     this.server.to(`session:${targetSessionId}`).emit('table_merge.approved', payload);
+    // M4 (timeline): tap fire-and-forget (status pending = no-op no tap).
+    this.tap?.record('table_merge.approved', payload, slug);
   }
 
   /**
@@ -498,6 +545,8 @@ export class EventsEmitterService {
     this.server.to(`tenant:${slug}`).emit('table_merge.rejected', payload);
     this.server.to(`session:${originSessionId}`).emit('table_merge.rejected', payload);
     this.server.to(`session:${targetSessionId}`).emit('table_merge.rejected', payload);
+    // M4 (timeline): tap fire-and-forget.
+    this.tap?.record('table_merge.rejected', payload, slug);
   }
 
   /**
@@ -568,6 +617,8 @@ export class EventsEmitterService {
     if (assignedManagerId) {
       this.server.to(`manager:${assignedManagerId}`).emit('complaint.received', payload);
     }
+    // M4 (timeline): tap fire-and-forget (description NÃO entra — LGPD).
+    this.tap?.record('complaint.received', payload, slug);
   }
 
   /**
@@ -605,6 +656,9 @@ export class EventsEmitterService {
     if (customerId) {
       this.server.to(`customer:${customerId}`).emit('complaint.resolved', payload);
     }
+    // M4 (timeline): tap fire-and-forget — hoje no-op no tap (o wire não
+    // carrega tableSessionId); já wirado pra quando o payload enriquecer.
+    this.tap?.record('complaint.resolved', payload, slug);
   }
 
   /**
@@ -659,6 +713,8 @@ export class EventsEmitterService {
   emitCourtesyCreated(slug: string, payload: WsCourtesyCreated['payload']) {
     this.server.to(`tenant:${slug}`).emit('courtesy.created', payload);
     this.server.to(`session:${payload.tableSessionId}`).emit('courtesy.created', payload);
+    // M4 (timeline): tap fire-and-forget (notes NÃO entram — LGPD).
+    this.tap?.record('courtesy.created', payload, slug);
   }
 
   /**
@@ -686,6 +742,8 @@ export class EventsEmitterService {
   emitPaymentConfirmed(slug: string, payload: WsPaymentConfirmed['payload']) {
     this.server.to(`tenant:${slug}`).emit('payment.confirmed', payload);
     this.server.to(`session:${payload.tableSessionId}`).emit('payment.confirmed', payload);
+    // M4 (timeline): tap fire-and-forget.
+    this.tap?.record('payment.confirmed', payload, slug);
   }
 
   /**
@@ -714,6 +772,8 @@ export class EventsEmitterService {
   emitSessionFlagChanged(slug: string, payload: WsSessionFlagChanged['payload']) {
     this.server.to(`tenant:${slug}`).emit('session.flag_changed', payload);
     this.server.to(`session:${payload.sessionId}`).emit('session.flag_changed', payload);
+    // M4 (timeline): tap fire-and-forget.
+    this.tap?.record('session.flag_changed', payload, slug);
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -731,6 +791,8 @@ export class EventsEmitterService {
   emitHostTableLiberated(slug: string, payload: WsHostTableLiberated['payload']) {
     this.server.to(`tenant:${slug}`).emit('host.table_liberated', payload);
     this.server.to(`session:${payload.sessionId}`).emit('host.table_liberated', payload);
+    // M4 (timeline): tap fire-and-forget (reason livre NÃO entra — LGPD).
+    this.tap?.record('host.table_liberated', payload, slug);
   }
 
   /**

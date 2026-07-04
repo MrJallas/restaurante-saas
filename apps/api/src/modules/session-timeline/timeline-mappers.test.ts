@@ -918,5 +918,8 @@ describe('WIRE_EVENT_TO_TIMELINE_KIND', () => {
     expect(WIRE_EVENT_TO_TIMELINE_KIND['courtesy.created']).toBe('courtesy.created');
     expect(WIRE_EVENT_TO_TIMELINE_KIND['session.flag_changed']).toBe('session.flag_changed');
     expect(WIRE_EVENT_TO_TIMELINE_KIND['host.table_liberated']).toBe('session.closed');
+    // M4: wire nascido no M3 (payments não emitia nada quando a tabela foi
+    // escrita no M1) — entrou junto com o tap.
+    expect(WIRE_EVENT_TO_TIMELINE_KIND['payment.confirmed']).toBe('payment.confirmed');
   });
 });

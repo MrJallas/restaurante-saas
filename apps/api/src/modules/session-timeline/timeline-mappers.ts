@@ -722,4 +722,7 @@ export const WIRE_EVENT_TO_TIMELINE_KIND: Readonly<Partial<Record<WsEventName, T
   'courtesy.created': 'courtesy.created',
   'session.flag_changed': 'session.flag_changed',
   'host.table_liberated': 'session.closed',
+  // M4: o wire nasceu no M3 (payments não emitia nada quando esta tabela
+  // foi escrita) — entra agora que o tap dobra eventos live no store.
+  'payment.confirmed': 'payment.confirmed',
 };
