@@ -284,16 +284,30 @@ export class DashboardService {
 
     let lateRows: Array<Record<string, unknown>> = [];
     if (kitchenEtaMaxMinutes != null) {
+      // BUG P1: o relógio de preparo NÃO pode sair de o.updated_at — o reorder
+      // da cozinha (applyKitchenRanksInTx) faz `SET priority_rank=..., updated_at
+      // = now()` em pedidos in_progress, então cada "Ver fila" + reordenar
+      // zerava minutes_in_prep e sumia com TODOS os alertas. Fonte real do
+      // "entrou em preparo" = a transição pra in_progress na order_status_history
+      // (MESMA fonte que a query irmã loadOrderFunnel já usa). MAX(created_at)
+      // pega a última entrada em preparo caso o pedido tenha revisitado o status.
       lateRows = (await this.tenantConn.query(
         `SELECT o.id AS order_id, t.label AS table_label,
-                EXTRACT(EPOCH FROM (now() - o.updated_at)) / 60 AS minutes_in_prep,
+                EXTRACT(EPOCH FROM (now() - prep.started_at)) / 60 AS minutes_in_prep,
                 (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id)::int AS item_count
            FROM orders o
            JOIN table_sessions ts ON ts.id = o.table_session_id
            JOIN tables t ON t.id = ts.table_id
+           JOIN LATERAL (
+             SELECT MAX(h.created_at) AS started_at
+               FROM order_status_history h
+              WHERE h.order_id = o.id
+                AND h.to_status = 'in_progress'
+           ) prep ON true
           WHERE o.status = 'in_progress'
-            AND o.updated_at < now() - ($1 || ' minutes')::interval
-          ORDER BY o.updated_at ASC`,
+            AND prep.started_at IS NOT NULL
+            AND prep.started_at < now() - ($1 || ' minutes')::interval
+          ORDER BY prep.started_at ASC`,
         [String(kitchenEtaMaxMinutes)],
       )) as Array<Record<string, unknown>>;
     }
