@@ -124,6 +124,11 @@ export class CustomerStaffMessagesService {
       await db
         .collection<ThreadDoc>(THREADS_COLLECTION)
         .createIndex({ customerId: 1, lastMessageAt: -1 });
+      // FASE 3 (auditoria): a inbox do STAFF filtra por tenantId — sem este
+      // índice era COLLSCAN cross-tenant a cada abertura da inbox.
+      await db
+        .collection<ThreadDoc>(THREADS_COLLECTION)
+        .createIndex({ tenantId: 1, lastMessageAt: -1 });
       await db
         .collection<MessageDoc>(MESSAGES_COLLECTION)
         .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });

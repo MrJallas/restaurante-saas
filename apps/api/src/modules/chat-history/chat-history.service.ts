@@ -82,6 +82,35 @@ export class ChatHistoryService {
    * @param ctx.conversationId opcional — id gerado no FE por abertura do
    *   assistente; entrada normal em `/assistente` vira thread nova.
    */
+  private indexesEnsured = false;
+
+  /**
+   * FASE 3 (auditoria): o TTL de 30d dependia SÓ do mongo-init.js (roda no
+   * PRIMEIRO boot do volume) — volume criado antes do script nunca ganhava
+   * o índice e o chat virava para-sempre. Idempotente e lazy no primeiro
+   * write, soft-fail como o resto do serviço.
+   */
+  private async ensureIndexes(): Promise<void> {
+    if (this.indexesEnsured) return;
+    await this.ensureIndexes();
+    const db = this.mongo.tryDb();
+    if (!db) return;
+    try {
+      await db
+        .collection<ThreadDoc>(THREADS_COLLECTION)
+        .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+      await db
+        .collection<MessageDoc>(MESSAGES_COLLECTION)
+        .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+      await db
+        .collection<MessageDoc>(MESSAGES_COLLECTION)
+        .createIndex({ threadId: 1, createdAt: 1 });
+      this.indexesEnsured = true;
+    } catch (err) {
+      this.logger?.warn?.(`Falha ao garantir TTL index do chat: ${(err as Error).message}`);
+    }
+  }
+
   async appendTurn(ctx: {
     tenantId: string;
     customerId: string;
