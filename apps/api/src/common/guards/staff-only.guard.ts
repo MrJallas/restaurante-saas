@@ -7,14 +7,46 @@ import {
 } from '@nestjs/common';
 import { timingSafeEqual } from 'crypto';
 import { authErrorResponse } from './auth-error-response';
+import { RedisService } from '../../infra/redis/redis.service';
+import { verifyStaffSessionToken } from '../auth/staff-session-token';
 
+/**
+ * "É staff?" — porta dos 64 endpoints StaffOnly. Aceita DUAS provas de
+ * identidade de equipe:
+ *   1. `x-staff-token` de sessão (verificado no Redis, confinado ao tenant)
+ *      — o caminho novo (Ciclo 2, decisão Caleb 2026-07-04): o client não
+ *      precisa embarcar segredo, o token é individual e expira no turno.
+ *   2. `x-staff-key` compartilhada (timing-safe) — o caminho legado, mantido
+ *      enquanto os clients migram e pro proxy TV/KDS que injeta a key
+ *      server-side.
+ * ADITIVO: a ordem tenta o token primeiro; sem token válido, cai na key. Um
+ * dos dois basta.
+ */
 @Injectable()
 export class StaffOnlyGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
+  constructor(private readonly redis: RedisService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<{
       headers: Record<string, string>;
+      params?: { slug?: string };
     }>();
 
+    // 1. Token de sessão (identidade individual verificada server-side).
+    const token = request.headers['x-staff-token'];
+    if (token) {
+      const slug = request.params?.slug ?? 'unknown';
+      const payload = await verifyStaffSessionToken(this.redis, token, slug);
+      if (payload) return true;
+      // Token presente mas inválido → NUNCA faz downgrade pra key (mesma
+      // proteção do resolveAuthenticatedStaff).
+      throw new HttpException(
+        authErrorResponse('AUTH_INVALID', 'Sessão de equipe inválida. Faça login novamente.'),
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    // 2. Chave compartilhada (legado / proxy server-side).
     const provided = request.headers['x-staff-key'];
     const expected = process.env.STAFF_API_KEY;
 
