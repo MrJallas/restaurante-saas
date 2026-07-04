@@ -10,6 +10,7 @@ import { BadRequestException } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { BillingService } from '../billing/billing.service';
 import { ConsumptionSummaryService } from './consumption-summary.service';
+import { KdsQueryService } from './kds-query.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import type { RedisService } from '../../infra/redis/redis.service';
 
@@ -47,6 +48,7 @@ function makeService(initialStatus: string) {
     {} as unknown as RedisService,
     new BillingService(db.conn),
     new ConsumptionSummaryService(db.conn),
+    new KdsQueryService(db.conn),
   );
   return { service, db };
 }
