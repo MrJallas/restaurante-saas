@@ -147,11 +147,21 @@ export class TableSessionService {
     const { sessionId, isNewSession } = await this.tenantConn.transaction(async (tx) => {
       await tx.query(`SELECT id FROM tables WHERE id = $1 FOR UPDATE`, [table.id]);
 
+      // O reuse tem que casar EXATAMENTE o escopo da UNIQUE parcial
+      // `table_sessions(table_id) WHERE status='active'` (migration 064):
+      // no máximo 1 sessão ATIVA por mesa, sem bound de idade. O bound de 4h
+      // que existia aqui era só heurística de "sessão velha" — e divergia da
+      // constraint: num jantar-longo (sessão de 5h com pedido recente, ainda
+      // ativa) o reuse com filtro de 4h NÃO achava a sessão e caía no INSERT
+      // abaixo, que colidia com a UNIQUE parcial → 23505 → 500 no próximo scan.
+      // Sessões genuinamente velhas SEM atividade já são fechadas pelo
+      // `sweepStaleSessions` (ttl-tick.service.ts), que mede ATIVIDADE
+      // (GREATEST do último pedido/chamado/pagamento), não idade — então
+      // remover o bound aqui não ressuscita zumbi nenhuma.
       const activeRows = (await tx.query(
         `SELECT id FROM table_sessions
            WHERE table_id = $1
              AND status = 'active'
-             AND created_at > NOW() - INTERVAL '4 hours'
            ORDER BY created_at DESC
            LIMIT 1`,
         [table.id],
