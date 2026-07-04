@@ -8,6 +8,7 @@
 
 import { BadRequestException } from '@nestjs/common';
 import { OrdersService } from './orders.service';
+import { EtaDecoratorService } from './eta-decorator.service';
 import { BillingService } from '../billing/billing.service';
 import { ConsumptionSummaryService } from './consumption-summary.service';
 import { KdsQueryService } from './kds-query.service';
@@ -53,6 +54,7 @@ function makeService(initialStatus: string) {
     new KdsQueryService(db.conn),
     new OrderDeliveryService(db.conn, new ConsumptionSummaryService(db.conn)),
     new CustomerBillQueryService(db.conn, new BillingService(db.conn)),
+    new EtaDecoratorService(db.conn),
   );
   return { service, db };
 }

@@ -4,6 +4,7 @@ import { RedisModule } from '../../infra/redis/redis.module';
 import { OrdersController } from './orders.controller';
 import { KitchenController } from './kitchen.controller';
 import { OrdersService } from './orders.service';
+import { EtaDecoratorService } from './eta-decorator.service';
 import { ConsumptionSummaryService } from './consumption-summary.service';
 import { KdsQueryService } from './kds-query.service';
 import { OrderDeliveryService } from './order-delivery.service';
@@ -30,6 +31,7 @@ import { BillingModule } from '../billing/billing.module';
   controllers: [OrdersController, KitchenController],
   providers: [
     OrdersService,
+    EtaDecoratorService,
     ConsumptionSummaryService,
     KdsQueryService,
     OrderDeliveryService,

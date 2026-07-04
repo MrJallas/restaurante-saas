@@ -12,6 +12,7 @@
  */
 
 import { OrdersService } from './orders.service';
+import { EtaDecoratorService } from './eta-decorator.service';
 import { BillingService } from '../billing/billing.service';
 import { ConsumptionSummaryService } from './consumption-summary.service';
 import { KdsQueryService } from './kds-query.service';
@@ -62,6 +63,7 @@ function makeService(redis: RedisService, kdsRows: Array<Record<string, unknown>
     kdsQuery,
     new OrderDeliveryService(conn, new ConsumptionSummaryService(conn)),
     new CustomerBillQueryService(conn, new BillingService(conn)),
+    new EtaDecoratorService(conn),
   );
   return { service, getKdsCalls: () => kdsCalls };
 }
