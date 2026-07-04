@@ -11,6 +11,7 @@ import { BillingService } from '../billing/billing.service';
 import { ConsumptionSummaryService } from './consumption-summary.service';
 import { KdsQueryService } from './kds-query.service';
 import { OrderDeliveryService } from './order-delivery.service';
+import { CustomerBillQueryService } from './customer-bill-query.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import type { RedisService } from '../../infra/redis/redis.service';
 
@@ -62,6 +63,7 @@ function makeService(opts: Parameters<typeof fakeBillDb>[0]) {
     new ConsumptionSummaryService(conn),
     new KdsQueryService(conn),
     new OrderDeliveryService(conn, new ConsumptionSummaryService(conn)),
+    new CustomerBillQueryService(conn, new BillingService(conn)),
   );
 }
 
