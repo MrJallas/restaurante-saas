@@ -455,14 +455,21 @@ export class HostService {
           );
         }
 
-        const moved = (await tx.query(
-          `UPDATE table_sessions
+        // unwrapRows: pg via TypeORM devolve UPDATE...RETURNING como tupla
+        // [rows, rowCount] — cast cru fazia `moved.length` ser sempre 2 e o
+        // guard abaixo (0 linhas = origem inativa) era dead code em prod, com
+        // o swap carimbado 'completed' sem mover nada (falso-sucesso + audit
+        // mentiroso). Mesmo footgun de tupla do OOM/table-merge.
+        const moved = unwrapRows<{ id: string }>(
+          await tx.query(
+            `UPDATE table_sessions
               SET table_id = $2,
                   updated_at = now()
             WHERE id = $1 AND status = 'active'
             RETURNING id`,
-          [existing.table_session_id, existing.to_table_id],
-        )) as Array<{ id: string }>;
+            [existing.table_session_id, existing.to_table_id],
+          ),
+        );
         if (moved.length === 0) {
           // A sessao de origem nao esta mais ativa (encerrada/movida antes do
           // complete) — sem move a fazer; aborta sem carimbar o swap.

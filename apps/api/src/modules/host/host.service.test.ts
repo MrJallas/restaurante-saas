@@ -317,7 +317,11 @@ function fakeSwapDb(opts: SwapFakeOptions = {}) {
       moveExecuted = true;
       moveParams = params;
       // Guard WHERE id=... AND status='active' → 0 linhas se origem inativa.
-      return opts.originNoLongerActive ? [] : [{ id: params[0] }];
+      // pg via TypeORM devolve UPDATE...RETURNING como TUPLA [rows, rowCount]
+      // (não flat) — o fake tem que imitar o driver, senão o teste mascara o
+      // bug da tupla (moved.length===2 sempre). O código deve passar por
+      // unwrapRows pra ler as linhas de verdade.
+      return opts.originNoLongerActive ? [[], 0] : [[{ id: params[0] }], 1];
     }
     throw new Error(`fake swap: SQL não roteado: ${s}`);
   };
