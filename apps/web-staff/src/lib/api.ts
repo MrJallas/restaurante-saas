@@ -1,11 +1,10 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-// P1-F: o x-staff-key NAO vive mais no client. Toda var NEXT_PUBLIC_* e
-// inlinada no bundle JS, entao carregar o segredo aqui vazava credencial
-// de nivel staff/kitchen pra qualquer visitante via DevTools. O literal
-// committado `dev-staff-api-key-change-in-prod` era pior ainda — segredo
-// publico conhecido. A chave agora e injetada SO server-side pelo proxy
-// (/api/proxy, STAFF_API_KEY sem prefixo NEXT_PUBLIC_). Manter vazio aqui.
-const STAFF_API_KEY = process.env.NEXT_PUBLIC_STAFF_API_KEY || '';
+// Ciclo 2 (decisão Caleb 2026-07-04): toda chamada HTTP de staff passa pelo
+// PROXY same-origin (`/api/proxy`), que injeta a x-staff-key server-side e
+// lê o cookie httpOnly `staff_token` do login → x-staff-token. O bundle JS
+// nunca mais carrega a key (fecha o vazamento P1-F que o passe iOS revelou),
+// e o client bate no próprio web-staff — `localhost` deixa de quebrar o
+// simulador iOS (o proxy chama a API internamente).
+const API_BASE_URL = '/api/proxy';
 
 const STAFF_ID_QUERY_KEYS = ['staffId', 'hostId', 'managerId', 'waiterId', 'cookId'] as const;
 
@@ -160,7 +159,9 @@ export async function staffApi<T>(path: string, options: RequestInit = {}): Prom
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(STAFF_API_KEY ? { 'x-staff-key': STAFF_API_KEY } : {}),
+      // x-staff-key é injetada pelo PROXY server-side, nunca aqui. O cookie
+      // httpOnly `staff_token` (setado no login) vai automático via
+      // `credentials: 'include'` e o proxy o vira x-staff-token.
       ...staffIdentityHeaders(),
       ...options.headers,
     },
