@@ -647,7 +647,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     orderId: string,
     status: string,
     tableLabel?: string,
-    extra?: Pick<WsOrderStatus['payload'], 'tableSessionId' | 'changedBy'>,
+    extra?: Pick<WsOrderStatus['payload'], 'tableSessionId' | 'changedBy' | 'historyId'>,
   ) {
     return this.emitter.emitOrderStatusUpdate(slug, orderId, status, tableLabel, extra);
   }
@@ -664,7 +664,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     slug: string,
     orderId: string,
     claimedBy: string,
-    extra?: Pick<WsOrderClaimed['payload'], 'tableSessionId' | 'tableLabel'>,
+    extra?: Pick<WsOrderClaimed['payload'], 'tableSessionId' | 'tableLabel' | 'deliveryId'>,
   ) {
     return this.emitter.emitOrderClaimed(slug, orderId, claimedBy, extra);
   }

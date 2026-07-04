@@ -300,12 +300,14 @@ describe('EventsGateway emit* — characterization de rooms/wire/payload', () =>
   // nascem nos CALLERS; aqui fixamos só o repasse + rooms/wire imutáveis).
   // ─────────────────────────────────────────────────────────────────────
 
-  it('h1. [M2·order] emitOrderStatusUpdate repassa extra (tableSessionId + changedBy) pros MESMOS rooms waiter/kitchen', () => {
+  it('h1. [M2·order] emitOrderStatusUpdate repassa extra (tableSessionId + changedBy + historyId) pros MESMOS rooms waiter/kitchen', () => {
     const { gateway, emitted } = createHarness();
 
     gateway.emitOrderStatusUpdate(SLUG, 'order-9', 'delivered', 'Mesa 2', {
       tableSessionId: 'ts-42',
       changedBy: { type: 'staff', id: 'staff-7' },
+      // FIX convergência de id (2026-07-04): pk natural da row osh inserida.
+      historyId: 'osh-9',
     });
 
     expect(emitted).toHaveLength(2);
@@ -321,17 +323,20 @@ describe('EventsGateway emit* — characterization de rooms/wire/payload', () =>
         tableLabel: 'Mesa 2',
         tableSessionId: 'ts-42',
         changedBy: { type: 'staff', id: 'staff-7' },
+        historyId: 'osh-9',
       });
       expectIsoTimestamp(record.payload.timestamp);
     }
   });
 
-  it('h2. [M2·order] emitOrderClaimed repassa extra (tableSessionId + tableLabel) — room waiter inalterada', () => {
+  it('h2. [M2·order] emitOrderClaimed repassa extra (tableSessionId + tableLabel + deliveryId) — room waiter inalterada', () => {
     const { gateway, emitted } = createHarness();
 
     gateway.emitOrderClaimed(SLUG, 'order-10', 'staff-7', {
       tableSessionId: 'ts-42',
       tableLabel: 'Mesa 2',
+      // FIX convergência de id (2026-07-04): pk natural da row odel claimada.
+      deliveryId: 'del-10',
     });
 
     expect(emitted).toHaveLength(1);
@@ -342,6 +347,7 @@ describe('EventsGateway emit* — characterization de rooms/wire/payload', () =>
       claimedBy: 'staff-7',
       tableSessionId: 'ts-42',
       tableLabel: 'Mesa 2',
+      deliveryId: 'del-10',
     });
     expectIsoTimestamp(emitted[0].payload.timestamp);
   });

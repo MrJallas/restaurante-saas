@@ -522,17 +522,22 @@ export class OrdersService {
         }
       }
 
-      await tx.query(
-        `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
-         VALUES ($1, NULL, 'received', $2)`,
-        [ord.id, input.staffId],
+      // FIX convergência de id: captura o pk da row osh 'received' pra
+      // correlacionar o evento live (tap M4) com o backfill (M5).
+      const historyRows = unwrapRows<{ id: string }>(
+        await tx.query(
+          `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
+         VALUES ($1, NULL, 'received', $2)
+         RETURNING id`,
+          [ord.id, input.staffId],
+        ),
       );
 
       await tx.query(`UPDATE menu_items SET total_orders = total_orders + 1 WHERE id = ANY($1)`, [
         uniqueItemIds,
       ]);
 
-      return ord;
+      return { ...ord, historyId: historyRows[0]?.id };
     });
 
     if (this.eventsGateway) {
@@ -563,6 +568,8 @@ export class OrdersService {
         tableSessionId: session.id,
         // Actor server-side: staff validado no SELECT de staff ativo acima.
         changedBy: { type: 'staff', id: input.staffId },
+        // FIX convergência de id: pk da row osh 'received' recém-inserida.
+        ...(order.historyId ? { historyId: order.historyId } : {}),
       });
     }
 
@@ -673,11 +680,15 @@ export class OrdersService {
       return { orderId, status: refresh[0]?.status ?? 'received' };
     }
 
-    await this.tenantConn.query(
-      `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
-       VALUES ($1, $2, 'received', 'customer')`,
-      [orderId, order.status],
+    const historyRows = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
+       VALUES ($1, $2, 'received', 'customer')
+       RETURNING id`,
+        [orderId, order.status],
+      ),
     );
+    const historyId = historyRows[0]?.id;
 
     if (slug && this.eventsGateway) {
       const items = (await this.tenantConn.query(
@@ -702,6 +713,8 @@ export class OrdersService {
         // Actor server-side: rota SessionGuard — quem confirma é o customer
         // da sessão; não há customer_id resolvido no escopo (id fica null).
         changedBy: { type: 'customer', id: null },
+        // FIX convergência de id: pk da row osh 'received' recém-inserida.
+        ...(historyId ? { historyId } : {}),
       });
       this.eventsGateway.emitToSession(order.table_session_id, 'order:status', {
         orderId,
@@ -754,11 +767,15 @@ export class OrdersService {
       return { orderId, status: refresh[0]?.status ?? 'cancelled' };
     }
 
-    await this.tenantConn.query(
-      `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
-       VALUES ($1, $2, 'cancelled', 'customer')`,
-      [orderId, order.status],
+    const historyRows = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
+       VALUES ($1, $2, 'cancelled', 'customer')
+       RETURNING id`,
+        [orderId, order.status],
+      ),
     );
+    const historyId = historyRows[0]?.id;
 
     if (this.eventsGateway) {
       this.eventsGateway.emitToSession(order.table_session_id, 'order:status', {
@@ -775,6 +792,8 @@ export class OrdersService {
       this.eventsGateway.emitOrderStatusUpdate(slug, orderId, 'cancelled', undefined, {
         tableSessionId: order.table_session_id,
         changedBy: { type: 'customer', id: null },
+        // FIX convergência de id: pk da row osh 'cancelled' recém-inserida.
+        ...(historyId ? { historyId } : {}),
       });
     }
     return { orderId, status: 'cancelled' };
@@ -1605,11 +1624,17 @@ export class OrdersService {
       };
     }
 
-    await this.tenantConn.query(
-      `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
-       VALUES ($1, $2, $3, $4)`,
-      [orderId, currentStatus, newStatus, changedBy],
+    // FIX convergência de id: captura o pk da row osh pra correlacionar o
+    // evento live (tap M4) com o backfill (M5) — ambos gravam `osh:<pk>`.
+    const historyRows = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
+        [orderId, currentStatus, newStatus, changedBy],
+      ),
     );
+    const historyId = historyRows[0]?.id;
 
     if (newStatus === 'delivered') {
       await this.consumption.updateForDeliveredOrder(orderId);
@@ -1665,6 +1690,9 @@ export class OrdersService {
       this.eventsGateway.emitOrderStatusUpdate(slug, orderId, newStatus, undefined, {
         tableSessionId,
         ...(changedByActor ? { changedBy: changedByActor } : {}),
+        // FIX convergência de id: pk da row osh recém-inserida → tap usa
+        // `osh:<pk>` (mesmo doc do backfill).
+        ...(historyId ? { historyId } : {}),
       });
       if (newStatus === 'ready') {
         // M2 (timeline): antes emitia tableLabel:'' hardcoded (card "pronto"

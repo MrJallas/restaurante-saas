@@ -432,6 +432,15 @@ export interface WsOrderStatus {
     changedBy?: { type: 'staff' | 'customer'; id: string | null };
     /** M2 (timeline): staff que confirmou a entrega (só no 'delivered'). */
     deliveredBy?: string;
+    /**
+     * FIX convergência de id (2026-07-04): pk natural da row de
+     * order_status_history inserida NESTA transição. Quando presente, o tap
+     * (M4) usa `osh:<historyId>` — CONVERGE com o id do backfill (M5), então
+     * live e backfill upsertam no MESMO doc (sem duplicata). Ausente no
+     * caminho KDS mark-ready (emite sem inserir osh) → tap cai no fallback
+     * `ws:*`, que não tem competidor no backfill.
+     */
+    historyId?: string;
   };
 }
 
@@ -446,6 +455,13 @@ export interface WsOrderClaimed {
     tableSessionId?: string;
     /** M2 (timeline): label da mesa (ex.: "Mesa 3"). */
     tableLabel?: string;
+    /**
+     * FIX convergência de id (2026-07-04): pk natural da row de
+     * order_deliveries reivindicada. Quando presente, o tap (M4) usa
+     * `odel:<deliveryId>:claimed` — CONVERGE com o id do backfill (M5).
+     * Ausente → tap cai no fallback `ws:order:claimed:<orderId>:<claimedBy>`.
+     */
+    deliveryId?: string;
   };
 }
 

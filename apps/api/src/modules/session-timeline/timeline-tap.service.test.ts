@@ -87,6 +87,36 @@ describe('TimelineTapService — uma entrada correta por família mapeável', ()
     expect(entry.actor).toEqual({ type: 'system', id: null, name: null });
   });
 
+  it('order:status COM historyId → id osh:<historyId> (CONVERGE com backfill M5)', async () => {
+    const entry = await tapOne('order:status', {
+      orderId: 'o-1b',
+      status: 'preparing',
+      tableSessionId: 'ts-1',
+      changedBy: { type: 'staff', id: 'staff-7' },
+      historyId: 'osh-42',
+      timestamp: '2026-07-04T12:00:30.000Z',
+    });
+    // pk natural presente → id da row de order_status_history (mesmo do M1
+    // `osh:<pk>`), NÃO o fallback ws:*. O resto do shape é intocado.
+    expect(entry.id).toBe('osh:osh-42');
+    expect(entry.kind).toBe('order.status_changed');
+    expect(entry.at).toBe('2026-07-04T12:00:30.000Z');
+    expect(entry.sessionId).toBe('ts-1');
+    expect(entry.actor).toEqual({ type: 'staff', id: 'staff-7', name: null });
+    expect(entry.refs).toEqual({ orderId: 'o-1b' });
+    expect(entry.payload).toEqual({ toStatus: 'preparing' });
+  });
+
+  it('order:status SEM historyId → fallback ws:order:status:<orderId>:<status>:<at> (caminho KDS sem osh)', async () => {
+    const entry = await tapOne('order:status', {
+      orderId: 'o-1c',
+      status: 'ready',
+      tableSessionId: 'ts-1',
+      timestamp: '2026-07-04T12:00:45.000Z',
+    });
+    expect(entry.id).toBe('ws:order:status:o-1c:ready:2026-07-04T12:00:45.000Z');
+  });
+
   it('order:handoff_called → delivery.called · id odel:<deliveryId>:called (converge com M1) · calledBy null → system', async () => {
     const entry = await tapOne('order:handoff_called', {
       orderId: 'o-3',
@@ -126,6 +156,36 @@ describe('TimelineTapService — uma entrada correta por família mapeável', ()
       refs: { orderId: 'o-4' },
       payload: {},
     });
+  });
+
+  it('order:claimed COM deliveryId → id odel:<deliveryId>:claimed (CONVERGE com backfill M5)', async () => {
+    const entry = await tapOne('order:claimed', {
+      orderId: 'o-4b',
+      claimedBy: 'staff-9',
+      tableSessionId: 'ts-4',
+      tableLabel: 'Mesa 2',
+      deliveryId: 'del-77',
+      timestamp: '2026-07-04T12:03:30.000Z',
+    });
+    // pk natural presente → id da row de order_deliveries (mesmo do M1
+    // `odel:<pk>:claimed`), NÃO o fallback ws:*.
+    expect(entry.id).toBe('odel:del-77:claimed');
+    expect(entry.kind).toBe('delivery.claimed');
+    expect(entry.at).toBe('2026-07-04T12:03:30.000Z');
+    expect(entry.sessionId).toBe('ts-4');
+    expect(entry.actor).toEqual({ type: 'staff', id: 'staff-9', name: null });
+    expect(entry.refs).toEqual({ orderId: 'o-4b' });
+    expect(entry.payload).toEqual({});
+  });
+
+  it('order:claimed SEM deliveryId → fallback ws:order:claimed:<orderId>:<claimedBy>', async () => {
+    const entry = await tapOne('order:claimed', {
+      orderId: 'o-4c',
+      claimedBy: 'staff-9',
+      tableSessionId: 'ts-4',
+      timestamp: '2026-07-04T12:03:45.000Z',
+    });
+    expect(entry.id).toBe('ws:order:claimed:o-4c:staff-9');
   });
 
   it('waiter:call → waiter.called · id wcall:<callId> (M1) · actor customer (id null = chamada anônima)', async () => {

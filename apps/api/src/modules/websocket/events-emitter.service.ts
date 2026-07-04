@@ -85,7 +85,7 @@ export class EventsEmitterService {
     orderId: string,
     status: string,
     tableLabel?: string,
-    extra?: Pick<WsOrderStatus['payload'], 'tableSessionId' | 'changedBy'>,
+    extra?: Pick<WsOrderStatus['payload'], 'tableSessionId' | 'changedBy' | 'historyId'>,
   ) {
     this.server.to(`tenant:${slug}:waiter`).emit('order:status', {
       orderId,
@@ -136,7 +136,7 @@ export class EventsEmitterService {
     slug: string,
     orderId: string,
     claimedBy: string,
-    extra?: Pick<WsOrderClaimed['payload'], 'tableSessionId' | 'tableLabel'>,
+    extra?: Pick<WsOrderClaimed['payload'], 'tableSessionId' | 'tableLabel' | 'deliveryId'>,
   ) {
     this.server.to(`tenant:${slug}:waiter`).emit('order:claimed', {
       orderId,

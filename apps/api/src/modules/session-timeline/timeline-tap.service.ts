@@ -35,15 +35,17 @@ import { TimelineStoreService } from './timeline-store.service';
  * REGRAS DE ID (determinísticas DO PAYLOAD; onde o payload carrega o pk da
  * row de origem o id CONVERGE com o mapper SQL do M1, então um backfill
  * futuro upserta no MESMO doc):
- *  - order:status          → ws:order:status:<orderId>:<status>:<at>
- *                            (payload não tem o pk de order_status_history;
- *                            o timestamp do ato distingue repetições legítimas
- *                            da mesma transição — ex.: kitchen reverteu e
- *                            reavançou)
+ *  - order:status          → osh:<historyId>  quando o payload carrega o pk
+ *                            da row de order_status_history (CONVERGE com o
+ *                            backfill M5, mesmo doc). Sem historyId (caminho
+ *                            KDS mark-ready que emite SEM inserir osh) →
+ *                            fallback ws:order:status:<orderId>:<status>:<at>
+ *                            (sem competidor no backfill → sem dup)
  *  - order:handoff_called  → odel:<deliveryId>:called            (M1)
- *  - order:claimed         → ws:order:claimed:<orderId>:<claimedBy>
- *                            (payload não tem deliveryId; claim é único por
- *                            pedido+staff)
+ *  - order:claimed         → odel:<deliveryId>:claimed  quando o payload
+ *                            carrega o pk da row de order_deliveries (CONVERGE
+ *                            com o backfill M5). Sem deliveryId → fallback
+ *                            ws:order:claimed:<orderId>:<claimedBy>
  *  - waiter:call           → wcall:<callId>                      (M1)
  *  - waiter:acknowledged   → wcall:<callId>:acknowledged         (M1)
  *  - late_arrival.created  → la:<requestId>                      (M1)
@@ -59,11 +61,20 @@ import { TimelineStoreService } from './timeline-store.service';
  *                            inalcançável — wire sem âncora de sessão)
  *  - courtesy.created      → court:<id>                          (M1)
  *  - session.flag_changed  → ws:session.flag_changed:<sessionId>:
- *                            <flags ordenadas>:<by.staffId> (wire não carrega
- *                            o pk de session_flags NEM timestamp; limitação
- *                            documentada: re-toggle IDÊNTICO da mesma
- *                            combinação por o mesmo staff colapsa no doc
- *                            original)
+ *                            <flags ordenadas>:<by.staffId>
+ *                            CASO CONHECIDO DE POSSÍVEL DUP (não convergido de
+ *                            propósito): o emit é AGREGADO — carrega o
+ *                            SNAPSHOT de flags ativas da sessão
+ *                            (getActiveFlags), não o pk da row de
+ *                            session_flags que mudou (nem sabe qual mudou). O
+ *                            backfill M5 é 1 doc POR row (`flag:<pk>` [+
+ *                            `:cleared`]), então NÃO há mapeamento 1:1 pra
+ *                            casar o id — forçar um pk aqui seria adivinhar.
+ *                            Fica no ws:* e o verify (M8) ancora a chave
+ *                            lógica na sessão (conservador). Dedup no READ é
+ *                            fatia futura. Limitação secundária: re-toggle
+ *                            IDÊNTICO da mesma combinação pelo mesmo staff
+ *                            colapsa no doc original (sem timestamp no wire).
  *  - host.table_liberated  → sess:<sessionId>:closed             (M1; sessão
  *                            fecha uma vez)
  *  - payment.confirmed     → pay:<paymentId>                     (M1)
@@ -108,8 +119,15 @@ export class TimelineTapService {
         if (!sessionId) return null;
         const at = pickAt(p, 'timestamp');
         const changedBy = p.changedBy as { type?: string; id?: string | null } | undefined;
+        // FIX convergência de id: pk natural da row de order_status_history
+        // presente → `osh:<pk>` (CONVERGE com o backfill M5, mesmo doc). Sem
+        // pk (caminho KDS mark-ready que emite SEM inserir osh) → fallback
+        // ws:* sintético, que não tem competidor no backfill (sem dup).
+        const historyId = str(p.historyId);
         return {
-          id: `ws:order:status:${str(p.orderId)}:${str(p.status)}:${at}`,
+          id: historyId
+            ? `osh:${historyId}`
+            : `ws:order:status:${str(p.orderId)}:${str(p.status)}:${at}`,
           kind,
           at,
           sessionId,
@@ -139,8 +157,14 @@ export class TimelineTapService {
       case 'order:claimed': {
         const sessionId = this.anchor(wire, p.tableSessionId);
         if (!sessionId) return null;
+        // FIX convergência de id: pk natural da row de order_deliveries
+        // presente → `odel:<pk>:claimed` (CONVERGE com o backfill M5). Sem pk
+        // → fallback ws:* sintético.
+        const deliveryId = str(p.deliveryId);
         return {
-          id: `ws:order:claimed:${str(p.orderId)}:${str(p.claimedBy)}`,
+          id: deliveryId
+            ? `odel:${deliveryId}:claimed`
+            : `ws:order:claimed:${str(p.orderId)}:${str(p.claimedBy)}`,
           kind,
           at: pickAt(p, 'timestamp'),
           sessionId,
@@ -316,8 +340,12 @@ export class TimelineTapService {
         if (!sessionId) return null;
         const by = p.by as { staffId?: string | null; name?: string | null } | undefined;
         const flags = Array.isArray(p.flags) ? (p.flags as string[]) : [];
-        // Wire não tem pk de session_flags nem timestamp — id da combinação
-        // (re-toggle idêntico colapsa; ver doc de regras de id acima).
+        // CASO CONHECIDO DE POSSÍVEL DUP (não convergido de propósito): o emit
+        // é AGREGADO (snapshot das flags ativas da sessão via getActiveFlags),
+        // sem o pk da row de session_flags que mudou — não casa 1:1 com o
+        // `flag:<pk>` do backfill M5, então mantemos o ws:* sintético (dedup
+        // no read é fatia futura; ver doc de regras de id acima). Secundário:
+        // re-toggle idêntico da mesma combinação colapsa (wire sem timestamp).
         const flagsKey = [...flags].sort().join(',');
         return {
           id: `ws:session.flag_changed:${sessionId}:${flagsKey}:${str(by?.staffId)}`,

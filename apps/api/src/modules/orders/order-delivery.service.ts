@@ -220,16 +220,23 @@ export class OrderDeliveryService {
         delivery = await claimExistingRow(existing[0]);
       }
 
+      let historyId: string | undefined;
       if (order.status !== 'in_transit') {
         await tx.query(
           `UPDATE orders SET status = 'in_transit', updated_at = now() WHERE id = $1`,
           [orderId],
         );
-        await tx.query(
-          `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
-           VALUES ($1, $2, 'in_transit', $3)`,
-          [orderId, order.status, staffId],
+        // FIX convergência de id: captura o pk da row osh 'in_transit' pra
+        // correlacionar o evento live (tap M4) com o backfill (M5).
+        const historyRows = unwrapRows<{ id: string }>(
+          await tx.query(
+            `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
+           VALUES ($1, $2, 'in_transit', $3)
+           RETURNING id`,
+            [orderId, order.status, staffId],
+          ),
         );
+        historyId = historyRows[0]?.id;
       }
 
       return {
@@ -237,6 +244,7 @@ export class OrderDeliveryService {
         deliveryId: delivery.id,
         tableSessionId: order.table_session_id,
         tableLabel: order.table_label,
+        historyId,
         status: 'in_transit' as const,
       };
     });
@@ -246,10 +254,16 @@ export class OrderDeliveryService {
     this.eventsGateway?.emitOrderClaimed(slug, orderId, staffId, {
       tableSessionId: result.tableSessionId,
       tableLabel: result.tableLabel,
+      // FIX convergência de id: pk da row odel claimada → tap usa
+      // `odel:<pk>:claimed` (mesmo doc do backfill).
+      deliveryId: result.deliveryId,
     });
     this.eventsGateway?.emitOrderStatusUpdate(slug, orderId, 'in_transit', result.tableLabel, {
       tableSessionId: result.tableSessionId,
       changedBy: { type: 'staff', id: staffId },
+      // FIX convergência de id: pk da row osh 'in_transit' (undefined quando
+      // já estava in_transit e não inserimos osh — tap cai no fallback ws:*).
+      ...(result.historyId ? { historyId: result.historyId } : {}),
     });
     this.eventsGateway?.emitToSession(result.tableSessionId, 'order:status', {
       orderId,
