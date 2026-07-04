@@ -1,4 +1,10 @@
-import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import type { ReservationEntryDto, ReservationStatus } from '@restaurant/shared-types';
@@ -163,17 +169,29 @@ export class HostReservationsService {
   // ─── helpers privados ───
 
   private async findTableByNumber(number: number): Promise<{ id: string } | null> {
-    // O FE conversa em "table number" (int), o DB persiste `code` (text). O
-    // padrao convencionado pelo seed eh `code = "<number>"` (ex: "12") ou
-    // "M12" — extraimos so os digitos pra comparar.
+    // Mesma resolução determinística do host.service (P1-P do re-scan): code
+    // EXATO vence; colisão de dígitos (>1 candidato sem exato, ex.: 'M01'/'D1'
+    // → 1) é REJEITADA como ambígua em vez de escolher mesa arbitrária via
+    // LIMIT 1 sem ORDER BY. Aqui a reserva agiria na mesa errada.
     const rows = (await this.tenantConn.query(
-      `SELECT id
+      `SELECT id, code
          FROM tables
-        WHERE CAST(NULLIF(regexp_replace(code, '[^0-9]', '', 'g'), '') AS INT) = $1
-        LIMIT 1`,
-      [number],
-    )) as Array<{ id: string }>;
-    return rows[0] ?? null;
+        WHERE code = $2
+           OR CAST(NULLIF(regexp_replace(code, '[^0-9]', '', 'g'), '') AS INT) = $1
+        ORDER BY id ASC`,
+      [number, String(number)],
+    )) as Array<{ id: string; code: string }>;
+    if (rows.length === 0) return null;
+    const exact = rows.find((r) => r.code === String(number));
+    if (exact) return { id: exact.id };
+    if (rows.length > 1) {
+      throw new BadRequestException(
+        `Codigo de mesa ambiguo para o numero ${number}: ${rows
+          .map((r) => r.code)
+          .join(', ')}. Use o codigo exato da mesa.`,
+      );
+    }
+    return { id: rows[0].id };
   }
 
   private mapReservationRow(row: ReservationRow): ReservationEntryDto {

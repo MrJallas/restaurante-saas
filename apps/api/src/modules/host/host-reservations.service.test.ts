@@ -74,7 +74,7 @@ function fakeDb(
     calls.push({ sql: s, params });
 
     // findTableByNumber
-    if (s.startsWith('SELECT id FROM tables WHERE')) {
+    if (s.startsWith('SELECT id, code FROM tables WHERE')) {
       return opts.tableLookup === undefined ? [] : opts.tableLookup ? [opts.tableLookup] : [];
     }
     // listReservations
@@ -224,8 +224,9 @@ describe('Host reservations — characterization', () => {
         when: '18:00',
         table: 12,
       });
-      const lookup = calls.find((c) => c.sql.startsWith('SELECT id FROM tables WHERE'))!;
-      expect(lookup.params).toEqual([12]);
+      const lookup = calls.find((c) => c.sql.startsWith('SELECT id, code FROM tables WHERE'))!;
+      // P1-P: agora passa [number, String(number)] (dígito + code exato).
+      expect(lookup.params).toEqual([12, '12']);
       const insert = calls.find((c) => c.sql.startsWith('INSERT INTO reservations'))!;
       expect(insert.params[4]).toBe(TABLE_ID);
     });
