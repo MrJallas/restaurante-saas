@@ -83,6 +83,24 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
     }
   }
 
+  // Sentar alguém da fila: primeiro tira a entrada da waitlist com transição
+  // 'seated' (DELETE /host/waitlist/:id?transition=seated) e só então segue
+  // pro fluxo de liberar/abrir a mesa. Sem isso a entrada continua 'waiting',
+  // reaparece no poll de 12s, é recontada em "N ESPERANDO" e fica sentável de
+  // novo (fila presa). Guarda de submitting evita duplo-clique.
+  async function seatFromWaitlist(tableNumber: number) {
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await removeFromWaitlist(tenantSlug, entryId, 'seated');
+      onLiberate?.(tableNumber);
+    } catch {
+      setError('Não foi possível sentar essa pessoa agora.');
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div
       style={{
@@ -224,7 +242,8 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
                     <button
                       key={table.number}
                       type="button"
-                      onClick={() => onLiberate?.(table.number)}
+                      disabled={submitting}
+                      onClick={() => seatFromWaitlist(table.number)}
                       style={{
                         all: 'unset',
                         cursor: 'pointer',
@@ -309,7 +328,7 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
               kind="success"
               full
               dark={dark}
-              onClick={() => suggestions[0] && onLiberate?.(suggestions[0].number)}
+              onClick={() => suggestions[0] && seatFromWaitlist(suggestions[0].number)}
               disabled={suggestions.length === 0 || submitting}
             >
               {suggestions[0] ? `Sentar na mesa ${suggestions[0].number}` : 'Sem mesa compatível'}
