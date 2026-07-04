@@ -6,7 +6,7 @@ import { CpfInput } from '../../components/welcome/CpfInput';
 import { PillButton } from '../../components/ui/PillButton';
 import { useSession } from '../../hooks/useSession';
 import { cleanCpf, validateCpf } from '../../lib/cpf';
-import { identifyCustomer } from '../../lib/api/customer-host';
+import { identifyCustomer, createLateArrivalRequest } from '../../lib/api/customer-host';
 import type { CustomerIdentifyResponse } from '@restaurant/shared-types';
 
 interface ScreenCustomerIdentifyBeforeJoinProps {
@@ -92,6 +92,28 @@ export function ScreenCustomerIdentifyBeforeJoin({
         isReturning: result.isReturning,
       });
 
+      // P1-K (re-scan): identify só rodava o lookup e navegava pra
+      // /waiting-approval SEM criar a late_arrival_request no backend —
+      // `createLateArrivalRequest` tinha 0 call-sites. Resultado: a tela de
+      // espera renderizava "aguardando host" permanentemente porque não havia
+      // request nenhum pra o host aprovar nem `requestId`/`expiresAt` pra
+      // rastrear via WS. Aqui criamos o pedido de verdade (o backend deriva
+      // customerId do cookie recognition_token e tableSessionId da session —
+      // o body só precisa satisfazer o @IsUUID customerId do DTO) e roteamos
+      // com o `id` + `expiresAt` que o create realmente devolve
+      // (LateArrivalRequestDto), não um campo `next`/`redirect` inexistente.
+      const request = await createLateArrivalRequest({
+        slug,
+        customerId: result.customerId,
+      });
+
+      const waitingUrl = buildWaitingUrl({
+        base: redirectTo ?? `/${slug}/waiting-approval`,
+        requestId: request.id,
+        expiresAt: request.expiresAt,
+        hostName,
+      });
+
       // Soft alert "bem-vindo de volta" quando retornante e o nome canonico
       // diverge do digitado. Pequena pausa visual antes de navegar pra que o
       // cliente veja a mensagem (alternativa ao toast: poderia ser passado
@@ -100,16 +122,16 @@ export function ScreenCustomerIdentifyBeforeJoin({
       if (result.isReturning && result.canonicalName !== name.trim()) {
         setReturningName(result.canonicalName);
         setTimeout(() => {
-          router.push(redirectTo ?? `/${slug}/waiting-approval`);
+          router.push(waitingUrl);
         }, 1800);
         return;
       }
-      router.push(redirectTo ?? `/${slug}/waiting-approval`);
+      router.push(waitingUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao validar seus dados. Tente novamente.');
       setSubmitting(false);
     }
-  }, [canSubmit, slug, name, cleanedCpf, sessionId, setCustomer, router, redirectTo]);
+  }, [canSubmit, slug, name, cleanedCpf, sessionId, setCustomer, router, redirectTo, hostName]);
 
   // capitalize on blur: roda a cada keystroke quebra autocorrect do iOS
   // (mesmo motivo do WelcomeModal). Mantemos a UX de Title-Case sem brigar
@@ -203,6 +225,28 @@ export function ScreenCustomerIdentifyBeforeJoin({
       </div>
     </main>
   );
+}
+
+/**
+ * Anexa `requestId`/`expiresAt`/`hostName` ao destino da waiting-approval sem
+ * pisar em query params que o caller já tenha posto no `redirect`. A tela
+ * `/waiting-approval` lê exatamente essas chaves (page.tsx) e as repassa pro
+ * `ScreenCustomerWaitingApproval`, que casa o `requestId` nos eventos WS
+ * `late_arrival.*` e usa o `expiresAt` pra dirigir o countdown. Sem esses
+ * params a tela ficava presa em "aguardando host" pra sempre (P1-K).
+ */
+function buildWaitingUrl(input: {
+  base: string;
+  requestId: string;
+  expiresAt?: string | null;
+  hostName?: string | null;
+}): string {
+  const [path, existingQuery = ''] = input.base.split('?');
+  const params = new URLSearchParams(existingQuery);
+  params.set('requestId', input.requestId);
+  if (input.expiresAt) params.set('expiresAt', input.expiresAt);
+  if (input.hostName) params.set('hostName', input.hostName);
+  return `${path}?${params.toString()}`;
 }
 
 interface FieldShellProps {
