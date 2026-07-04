@@ -63,12 +63,18 @@ export function acquireCustomerSocket(): CustomerSocketEntry | null {
     return existing;
   }
 
+  // Hint de tenant pro gateway escopar o rate-limit de handshake por
+  // tenant+IP (restaurante inteiro sai pelo mesmo NAT). As rotas do
+  // customer são sempre /:slug/... — o slug do path basta como hint.
+  const tenantSlug =
+    typeof window !== 'undefined' ? window.location.pathname.split('/')[1] || undefined : undefined;
+
   const socket: Socket = io(wsUrl, {
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelayMax: 10_000,
-    auth: sessionToken ? { sessionToken } : undefined,
+    auth: sessionToken ? { sessionToken, tenantSlug } : tenantSlug ? { tenantSlug } : undefined,
     // Manda o cookie httpOnly `recognition_token` também no transporte de
     // polling (no upgrade WS o browser já manda sozinho) — é a identidade
     // POR PARTICIPANTE no gateway (decisão 2026-06-12): cada cliente da

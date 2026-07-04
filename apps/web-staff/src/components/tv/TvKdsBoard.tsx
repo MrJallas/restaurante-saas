@@ -454,6 +454,12 @@ export function TvKdsBoard({
 // Beep pra notificar pedido novo. Reutiliza o padrao da pagina antiga
 // (cozinha/page.tsx). Falha silenciosa se WebAudio nao estiver
 // disponivel (Safari incognito, etc).
+// AudioContext SINGLETON (auditoria 2026-07-03): um contexto NOVO por
+// beep, sem close(), estoura o limite de ~6 contextos do browser — a TV
+// KDS (que nunca recarrega) ficava MUDA e o beep é a notificação da
+// cozinha. Um contexto vive pra sempre e é retomado se suspenso.
+let sharedAudioCtx: AudioContext | null = null;
+
 function playBeep() {
   try {
     type WebAudioWindow = Window & {
@@ -462,7 +468,13 @@ function playBeep() {
     const w = window as WebAudioWindow;
     const Ctx = window.AudioContext || w.webkitAudioContext;
     if (!Ctx) return;
-    const audioCtx = new Ctx();
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      sharedAudioCtx = new Ctx();
+    }
+    const audioCtx = sharedAudioCtx;
+    if (audioCtx.state === 'suspended') {
+      void audioCtx.resume();
+    }
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
     oscillator.connect(gainNode);

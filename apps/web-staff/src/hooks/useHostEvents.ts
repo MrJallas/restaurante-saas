@@ -21,8 +21,13 @@
 // `socket.io-client` falando com `/socket.io/` (vide events.gateway.ts).
 
 import { useEffect, useRef, useState } from 'react';
-import { io, type Socket } from 'socket.io-client';
 import type { WsEvent, WsEventName } from '@restaurant/shared-types';
+import {
+  acquireStaffSocket,
+  readStaffId,
+  releaseStaffSocket,
+  resolveWsUrl,
+} from '../lib/staffSocket';
 
 type Listener = (event: WsEvent) => void;
 
@@ -54,24 +59,6 @@ const DEFAULT_HOST_EVENTS: WsEventName[] = [
   'staff_message.read',
 ];
 
-function resolveWsUrl(): string | null {
-  if (typeof window === 'undefined') return null;
-  const explicit = (window as { __WS_URL__?: string }).__WS_URL__ || process.env.NEXT_PUBLIC_WS_URL;
-  if (explicit) return explicit;
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (apiUrl) return apiUrl.replace(/\/?api\/?$/, '');
-  return 'http://localhost:3001';
-}
-
-function readStaffId(): string | undefined {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    return window.localStorage.getItem('staffId') ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export function useHostEvents({
   tenantSlug,
   hostId,
@@ -85,7 +72,6 @@ export function useHostEvents({
 } {
   const [connected, setConnected] = useState(false);
   const listeners = useRef<Set<Listener>>(new Set());
-  const socketRef = useRef<Socket | null>(null);
   const eventsKey = (events ?? DEFAULT_HOST_EVENTS).join(',');
   const eventsRef = useRef<WsEventName[]>(events ?? DEFAULT_HOST_EVENTS);
   eventsRef.current = events ?? DEFAULT_HOST_EVENTS;
@@ -96,46 +82,30 @@ export function useHostEvents({
     const wsUrl = resolveWsUrl();
     if (!wsUrl) return;
 
-    const staffKey = process.env.NEXT_PUBLIC_STAFF_API_KEY ?? undefined;
+    // Sem identidade o gateway rejeita o handshake staff de qualquer forma
+    // — não conectar evita queimar a cota compartilhada de 30/60s por IP.
     const staffId = hostId ?? readStaffId();
+    if (!staffId) return;
 
-    let socket: Socket;
-    try {
-      socket = io(wsUrl, {
-        path: '/socket.io/',
-        transports: ['websocket'],
-        reconnection: true,
-        autoConnect: false,
-        auth: {
-          staffKey,
-          staffId,
-          tenantSlug,
-          staffRole: 'host',
-          role: 'host',
-        },
-      });
-    } catch {
-      return;
-    }
-    socketRef.current = socket;
+    // Socket COMPARTILHADO por (url|tenant|staff|role) com retry — antes
+    // cada tela abria o próprio socket sem retry pós-rejeição do gateway
+    // (auditoria 2026-07-03).
+    const entry = acquireStaffSocket(wsUrl, tenantSlug, staffId, 'host');
+    if (!entry) return;
+    const socket = entry.socket;
 
-    const handleConnect = () => {
-      setConnected(true);
-      socket.emit('join:tenant', { slug: tenantSlug, role: 'host' });
-      if (staffId) socket.emit('join:staff', { staffId });
-    };
+    const handleConnect = () => setConnected(true);
+    const handleDisconnect = () => setConnected(false);
     socket.on('connect', handleConnect);
-    socket.on('disconnect', () => setConnected(false));
-    socket.on('connect_error', () => setConnected(false));
-    socket.connect();
-    if (socket.connected) {
-      handleConnect();
-    }
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleDisconnect);
+    if (socket.connected) setConnected(true);
 
     const subscribed =
       eventsRef.current && eventsRef.current.length > 0 ? eventsRef.current : DEFAULT_HOST_EVENTS;
+    const handlers: Array<[string, (payload: unknown) => void]> = [];
     for (const name of subscribed) {
-      socket.on(name, (payload: unknown) => {
+      const handler = (payload: unknown) => {
         if (!payload || typeof payload !== 'object') return;
         const evt = { event: name, payload } as WsEvent;
         listeners.current.forEach((fn) => {
@@ -145,16 +115,19 @@ export function useHostEvents({
             /* noop */
           }
         });
-      });
+      };
+      socket.on(name, handler);
+      handlers.push([name, handler]);
     }
 
     return () => {
-      try {
-        socket.disconnect();
-      } catch {
-        /* ignore */
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleDisconnect);
+      for (const [name, handler] of handlers) {
+        socket.off(name, handler);
       }
-      socketRef.current = null;
+      releaseStaffSocket(wsUrl, tenantSlug, staffId, 'host');
     };
   }, [tenantSlug, hostId, eventsKey]);
 

@@ -30,8 +30,13 @@
 // antigo ignorava).
 
 import { useEffect, useRef, useState } from 'react';
-import { io, type Socket } from 'socket.io-client';
 import type { WsEvent, WsEventName } from '@restaurant/shared-types';
+import {
+  acquireStaffSocket,
+  readStaffId,
+  releaseStaffSocket,
+  resolveWsUrl,
+} from '../lib/staffSocket';
 
 type Listener = (event: WsEvent) => void;
 
@@ -66,112 +71,6 @@ const DEFAULT_WAITER_EVENTS: WsEventName[] = [
   'session.flag_changed',
 ];
 
-function resolveWsUrl(): string | null {
-  if (typeof window === 'undefined') return null;
-  const explicit = (window as { __WS_URL__?: string }).__WS_URL__ || process.env.NEXT_PUBLIC_WS_URL;
-  if (explicit) return explicit;
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (apiUrl) return apiUrl.replace(/\/?api\/?$/, '');
-  return 'http://localhost:3001';
-}
-
-function readStaffId(): string | undefined {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    // remember=false guarda o staffId em sessionStorage (lib/api
-    // saveStaffSession) — ler só localStorage gerava handshake rejeitado.
-    return (
-      window.localStorage.getItem('staffId') ??
-      window.sessionStorage.getItem('staffId') ??
-      undefined
-    );
-  } catch {
-    return undefined;
-  }
-}
-
-interface SharedSocketEntry {
-  socket: Socket;
-  refCount: number;
-  retryTimer: ReturnType<typeof setTimeout> | null;
-  retryAttempt: number;
-}
-
-const socketRegistry = new Map<string, SharedSocketEntry>();
-
-function acquireSocket(
-  wsUrl: string,
-  tenantSlug: string,
-  staffId: string,
-): SharedSocketEntry | null {
-  const key = `${wsUrl}|${tenantSlug}|${staffId}`;
-  const existing = socketRegistry.get(key);
-  if (existing) {
-    existing.refCount += 1;
-    return existing;
-  }
-
-  const staffKey = process.env.NEXT_PUBLIC_STAFF_API_KEY ?? undefined;
-  let socket: Socket;
-  try {
-    socket = io(wsUrl, {
-      path: '/socket.io/',
-      transports: ['websocket'],
-      reconnection: true,
-      autoConnect: false,
-      auth: {
-        staffKey,
-        staffId,
-        tenantSlug,
-        staffRole: 'waiter',
-        role: 'waiter',
-      },
-    });
-  } catch {
-    return null;
-  }
-
-  const entry: SharedSocketEntry = { socket, refCount: 1, retryTimer: null, retryAttempt: 0 };
-
-  socket.on('connect', () => {
-    entry.retryAttempt = 0;
-    socket.emit('join:tenant', { slug: tenantSlug, role: 'waiter' });
-    socket.emit('join:staff', { staffId });
-  });
-  socket.on('disconnect', (reason) => {
-    // 'io server disconnect' (rate-limit/rejeição do gateway) não dispara o
-    // auto-reconnect do socket.io — sem isso o realtime morria até reload.
-    if (reason === 'io server disconnect' && entry.refCount > 0 && !entry.retryTimer) {
-      const delay = Math.min(60_000, 5_000 * 2 ** entry.retryAttempt) + Math.random() * 2_000;
-      entry.retryAttempt += 1;
-      entry.retryTimer = setTimeout(() => {
-        entry.retryTimer = null;
-        if (entry.refCount > 0) socket.connect();
-      }, delay);
-    }
-  });
-  socket.connect();
-
-  socketRegistry.set(key, entry);
-  return entry;
-}
-
-function releaseSocket(wsUrl: string, tenantSlug: string, staffId: string) {
-  const key = `${wsUrl}|${tenantSlug}|${staffId}`;
-  const entry = socketRegistry.get(key);
-  if (!entry) return;
-  entry.refCount -= 1;
-  if (entry.refCount <= 0) {
-    if (entry.retryTimer) clearTimeout(entry.retryTimer);
-    try {
-      entry.socket.disconnect();
-    } catch {
-      /* ignore */
-    }
-    socketRegistry.delete(key);
-  }
-}
-
 export function useWaiterEvents({
   tenantSlug,
   waiterId,
@@ -202,7 +101,7 @@ export function useWaiterEvents({
     // — não conectar evita queimar o budget compartilhado de 30/60s por IP.
     if (!staffId) return;
 
-    const entry = acquireSocket(wsUrl, tenantSlug, staffId);
+    const entry = acquireStaffSocket(wsUrl, tenantSlug, staffId, 'waiter');
     if (!entry) return;
     const socket = entry.socket;
 
@@ -240,7 +139,7 @@ export function useWaiterEvents({
       for (const [name, handler] of handlers) {
         socket.off(name, handler);
       }
-      releaseSocket(wsUrl, tenantSlug, staffId);
+      releaseStaffSocket(wsUrl, tenantSlug, staffId, 'waiter');
     };
   }, [tenantSlug, waiterId, eventsKey]);
 
