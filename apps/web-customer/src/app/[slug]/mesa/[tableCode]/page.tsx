@@ -464,7 +464,13 @@ export default function MesaPage() {
               timeoutMs: 4000,
             });
             if (location.status !== 'granted') {
-              clearSession();
+              // Geoloc negada/timeout/indisponível é best-effort: bloqueia a entrada
+              // (política — welcome exige location granted) mas NÃO invalida a sessão
+              // da mesa. Apagar o session_token aqui (clearSession) fazia o retry
+              // cross-origin no iOS virar 401 e forçar re-scan do QR físico (P1-L,
+              // reincidência no init da mesa). O cliente nega uma vez, lê o aviso e
+              // concede no retry — a sessão precisa sobreviver pra isso funcionar. Só
+              // scan de QR de OUTRA mesa justifica clearSession, o que não é o caso.
               setErrorMessage('Permita o acesso à localização para entrar no app do restaurante.');
               transitionTo('error');
               return;
@@ -535,7 +541,11 @@ export default function MesaPage() {
             return;
           } catch (err) {
             if (err instanceof ApiRequestError && err.statusCode === 403) {
-              clearSession();
+              // 403 do recognize = geofence (location não-granted OU fora do raio — o
+              // backend funde os dois). Nenhum é scan de OUTRA mesa, então NÃO apagamos
+              // o session_token: clearSession aqui matava o retry cross-origin no iOS
+              // (401 → re-scan do QR físico, P1-L). O bloqueio de entrada é preservado
+              // via setErrorMessage + transitionTo('error'); a sessão sobrevive pro retry.
               setErrorMessage(err.message);
               transitionTo('error');
               return;
