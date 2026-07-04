@@ -320,6 +320,38 @@ Fatia 1A (2026-07-04, branch fix/framework-bugfixes) — cluster de dinheiro:
   comanda individual do caller — se a parte rateada exceder a comanda, o
   backend clampa pro devido individual. Alinhar semantica na fatia 1D/Balde 3.
 
+Madrugada autonoma 2026-07-04 (Caleb autorizou rodar sem perguntas) — branch
+fix/framework-bugfixes, commits c014186..42584b2:
+
+- Fatia 1E (decisoes do gate 1D): cartao some do pagamento, Pix com selo
+  'Pagamento simulado'; botoes approve/reject de late-arrival do manager
+  removidos (staff passivo). Decisao registrada no vault
+  (brain/decisions/2026-07-04-gate-1d-...) e RAG reindexado.
+- Backends REAIS do manager (decisao 3 do gate): GET /dashboard/funnel
+  (mediana/p95 por etapa do dia via order_status_history; 'acima da meta'
+  ancorado no kitchen_eta), GET /dashboard/team-kpis (chamados/resposta/
+  entregas por staff via acknowledged_by + order_deliveries.claimed_by),
+  GET /dashboard/active-tables (sessoes ativas com conta e idade; late
+  orders acima da meta). Telas religadas: Ops (alertas/mapa/funil reais),
+  MesasAtivas/EmAlerta/Atencao reais, Staff com metricas reais (rating/
+  vendas fabricados REMOVIDOS), CargaMedia/Sobrecarga com selo DEMO
+  (mesas-por-garcom sem fonte). Card 'O que fazer agora' do funil so com
+  etapa real acima da meta. Provas vivas via curl + screenshots Playwright.
+  GOTCHA novo: tables NAO tem coluna number — derivar do code (regexp).
+- FASE 2 iniciada: 2A OrderStateMachine (order-state-machine.ts puro;
+  24 characterization tests ANTES da extracao) e 2B EtaEngine
+  (eta-engine.ts verbatim + valores congelados). orders.service
+  2363→~2300 linhas. PROXIMAS extracoes (KDS query/sweep/consumption)
+  adiadas de proposito: efeitos colaterais de I/O merecem characterization
+  dedicada com gate acordado.
+- RE-SCAN enxuto pos-FASE 1 (3 auditores, verificacao inline): backend 0
+  achados; ai-service 0 bugs (trade-off de custo documentado no guard de
+  negacao); FE 3 achados → 2 corrigidos (api sem useMemo em Ops/StatDetail
+  = refetch por segundo com o tick do pause; d74521e) e 1 pre-existente
+  registrado (aba 'Customizado' do dividir nao recalcula — epico pagamento).
+- Suites no fim da madrugada: jest 149/149, pytest 331/331, builds/format
+  verdes, critical-paths.spec verde.
+
 Fatia 1D (2026-07-04, branch fix/framework-bugfixes) — staff ops + botoes mortos:
 
 - forceMerge (override manager) funcionava 0%: INSERT em colunas inexistentes
