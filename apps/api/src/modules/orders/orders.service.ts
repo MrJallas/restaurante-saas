@@ -2104,6 +2104,11 @@ export class OrdersService {
     if (mode === 'individual') {
       params.push(visitId);
       whereClause += ` AND o.billing_mode = 'individual' AND o.visit_id = $${params.length}`;
+    } else {
+      // Mesma cerca do POST /payments (e do perVisit logo abaixo): a
+      // "conta da mesa" são os pedidos em comanda de mesa — sem isto a
+      // tela somava pedidos de comanda individual que o Pix não cobra.
+      whereClause += ` AND o.billing_mode = 'table'`;
     }
 
     const orders = (await this.tenantConn.query(
