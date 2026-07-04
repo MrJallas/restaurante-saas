@@ -111,6 +111,19 @@ export class StaffAuthController {
     });
   }
 
+  /**
+   * Logout (P1-E re-scan, decisão Caleb 2026-07-04). Lê o `x-staff-token`
+   * (injetado pelo proxy a partir do cookie httpOnly) e revoga TODAS as
+   * sessões do staff no Redis — o proxy web-staff limpa o cookie ao ver a
+   * rota `/staff-auth/logout`. Sem token válido responde 200 idempotente:
+   * logout nunca falha, então nunca deixa o usuário preso na sessão.
+   */
+  @Post('logout')
+  @HttpCode(200)
+  logout(@Req() req: Request) {
+    return this.staffAuth.logout(this.staffToken(req));
+  }
+
   private staffToken(req: Request): string | undefined {
     const raw = req.headers['x-staff-token'];
     return Array.isArray(raw) ? raw[0] : raw;

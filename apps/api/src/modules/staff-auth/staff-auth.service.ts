@@ -247,6 +247,30 @@ export class StaffAuthService {
   }
 
   /**
+   * Logout do staff (P1-E re-scan, decisão Caleb 2026-07-04). O logout só
+   * limpava o localStorage — a sessão no Redis + o cookie httpOnly
+   * `staff_token` seguiam vivos por até 12h, então num kiosk/device
+   * compartilhado reabrir o browser cavalgava o cookie e reentrava.
+   *
+   * Verifica o `x-staff-token` (o proxy injeta a partir do cookie) e, se
+   * válido, REVOGA TODAS as sessões do staff — em device compartilhado é
+   * mais seguro derrubar tudo do que só a sessão corrente. O proxy web-staff
+   * limpa o cookie independentemente da resposta. É SEMPRE idempotente:
+   * token ausente/expirado/de outro tenant não revoga nada e ainda responde
+   * 200 (logout nunca deve falhar — falhar prenderia o usuário logado).
+   */
+  async logout(token: string | undefined) {
+    const payload = await verifyStaffSessionToken(this.redis, token, this.tenantSlug());
+    if (payload) {
+      await revokeStaffSessions(this.redis, {
+        staffId: payload.staffId,
+        slug: this.tenantSlug(),
+      });
+    }
+    return { message_user: 'Sessão encerrada.', code: 'LOGGED_OUT' };
+  }
+
+  /**
    * Reset de PIN pelo GERENTE (TROCAR-PIN, decisão Caleb 2026-07-04) —
    * rota manager-only. Gera PIN temporário de 6 dígitos (devolvido UMA vez
    * no body; o gerente fala pro staff), seta `must_change_pin = true` (o

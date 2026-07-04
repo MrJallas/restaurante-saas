@@ -321,3 +321,29 @@ export function staffAuthChangePin(
 ): Promise<StaffChangePinResponse> {
   return staffAuthApi<StaffChangePinResponse>(slug, '/change-pin', body);
 }
+
+/**
+ * Logout do staff (P1-E re-scan 2026-07-04). Antes o logout só limpava o
+ * localStorage e a sessão no Redis + o cookie httpOnly `staff_token` seguiam
+ * vivos por até 12h (kiosk reentrava ao reabrir o browser). O cookie vai no
+ * `credentials: include`; o backend revoga TODAS as sessões do staff e o
+ * proxy limpa o cookie ao ver a rota `/staff-auth/logout`. Sempre chamar
+ * ANTES de limpar o localStorage e redirecionar pro login.
+ */
+export function staffAuthLogout(slug: string): Promise<{ message_user: string; code: string }> {
+  return staffAuthApi<{ message_user: string; code: string }>(slug, '/logout', {});
+}
+
+/**
+ * Logout completo do lado do cliente: revoga a sessão server-side (best-effort
+ * — logout NUNCA deve travar o usuário, então falha de rede é engolida) e só
+ * então limpa o localStorage. O caller redireciona pro /login depois.
+ */
+export async function performStaffLogout(slug: string): Promise<void> {
+  try {
+    await staffAuthLogout(slug || defaultTenantSlug());
+  } catch {
+    /* rede caiu / backend fora: segue com a limpeza local mesmo assim */
+  }
+  clearStaffSession();
+}

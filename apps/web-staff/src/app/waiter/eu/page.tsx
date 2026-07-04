@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenWaiterProfile } from '../../../screens/waiter/ScreenWaiterProfile';
-import { readStaffSession } from '../../../lib/api';
+import { performStaffLogout, readStaffSession } from '../../../lib/api';
 import { requestWaiterShiftEnd } from '../../../lib/api/waiter';
 import { useStaffTheme } from '../../../lib/theme';
 import { useG, G_FONT } from '../../../components/waiter/tokens';
@@ -44,12 +44,13 @@ function WaiterProfilePageInner() {
         waiterInitials={initials}
         dark={dark}
         onBack={() => router.back()}
-        onLogout={() => {
+        onLogout={async () => {
+          // Revoga a sessão server-side (Redis + cookie httpOnly via proxy)
+          // ANTES de limpar o storage local — sem isso o cookie sobrevivia 12h
+          // e reabrir o browser num device compartilhado reentrava.
+          await performStaffLogout(tenantSlug);
           try {
             window.sessionStorage.clear();
-            window.localStorage.removeItem('staffId');
-            window.localStorage.removeItem('staffRole');
-            window.localStorage.removeItem('staffName');
           } catch {
             /* ignore */
           }

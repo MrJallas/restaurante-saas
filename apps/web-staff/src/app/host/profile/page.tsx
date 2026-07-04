@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenHostProfile } from '../../../screens/host/ScreenHostProfile';
-import { clearStaffSession } from '../../../lib/api';
+import { performStaffLogout } from '../../../lib/api';
 
 function HostProfilePageInner() {
   const router = useRouter();
@@ -18,8 +18,10 @@ function HostProfilePageInner() {
       hostName={hostName}
       hostInitials={hostInitials}
       onBack={() => router.back()}
-      onLogout={() => {
-        clearStaffSession();
+      onLogout={async () => {
+        // Revoga a sessão no Redis + limpa o cookie httpOnly (via proxy) antes
+        // de limpar o localStorage — kiosk não reentra reabrindo o browser.
+        await performStaffLogout(tenantSlug);
         router.push('/');
       }}
       onTabChange={(tab) => {

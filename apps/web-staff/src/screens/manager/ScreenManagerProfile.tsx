@@ -19,7 +19,7 @@ import {
   MSection,
   GIconBtn,
 } from '../../components/manager';
-import { clearStaffSession } from '../../lib/api';
+import { performStaffLogout } from '../../lib/api';
 import { manager, type ManagerShiftLog } from '../../lib/api/manager';
 
 export interface ScreenManagerProfileProps {
@@ -80,12 +80,10 @@ export function ScreenManagerProfile({
   const [shiftBusy, setShiftBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleLogout = () => {
-    try {
-      clearStaffSession();
-    } catch {
-      /* ignore */
-    }
+  const handleLogout = async () => {
+    // Revoga a sessão server-side (Redis + cookie httpOnly via proxy) ANTES de
+    // limpar o localStorage — sem isso o cookie sobrevivia 12h num kiosk.
+    await performStaffLogout(tenantSlug);
     router.push('/');
   };
 
@@ -103,8 +101,8 @@ export function ScreenManagerProfile({
     }
   };
 
-  const finishEndShiftFlow = () => {
-    clearStaffSession();
+  const finishEndShiftFlow = async () => {
+    await performStaffLogout(tenantSlug);
     router.replace('/');
   };
 
