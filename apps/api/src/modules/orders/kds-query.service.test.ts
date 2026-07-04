@@ -1,7 +1,10 @@
 /**
  * CHARACTERIZATION (FASE 2 · KDS): congela o comportamento das duas leituras
  * de fila da cozinha extraídas do orders.service. Fixa: (a) o predicado de
- * estação — bar filtra `= 'bebidas'`, cozinha filtra `<> 'bebidas'`; (b) o
+ * estação — bar filtra pelo FLAG autoritativo `menu_items.kind = 'drink'`,
+ * cozinha filtra `<> 'drink'` (NÃO pelo nome da categoria — bug P1 re-scan:
+ * uma bebida numa categoria "Cervejas"/"Vinhos" caía na cozinha porque o
+ * predicado antigo comparava `LOWER(TRIM(mc.name)) = 'bebidas'`); (b) o
  * mapeamento numérico priority_bucket → label (0=urgent, 1=vip, 2=normal,
  * fora-de-range → normal) e a REMOÇÃO da coluna priority_bucket do output;
  * (c) getKitchenQueue devolve o resultado da query direto (passthrough).
@@ -23,7 +26,7 @@ function fakeConn(rows: unknown[]) {
 }
 
 describe('KdsQueryService — characterization (extraído do orders.service)', () => {
-  it("getActiveOrdersForKds('bar') filtra bebidas e mapeia priority_bucket → label", async () => {
+  it("getActiveOrdersForKds('bar') roteia pelo kind='drink' e mapeia priority_bucket → label", async () => {
     const { calls, conn } = fakeConn([
       { id: 'o1', priority_bucket: 0, items: [] },
       { id: 'o2', priority_bucket: 1, items: [] },
@@ -33,7 +36,10 @@ describe('KdsQueryService — characterization (extraído do orders.service)', (
 
     const out = await new KdsQueryService(conn).getActiveOrdersForKds('bar');
 
-    expect(calls[0].sql).toContain("= 'bebidas'");
+    // Bar roteia pelo FLAG autoritativo (indexado, migration 016), NÃO pelo
+    // nome da categoria. Uma bebida em "Cervejas"/"Vinhos" também vai pro bar.
+    expect(calls[0].sql).toContain("mi.kind = 'drink'");
+    expect(calls[0].sql).not.toContain("'bebidas'");
     expect(out.map((o) => (o as { priority: string }).priority)).toEqual([
       'urgent',
       'vip',
@@ -45,10 +51,31 @@ describe('KdsQueryService — characterization (extraído do orders.service)', (
     expect(out[0]).toHaveProperty('id', 'o1');
   });
 
-  it("getActiveOrdersForKds('kitchen') exclui bebidas", async () => {
+  it("getActiveOrdersForKds('kitchen') exclui bebidas pelo kind (não pelo nome da categoria)", async () => {
     const { calls, conn } = fakeConn([]);
     await new KdsQueryService(conn).getActiveOrdersForKds('kitchen');
-    expect(calls[0].sql).toContain("<> 'bebidas'");
+    // Cozinha = tudo que NÃO é bebida pelo flag; nada depende de "bebidas".
+    expect(calls[0].sql).toContain("mi.kind <> 'drink'");
+    expect(calls[0].sql).not.toContain("'bebidas'");
+  });
+
+  it("BUG P1: bebida numa categoria que NÃO se chama 'Bebidas' (ex.: 'Cervejas') vai pro BAR", async () => {
+    // Regressão do bug de roteamento por nome de categoria: o seed usa a
+    // categoria literal "Bebidas", o que MASCARAVA o bug. Prova o contrato
+    // correto lendo o predicado SQL gerado — ele deve casar por
+    // menu_items.kind = 'drink' e NUNCA restringir o bar à categoria
+    // "bebidas". Assim uma cerveja (kind='drink', categoria "Cervejas")
+    // aparece no KDS do bar em vez de cair na cozinha.
+    const { calls, conn } = fakeConn([]);
+    await new KdsQueryService(conn).getActiveOrdersForKds('bar');
+
+    const barSql = calls[0].sql;
+    // O bar seleciona itens de bebida pelo flag, independentemente da categoria.
+    expect(barSql).toContain("mi.kind = 'drink'");
+    // Nenhuma dependência do nome de categoria "bebidas" — sem isso, "Cervejas"
+    // seria roteada erroneamente pra cozinha. (mc.name segue no SELECT só como
+    // metadado de display `categoryName`, não é fonte de roteamento.)
+    expect(barSql.toLowerCase()).not.toContain('bebidas');
   });
 
   it('getKitchenQueue devolve o resultado da query direto (passthrough)', async () => {

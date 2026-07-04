@@ -21,11 +21,17 @@ export class KdsQueryService {
   async getActiveOrdersForKds(
     station: 'kitchen' | 'bar',
   ): Promise<Array<Record<string, unknown> & { priority: string }>> {
-    const normalizedCategoryName = 'LOWER(TRIM(mc.name))';
+    // Roteamento bar × cozinha pelo FLAG autoritativo `menu_items.kind`
+    // (migration 016: VARCHAR(10) NOT NULL DEFAULT 'food', indexado por
+    // idx_menu_items_kind). Valores canônicos = 'drink' | 'food'
+    // (shared-types MenuItemKind). NÃO rotear pelo NOME da categoria:
+    // o antigo `LOWER(TRIM(mc.name)) = 'bebidas'` mandava toda bebida de
+    // categoria "Cervejas"/"Vinhos"/"Drinks" pra cozinha (o seed usa a
+    // categoria literal "Bebidas", o que MASCARAVA o bug). Cozinha recebe
+    // tudo que NÃO é bebida — incluindo kind default 'food' e qualquer
+    // valor legacy inesperado (`<> 'drink'`).
     const itemPredicate =
-      station === 'bar'
-        ? `${normalizedCategoryName} = 'bebidas'`
-        : `${normalizedCategoryName} <> 'bebidas'`;
+      station === 'bar' ? `mi.kind = 'drink'` : `mi.kind <> 'drink'`;
 
     // Três filas/prioridades canônicas (decisão 2026-06-10, prompt 99 §6):
     // 1. urgência (priority_rank > 0 — reorder/urgência da cozinha),
