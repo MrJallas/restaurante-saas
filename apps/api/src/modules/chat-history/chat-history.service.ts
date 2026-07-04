@@ -92,7 +92,6 @@ export class ChatHistoryService {
    */
   private async ensureIndexes(): Promise<void> {
     if (this.indexesEnsured) return;
-    await this.ensureIndexes();
     const db = this.mongo.tryDb();
     if (!db) return;
     try {
@@ -129,6 +128,11 @@ export class ChatHistoryService {
       this.logger.warn(`Mongo offline · skipping chat persist for customer ${ctx.customerId}`);
       return;
     }
+
+    // Bug 2026-07-04: o ensureIndexes existia mas (a) recursava em si mesmo
+    // e (b) NINGUÉM o chamava — o índice TTL de 30d (LGPD) nunca nascia em
+    // volume criado antes do mongo-init.js. Garantido aqui, no write.
+    await this.ensureIndexes();
 
     try {
       const now = new Date();
