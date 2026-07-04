@@ -24,6 +24,7 @@ interface LateArrivalRow {
   approved_by_customer_id: string | null;
   decided_at: string | null;
   escalation_level: number;
+  escalation_chain_id: string | null;
   ttl_expires_at: string;
   message: string | null;
   created_at: string;
@@ -203,6 +204,27 @@ export class LateArrivalService {
       );
       if (!updatedRows.length) {
         throw new HttpException('Late-arrival request nao encontrado.', HttpStatus.NOT_FOUND);
+      }
+
+      // Resíduo 2 (chain órfã/zumbi): assim que o host DECIDE (aprovar OU
+      // rejeitar), a escalation_chain vinculada tem de ser encerrada. O
+      // sweepEscalations filtra só `completed_at IS NULL AND ttl<now` sem olhar
+      // o status do request — sem carimbar completed_at aqui, a chain sobrevivia
+      // à decisão, vencia o TTL e escalava pro gerente como zumbi. Espelha o
+      // scan-verification.resolve() (que fecha a SUA chain no respond). Fecha
+      // dentro da MESMA transação do status flip pra ser atômico. `completed_at
+      // IS NULL` é idempotente e não sobrescreve uma chain já encerrada.
+      const chainId = updatedRows[0].escalation_chain_id;
+      if (chainId) {
+        await tx.query(
+          `UPDATE escalation_chains
+              SET completed_at = now(),
+                  resolution_notes = COALESCE(resolution_notes, $2),
+                  updated_at = now()
+            WHERE id = $1
+              AND completed_at IS NULL`,
+          [chainId, status === 'approved' ? 'host_approved' : 'host_rejected'],
+        );
       }
 
       // Only on approval: ensure the requesting customer is a session

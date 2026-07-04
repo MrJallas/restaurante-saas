@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { EventsGateway } from '../websocket/events.gateway';
-import { unwrapRows } from '../tenant/query-utils';
+import { unwrapRows, unwrapAffected } from '../tenant/query-utils';
 import { SecurityAuditService } from '../security-audit/security-audit.service';
 
 /**
@@ -443,14 +443,23 @@ export class TtlTickService {
       const MAX_LEVEL = 2;
 
       if (nextLevel > MAX_LEVEL) {
-        await qr.query(
-          `UPDATE escalation_chains
-              SET completed_at = now(),
-                  resolution_notes = COALESCE(resolution_notes, 'auto-timeout'),
-                  updated_at = now()
-            WHERE id = $1`,
-          [chainId],
+        // Level-CAS (resíduo 1): só completa se a chain ainda estiver aberta
+        // NO nível que lemos (`level = $2` = fromLevel). Se um caminho
+        // concorrente (o outro sweep no mesmo tick) já mexeu na chain, este
+        // UPDATE casa 0 linhas e abortamos SEM emitir — o vencedor já emitiu.
+        const completedAffected = unwrapAffected(
+          await qr.query(
+            `UPDATE escalation_chains
+                SET completed_at = now(),
+                    resolution_notes = COALESCE(resolution_notes, 'auto-timeout'),
+                    updated_at = now()
+              WHERE id = $1
+                AND completed_at IS NULL
+                AND level = $2`,
+            [chainId, fromLevel],
+          ),
         );
+        if (completedAffected === 0) return null;
         let scanResolution: { tableSessionId: string; tableId: string; customerId: string } | null =
           null;
         if (kind === 'scan_verification' && sourceId) {
@@ -521,16 +530,28 @@ export class TtlTickService {
             : 'manager';
       const ttl = new Date(Date.now() + 60 * 1000).toISOString();
 
-      await qr.query(
-        `UPDATE escalation_chains
-            SET level = $2,
-                current_assignee_role = $3,
-                current_assignee_staff_id = NULL,
-                ttl_expires_at = $4,
-                updated_at = now()
-          WHERE id = $1`,
-        [chainId, nextLevel, nextRole, ttl],
+      // Level-CAS (resíduo 1): avança SÓ se a chain ainda está no nível que
+      // lemos (`level = $5` = fromLevel). Os DOIS sweeps de um mesmo tick
+      // (sweepEscalations sob FOR UPDATE e sweepLateArrivals em autocommit,
+      // sem lock) podem casar a MESMA chain vencida; o FOR UPDATE não serializa
+      // o caminho autocommit. O Postgres serializa os dois UPDATEs na row: o
+      // primeiro casa `level = fromLevel` e sobe pra nextLevel; o segundo vê o
+      // nível já avançado, casa 0 linhas e abortamos SEM re-emitir advance.
+      const advanceAffected = unwrapAffected(
+        await qr.query(
+          `UPDATE escalation_chains
+              SET level = $2,
+                  current_assignee_role = $3,
+                  current_assignee_staff_id = NULL,
+                  ttl_expires_at = $4,
+                  updated_at = now()
+            WHERE id = $1
+              AND completed_at IS NULL
+              AND level = $5`,
+          [chainId, nextLevel, nextRole, ttl, fromLevel],
+        ),
       );
+      if (advanceAffected === 0) return null;
       let scan: { tableSessionId: string; tableId: string; customerId: string } | null = null;
       if (kind === 'scan_verification' && sourceId) {
         const updatedScan = unwrapRows<{
