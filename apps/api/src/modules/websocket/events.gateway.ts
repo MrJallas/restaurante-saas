@@ -198,6 +198,27 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
    * com PII alheia. Cache na chave `customer_tenant:<customerId>` (TTL
    * 5min) pra evitar lookup em DB a cada join.
    */
+  /**
+   * Re-scan (P1): resolve o SLUG público de um tenant pro seu `schema_name`
+   * Postgres via `public.restaurants` (ativo). É o mesmo lookup que
+   * `validateCustomerInTenant` (join:customer) usa — extraído pra que
+   * `join:session` compare em schema-space em vez de comparar schema (do
+   * payload da sessão) contra slug (do handshake), o que rejeitava staff
+   * legítimo de tenant com slug≠schema_name. Devolve null se o slug não
+   * resolve pra tenant ativo (fail-closed) ou se o schema é malformado.
+   */
+  private async resolveSchemaForSlug(slug: string): Promise<string | null> {
+    const restaurantRows = (await this.dataSource.query(
+      `SELECT schema_name FROM public.restaurants
+        WHERE slug = $1 AND is_active = true`,
+      [slug],
+    )) as Array<{ schema_name: string }>;
+    if (!restaurantRows.length) return null;
+    const schemaName = restaurantRows[0].schema_name;
+    if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schemaName)) return null;
+    return schemaName;
+  }
+
   private async validateCustomerInTenant(
     customerId: string,
     staffTenantSlug: string,
@@ -211,14 +232,8 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       return cached === staffTenantSlug;
     }
 
-    const restaurantRows = (await this.dataSource.query(
-      `SELECT schema_name FROM public.restaurants
-        WHERE slug = $1 AND is_active = true`,
-      [staffTenantSlug],
-    )) as Array<{ schema_name: string }>;
-    if (!restaurantRows.length) return false;
-    const schemaName = restaurantRows[0].schema_name;
-    if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schemaName)) return false;
+    const schemaName = await this.resolveSchemaForSlug(staffTenantSlug);
+    if (!schemaName) return false;
 
     const customerRows = (await this.dataSource.query(
       `SELECT 1 FROM "${schemaName}".customers WHERE id = $1 LIMIT 1`,
@@ -509,7 +524,21 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       // então o check anterior `&& ...` virou `!staffTenantSlug ||` pra
       // não curto-circuitar caso futura regressão volte a stamping
       // condicional.
-      if (!client.data.staffTenantSlug || parsed.schemaName !== client.data.staffTenantSlug) {
+      if (!client.data.staffTenantSlug) {
+        client.emit('error', { message: 'Cross-tenant session join blocked.' });
+        return;
+      }
+      // Re-scan (P1): o payload da sessão guarda o SCHEMA Postgres
+      // (`schemaName`), mas `staffTenantSlug` é o SLUG público carimbado no
+      // handshake — iguais só quando slug == schema_name. Comparar os dois
+      // crus rejeitava staff LEGÍTIMO de qualquer tenant com slug≠schema
+      // (modo suportado pelo create-tenant), silenciando a mesa view do
+      // gerente e a table view do garçom. Alinhado ao join:customer: resolve
+      // o slug do staff pra schema_name via public.restaurants (mesmo lookup
+      // de validateCustomerInTenant) e compara em schema-space. Fail-closed:
+      // slug inexistente/inativo não resolve nada → rejeita.
+      const staffSchema = await this.resolveSchemaForSlug(client.data.staffTenantSlug);
+      if (!staffSchema || parsed.schemaName !== staffSchema) {
         client.emit('error', { message: 'Cross-tenant session join blocked.' });
         return;
       }
