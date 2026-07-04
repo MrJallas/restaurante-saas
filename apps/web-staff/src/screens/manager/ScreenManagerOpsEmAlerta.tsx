@@ -3,16 +3,15 @@
 // V9 drill-down — EM ALERTA chip (/manager/operacoes/em-alerta).
 //
 // Canvas spec: docs/design-canvas/handoff/garcom/garcom-screens-e.jsx:886-987
-// (variant `em-alerta`). Hero "N" + sub split em "X CRÍTICAS · Y LENTAS"
-// + lista mesas em alerta com cor por status (vermelho/amarelo) + 2
-// ActionPills "Realocar críticas" + "Mensagem direta pros garçons" + Fórmula.
+// (variant `em-alerta`).
 //
-// Backend wiring (Round 18 Onda 4):
-//   • REAL (parcial): tap em mesa abre `/manager/mesa/N`. A lista vem do
-//     mesmo endpoint TODO `/tables/open` com filtro `state in (warn,
-//     crit)`. Por enquanto mock derivado.
-//     TODO(round19): wire GET /:slug/tables/alerts.
-//   • REAL: ações navegam para redistribuição de equipe e mensagens.
+// Backend wiring (anti-placebo):
+//   • REAL: lista vem dos `lateOrders` do GET /:slug/dashboard/active-tables
+//     — pedidos em preparo há mais tempo que a meta da cozinha
+//     (settings.kitchen_eta_max_minutes).
+//   • Meta não configurada (kitchenEtaMaxMinutes null) → aviso pra
+//     configurar em /cozinha/eu, nunca lista fabricada.
+//   • Tap em pedido abre `/manager/mesa/N` (número extraído do label real).
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -25,61 +24,14 @@ import {
   GIconBtn,
   MBottomNav,
 } from '../../components/manager';
-
-interface AlertTable {
-  n: number;
-  waiter: { init: string; color: string; name: string };
-  t: string;
-  state: 'CRÍTICA' | 'LENTA';
-  stateColor: string;
-  borderColor: string;
-  bg: string;
-}
+import { activeTablesApi, type LateOrderRow } from '../../lib/api/manager';
 
 export interface ScreenManagerOpsEmAlertaProps {
   dark?: boolean;
   tenantSlug: string;
 }
 
-// Mock canvas spec. TODO(round19): replace com GET /:slug/tables/alerts.
-const FALLBACK_ALERT_TABLES: AlertTable[] = [
-  {
-    n: 11,
-    waiter: { init: 'OM', color: '#E37D2F', name: 'Olivia' },
-    t: '1h 38',
-    state: 'CRÍTICA',
-    stateColor: '#A12626',
-    borderColor: '#F4C7C7',
-    bg: '#FFF1F1',
-  },
-  {
-    n: 14,
-    waiter: { init: 'HL', color: '#7A4FBE', name: 'Henrique' },
-    t: '2h 03',
-    state: 'CRÍTICA',
-    stateColor: '#A12626',
-    borderColor: '#F4C7C7',
-    bg: '#FFF1F1',
-  },
-  {
-    n: 3,
-    waiter: { init: 'HL', color: '#7A4FBE', name: 'Henrique' },
-    t: '1h 47',
-    state: 'LENTA',
-    stateColor: '#9A7212',
-    borderColor: '#F0DCB6',
-    bg: '#FFF7E6',
-  },
-  {
-    n: 6,
-    waiter: { init: 'OM', color: '#E37D2F', name: 'Olivia' },
-    t: '1h 22',
-    state: 'LENTA',
-    stateColor: '#9A7212',
-    borderColor: '#F0DCB6',
-    bg: '#FFF7E6',
-  },
-];
+const CRIT = { color: '#A12626', border: '#F4C7C7', bg: '#FFF1F1' };
 
 export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsEmAlertaProps) {
   const C = useG(!!dark);
@@ -88,9 +40,33 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
   const slugQs = params.get('slug');
   const backHref = slugQs ? `/manager/operacoes?slug=${slugQs}` : '/manager/operacoes';
 
-  const items = FALLBACK_ALERT_TABLES;
-  const crit = items.filter((i) => i.state === 'CRÍTICA').length;
-  const lent = items.filter((i) => i.state === 'LENTA').length;
+  const [items, setItems] = useState<LateOrderRow[]>([]);
+  const [kitchenEta, setKitchenEta] = useState<number | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    let stop = false;
+    activeTablesApi(tenantSlug)
+      .get()
+      .then((res) => {
+        if (stop) return;
+        setItems(res.lateOrders);
+        setKitchenEta(res.kitchenEtaMaxMinutes);
+        setLoaded(true);
+        setLoadError(false);
+      })
+      .catch(() => {
+        if (stop) return;
+        setLoaded(true);
+        setLoadError(true);
+      });
+    return () => {
+      stop = true;
+    };
+  }, [tenantSlug]);
+
+  const metaMissing = loaded && !loadError && kitchenEta == null;
 
   // Render-time `new Date()` causa hydration mismatch (server em UTC,
   // client em Brasília). Placeholder no SSR, atualiza após mount.
@@ -104,8 +80,10 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
     );
   }, []);
 
-  const openTable = (n: number) => {
-    router.push(slugQs ? `/manager/mesa/${n}?slug=${slugQs}` : `/manager/mesa/${n}`);
+  const openTableByLabel = (label: string) => {
+    const digits = label.replace(/\D/g, '');
+    if (!digits) return;
+    router.push(slugQs ? `/manager/mesa/${digits}?slug=${slugQs}` : `/manager/mesa/${digits}`);
   };
 
   return (
@@ -158,54 +136,67 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
               lineHeight: 1.05,
             }}
           >
-            {items.length}
+            {!loaded || loadError || metaMissing ? '—' : items.length}
           </div>
-          {items.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
-              <div
-                style={{
-                  fontSize: 12.5,
-                  fontWeight: 800,
-                  color: '#A12626',
-                  fontFamily: MONO_FONT,
-                  letterSpacing: 0.4,
-                  textTransform: 'uppercase',
-                }}
-              >
-                · {crit} CRÍTICAS
-              </div>
-              <div
-                style={{
-                  fontSize: 12.5,
-                  fontWeight: 800,
-                  color: '#9A7212',
-                  fontFamily: MONO_FONT,
-                  letterSpacing: 0.4,
-                  textTransform: 'uppercase',
-                }}
-              >
-                · {lent} LENTAS
-              </div>
+          {loaded && !loadError && !metaMissing && items.length > 0 && (
+            <div
+              style={{
+                fontSize: 12.5,
+                fontWeight: 800,
+                color: '#A12626',
+                fontFamily: MONO_FONT,
+                letterSpacing: 0.4,
+                textTransform: 'uppercase',
+                marginTop: 4,
+              }}
+            >
+              · {items.length} {items.length === 1 ? 'PEDIDO' : 'PEDIDOS'} ACIMA DA META
             </div>
           )}
           <div
             style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}
           >
-            {items.length > 0
-              ? `${items.length} mesas onde algo passou da meta de tempo.`
-              : 'Nenhuma mesa em alerta agora.'}
+            {loadError
+              ? 'Não foi possível carregar os alertas agora — tente de novo em instantes.'
+              : !loaded
+                ? 'Carregando alertas…'
+                : metaMissing
+                  ? 'Sem meta configurada não dá pra saber o que está atrasado.'
+                  : items.length > 0
+                    ? `${items.length} ${items.length === 1 ? 'pedido passou' : 'pedidos passaram'} da meta da cozinha (${kitchenEta} min).`
+                    : `Nenhum pedido acima da meta da cozinha (${kitchenEta} min) agora.`}
           </div>
         </div>
 
-        {items.length > 0 && (
+        {metaMissing && (
+          <div style={{ padding: '0 16px' }}>
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 12,
+                border: '1px solid #F0DCB6',
+                background: '#FFF7E6',
+                fontSize: 13,
+                color: '#7A4D10',
+                fontWeight: 600,
+                lineHeight: 1.5,
+              }}
+            >
+              Meta da cozinha não configurada — defina em /cozinha/eu para acompanhar pedidos
+              atrasados aqui.
+            </div>
+          </div>
+        )}
+
+        {loaded && !loadError && !metaMissing && items.length > 0 && (
           <>
-            <SectionLabel C={C}>Mesas em alerta</SectionLabel>
+            <SectionLabel C={C}>Pedidos acima da meta</SectionLabel>
             <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {items.map((t) => (
+              {items.map((o) => (
                 <button
-                  key={t.n}
+                  key={o.orderId}
                   type="button"
-                  onClick={() => openTable(t.n)}
+                  onClick={() => openTableByLabel(o.tableLabel)}
                   style={{
                     all: 'unset',
                     cursor: 'pointer',
@@ -213,8 +204,8 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
                     width: '100%',
                     padding: '10px 12px',
                     borderRadius: 10,
-                    border: `1px solid ${t.borderColor}`,
-                    background: t.bg,
+                    border: `1px solid ${CRIT.border}`,
+                    background: CRIT.bg,
                     display: 'flex',
                     alignItems: 'center',
                     gap: 11,
@@ -226,8 +217,8 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
                       height: 32,
                       borderRadius: 8,
                       background: '#fff',
-                      color: t.stateColor,
-                      border: `1px solid ${t.borderColor}`,
+                      color: CRIT.color,
+                      border: `1px solid ${CRIT.border}`,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -238,38 +229,39 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    {t.n}
+                    {o.tableLabel.replace(/\D/g, '') || '—'}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
                         fontSize: 9.5,
                         fontWeight: 800,
-                        color: t.stateColor,
+                        color: CRIT.color,
                         letterSpacing: 0.7,
                         textTransform: 'uppercase',
                         fontFamily: MONO_FONT,
                       }}
                     >
-                      {t.state}
+                      PASSOU DA META · {kitchenEta} MIN
                     </div>
                     <div
                       style={{
                         fontSize: 13,
                         fontWeight: 700,
-                        color: t.stateColor,
+                        color: CRIT.color,
                         letterSpacing: -0.1,
                         marginTop: 2,
                       }}
                     >
-                      {t.waiter.name} · {t.t} aberta
+                      {o.tableLabel} · {o.minutesInPrep} min em preparo · {o.itemCount}{' '}
+                      {o.itemCount === 1 ? 'item' : 'itens'}
                     </div>
                   </div>
                   <span
                     style={{
                       fontSize: 11,
                       fontWeight: 800,
-                      color: t.stateColor,
+                      color: CRIT.color,
                       letterSpacing: 0.4,
                       fontFamily: MONO_FONT,
                       textTransform: 'uppercase',
@@ -289,9 +281,13 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
                 filled
                 accent="#A12626"
                 icon={Icon.table(13)}
-                onClick={() => router.push(`/manager/equipe/sobrecarga?slug=${tenantSlug}`)}
+                onClick={() =>
+                  router.push(
+                    slugQs ? `/manager/kitchen-reorder?slug=${slugQs}` : '/manager/kitchen-reorder',
+                  )
+                }
               >
-                Realocar mesas críticas
+                Ver fila da cozinha
               </ActionPill>
               <ActionPill
                 C={C}
@@ -300,7 +296,7 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
                   router.push(slugQs ? `/manager/mensagens?slug=${slugQs}` : '/manager/mensagens')
                 }
               >
-                Mensagem direta pros garçons das críticas
+                Mensagem direta pra equipe
               </ActionPill>
             </div>
           </>
@@ -308,8 +304,8 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
 
         <div style={{ height: 18 }} />
         <Formula C={C}>
-          Mesas com pedido ou chamado que <b>passou da meta</b> · ATENÇÃO se &gt;80% da meta ·
-          CRÍTICA se &gt;100%.
+          Pedidos com status <b>em preparo</b> há mais tempo que a meta da cozinha
+          {kitchenEta != null ? ` (${kitchenEta} min)` : ''} · meta configurada em /cozinha/eu.
         </Formula>
       </div>
 

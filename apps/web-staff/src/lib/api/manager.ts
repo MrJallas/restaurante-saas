@@ -371,6 +371,51 @@ export const funnelApi = (slug: string) => ({
   get: () => staffGet<{ stages: FunnelStage[] }>(`/${slug}/dashboard/funnel`),
 });
 
+export interface TeamKpiEntry {
+  staffId: string;
+  name: string;
+  role: string;
+  callsAcknowledged: number;
+  avgResponseMinutes: number | null;
+  deliveries: number;
+}
+
+/**
+ * KPIs por funcionário HOJE — só métricas com fonte real
+ * (waiter_calls acknowledged + order_deliveries claimed).
+ */
+export const teamKpisApi = (slug: string) => ({
+  get: () => staffGet<{ team: TeamKpiEntry[] }>(`/${slug}/dashboard/team-kpis`),
+});
+
+export interface ActiveTableRow {
+  sessionId: string;
+  tableLabel: string;
+  tableNumber: number;
+  openedMinutes: number;
+  people: number;
+  subtotalCents: number;
+}
+
+export interface LateOrderRow {
+  orderId: string;
+  tableLabel: string;
+  minutesInPrep: number;
+  itemCount: number;
+}
+
+export interface ActiveTablesResponse {
+  tables: ActiveTableRow[];
+  lateOrders: LateOrderRow[];
+  /** null = meta da cozinha não configurada (settings.kitchen_eta_max_minutes). */
+  kitchenEtaMaxMinutes: number | null;
+}
+
+/** Mesas com sessão aberta + pedidos acima da meta da cozinha (dados reais). */
+export const activeTablesApi = (slug: string) => ({
+  get: () => staffGet<ActiveTablesResponse>(`/${slug}/dashboard/active-tables`),
+});
+
 export const alertsApi = (slug: string) => ({
   list: (
     params: { sev?: AlertSeverity | 'all'; status?: AlertStatus | 'all'; limit?: number } = {},
@@ -777,6 +822,8 @@ export function manager(slug: string) {
     assistant: assistantApi(slug),
     alerts: alertsApi(slug),
     funnel: funnelApi(slug),
+    teamKpis: teamKpisApi(slug),
+    activeTables: activeTablesApi(slug),
     account: managerAccountApi(slug),
     kitchen: kitchenApi(slug),
     orderTimeline: {

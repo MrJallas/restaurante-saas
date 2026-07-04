@@ -11,6 +11,9 @@
 //   • REAL (parcial): GET /:slug/staff?activeOnly=true → derive overload
 //     candidates. Ações usam redistribuição/manual, mensagem direta e pausa
 //     de zona já existentes.
+//   • DEMO: mesas-por-garçom NÃO tem endpoint (team-kpis só traz chamados/
+//     resposta/entregas) — a lista de sobrecarregados é ilustrativa e a
+//     tela carrega o selo "Dados de demonstração" até existir fonte real.
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -132,6 +135,7 @@ export function ScreenManagerStaffSobrecarga({
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0, paddingBottom: 100 }}>
         {/* Hero */}
         <div style={{ padding: '20px 16px 18px' }}>
+          <DemoBadge C={C} />
           <div
             style={{
               fontSize: 10.5,
@@ -333,6 +337,33 @@ export function ScreenManagerStaffSobrecarga({
 }
 
 // ─── Local shared bits (intentional duplication while V9 stabilizes) ──
+
+// Selo anti-placebo — mesmo padrão do que existia na aba Funil do
+// ScreenManagerOps antes do backend real (pill border-soft, mono 10px
+// uppercase tracking 1px).
+function DemoBadge({ C }: { C: ReturnType<typeof useG> }) {
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '4px 10px',
+        borderRadius: 100,
+        border: `1px solid ${C.borderSoft}`,
+        color: C.faint,
+        fontSize: 10,
+        fontWeight: 800,
+        letterSpacing: 1,
+        textTransform: 'uppercase',
+        fontFamily: MONO_FONT,
+        marginBottom: 10,
+      }}
+    >
+      Dados de demonstração
+    </div>
+  );
+}
 
 function SectionLabel({ C, children }: { C: ReturnType<typeof useG>; children: React.ReactNode }) {
   return (

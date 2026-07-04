@@ -3,16 +3,16 @@
 // V9 drill-down — MESAS ATIVAS chip (/manager/operacoes/mesas-ativas).
 //
 // Canvas spec: docs/design-canvas/handoff/garcom/garcom-screens-e.jsx:771-884
-// (variant `mesas-ativas`). Hero "occ/total" + 1 livres + lista por seção
-// (Salão · Varanda) cada com avatar do garçom + tempo aberta + R$ + Ver
-// arrow. ActionPill "Ver no Mapa →" + Fórmula.
+// (variant `mesas-ativas`). Hero "occ/total" + livres + lista de mesas
+// abertas + Ver arrow. ActionPill "Ver no Mapa →" + Fórmula.
 //
-// Backend wiring (Round 18 Onda 4):
-//   • REAL (parcial): cada row → tap em mesa abre `/manager/mesa/N` (real
-//     endpoint). A LISTA inteira de mesas com sessão aberta precisa de
-//     endpoint dedicado `/tables/open` que não existe ainda.
-//     TODO(round19): wire GET /:slug/tables/open com tempo aberta + R$.
-//   • Ação inferior navega de volta para o mapa.
+// Backend wiring (anti-placebo):
+//   • REAL: lista vem de GET /:slug/dashboard/active-tables (label, tempo
+//     aberto, pessoas e conta reais). Total/livres vem do
+//     GET /:slug/staff/tables-overview (mesmo endpoint do mapa do Ops).
+//   • Seções Salão/Varanda e avatar do garçom por mesa saíram — não há
+//     fonte de zona/atribuição por mesa; nada de dado fabricado.
+//   • Tap em mesa abre `/manager/mesa/N` (real endpoint).
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -25,55 +25,30 @@ import {
   GIconBtn,
   MBottomNav,
 } from '../../components/manager';
-
-interface ActiveTable {
-  n: number;
-  waiter: { init: string; color: string };
-  t: string;
-  val: number;
-}
-
-interface TableSection {
-  name: string;
-  tables: ActiveTable[];
-}
+import { activeTablesApi, type ActiveTableRow } from '../../lib/api/manager';
+import { listTablesOverview } from '../../lib/api/waiter';
 
 export interface ScreenManagerOpsMesasAtivasProps {
   dark?: boolean;
   tenantSlug: string;
 }
 
-// Mock canvas spec — TODO(round19) substituir por GET /:slug/tables/open.
-const FALLBACK_SECTIONS: TableSection[] = [
-  {
-    name: 'Salão',
-    tables: [
-      { n: 1, waiter: { init: 'CS', color: '#4F6BFF' }, t: '1h 12', val: 142 },
-      { n: 2, waiter: { init: 'CS', color: '#4F6BFF' }, t: '0h 38', val: 88 },
-      { n: 3, waiter: { init: 'HL', color: '#7A4FBE' }, t: '1h 47', val: 312 },
-      { n: 4, waiter: { init: 'OM', color: '#E37D2F' }, t: '0h 52', val: 64 },
-      { n: 6, waiter: { init: 'OM', color: '#E37D2F' }, t: '1h 22', val: 184 },
-      { n: 7, waiter: { init: 'CS', color: '#4F6BFF' }, t: '0h 41', val: 96 },
-      { n: 8, waiter: { init: 'HL', color: '#7A4FBE' }, t: '1h 04', val: 220 },
-      { n: 9, waiter: { init: 'CS', color: '#4F6BFF' }, t: '2h 11', val: 412 },
-    ],
-  },
-  {
-    name: 'Varanda',
-    tables: [
-      { n: 11, waiter: { init: 'OM', color: '#E37D2F' }, t: '1h 38', val: 156 },
-      { n: 12, waiter: { init: 'HL', color: '#7A4FBE' }, t: '0h 28', val: 78 },
-      { n: 13, waiter: { init: 'CS', color: '#4F6BFF' }, t: '1h 14', val: 244 },
-      { n: 14, waiter: { init: 'HL', color: '#7A4FBE' }, t: '2h 03', val: 168 },
-      { n: 16, waiter: { init: 'OM', color: '#E37D2F' }, t: '0h 47', val: 110 },
-    ],
-  },
-];
-const TOTAL_TABLES = 16;
+/** 72 min → "1h 12" · 38 min → "38 min". */
+function fmtOpenTime(minutes: number): string {
+  if (minutes >= 60) {
+    return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}`;
+  }
+  return `${minutes} min`;
+}
+
+/** Centavos → "R$ 1.234,56". */
+function fmtBRL(cents: number): string {
+  return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
 
 export function ScreenManagerOpsMesasAtivas({
   dark,
-  tenantSlug: _tenantSlug,
+  tenantSlug,
 }: ScreenManagerOpsMesasAtivasProps) {
   const C = useG(!!dark);
   const router = useRouter();
@@ -81,10 +56,33 @@ export function ScreenManagerOpsMesasAtivas({
   const slugQs = params.get('slug');
   const backHref = slugQs ? `/manager/operacoes?slug=${slugQs}` : '/manager/operacoes';
 
-  const sections = FALLBACK_SECTIONS;
+  const [tables, setTables] = useState<ActiveTableRow[]>([]);
+  const [totalTables, setTotalTables] = useState<number | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
-  const occ = sections.reduce((s, sec) => s + sec.tables.length, 0);
-  const free = TOTAL_TABLES - occ;
+  useEffect(() => {
+    let stop = false;
+    Promise.all([activeTablesApi(tenantSlug).get(), listTablesOverview(tenantSlug)])
+      .then(([activeRes, overviewRows]) => {
+        if (stop) return;
+        setTables(activeRes.tables);
+        setTotalTables(overviewRows.length > 0 ? overviewRows.length : null);
+        setLoaded(true);
+        setLoadError(false);
+      })
+      .catch(() => {
+        if (stop) return;
+        setLoaded(true);
+        setLoadError(true);
+      });
+    return () => {
+      stop = true;
+    };
+  }, [tenantSlug]);
+
+  const occ = tables.length;
+  const free = totalTables != null ? Math.max(0, totalTables - occ) : null;
 
   // Render-time `new Date()` causa hydration mismatch (server em UTC,
   // client em Brasília). Renderiza placeholder no SSR e atualiza após
@@ -153,40 +151,70 @@ export function ScreenManagerOpsMesasAtivas({
               lineHeight: 1.05,
             }}
           >
-            {occ}
-            <span style={{ fontSize: 20, color: C.faint, fontWeight: 600 }}>/{TOTAL_TABLES}</span>
+            {loaded && !loadError ? occ : '—'}
+            {loaded && !loadError && totalTables != null && (
+              <span style={{ fontSize: 20, color: C.faint, fontWeight: 600 }}>/{totalTables}</span>
+            )}
           </div>
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: C.faint,
-              marginTop: 4,
-              fontFamily: MONO_FONT,
-              letterSpacing: 0.4,
-              textTransform: 'uppercase',
-            }}
-          >
-            · {free} LIVRES
-          </div>
+          {loaded && !loadError && free != null && (
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: C.faint,
+                marginTop: 4,
+                fontFamily: MONO_FONT,
+                letterSpacing: 0.4,
+                textTransform: 'uppercase',
+              }}
+            >
+              · {free} LIVRES
+            </div>
+          )}
           <div
             style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}
           >
-            {occ} mesas com cliente sentado agora · {free} livres.
+            {loadError
+              ? 'Não foi possível carregar as mesas agora — tente de novo em instantes.'
+              : !loaded
+                ? 'Carregando mesas abertas…'
+                : occ === 0
+                  ? 'Nenhuma mesa com sessão aberta agora.'
+                  : free != null
+                    ? `${occ} ${occ === 1 ? 'mesa' : 'mesas'} com cliente sentado agora · ${free} livres.`
+                    : `${occ} ${occ === 1 ? 'mesa' : 'mesas'} com cliente sentado agora.`}
           </div>
         </div>
 
-        {sections.map((sec) => (
-          <div key={sec.name}>
+        {loaded && !loadError && occ === 0 && (
+          <div style={{ padding: '0 16px' }}>
+            <div
+              style={{
+                padding: '24px 20px',
+                textAlign: 'center',
+                border: `1.5px dashed ${C.borderSoft}`,
+                borderRadius: 14,
+                color: C.faint,
+                fontSize: 12.5,
+                fontWeight: 500,
+              }}
+            >
+              Nenhuma mesa aberta — a lista aparece quando um cliente sentar.
+            </div>
+          </div>
+        )}
+
+        {occ > 0 && (
+          <div>
             <SectionLabel C={C}>
-              {sec.name} · {sec.tables.length} mesas
+              Mesas abertas · {occ} {occ === 1 ? 'mesa' : 'mesas'}
             </SectionLabel>
             <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {sec.tables.map((t) => (
+              {tables.map((t) => (
                 <button
-                  key={t.n}
+                  key={t.sessionId}
                   type="button"
-                  onClick={() => openTable(t.n)}
+                  onClick={() => openTable(t.tableNumber)}
                   style={{
                     all: 'unset',
                     cursor: 'pointer',
@@ -218,37 +246,22 @@ export function ScreenManagerOpsMesasAtivas({
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    {t.n}
+                    {t.tableNumber}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div
-                        style={{
-                          width: 16,
-                          height: 16,
-                          borderRadius: '50%',
-                          background: t.waiter.color,
-                          color: '#fff',
-                          fontSize: 8.5,
-                          fontWeight: 800,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        {t.waiter.init}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: C.ink,
-                          letterSpacing: -0.1,
-                          fontVariantNumeric: 'tabular-nums',
-                        }}
-                      >
-                        {t.t} aberta
-                      </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: C.ink,
+                        letterSpacing: -0.1,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {fmtOpenTime(t.openedMinutes)} aberta
+                    </div>
+                    <div style={{ fontSize: 11, color: C.faint, fontWeight: 500, marginTop: 1 }}>
+                      {t.tableLabel} · {t.people} {t.people === 1 ? 'pessoa' : 'pessoas'}
                     </div>
                   </div>
                   <div
@@ -261,7 +274,7 @@ export function ScreenManagerOpsMesasAtivas({
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    R$ {t.val}
+                    {fmtBRL(t.subtotalCents)}
                   </div>
                   <span style={{ color: C.faint, opacity: 0.7, flexShrink: 0 }}>
                     {Icon.arrow(14)}
@@ -270,7 +283,7 @@ export function ScreenManagerOpsMesasAtivas({
               ))}
             </div>
           </div>
-        ))}
+        )}
 
         <SectionLabel C={C}>O que fazer agora</SectionLabel>
         <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>

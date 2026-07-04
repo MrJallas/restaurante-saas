@@ -6,8 +6,10 @@
 // (variant `atencao`). Hero "N" mostarda + lista cada com 2 ações inline
 // + Fórmula.
 //
-// Backend wiring (Round 18 Onda 4):
-//   • REAL: reservado para GET /:slug/alerts?severity=med quando existir.
+// Backend wiring (anti-placebo):
+//   • REAL: alimentado pelos `lateOrders` do GET /:slug/dashboard/
+//     active-tables — pedidos em preparo acima da meta da cozinha.
+//   • Meta não configurada → aviso pra configurar em /cozinha/eu.
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -20,6 +22,7 @@ import {
   GIconBtn,
   MBottomNav,
 } from '../../components/manager';
+import { activeTablesApi, type LateOrderRow } from '../../lib/api/manager';
 
 interface AttentionAlert {
   id: string;
@@ -34,17 +37,50 @@ export interface ScreenManagerOpsAtencaoProps {
   tenantSlug: string;
 }
 
-export function ScreenManagerOpsAtencao({
-  dark,
-  tenantSlug: _tenantSlug,
-}: ScreenManagerOpsAtencaoProps) {
+export function ScreenManagerOpsAtencao({ dark, tenantSlug }: ScreenManagerOpsAtencaoProps) {
   const C = useG(!!dark);
   const router = useRouter();
   const params = useSearchParams();
   const slugQs = params.get('slug');
   const backHref = slugQs ? `/manager/operacoes?slug=${slugQs}` : '/manager/operacoes';
 
-  const items: AttentionAlert[] = [];
+  const [lateOrders, setLateOrders] = useState<LateOrderRow[]>([]);
+  const [kitchenEta, setKitchenEta] = useState<number | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    let stop = false;
+    activeTablesApi(tenantSlug)
+      .get()
+      .then((res) => {
+        if (stop) return;
+        setLateOrders(res.lateOrders);
+        setKitchenEta(res.kitchenEtaMaxMinutes);
+        setLoaded(true);
+        setLoadError(false);
+      })
+      .catch(() => {
+        if (stop) return;
+        setLoaded(true);
+        setLoadError(true);
+      });
+    return () => {
+      stop = true;
+    };
+  }, [tenantSlug]);
+
+  const metaMissing = loaded && !loadError && kitchenEta == null;
+
+  const items: AttentionAlert[] = metaMissing
+    ? []
+    : lateOrders.map((o) => ({
+        id: o.orderId,
+        msg: `${o.tableLabel} · pedido em preparo há ${o.minutesInPrep} min`,
+        sub: `${o.itemCount} ${o.itemCount === 1 ? 'item' : 'itens'} · meta ${kitchenEta} min`,
+        ts: `${o.minutesInPrep} min`,
+        actions: ['Ver fila da cozinha', 'Ver operações'],
+      }));
 
   const empty = items.length === 0;
   // Render-time `new Date()` causa hydration mismatch (server em UTC,
@@ -109,7 +145,7 @@ export function ScreenManagerOpsAtencao({
               lineHeight: 1.05,
             }}
           >
-            {items.length}
+            {!loaded || loadError || metaMissing ? '—' : items.length}
           </div>
           <div
             style={{
@@ -122,16 +158,46 @@ export function ScreenManagerOpsAtencao({
               textTransform: 'uppercase',
             }}
           >
-            {empty ? '· NADA EM ATENÇÃO' : '· PRÓXIMOS 10 MIN'}
+            {metaMissing
+              ? '· META NÃO CONFIGURADA'
+              : empty
+                ? '· NADA EM ATENÇÃO'
+                : '· ACIMA DA META'}
           </div>
           <div
             style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}
           >
-            {empty
-              ? 'Nenhum alerta em atenção. Volta aqui se algo se aproximar do limite.'
-              : `${items.length} alertas vão virar críticos se não agir logo.`}
+            {loadError
+              ? 'Não foi possível carregar os alertas agora — tente de novo em instantes.'
+              : !loaded
+                ? 'Carregando alertas…'
+                : metaMissing
+                  ? 'Sem meta configurada não dá pra saber o que precisa de atenção.'
+                  : empty
+                    ? `Nenhum pedido acima da meta da cozinha (${kitchenEta} min). Volta aqui se algo passar do limite.`
+                    : `${items.length} ${items.length === 1 ? 'pedido passou' : 'pedidos passaram'} da meta da cozinha.`}
           </div>
         </div>
+
+        {metaMissing && (
+          <div style={{ padding: '0 16px' }}>
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 12,
+                border: '1px solid #F0DCB6',
+                background: '#FFF7E6',
+                fontSize: 13,
+                color: '#7A4D10',
+                fontWeight: 600,
+                lineHeight: 1.5,
+              }}
+            >
+              Meta da cozinha não configurada — defina em /cozinha/eu para acompanhar pedidos em
+              atenção aqui.
+            </div>
+          </div>
+        )}
 
         {!empty && (
           <>
@@ -143,7 +209,11 @@ export function ScreenManagerOpsAtencao({
                   C={C}
                   alert={a}
                   onAction0={() =>
-                    router.push(slugQs ? `/manager/mensagens?slug=${slugQs}` : '/manager/mensagens')
+                    router.push(
+                      slugQs
+                        ? `/manager/kitchen-reorder?slug=${slugQs}`
+                        : '/manager/kitchen-reorder',
+                    )
                   }
                   onAction1={() =>
                     router.push(slugQs ? `/manager/operacoes?slug=${slugQs}` : '/manager/operacoes')
@@ -156,8 +226,8 @@ export function ScreenManagerOpsAtencao({
 
         <div style={{ height: 18 }} />
         <Formula C={C}>
-          Pedidos ou chamados a <b>80% da meta</b> de tempo · vai virar crítico em ~10 min se não
-          agir.
+          Pedidos com status <b>em preparo</b> há mais tempo que a meta da cozinha
+          {kitchenEta != null ? ` (${kitchenEta} min)` : ''} · meta configurada em /cozinha/eu.
         </Formula>
       </div>
 

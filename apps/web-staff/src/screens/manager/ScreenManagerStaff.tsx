@@ -13,7 +13,7 @@
 //   7. Próximos eventos do turno
 //   8. CTA fixa "+ Adicionar funcionário" sobre o bottom-nav
 
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -29,10 +29,9 @@ import {
   MContactStaffSheet,
   type ManagerStaffTarget,
 } from '../../components/manager';
-import { staffRosterApi } from '../../lib/api/manager';
+import { staffRosterApi, teamKpisApi, type TeamKpiEntry } from '../../lib/api/manager';
 
 type StaffStatus = 'on' | 'off';
-type StaffFlag = 'overload' | 'in-call' | null;
 
 interface StaffMember {
   id: string;
@@ -41,13 +40,13 @@ interface StaffMember {
   init: string;
   shift: string;
   status: StaffStatus;
-  rating: number;
-  callsAvg: number;
-  tables: number;
-  sales: number;
-  scaled: number;
+  /** Chamados atendidos HOJE (waiter_calls acknowledged — fonte real). */
+  calls: number;
+  /** Tempo médio de resposta em minutos HOJE · null = sem chamados ainda. */
+  respMin: number | null;
+  /** Entregas HOJE (order_deliveries claimed — fonte real). */
+  deliveries: number;
   color: string;
-  flag: StaffFlag;
 }
 
 const M_TEAM_FALLBACK: StaffMember[] = [];
@@ -106,9 +105,9 @@ export function ScreenManagerStaff({
   const router = useRouter();
   const [team, setTeam] = useState<StaffMember[]>(M_TEAM_FALLBACK);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<
-    'todos' | 'em_turno' | 'sobrec' | 'folga' | 'fora'
-  >('todos');
+  const [statusFilter, setStatusFilter] = useState<'todos' | 'em_turno' | 'folga' | 'fora'>(
+    'todos',
+  );
   const [roleFilter, setRoleFilter] = useState<'todos' | StaffMember['role'] | 'cozinha+bar'>(
     'todos',
   );
@@ -119,29 +118,39 @@ export function ScreenManagerStaff({
     let cancelled = false;
     (async () => {
       try {
-        const data = await staffRosterApi(tenantSlug).list();
+        // KPIs por funcionário vêm do dashboard/team-kpis (fonte real:
+        // waiter_calls + order_deliveries de HOJE). Se o endpoint falhar,
+        // as métricas ficam zeradas/'—' — nunca número inventado ao lado
+        // de nome real.
+        const [data, kpisRes] = await Promise.all([
+          staffRosterApi(tenantSlug).list(),
+          teamKpisApi(tenantSlug)
+            .get()
+            .catch(() => ({ team: [] as TeamKpiEntry[] })),
+        ]);
         if (cancelled || !data.length) return;
+        const kpiById = new Map(kpisRes.team.map((k) => [k.staffId, k]));
         setTeam(
-          data.map((s, i) => ({
-            id: s.id,
-            name: s.name,
-            role: ROLE_LABEL[s.role] ?? (s.role as StaffMember['role']) ?? 'Garçom',
-            init: s.name
-              .split(' ')
-              .map((p) => p[0])
-              .slice(0, 2)
-              .join('')
-              .toUpperCase(),
-            shift: '17:00 — 23:00',
-            status: s.is_active ? 'on' : 'off',
-            rating: 4.5 + (i % 3) * 0.1,
-            callsAvg: 1.2 + (i % 4) * 0.3,
-            tables: Math.max(0, 7 - i),
-            sales: 1000 + i * 200,
-            scaled: i === 2 ? 2 : 0,
-            color: ROLE_PALETTE[i % ROLE_PALETTE.length],
-            flag: null,
-          })),
+          data.map((s, i) => {
+            const kpi = kpiById.get(s.id);
+            return {
+              id: s.id,
+              name: s.name,
+              role: ROLE_LABEL[s.role] ?? (s.role as StaffMember['role']) ?? 'Garçom',
+              init: s.name
+                .split(' ')
+                .map((p) => p[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase(),
+              shift: s.default_shift ?? '',
+              status: s.is_active ? 'on' : 'off',
+              calls: kpi?.callsAcknowledged ?? 0,
+              respMin: kpi?.avgResponseMinutes ?? null,
+              deliveries: kpi?.deliveries ?? 0,
+              color: ROLE_PALETTE[i % ROLE_PALETTE.length],
+            };
+          }),
         );
       } catch {
         // keep fallback
@@ -153,25 +162,16 @@ export function ScreenManagerStaff({
   }, [tenantSlug]);
 
   // ─── Stats agregados ────────────────────────────────────────────
+  // Só "Em campo" tem fonte real (roster ativo). Sobrecarga e carga
+  // média dependem de mesas-por-garçom, que ainda não tem endpoint —
+  // mostram '—' com "sem dados ainda" (anti-placebo), nunca número
+  // fabricado.
   const inField = team.filter((p) => p.status === 'on').length;
   const totalCount = team.length;
-  const overloadCount = team.filter((p) => p.tables >= 7).length;
-  const totalTables = team.reduce((s, p) => s + (p.status === 'on' ? p.tables : 0), 0);
-  const avgLoadNum = inField > 0 ? totalTables / inField : 0;
-  const avgLoad = inField > 0 ? avgLoadNum.toFixed(1).replace('.', ',') : '—';
-
-  const META = 5;
-  const loadHealth = useMemo(() => {
-    if (avgLoadNum === 0) return { color: C.faint, sub: '· —', accent: null as string | null };
-    if (avgLoadNum < META * 0.7) return { color: '#1E8C5A', sub: '· FOLGADO', accent: null };
-    if (avgLoadNum < META) return { color: C.faint, sub: '· DENTRO DA META', accent: null };
-    return { color: '#A12626', sub: '· ACIMA DA META · REALOCAR', accent: '#A12626' };
-  }, [avgLoadNum, C.faint]);
 
   // ─── Filtragem ──────────────────────────────────────────────────
   const filtered = team.filter((p) => {
     if (statusFilter === 'em_turno' && p.status !== 'on') return false;
-    if (statusFilter === 'sobrec' && p.tables < 7) return false;
     if (statusFilter === 'folga' && p.status !== 'off') return false;
     if (statusFilter === 'fora' && p.status === 'on') return false;
     if (roleFilter !== 'todos') {
@@ -187,22 +187,40 @@ export function ScreenManagerStaff({
     (search.trim() !== '' || statusFilter !== 'todos' || roleFilter !== 'todos');
 
   // ─── Turnos do dia ──────────────────────────────────────────────
+  // Membership real via `default_shift` do roster (Manhã/Tarde/Noite).
+  // "Atual" vem do relógio real, calculado pós-mount (SSR-safe — evita
+  // hydration mismatch server UTC vs client Brasília).
+  const [hourNow, setHourNow] = useState<number | null>(null);
+  useEffect(() => {
+    setHourNow(new Date().getHours());
+  }, []);
+  const statusFor = (start: number, end: number): ShiftStatus => {
+    if (hourNow == null) return 'soon';
+    if (hourNow >= start && hourNow < end) return 'now';
+    return hourNow >= end ? 'past' : 'soon';
+  };
   const derivedShifts: ShiftRow[] = [
+    {
+      id: 'manha',
+      label: 'MANHÃ',
+      range: 'ATÉ 12H',
+      status: statusFor(0, 12),
+      members: team.filter((p) => p.shift === 'Manhã'),
+    },
     {
       id: 'tarde',
       label: 'TARDE',
       range: '12H – 17H',
-      status: 'past',
-      members: team.filter((p) => p.shift.startsWith('12:00')),
+      status: statusFor(12, 17),
+      members: team.filter((p) => p.shift === 'Tarde'),
     },
     {
       id: 'noite',
       label: 'NOITE',
       range: '17H – 23H',
-      status: 'now',
-      members: team.filter((p) => p.shift.startsWith('17:00')),
+      status: statusFor(17, 24),
+      members: team.filter((p) => p.shift === 'Noite'),
     },
-    { id: 'enc', label: 'ENCERRAMENTO', range: '23H – 02H', status: 'soon', members: [] },
   ];
   const shifts = shiftsOverride ?? derivedShifts;
   const nextEvents = nextEventsOverride ?? [];
@@ -257,11 +275,9 @@ export function ScreenManagerStaff({
               dark={dark}
               compact
               label="Sobrecarga"
-              value={String(overloadCount)}
-              sub={overloadCount > 0 ? '↓ realocar' : 'tudo certo'}
-              accent={overloadCount > 0 ? '#A12626' : null}
-              subColor={overloadCount > 0 ? '#A12626' : undefined}
-              help="Funcionários com 7+ mesas atendendo simultaneamente · ajuste o limiar em Operação."
+              value="—"
+              sub="sem dados ainda"
+              help="Funcionários com 7+ mesas atendendo simultaneamente · precisa do endpoint de mesas por garçom (ainda não existe)."
               onHelp={() => router.push('/manager/equipe/sobrecarga')}
             />
           </StatButton>
@@ -270,11 +286,9 @@ export function ScreenManagerStaff({
               dark={dark}
               compact
               label="Carga média"
-              value={avgLoad}
-              accent={loadHealth.accent}
-              sub={loadHealth.sub}
-              subColor={loadHealth.color}
-              help="Mesas abertas dividido por funcionários em campo · meta menor que 5 por garçom."
+              value="—"
+              sub="sem dados ainda"
+              help="Mesas abertas dividido por funcionários em campo · precisa do endpoint de mesas por garçom (ainda não existe)."
               onHelp={() => router.push('/manager/equipe/carga-media')}
             />
           </StatButton>
@@ -394,12 +408,6 @@ export function ScreenManagerStaff({
                 active: statusFilter === 'em_turno',
               },
               {
-                id: 'sobrec',
-                label: 'Sobrecarregados',
-                count: overloadCount,
-                active: statusFilter === 'sobrec',
-              },
-              {
                 id: 'folga',
                 label: 'Folga',
                 count: team.filter((p) => p.status === 'off').length,
@@ -412,9 +420,7 @@ export function ScreenManagerStaff({
                 active: statusFilter === 'fora',
               },
             ]}
-            onClick={(id) =>
-              setStatusFilter(id as 'todos' | 'em_turno' | 'sobrec' | 'folga' | 'fora')
-            }
+            onClick={(id) => setStatusFilter(id as 'todos' | 'em_turno' | 'folga' | 'fora')}
           />
           <div style={{ height: 6 }} />
           <ChipRow
@@ -851,15 +857,12 @@ function StaffCard({
 }) {
   const router = useRouter();
   const C = useG(!!dark);
+  // Sem fonte de mesas-por-garçom não dá pra afirmar sobrecarga —
+  // status honesto é só Em turno / Folga.
   const status =
     p.status === 'off'
       ? { id: 'folga' as const, tone: 'mute' as const, label: 'Folga' }
-      : p.tables >= 7
-        ? { id: 'sobre' as const, tone: 'danger' as const, label: 'Sobrecarregado' }
-        : p.tables >= 5
-          ? { id: 'media' as const, tone: 'warn' as const, label: 'Carga média' }
-          : { id: 'ok' as const, tone: 'success' as const, label: 'Em turno' };
-  const showOverloadActions = status.id === 'sobre' || status.id === 'media';
+      : { id: 'ok' as const, tone: 'success' as const, label: 'Em turno' };
 
   // Round 18 (Onda 2): clique no card abre StaffDetail. Antes o card
   // era render-only.
@@ -911,7 +914,8 @@ function StaffCard({
             {p.name}
           </div>
           <div style={{ fontSize: 12, color: C.faint, fontWeight: 500, marginTop: 2 }}>
-            {p.role} · {p.shift}
+            {p.role}
+            {p.shift ? ` · ${p.shift}` : ''}
           </div>
         </div>
         <MPill tone={status.tone} dark={dark}>
@@ -931,12 +935,14 @@ function StaffCard({
           }}
         >
           {[
-            { lbl: 'MESAS', val: p.tables || '—' },
+            // Só métricas com fonte real (dashboard/team-kpis · HOJE).
+            // Rating e vendas por garçom saíram — sem fonte, sem número.
+            { lbl: 'CHAMADOS HOJE', val: String(p.calls) },
             {
               lbl: 'RESPOSTA',
-              val: p.callsAvg ? `${p.callsAvg.toFixed(1).replace('.', ',')}m` : '—',
+              val: p.respMin != null ? `${p.respMin.toFixed(1).replace('.', ',')}m` : '—',
             },
-            { lbl: 'VENDIDO', val: p.sales ? `R$ ${p.sales.toLocaleString('pt-BR')}` : '—' },
+            { lbl: 'ENTREGAS HOJE', val: String(p.deliveries) },
           ].map((m, i) => (
             <div
               key={m.lbl}
@@ -976,47 +982,30 @@ function StaffCard({
 
       {p.status === 'on' && (
         <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
-          {showOverloadActions ? (
-            <>
-              <ActionPill
-                filled
-                dark={dark}
-                onClick={() => router.push(withSlug('/manager/equipe/sobrecarga'))}
-              >
-                Realocar mesas
-              </ActionPill>
-              <ActionPill
-                dark={dark}
-                onClick={() =>
-                  onContact({
-                    staffId: p.id,
-                    name: p.name,
-                    init: p.init,
-                    color: p.color,
-                    role: p.role,
-                    contextHint: `${p.tables} mesas`,
-                  })
-                }
-              >
-                Mensagem direta
-              </ActionPill>
-            </>
-          ) : (
-            <>
-              <ActionPill
-                dark={dark}
-                onClick={() => router.push(withSlug('/manager/operacoes/mesas-ativas'))}
-              >
-                Ver mesas
-              </ActionPill>
-              <ActionPill
-                dark={dark}
-                onClick={() => router.push(withSlug('/manager/equipe/sobrecarga'))}
-              >
-                Mover mesa
-              </ActionPill>
-            </>
-          )}
+          <ActionPill
+            dark={dark}
+            onClick={() => router.push(withSlug('/manager/operacoes/mesas-ativas'))}
+          >
+            Ver mesas
+          </ActionPill>
+          <ActionPill
+            dark={dark}
+            onClick={() =>
+              onContact({
+                staffId: p.id,
+                name: p.name,
+                init: p.init,
+                color: p.color,
+                role: p.role,
+                contextHint:
+                  p.calls > 0
+                    ? `${p.calls} ${p.calls === 1 ? 'chamado atendido' : 'chamados atendidos'} hoje`
+                    : undefined,
+              })
+            }
+          >
+            Mensagem direta
+          </ActionPill>
         </div>
       )}
     </div>
