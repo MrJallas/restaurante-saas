@@ -147,3 +147,132 @@ describe('HostService.findTableByNumber — resolução determinística (P1-P)',
     expect(db.getActiveSessionParams()).toBeNull();
   });
 });
+
+/**
+ * P1-O (re-scan data-integrity): completar um swap NÃO pode deixar 2 sessões
+ * ativas na mesma mesa.
+ *
+ * Bug: o complete fazia `UPDATE table_sessions SET table_id = <destino> WHERE
+ * id = <origem>` sem guard. O destino-livre só era checado na criação do swap;
+ * entre criar e completar, o cliente escaneava a mesa destino e abria S2 ativa
+ * nela. O move deixava S1 (origem movida) + S2 ativas na MESMA mesa.
+ *
+ * Fix congelado aqui: o complete roda numa transação que RE-CONFIRMA o destino
+ * livre e move só a sessão que AINDA está ativa. Destino ocupou no meio →
+ * BadRequest, rollback, NENHUM move (o swap fica in_progress, sem 2ª ativa).
+ */
+
+interface SwapFakeOptions {
+  // Se true, a re-checagem do destino (dentro da tx) acha uma sessão ativa —
+  // simula o cliente que escaneou a mesa destino entre criar e completar.
+  destinationOccupiedAtComplete?: boolean;
+  // Se true, o UPDATE guardado (WHERE id=... AND status='active') não casa
+  // nenhuma linha — a sessão de origem já não está mais ativa.
+  originNoLongerActive?: boolean;
+}
+
+/**
+ * fakeSwapDb roteia as queries de updateSwapRequest(id, {status:'completed'}):
+ *  1. SELECT sr.id ... FROM table_swap_requests → existing (in_progress)
+ *  2. transaction(cb) → executa cb com um tx que roteia:
+ *     a. UPDATE table_swap_requests SET status='completed' ...
+ *     b. SELECT id FROM tables WHERE id = $1 FOR UPDATE (lock do destino)
+ *     c. SELECT id FROM table_sessions WHERE table_id=$1 AND status='active' (re-check)
+ *     d. UPDATE table_sessions ... WHERE id=$1 AND status='active' RETURNING id (move guardado)
+ *  3. SELECT sr.id ... (refetch para o DTO)
+ * Grava se o move (2d) chegou a ser executado e com quais params, pra provar
+ * que sob destino-ocupado NENHUMA 2ª sessão ativa é criada.
+ */
+function fakeSwapDb(opts: SwapFakeOptions = {}) {
+  const EXISTING = {
+    id: 'swap-1',
+    table_session_id: 'sess-origin',
+    from_table_id: 'table-from',
+    to_table_id: 'table-to',
+    status: 'in_progress',
+    reason: null,
+    created_at: '2026-07-04T10:00:00.000Z',
+    completed_at: null,
+    cancelled_at: null,
+    from_table_number: 5,
+    to_table_number: 9,
+  };
+
+  let moveExecuted = false;
+  let moveParams: unknown[] | null = null;
+  let swapMarkedCompleted = false;
+
+  const route = async (sql: string, params: unknown[] = []): Promise<unknown> => {
+    const s = sql.replace(/\s+/g, ' ').trim();
+
+    if (s.startsWith('SELECT sr.id')) {
+      // existing + refetch. No refetch (após move ok) devolve status completed.
+      return [{ ...EXISTING, status: swapMarkedCompleted ? 'completed' : EXISTING.status }];
+    }
+    if (s.startsWith('UPDATE table_swap_requests SET')) {
+      swapMarkedCompleted = true;
+      return [];
+    }
+    if (s.startsWith('SELECT id FROM tables WHERE id = $1 FOR UPDATE')) {
+      return [{ id: params[0] }];
+    }
+    if (s.startsWith('SELECT id FROM table_sessions')) {
+      // Re-check do destino dentro da tx.
+      return opts.destinationOccupiedAtComplete ? [{ id: 'sess-intruder' }] : [];
+    }
+    if (s.startsWith('UPDATE table_sessions')) {
+      moveExecuted = true;
+      moveParams = params;
+      // Guard WHERE id=... AND status='active' → 0 linhas se origem inativa.
+      return opts.originNoLongerActive ? [] : [{ id: params[0] }];
+    }
+    throw new Error(`fake swap: SQL não roteado: ${s}`);
+  };
+
+  const conn = {
+    query: (sql: string, params?: unknown[]) => route(sql, params),
+    transaction: async <T>(work: (tx: { query: typeof route }) => Promise<T>): Promise<T> => {
+      // Emula commit/rollback: se o work lança, propaga (rollback) sem estado
+      // parcial visível — o fake não persiste nada entre queries além dos flags.
+      return work({ query: route });
+    },
+  } as unknown as TenantConnectionProvider;
+
+  return {
+    conn,
+    wasMoveExecuted: () => moveExecuted,
+    getMoveParams: () => moveParams,
+    wasSwapMarkedCompleted: () => swapMarkedCompleted,
+  };
+}
+
+describe('HostService.updateSwapRequest — complete não duplica sessão ativa (P1-O)', () => {
+  it('destino livre → move OK: sessão de origem vai pra mesa destino (caminho feliz congelado)', async () => {
+    const db = fakeSwapDb();
+    const dto = await makeService(db.conn).updateSwapRequest(
+      'swap-1',
+      { status: 'completed' },
+      'slug',
+    );
+    expect(dto.status).toBe('completed');
+    // O move rodou com guard: [sessionId, toTableId].
+    expect(db.wasMoveExecuted()).toBe(true);
+    expect(db.getMoveParams()).toEqual(['sess-origin', 'table-to']);
+  });
+
+  it('destino ocupou entre criar/completar → rejeita BadRequest e NÃO executa o move (sem 2ª ativa)', async () => {
+    const db = fakeSwapDb({ destinationOccupiedAtComplete: true });
+    await expect(
+      makeService(db.conn).updateSwapRequest('swap-1', { status: 'completed' }, 'slug'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    // Prova P1-O: nenhum UPDATE table_sessions rodou → destino não ganhou 2ª ativa.
+    expect(db.wasMoveExecuted()).toBe(false);
+  });
+
+  it('sessão de origem já não está ativa → rejeita BadRequest (move guardado casa 0 linhas)', async () => {
+    const db = fakeSwapDb({ originNoLongerActive: true });
+    await expect(
+      makeService(db.conn).updateSwapRequest('swap-1', { status: 'completed' }, 'slug'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});

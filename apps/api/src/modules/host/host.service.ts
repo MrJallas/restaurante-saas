@@ -414,21 +414,60 @@ export class HostService {
       params.push(body.reason);
     }
 
-    await this.tenantConn.query(
-      `UPDATE table_swap_requests SET ${setClause.join(', ')} WHERE id = $1`,
-      params,
-    );
-
     // Effective move: quando status = completed, swap a sessao pra mesa
-    // destino. Mantemos isso atomico no proprio update — sem isso,
-    // completed seria so um carimbo sem efeito real.
+    // destino. O destino-livre foi checado na CRIACAO do swap, mas entre
+    // criar e completar o cliente pode escanear a mesa destino e abrir uma
+    // 2a sessao ativa nela (S2). Sem re-check + guard aqui, o move criaria
+    // S1 + S2 ativas na MESMA mesa (P1-O, data-integrity). Por isso o
+    // complete roda numa transacao: (a) re-carimba o swap, (b) RE-CONFIRMA
+    // que o destino segue sem sessao ativa, (c) move so a sessao de origem
+    // que AINDA esta ativa (`AND status = 'active'`). Se o destino ocupou no
+    // meio, aborta com BadRequest e o rollback mantem o swap in_progress —
+    // nunca 2 ativas na mesma mesa.
     if (body.status === 'completed') {
+      await this.tenantConn.transaction(async (tx) => {
+        await tx.query(
+          `UPDATE table_swap_requests SET ${setClause.join(', ')} WHERE id = $1`,
+          params,
+        );
+
+        // Lock da linha da mesa destino: serializa contra um scan concorrente
+        // (que faz `SELECT ... FROM tables ... FOR UPDATE` antes de inserir a
+        // sessao). Se o scan chegar primeiro, vemos a sessao ativa dele; se
+        // chegarmos primeiro, ele espera o commit e ve a sessao movida.
+        await tx.query(`SELECT id FROM tables WHERE id = $1 FOR UPDATE`, [existing.to_table_id]);
+
+        const targetActive = (await tx.query(
+          `SELECT id FROM table_sessions
+             WHERE table_id = $1 AND status = 'active' LIMIT 1`,
+          [existing.to_table_id],
+        )) as Array<{ id: string }>;
+        if (targetActive.length > 0) {
+          throw new BadRequestException(
+            'Mesa destino ocupou-se durante o swap, refaça a solicitação.',
+          );
+        }
+
+        const moved = (await tx.query(
+          `UPDATE table_sessions
+              SET table_id = $2,
+                  updated_at = now()
+            WHERE id = $1 AND status = 'active'
+            RETURNING id`,
+          [existing.table_session_id, existing.to_table_id],
+        )) as Array<{ id: string }>;
+        if (moved.length === 0) {
+          // A sessao de origem nao esta mais ativa (encerrada/movida antes do
+          // complete) — sem move a fazer; aborta sem carimbar o swap.
+          throw new BadRequestException(
+            'Sessão de origem não está mais ativa, refaça a solicitação.',
+          );
+        }
+      });
+    } else {
       await this.tenantConn.query(
-        `UPDATE table_sessions
-            SET table_id = $2,
-                updated_at = now()
-          WHERE id = $1`,
-        [existing.table_session_id, existing.to_table_id],
+        `UPDATE table_swap_requests SET ${setClause.join(', ')} WHERE id = $1`,
+        params,
       );
     }
 
