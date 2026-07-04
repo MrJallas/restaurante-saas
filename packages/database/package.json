@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "create-tenant": "ts-node scripts/create-tenant.ts",
+    "provision:staging": "ts-node scripts/provision-staging.ts",
     "migrate:public": "ts-node scripts/migrate-public.ts",
     "migrate:tenants": "ts-node scripts/migrate-tenants.ts",
     "migrate": "ts-node scripts/migrate-public.ts",
