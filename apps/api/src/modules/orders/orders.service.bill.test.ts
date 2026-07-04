@@ -8,6 +8,7 @@
 
 import { OrdersService } from './orders.service';
 import { BillingService } from '../billing/billing.service';
+import { ConsumptionSummaryService } from './consumption-summary.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import type { RedisService } from '../../infra/redis/redis.service';
 
@@ -52,7 +53,12 @@ function fakeBillDb(opts: { serviceFeePct?: string; orderTotals: Array<number | 
 
 function makeService(opts: Parameters<typeof fakeBillDb>[0]) {
   const conn = fakeBillDb(opts);
-  return new OrdersService(conn, {} as unknown as RedisService, new BillingService(conn));
+  return new OrdersService(
+    conn,
+    {} as unknown as RedisService,
+    new BillingService(conn),
+    new ConsumptionSummaryService(conn),
+  );
 }
 
 describe('OrdersService.getBill — conta com taxa server-side', () => {

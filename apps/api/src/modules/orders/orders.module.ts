@@ -4,6 +4,7 @@ import { RedisModule } from '../../infra/redis/redis.module';
 import { OrdersController } from './orders.controller';
 import { KitchenController } from './kitchen.controller';
 import { OrdersService } from './orders.service';
+import { ConsumptionSummaryService } from './consumption-summary.service';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { RedisThrottleGuard } from '../../common/guards/redis-throttle.guard';
@@ -24,7 +25,13 @@ import { BillingModule } from '../billing/billing.module';
     forwardRef(() => OrderRatingsModule),
   ],
   controllers: [OrdersController, KitchenController],
-  providers: [OrdersService, StaffOrSessionGuard, ManagerOnlyGuard, RedisThrottleGuard],
+  providers: [
+    OrdersService,
+    ConsumptionSummaryService,
+    StaffOrSessionGuard,
+    ManagerOnlyGuard,
+    RedisThrottleGuard,
+  ],
   exports: [OrdersService],
 })
 export class OrdersModule {}

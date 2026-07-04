@@ -10,6 +10,7 @@ import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { BillingService } from '../billing/billing.service';
 import { planTransition } from './order-state-machine';
 import { ETA_QUEUED_STATUSES, ETA_STAGE_RANGE, computeEtaRange } from './eta-engine';
+import { ConsumptionSummaryService } from './consumption-summary.service';
 import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -129,6 +130,7 @@ export class OrdersService {
     private readonly tenantConn: TenantConnectionProvider,
     private readonly redis: RedisService,
     private readonly billing: BillingService,
+    private readonly consumption: ConsumptionSummaryService,
     @Optional() private readonly eventsGateway?: EventsGateway,
     @Optional() private readonly orderRatings?: OrderRatingsService,
   ) {}
@@ -1658,7 +1660,7 @@ export class OrdersService {
       return result;
     }
 
-    await this.updateConsumptionSummary(orderId);
+    await this.consumption.updateForDeliveredOrder(orderId);
     if (this.orderRatings) {
       try {
         const orderInfo = (await this.tenantConn.query(
@@ -2182,7 +2184,7 @@ export class OrdersService {
     );
 
     if (newStatus === 'delivered') {
-      await this.updateConsumptionSummary(orderId);
+      await this.consumption.updateForDeliveredOrder(orderId);
       // Schedule rating prompt — B2's job runner picks this up ~13min later
       // and pushes the prompt. Fire-and-forget; errors don't block the
       // status transition because the rating prompt is best-effort.
@@ -2224,83 +2226,5 @@ export class OrdersService {
     }
 
     return { orderId, previousStatus: currentStatus, newStatus };
-  }
-
-  private async updateConsumptionSummary(orderId: string) {
-    const orderRows = (await this.tenantConn.query(
-      `SELECT o.visit_id, o.total_cents, v.customer_id
-       FROM orders o
-       LEFT JOIN visits v ON v.id = o.visit_id
-       WHERE o.id = $1`,
-      [orderId],
-    )) as { visit_id: string | null; total_cents: number; customer_id: string | null }[];
-
-    const order = orderRows[0];
-    if (!order?.customer_id) return;
-
-    const orderItems = (await this.tenantConn.query(
-      `SELECT mi.name, mi.category_id, mc.name as category_name, oi.quantity
-       FROM order_items oi
-       JOIN menu_items mi ON mi.id = oi.menu_item_id
-       JOIN menu_categories mc ON mc.id = mi.category_id
-       WHERE oi.order_id = $1`,
-      [orderId],
-    )) as { name: string; category_id: string; category_name: string; quantity: number }[];
-
-    const lastItems = orderItems.map((i) => ({
-      name: i.name,
-      quantity: i.quantity,
-      category: i.category_name,
-    }));
-    const categories = [...new Set(orderItems.map((i) => i.category_name))];
-
-    const favoriteItems = await this.computeFavoriteItems(order.customer_id);
-
-    await this.tenantConn.query(
-      `INSERT INTO customer_consumption_summary (customer_id, total_spent_cents, total_orders, last_items, last_categories, favorite_items, updated_at)
-       VALUES ($1, $2, 1, $3::jsonb, $4::text[], $5::jsonb, now())
-       ON CONFLICT (customer_id) DO UPDATE SET
-         total_spent_cents = customer_consumption_summary.total_spent_cents + $2,
-         total_orders = customer_consumption_summary.total_orders + 1,
-         last_items = $3::jsonb,
-         last_categories = $4::text[],
-         favorite_items = $5::jsonb,
-         updated_at = now()`,
-      [
-        order.customer_id,
-        order.total_cents,
-        JSON.stringify(lastItems),
-        categories,
-        JSON.stringify(favoriteItems),
-      ],
-    );
-  }
-
-  private async computeFavoriteItems(
-    customerId: string,
-  ): Promise<{ name: string; category: string; orderCount: number; totalQty: number }[]> {
-    const rows = (await this.tenantConn.query(
-      `SELECT mi.name, mc.name AS category,
-              COUNT(DISTINCT o.id)::int AS order_count,
-              SUM(oi.quantity)::int AS total_qty
-         FROM orders o
-         JOIN visits v ON v.id = o.visit_id
-         JOIN order_items oi ON oi.order_id = o.id
-         JOIN menu_items mi ON mi.id = oi.menu_item_id
-         JOIN menu_categories mc ON mc.id = mi.category_id
-        WHERE v.customer_id = $1
-          AND o.status NOT IN ('cancelled', 'canceled')
-        GROUP BY mi.name, mc.name
-        ORDER BY order_count DESC, total_qty DESC
-        LIMIT 5`,
-      [customerId],
-    )) as { name: string; category: string; order_count: number; total_qty: number }[];
-
-    return rows.map((r) => ({
-      name: r.name,
-      category: r.category,
-      orderCount: r.order_count,
-      totalQty: r.total_qty,
-    }));
   }
 }
