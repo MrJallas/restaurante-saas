@@ -96,6 +96,8 @@ export class TtlTickService {
 
   private async sweepTenant(slug: string, schemaName: string) {
     const tables = await this.existingTables(schemaName, [
+      'alerts',
+      'table_sessions',
       'late_arrival_requests',
       'escalation_chains',
       'zone_pauses',
@@ -103,6 +105,20 @@ export class TtlTickService {
       'table_merge_cooldowns',
     ]);
     const jobs: Array<Promise<void>> = [];
+    if (tables.has('alerts')) {
+      jobs.push(
+        this.sweepStaleAlerts(slug, schemaName).catch((e) =>
+          this.logger.error(`[${slug}] sweepStaleAlerts`, e as Error),
+        ),
+      );
+    }
+    if (tables.has('table_sessions')) {
+      jobs.push(
+        this.sweepStaleSessions(slug, schemaName).catch((e) =>
+          this.logger.error(`[${slug}] sweepStaleSessions`, e as Error),
+        ),
+      );
+    }
     if (tables.has('late_arrival_requests')) {
       jobs.push(
         this.sweepLateArrivals(slug, schemaName).catch((e) =>
@@ -190,6 +206,63 @@ export class TtlTickService {
   }
 
   // ───────────── Late-arrival expirations ─────────────
+
+  /**
+   * Decisão Caleb 2026-07-04: alerta aberto há >24h auto-resolve — o
+   * painel do gerente mostra o turno relevante, não arqueologia ("HÁ 928H").
+   */
+  private async sweepStaleAlerts(slug: string, schemaName: string) {
+    const expired = await this.withTenant(schemaName, async (qr) =>
+      unwrapRows<{ id: string }>(
+        await qr.query(
+          `UPDATE alerts
+              SET resolved_at = now()
+            WHERE dismissed_at IS NULL
+              AND resolved_at IS NULL
+              AND created_at < now() - interval '24 hours'
+          RETURNING id`,
+        ),
+      ),
+    );
+    if (expired.length) {
+      this.logger.log(`[${slug}] ${expired.length} alerta(s) auto-resolvidos (24h)`);
+    }
+  }
+
+  /**
+   * Decisão Caleb 2026-07-04: sessão ativa SEM atividade (pedido, chamado
+   * ou pagamento) há 4h fecha sozinha e libera a mesa — mata as sessões
+   * zumbis que prendiam mesa no mapa. CAS por status='active' (mesmo
+   * fechamento do host liberate). WS do mapa fica pro read-model da FASE 3;
+   * o mapa atual poll/refresh pega a mudança.
+   */
+  private async sweepStaleSessions(slug: string, schemaName: string) {
+    const closed = await this.withTenant(schemaName, async (qr) =>
+      unwrapRows<{ id: string }>(
+        await qr.query(
+          `UPDATE table_sessions ts
+              SET status = 'closed',
+                  closed_at = now(),
+                  closed_by = 'system:ttl-4h',
+                  updated_at = now()
+            WHERE ts.status = 'active'
+              AND GREATEST(
+                    ts.created_at,
+                    COALESCE((SELECT MAX(o.created_at) FROM orders o
+                               WHERE o.table_session_id = ts.id), ts.created_at),
+                    COALESCE((SELECT MAX(wc.created_at) FROM waiter_calls wc
+                               WHERE wc.table_session_id = ts.id), ts.created_at),
+                    COALESCE((SELECT MAX(p.created_at) FROM payments p
+                               WHERE p.table_session_id = ts.id), ts.created_at)
+                  ) < now() - interval '4 hours'
+          RETURNING ts.id`,
+        ),
+      ),
+    );
+    if (closed.length) {
+      this.logger.log(`[${slug}] ${closed.length} sessão(ões) zumbi fechadas (4h sem atividade)`);
+    }
+  }
 
   private async sweepLateArrivals(slug: string, schemaName: string) {
     const expired = await this.withTenant(schemaName, async (qr) => {
