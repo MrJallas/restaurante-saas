@@ -24,6 +24,16 @@ export class DashboardController {
     return Math.min(n, max);
   }
 
+  @Get('team-kpis')
+  async getTeamKpis() {
+    return this.dashboardService.getTeamKpis();
+  }
+
+  @Get('active-tables')
+  async getActiveTables() {
+    return this.dashboardService.getActiveTables();
+  }
+
   @Get('funnel')
   async getOrderFunnel() {
     return this.dashboardService.getOrderFunnel();

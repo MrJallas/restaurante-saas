@@ -84,6 +84,133 @@ export class DashboardService {
     };
   }
 
+  /** KPIs por funcionário HOJE — só métricas com fonte real (gate 1D). */
+  async getTeamKpis(): Promise<{
+    team: Array<{
+      staffId: string;
+      name: string;
+      role: string;
+      callsAcknowledged: number;
+      avgResponseMinutes: number | null;
+      deliveries: number;
+    }>;
+  }> {
+    const rows = (await this.tenantConn.query(
+      `SELECT s.id AS staff_id, s.name, s.role,
+              COUNT(DISTINCT wc.id)::int AS calls_acknowledged,
+              AVG(EXTRACT(EPOCH FROM (wc.acknowledged_at - wc.created_at))) AS avg_response_secs,
+              COUNT(DISTINCT od.id)::int AS deliveries
+         FROM staff s
+         LEFT JOIN waiter_calls wc
+                ON wc.acknowledged_by = s.id
+               AND wc.acknowledged_at >= current_date
+         LEFT JOIN order_deliveries od
+                ON od.claimed_by = s.id
+               AND od.claimed_at >= current_date
+        WHERE s.is_active = true
+        GROUP BY s.id, s.name, s.role
+        ORDER BY s.name`,
+      [],
+    )) as Array<{
+      staff_id: string;
+      name: string;
+      role: string;
+      calls_acknowledged: unknown;
+      avg_response_secs: unknown;
+      deliveries: unknown;
+    }>;
+    return {
+      team: rows.map((r) => {
+        const avgSecs = r.avg_response_secs == null ? null : Number(r.avg_response_secs);
+        return {
+          staffId: r.staff_id,
+          name: r.name,
+          role: r.role,
+          callsAcknowledged: Number(r.calls_acknowledged) || 0,
+          avgResponseMinutes:
+            avgSecs == null || !Number.isFinite(avgSecs)
+              ? null
+              : Math.round((avgSecs / 60) * 10) / 10,
+          deliveries: Number(r.deliveries) || 0,
+        };
+      }),
+    };
+  }
+
+  /** Mesas ativas (conta e idade reais) + pedidos acima da meta da cozinha. */
+  async getActiveTables(): Promise<{
+    tables: Array<{
+      sessionId: string;
+      tableLabel: string;
+      tableNumber: number;
+      openedMinutes: number;
+      people: number;
+      subtotalCents: number;
+    }>;
+    lateOrders: Array<{
+      orderId: string;
+      tableLabel: string;
+      minutesInPrep: number;
+      itemCount: number;
+    }>;
+    kitchenEtaMaxMinutes: number | null;
+  }> {
+    const activeRows = (await this.tenantConn.query(
+      `SELECT ts.id AS session_id, t.label AS table_label, t.number AS table_number,
+              EXTRACT(EPOCH FROM (now() - ts.created_at)) / 60 AS opened_minutes,
+              (SELECT COUNT(*) FROM visits v WHERE v.table_session_id = ts.id)::int AS people,
+              COALESCE((SELECT SUM(o.total_cents) FROM orders o
+                         WHERE o.table_session_id = ts.id
+                           AND o.status NOT IN ('cancelled', 'pending_confirmation')), 0) AS subtotal_cents
+         FROM table_sessions ts
+         JOIN tables t ON t.id = ts.table_id
+        WHERE ts.status = 'active'
+        ORDER BY t.number`,
+      [],
+    )) as Array<Record<string, unknown>>;
+
+    const etaRows = (await this.tenantConn.query(
+      `SELECT kitchen_eta_max_minutes FROM settings LIMIT 1`,
+      [],
+    )) as Array<{ kitchen_eta_max_minutes: number | null }>;
+    const etaRaw = Number(etaRows[0]?.kitchen_eta_max_minutes ?? NaN);
+    const kitchenEtaMaxMinutes = Number.isFinite(etaRaw) && etaRaw > 0 ? etaRaw : null;
+
+    let lateRows: Array<Record<string, unknown>> = [];
+    if (kitchenEtaMaxMinutes != null) {
+      lateRows = (await this.tenantConn.query(
+        `SELECT o.id AS order_id, t.label AS table_label,
+                EXTRACT(EPOCH FROM (now() - o.updated_at)) / 60 AS minutes_in_prep,
+                (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id)::int AS item_count
+           FROM orders o
+           JOIN table_sessions ts ON ts.id = o.table_session_id
+           JOIN tables t ON t.id = ts.table_id
+          WHERE o.status = 'in_progress'
+            AND o.updated_at < now() - ($1 || ' minutes')::interval
+          ORDER BY o.updated_at ASC`,
+        [String(kitchenEtaMaxMinutes)],
+      )) as Array<Record<string, unknown>>;
+    }
+
+    return {
+      tables: activeRows.map((r) => ({
+        sessionId: String(r.session_id),
+        tableLabel: String(r.table_label),
+        tableNumber: Number(r.table_number) || 0,
+        openedMinutes: Math.round(Number(r.opened_minutes) || 0),
+        people: Number(r.people) || 0,
+        subtotalCents: Number(r.subtotal_cents) || 0,
+      })),
+      lateOrders: lateRows.map((r) => ({
+        orderId: String(r.order_id),
+        tableLabel: String(r.table_label),
+        minutesInPrep: Math.round(Number(r.minutes_in_prep) || 0),
+        itemCount: Number(r.item_count) || 0,
+      })),
+      kitchenEtaMaxMinutes,
+    };
+  }
+
   async getOverview() {
     // Today's stats
     const todayOrders = (await this.tenantConn.query(
