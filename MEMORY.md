@@ -816,6 +816,41 @@ claude/compassionate-haslett-5b2f60 — regras novas que ficam):
   newSession). PATCH /orders/:id/status NAO aceita in_transit (so o
   fluxo de entrega do garcom) — ready→delivered direto e valido.
 
+## OOM da API resolvido + contrato unwrapRows (2026-07-04)
+
+- O "OOM do watch em recompiles" NUNCA foi do compilador: era recursao
+  mutua infinita em table-merge.service (expireOverdueRequests⇄getById).
+  UPDATE…RETURNING via tenantConn.query/qr.query devolve a TUPLA
+  `[rows, rowCount]` (pg/TypeORM) — o cast cru fazia o guard de vazio
+  nunca disparar, `getById(undefined)` re-entrava no sweep e UM GET
+  `/:slug/table-merge-requests` (poll do dashboard staff) alocava
+  ~33MB/s ate o FATAL de heap em ~3min, em qualquer max-old-space-size.
+  Request pendurado nao loga request_timing — a rota assassina era
+  invisivel no log; cada recompile renascia o filho e o poll re-matava.
+- REGRA: todo UPDATE/DELETE…RETURNING consumido passa por unwrapRows/
+  unwrapAffected (modules/tenant/query-utils). INSERT…RETURNING (incl.
+  ON CONFLICT DO UPDATE) e flat — cast direto ok. Fakes de teste devem
+  emular o shape FIEL da tupla (template: table-merge.expire.test.ts);
+  fake que devolve `[]` no expire esconde exatamente essa classe de bug.
+- Varredura corrigiu os 4 crus restantes: complaints escalateToManager
+  (level caia pra 1), staff-auth resetPin (sucesso falso sem UPDATE),
+  waiter-calls acknowledge (guard do CAS nunca disparava; WS saia com
+  table_session_id undefined), zone-assignments remove (404 nunca
+  disparava).
+- Auto-recover do compose (service api): o nest watch e PAI do node da
+  API — filho morto deixava o container "Up" com health 000 e `restart:`
+  nunca disparava (RestartCount=0). Agora: watchdog no command (6 probes
+  de health falhas ~2min → kill -9 -1 → container exita) + `restart:
+unless-stopped` + healthcheck de compose (visibilidade no docker ps).
+  Validado: kill -9 no filho → unhealthy → restart automatico → health
+  200 em ~2min20s; 7 recompiles seguidos com filho estavel ~110-300MB.
+  `npm run start:dev` saiu do command (o script nunca existiu em
+  apps/api).
+- Pendencia conhecida (fora deste fix): rating-push.service re-envia os
+  pushes pendentes (~43 no dev DB) a cada boot — o dedup real e so o
+  memDedup in-memory; o comentario promete chave Redis `rating-push:<id>`
+  que nao existe no codigo.
+
 ## Suite TV Reproduzivel + Round-5 Security (2026-06-13)
 
 - `apps/web-customer/e2e/specs/{tv-kds,tv-coverage}.spec.ts` agora 100% verde

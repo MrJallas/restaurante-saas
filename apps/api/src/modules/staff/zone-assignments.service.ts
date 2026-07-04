@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { unwrapRows } from '../tenant/query-utils';
 
 /**
  * Atribuição explícita garçom→zona por dia (decisão Caleb 2026-07-04,
@@ -92,13 +93,18 @@ export class ZoneAssignmentsService {
 
   /** Remove a atribuição (preserva o histórico do dia via removed_at). */
   async remove(assignmentId: string) {
-    const rows = (await this.tenantConn.query(
-      `UPDATE waiter_zone_assignments
+    // unwrapRows: UPDATE…RETURNING chega como [rows, count] — o cast cru
+    // fazia rows.length ser sempre 2 e o 404 abaixo nunca disparar.
+    // (O INSERT…ON CONFLICT do assign acima segue flat — command tag INSERT.)
+    const rows = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `UPDATE waiter_zone_assignments
           SET removed_at = now()
         WHERE id = $1 AND removed_at IS NULL
       RETURNING id`,
-      [assignmentId],
-    )) as Array<{ id: string }>;
+        [assignmentId],
+      ),
+    );
     if (!rows.length) {
       throw new NotFoundException('Atribuição não encontrada ou já removida.');
     }

@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { unwrapRows } from '../tenant/query-utils';
 import { BillingService } from '../billing/billing.service';
 import { EventsGateway } from '../websocket/events.gateway';
 
@@ -270,8 +271,12 @@ export class WaiterCallsService {
     // efetivamente flipa o status. RETURNING expõe se a row foi tocada.
     // 0 rows = "ja foi atendido" (segundo garçom no race) ou "callId
     // inexistente" (NotFoundException distinta).
-    const updated = (await this.tenantConn.query(
-      `UPDATE waiter_calls
+    // unwrapRows: UPDATE…RETURNING chega como [rows, count] — o cast cru
+    // fazia updated.length ser sempre 2, o guard do race nunca disparar e
+    // o WS acknowledged sair com table_session_id undefined.
+    const updated = unwrapRows<{ id: string; table_session_id: string }>(
+      await this.tenantConn.query(
+        `UPDATE waiter_calls
        SET status = 'acknowledged',
            acknowledged_at = now(),
            acknowledged_by = $2,
@@ -279,8 +284,9 @@ export class WaiterCallsService {
            eta_minutes = COALESCE($4, eta_minutes)
        WHERE id = $1 AND status = 'pending'
        RETURNING id, table_session_id`,
-      [callId, staffId, effectiveStaffName, etaMinutes ?? null],
-    )) as { id: string; table_session_id: string }[];
+        [callId, staffId, effectiveStaffName, etaMinutes ?? null],
+      ),
+    );
 
     if (!updated.length) {
       // Distinguir "não existe" de "já atendido" pra UX correta.

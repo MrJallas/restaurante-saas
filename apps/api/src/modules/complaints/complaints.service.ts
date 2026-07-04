@@ -263,17 +263,21 @@ export class ComplaintsService {
         )) as Array<{ id: string }>;
         chainId = inserted[0].id;
       } else {
-        const bumped = (await tx.query(
-          `UPDATE escalation_chains
-              SET level = level + 1,
-                  current_assignee_role = 'manager',
-                  current_assignee_staff_id = $2,
-                  ttl_expires_at = $3,
-                  updated_at = now()
-            WHERE id = $1
-            RETURNING level`,
-          [chainId, toStaffId, ttlExpiresAt],
-        )) as Array<{ level: number }>;
+        // unwrapRows: UPDATE…RETURNING chega como [rows, count] — o cast
+        // cru fazia bumped[0]?.level ser undefined e o nível cair pra 1.
+        const bumped = unwrapRows<{ level: number }>(
+          await tx.query(
+            `UPDATE escalation_chains
+                SET level = level + 1,
+                    current_assignee_role = 'manager',
+                    current_assignee_staff_id = $2,
+                    ttl_expires_at = $3,
+                    updated_at = now()
+              WHERE id = $1
+              RETURNING level`,
+            [chainId, toStaffId, ttlExpiresAt],
+          ),
+        );
         chainLevel = bumped[0]?.level ?? 1;
       }
 

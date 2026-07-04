@@ -2,6 +2,7 @@ import { HttpException, HttpStatus, Injectable, ServiceUnavailableException } fr
 import { randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { RedisService } from '../../infra/redis/redis.service';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { unwrapRows } from '../tenant/query-utils';
 import { hashPin, timingSafeEqualHex } from '../staff/staff-pin.util';
 import { issueStaffSessionToken } from '../../common/auth/staff-session-token';
 
@@ -232,15 +233,20 @@ export class StaffAuthService {
       );
     }
 
-    const updated = (await this.tenantConn.query(
-      `UPDATE staff
-          SET pin_hash = $1, updated_at = now()
-        WHERE id = $2
-          AND cpf = $3
-          AND is_active = true
-        RETURNING id`,
-      [hashPin(input.pin), payload.staffId, payload.cpf],
-    )) as Array<{ id: string }>;
+    // unwrapRows: UPDATE…RETURNING chega como [rows, count] — o cast cru
+    // fazia updated.length ser sempre 2 e o guard abaixo nunca disparar
+    // (reset de PIN que não casava staff/cpf reportava sucesso).
+    const updated = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `UPDATE staff
+            SET pin_hash = $1, updated_at = now()
+          WHERE id = $2
+            AND cpf = $3
+            AND is_active = true
+          RETURNING id`,
+        [hashPin(input.pin), payload.staffId, payload.cpf],
+      ),
+    );
 
     await this.redis.del(this.resetTokenKey(input.resetToken));
 
