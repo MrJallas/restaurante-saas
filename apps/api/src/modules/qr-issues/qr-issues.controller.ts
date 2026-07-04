@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Post, Query, Req, UseGuards } from '@n
 import { IsIn, IsInt, IsOptional, IsString, IsUrl, Min } from 'class-validator';
 import type { Request } from 'express';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
+import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { QrIssueRow, QrIssueStatus, QrIssuesService } from './qr-issues.service';
 
@@ -33,7 +34,11 @@ export class QrIssuesController {
     private readonly callerResolver: CallerResolverService,
   ) {}
 
+  // P2 (re-scan): a lista expõe UUIDs de staff (reported_by/resolved_by) —
+  // antes o GET era anônimo, vazando identidade da equipe pra qualquer um.
+  // Agora exige prova de staff (mesmo guard das outras rotas de equipe).
   @Get()
+  @UseGuards(StaffOnlyGuard)
   async list(@Query() q: ListQrIssuesQuery): Promise<QrIssueRow[]> {
     return this.service.list(q.status ?? 'open');
   }
