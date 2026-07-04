@@ -29,6 +29,13 @@ export interface OrderItemPayload {
   quantity: number;
   notes?: string;
   customerId: string | null;
+  /**
+   * Rótulo do tamanho escolhido (ex.: 'Grande'). O backend usa esse label
+   * pra achar o preço do tamanho em `menu_items.sizes` e cobrar o valor
+   * certo — o preço NUNCA vem do cliente. Omitido quando o item não tem
+   * tamanhos.
+   */
+  size?: string;
 }
 
 /** Subconjunto do DraftItem necessário para montar o payload. */
@@ -38,6 +45,8 @@ export interface DraftItemForPayload {
   note?: string;
   commandMode: 'individual' | 'table';
   preferences?: string[];
+  /** Rótulo do tamanho escolhido no item detail (ex.: 'Pequeno'/'Médio'/'Grande'). */
+  size?: string;
 }
 
 /**
@@ -75,5 +84,8 @@ export function buildOrderItemPayload(
     quantity: item.quantity,
     notes: mergePreferencesIntoNotes(item.preferences, item.note),
     customerId: item.commandMode === 'individual' ? orderCustomerId : null,
+    // Manda o rótulo do tamanho pro backend precificar. Só inclui quando há
+    // size — item sem tamanhos mantém o payload antigo (chave ausente).
+    ...(item.size ? { size: item.size } : {}),
   };
 }

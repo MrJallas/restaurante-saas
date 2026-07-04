@@ -61,6 +61,16 @@ class CreateOrderItemDto {
   extraIds?: string[];
 
   /**
+   * Rótulo do tamanho escolhido (ex.: 'Grande'). O backend resolve o preço do
+   * tamanho em `menu_items.sizes` — o cliente manda só o label, nunca o preço.
+   * Tamanho desconhecido ou item sem tamanhos cai no preço-base.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  size?: string;
+
+  /**
    * Who this item belongs to on the shared table. `null`/omitted means the
    * item is shared on the table bill. Required when the parent order is in
    * `individual` billing mode (falls back to the order-level customerId).

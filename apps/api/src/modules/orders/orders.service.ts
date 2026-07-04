@@ -49,6 +49,38 @@ export interface CreateOrderItemDto {
   notes?: string;
   extraIds?: string[];
   customerId?: string | null;
+  /**
+   * Rótulo do tamanho escolhido (ex.: 'Grande'). O preço do tamanho é
+   * resolvido server-side em `menu_items.sizes` — o cliente manda só o label,
+   * NUNCA o preço (mesmo trust model dos extras).
+   */
+  size?: string;
+}
+
+/** Forma de um tamanho dentro do JSONB `menu_items.sizes`. */
+interface MenuItemSize {
+  label: string;
+  price_cents: number;
+}
+
+/**
+ * Resolve o preço-base de um line-item respeitando o tamanho escolhido.
+ * Quando `size` casa (case-insensitive, trim) com um label em `sizes`, usa o
+ * `price_cents` do tamanho; senão (sem size, item sem tamanhos, ou size
+ * desconhecido) cai no `price_cents` base. Preço sempre do banco, nunca do
+ * cliente.
+ */
+function resolveSizePriceCents(
+  basePriceCents: number,
+  sizes: MenuItemSize[] | null | undefined,
+  size: string | undefined,
+): number {
+  if (!size || !Array.isArray(sizes) || sizes.length === 0) return basePriceCents;
+  const wanted = size.trim().toLowerCase();
+  const match = sizes.find(
+    (s) => typeof s?.label === 'string' && s.label.trim().toLowerCase() === wanted,
+  );
+  return match && typeof match.price_cents === 'number' ? match.price_cents : basePriceCents;
 }
 
 export interface KitchenQueueItem {
@@ -224,9 +256,9 @@ export class OrdersService {
     const itemIds = items.map((i) => i.menuItemId);
     const uniqueItemIds = Array.from(new Set(itemIds));
     const menuItems = (await this.tenantConn.query(
-      `SELECT id, price_cents, name FROM menu_items WHERE id = ANY($1) AND is_available = true`,
+      `SELECT id, price_cents, name, sizes FROM menu_items WHERE id = ANY($1) AND is_available = true`,
       [uniqueItemIds],
-    )) as { id: string; price_cents: number; name: string }[];
+    )) as { id: string; price_cents: number; name: string; sizes: MenuItemSize[] | null }[];
 
     // Compara contra o set unique para nao falsificar "indisponivel"
     // quando o cliente repete o mesmo menuItemId em line-items distintos
@@ -274,7 +306,10 @@ export class OrdersService {
         (sum, eid) => sum + (extraMap.get(eid) || 0),
         0,
       );
-      const unitPrice = menuItem.price_cents + extrasTotal;
+      // Preço-base do line-item = preço do TAMANHO escolhido (ou base, se sem
+      // tamanho). Resolvido do banco — o cliente nunca manda o preço.
+      const basePrice = resolveSizePriceCents(menuItem.price_cents, menuItem.sizes, item.size);
+      const unitPrice = basePrice + extrasTotal;
       const subtotal = unitPrice * item.quantity;
       totalCents += subtotal;
 
@@ -444,9 +479,9 @@ export class OrdersService {
     const itemIds = input.items.map((i) => i.menuItemId);
     const uniqueItemIds = Array.from(new Set(itemIds));
     const menuItems = (await this.tenantConn.query(
-      `SELECT id, price_cents, name FROM menu_items WHERE id = ANY($1) AND is_available = true`,
+      `SELECT id, price_cents, name, sizes FROM menu_items WHERE id = ANY($1) AND is_available = true`,
       [uniqueItemIds],
-    )) as { id: string; price_cents: number; name: string }[];
+    )) as { id: string; price_cents: number; name: string; sizes: MenuItemSize[] | null }[];
 
     if (menuItems.length !== uniqueItemIds.length) {
       throw new BadRequestException('Um ou mais itens nao estao disponiveis.');
@@ -471,7 +506,8 @@ export class OrdersService {
         (sum, eid) => sum + (extraMap.get(eid) || 0),
         0,
       );
-      const unitPrice = menuItem.price_cents + extrasTotal;
+      const basePrice = resolveSizePriceCents(menuItem.price_cents, menuItem.sizes, item.size);
+      const unitPrice = basePrice + extrasTotal;
       const subtotal = unitPrice * item.quantity;
       totalCents += subtotal;
       return {

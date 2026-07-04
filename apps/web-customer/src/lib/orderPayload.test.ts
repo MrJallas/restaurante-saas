@@ -81,4 +81,16 @@ describe('buildOrderItemPayload', () => {
     const payload = buildOrderItemPayload(base, 'cust-123');
     expect(payload.notes).toBeUndefined();
   });
+
+  it('P1 re-scan: o tamanho escolhido (size) vai no payload pro backend precificar', () => {
+    const payload = buildOrderItemPayload({ ...base, size: 'Grande' }, 'cust-123');
+    // Antes do fix, size ficava só no rascunho/UI: o cliente escolhia Grande,
+    // via R$12, mas o POST não mandava o size e o backend cobrava o preço-base.
+    expect(payload.size).toBe('Grande');
+  });
+
+  it('item sem tamanho não inclui size no payload (comportamento antigo preservado)', () => {
+    const payload = buildOrderItemPayload(base, 'cust-123');
+    expect(payload.size).toBeUndefined();
+  });
 });
