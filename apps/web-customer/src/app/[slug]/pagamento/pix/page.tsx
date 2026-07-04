@@ -161,6 +161,11 @@ export default function PagamentoPixPage() {
           <div className="mt-1 text-[13px] text-mute text-pretty">
             Abra o app do seu banco e aponte a câmera para o código.
           </div>
+          {/* Decisão Caleb 2026-07-04 (gate 1D): demo honesta — o QR é
+              simulado (sem PSP) e o cliente fica sabendo. */}
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-border-soft px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[1px] text-faint">
+            Pagamento simulado · nenhum valor será cobrado
+          </div>
         </div>
 
         <div className="mb-4 flex justify-center">

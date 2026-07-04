@@ -186,24 +186,26 @@ function DetailContent({
           {new Date(r.expiresAt).toLocaleString('pt-BR')}
         </Field>
 
+        {/* Decisão Caleb 2026-07-04 (gate 1D): late-arrival NÃO vai pro
+            staff como aprovação ativa — quem aprova é o customer-host da
+            mesa (doutrina 2026-06-09). Os botões Aprovar/Rejeitar davam
+            401 sempre (o controller usa guard de cliente) e saíram; o
+            manager vê como notificação passiva. */}
         {r.status === 'pending' && (
-          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <GButton
-              dark={dark}
-              full
-              kind="ghost"
-              onClick={() => api.lateArrival.reject(r.id).then(onBack)}
-            >
-              Rejeitar
-            </GButton>
-            <GButton
-              dark={dark}
-              full
-              kind="primary"
-              onClick={() => api.lateArrival.approve(r.id).then(onBack)}
-            >
-              Aprovar
-            </GButton>
+          <div
+            style={{
+              marginTop: 16,
+              padding: '10px 12px',
+              borderRadius: 10,
+              border: `1px dashed ${C.borderSoft}`,
+              color: C.faint,
+              fontSize: 12,
+              fontWeight: 500,
+              lineHeight: 1.4,
+            }}
+          >
+            Aguardando decisão do anfitrião da mesa — chegada tardia é aprovada pelo cliente, não
+            pela equipe.
           </div>
         )}
       </>

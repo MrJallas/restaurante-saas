@@ -41,10 +41,11 @@ interface MethodOption {
   description: string;
 }
 
+// Decisão Caleb 2026-07-04 (gate 1D): pagamento é DEMO honesta até o PSP
+// real existir — cartão (que caía num erro fabricado E-210) saiu da lista
+// e o Pix carrega o selo de simulação. Nenhum CTA finge cobrança real.
 const METHODS: MethodOption[] = [
-  { key: 'pix', label: 'Pix', description: 'QR Code · aprovação imediata' },
-  { key: 'credit', label: 'Cartão de crédito', description: 'Visa, Master, Elo' },
-  { key: 'debit', label: 'Cartão de débito', description: 'Débito em conta' },
+  { key: 'pix', label: 'Pix', description: 'QR Code · simulado nesta versão' },
 ];
 
 export default function PagamentoPage() {
