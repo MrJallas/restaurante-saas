@@ -14,12 +14,14 @@
  */
 
 import { PaymentsService } from './payments.service';
+import { BillingService } from '../billing/billing.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import type { RedisService } from '../../infra/redis/redis.service';
 
 const SESSION = '11111111-1111-4111-8111-111111111111';
 const OTHER_SESSION = '99999999-9999-4999-8999-999999999999';
 const VISIT = '22222222-2222-4222-8222-222222222222';
+const CUSTOMER = '44444444-4444-4444-8444-444444444444';
 const PAYMENT_ID = '33333333-3333-4333-8333-333333333333';
 
 interface PaymentRow {
@@ -36,6 +38,9 @@ function fakeTenantConn(opts: {
   onUpdate?: (sql: string, params: unknown[]) => void;
 }): TenantConnectionProvider {
   const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
+    if (sql.includes('SELECT service_fee_pct FROM settings')) {
+      return [{ service_fee_pct: '0' }]; // taxa zero: short-pay testado sem ruído de fee
+    }
     if (sql.startsWith('SELECT COALESCE(SUM(total_cents)')) {
       return [{ total: opts.outstandingCents }];
     }
@@ -99,7 +104,7 @@ describe('PaymentsService security (A04-PAY-01 / A04-PAY-02)', () => {
         },
         onUpdate: (sql) => updates.push({ sql }),
       });
-      const svc = new PaymentsService(conn, fakeRedis());
+      const svc = new PaymentsService(conn, fakeRedis(), new BillingService(conn));
 
       const res = await svc.confirmPayment(PAYMENT_ID, SESSION, 'txid-forjado');
 
@@ -125,7 +130,7 @@ describe('PaymentsService security (A04-PAY-01 / A04-PAY-02)', () => {
         },
         onUpdate: (sql) => updates.push({ sql }),
       });
-      const svc = new PaymentsService(conn, fakeRedis());
+      const svc = new PaymentsService(conn, fakeRedis(), new BillingService(conn));
 
       const res = await svc.confirmPayment(PAYMENT_ID, SESSION, 'txid');
       expect(res.status).toBe('confirmed');
@@ -143,7 +148,7 @@ describe('PaymentsService security (A04-PAY-01 / A04-PAY-02)', () => {
           expires_at: null,
         },
       });
-      const svc = new PaymentsService(conn, fakeRedis());
+      const svc = new PaymentsService(conn, fakeRedis(), new BillingService(conn));
       await expect(svc.confirmPayment(PAYMENT_ID, OTHER_SESSION)).rejects.toThrow(
         /nao encontrado/i,
       );
@@ -153,34 +158,37 @@ describe('PaymentsService security (A04-PAY-01 / A04-PAY-02)', () => {
   describe('A04-PAY-02: short-pay bloqueado no split individual', () => {
     it('rejeita allocation abaixo do saldo devido (1 centavo por R$ 200)', async () => {
       const conn = fakeTenantConn({ outstandingCents: 20000 });
-      const svc = new PaymentsService(conn, fakeRedis());
+      const svc = new PaymentsService(conn, fakeRedis(), new BillingService(conn));
 
       await expect(
         svc.requestPayment(SESSION, VISIT, 'individual', 'pix', {
+          callerCustomerId: CUSTOMER,
           splitMode: 'custom',
-          allocations: [{ customerId: VISIT, amountCents: 1 }],
+          allocations: [{ customerId: CUSTOMER, amountCents: 1 }],
         }),
       ).rejects.toThrow(/abaixo do saldo/i);
     });
 
     it('aceita allocation igual ao saldo devido', async () => {
       const conn = fakeTenantConn({ outstandingCents: 20000 });
-      const svc = new PaymentsService(conn, fakeRedis());
+      const svc = new PaymentsService(conn, fakeRedis(), new BillingService(conn));
 
       const res = await svc.requestPayment(SESSION, VISIT, 'individual', 'pix', {
+        callerCustomerId: CUSTOMER,
         splitMode: 'custom',
-        allocations: [{ customerId: VISIT, amountCents: 20000 }],
+        allocations: [{ customerId: CUSTOMER, amountCents: 20000 }],
       });
       expect(res.amountCents).toBe(20000);
     });
 
     it('clampa allocation acima do saldo devido ao saldo real', async () => {
       const conn = fakeTenantConn({ outstandingCents: 20000 });
-      const svc = new PaymentsService(conn, fakeRedis());
+      const svc = new PaymentsService(conn, fakeRedis(), new BillingService(conn));
 
       const res = await svc.requestPayment(SESSION, VISIT, 'individual', 'pix', {
+        callerCustomerId: CUSTOMER,
         splitMode: 'custom',
-        allocations: [{ customerId: VISIT, amountCents: 999999 }],
+        allocations: [{ customerId: CUSTOMER, amountCents: 999999 }],
       });
       expect(res.amountCents).toBe(20000);
     });

@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { BillingService } from '../billing/billing.service';
 import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -157,6 +158,7 @@ export class OrdersService {
   constructor(
     private readonly tenantConn: TenantConnectionProvider,
     private readonly redis: RedisService,
+    private readonly billing: BillingService,
     @Optional() private readonly eventsGateway?: EventsGateway,
     @Optional() private readonly orderRatings?: OrderRatingsService,
   ) {}
@@ -2147,9 +2149,17 @@ export class OrdersService {
       )) as unknown[];
     }
 
+    // A conta exibida sai TODA do backend: mesma taxa (settings.
+    // service_fee_pct via BillingService) que o POST /payments cobra.
+    // `totalCents` passa a ser o total COM taxa — o número que se paga.
+    const totals = await this.billing.computeTotals(totalCents);
+
     return {
       mode,
-      totalCents,
+      totalCents: totals.totalCents,
+      subtotalCents: totals.subtotalCents,
+      serviceFeePct: totals.serviceFeePct,
+      serviceFeeCents: totals.serviceFeeCents,
       orderCount: orders.length,
       orders,
       perVisit: mode === 'table' ? perVisit : undefined,
@@ -2187,6 +2197,19 @@ export class OrdersService {
       }
       if (!actor.sessionTableId || actor.sessionTableId !== tableSessionId) {
         throw new ForbiddenException('Pedido não pertence à sua mesa.');
+      }
+      // Mesma regra de ORIGEM do cancelOrder dedicado: cliente só cancela
+      // dentro da janela de confirmação. Sem isto o PATCH genérico burlava
+      // os 15s (VALID_TRANSITIONS permite cancelled de received/ready/…,
+      // mas essas transições são do staff). Repeat de já-cancelado segue
+      // pro retorno idempotente abaixo.
+      if (
+        currentStatus !== 'cancelled' &&
+        !['pending_confirmation', 'open'].includes(currentStatus)
+      ) {
+        throw new BadRequestException(
+          'Pedido ja foi enviado para a cozinha e nao pode ser cancelado aqui.',
+        );
       }
     }
 

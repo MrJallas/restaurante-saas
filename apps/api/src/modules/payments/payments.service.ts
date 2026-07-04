@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { randomUUID } from 'crypto';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { RedisService } from '../../infra/redis/redis.service';
+import { BillingService, BillTotals } from '../billing/billing.service';
 
 /** Pix QR codes expire 10 minutes after generation (design S9b). */
 const PIX_EXPIRY_SECONDS = 600;
@@ -39,6 +40,8 @@ export interface SplitAllocation {
 export interface RequestPaymentOptions {
   splitMode?: string;
   allocations?: SplitAllocation[];
+  /** Resolvido server-side do cookie `recognition_token` (nunca do body). */
+  callerCustomerId?: string | null;
 }
 
 /**
@@ -55,6 +58,7 @@ export class PaymentsService {
   constructor(
     private readonly tenantConn: TenantConnectionProvider,
     private readonly redis: RedisService,
+    private readonly billing: BillingService,
   ) {}
 
   async requestPayment(
@@ -65,18 +69,26 @@ export class PaymentsService {
     options: RequestPaymentOptions = {},
   ) {
     let amountCents: number;
-
-    // For split-by-allocation flows the caller already computed the share
-    // (e.g. SP1 "Pagar minha parte"). Trust that amount — but bound-check
-    // it against the outstanding bill so a rogue client can't short-pay.
-    const myAllocation =
-      options.splitMode && options.allocations && visitId
-        ? options.allocations.find((a) => a.customerId === visitId)
-        : undefined;
+    let billTotals: BillTotals;
+    let effectiveVisitId = visitId;
+    const callerCustomerId = options.callerCustomerId ?? null;
 
     if (mode === 'individual') {
-      if (!visitId) {
-        throw new BadRequestException('visitId necessario para pagamento individual.');
+      // "Pagar minha parte": o FE não manda visitId — a comanda é derivada
+      // do cliente RECONHECIDO (cookie recognition_token), nunca do body.
+      if (!effectiveVisitId && callerCustomerId) {
+        const vrows = (await this.tenantConn.query(
+          `SELECT id FROM visits
+           WHERE table_session_id = $1 AND customer_id = $2
+           ORDER BY created_at DESC LIMIT 1`,
+          [tableSessionId, callerCustomerId],
+        )) as { id: string }[];
+        effectiveVisitId = vrows[0]?.id ?? null;
+      }
+      if (!effectiveVisitId) {
+        throw new BadRequestException(
+          'Não foi possível identificar sua comanda. Escaneie o QR da mesa novamente.',
+        );
       }
       const rows = (await this.tenantConn.query(
         `SELECT COALESCE(SUM(total_cents), 0) as total
@@ -84,15 +96,26 @@ export class PaymentsService {
          WHERE table_session_id = $1 AND visit_id = $2
            AND billing_mode = 'individual'
            AND status NOT IN ('cancelled', 'pending_confirmation')`,
-        [tableSessionId, visitId],
+        [tableSessionId, effectiveVisitId],
       )) as { total: number }[];
-      // A04-PAY-02 (short-pay): o allocation vem CRU do body (validado só
-      // por @Min/@Max no DTO). Sem bound-check contra o saldo devido, o
-      // cliente cobrava o proprio pagamento individual por 1 centavo. Aqui
-      // clampamos ao saldo real e rejeitamos qualquer valor abaixo dele —
-      // pagar a menos que a conta nunca é um fluxo válido do lado do cliente.
-      const outstanding = rows[0].total;
-      if (myAllocation) {
+      // O devido inclui a taxa de serviço server-side (settings.service_fee_pct
+      // via BillingService) — o backend cobra o MESMO total que exibe.
+      billTotals = await this.billing.computeTotals(rows[0].total);
+      const outstanding = billTotals.totalCents;
+      if (options.splitMode && options.allocations?.length) {
+        // A allocation do caller casa por customerId (as allocations são
+        // chaveadas assim no FE) — antes casava por visitId e nunca batia.
+        const myAllocation = callerCustomerId
+          ? options.allocations.find((a) => a.customerId === callerCustomerId)
+          : undefined;
+        if (!myAllocation) {
+          throw new BadRequestException(
+            'Não encontrei a sua parte na divisão. Atualize a página e tente novamente.',
+          );
+        }
+        // A04-PAY-02 (short-pay): o allocation vem CRU do body (validado só
+        // por @Min/@Max no DTO). Clampamos ao saldo real e rejeitamos valor
+        // abaixo dele — pagar a menos nunca é fluxo válido do cliente.
         if (myAllocation.amountCents < outstanding) {
           throw new BadRequestException('Valor do pagamento individual abaixo do saldo devido.');
         }
@@ -109,7 +132,8 @@ export class PaymentsService {
            AND status NOT IN ('cancelled', 'pending_confirmation')`,
         [tableSessionId],
       )) as { total: number }[];
-      amountCents = rows[0].total;
+      billTotals = await this.billing.computeTotals(rows[0].total);
+      amountCents = billTotals.totalCents;
     }
 
     if (amountCents <= 0) {
@@ -131,7 +155,7 @@ export class PaymentsService {
     // pra fechar TOCTOU window. Antes 2 POSTs concorrentes ambos viam
     // `existing=[]` e ambos INSERTavam → 2 Pix com QRs diferentes,
     // PSP webhook batia em ambos = double charge.
-    const lockKey = `payment_lock:${tableSessionId}:${visitId ?? 'table'}`;
+    const lockKey = `payment_lock:${tableSessionId}:${effectiveVisitId ?? 'table'}`;
     const gotLock = await this.redis.setNX(lockKey, JSON.stringify({ ts: Date.now() }), 30);
     if (!gotLock) {
       throw new BadRequestException('Pagamento sendo processado. Aguarde alguns segundos.');
@@ -143,8 +167,8 @@ export class PaymentsService {
       const existing = (await this.tenantConn.query(
         `SELECT id, expires_at FROM payments
          WHERE table_session_id = $1 AND status = 'pending'
-           ${visitId ? 'AND visit_id = $2' : 'AND visit_id IS NULL'}`,
-        visitId ? [tableSessionId, visitId] : [tableSessionId],
+           ${effectiveVisitId ? 'AND visit_id = $2' : 'AND visit_id IS NULL'}`,
+        effectiveVisitId ? [tableSessionId, effectiveVisitId] : [tableSessionId],
       )) as { id: string; expires_at: string | null }[];
 
       for (const row of existing) {
@@ -160,12 +184,13 @@ export class PaymentsService {
       // Continue após dedup limpo.
       return await this.continueRequestPayment({
         tableSessionId,
-        visitId,
+        visitId: effectiveVisitId,
         mode,
         method,
         amountCents,
         splitMode,
         splitAllocations,
+        totals: billTotals,
         options,
       });
     } finally {
@@ -187,6 +212,7 @@ export class PaymentsService {
     amountCents: number;
     splitMode: string | null;
     splitAllocations: SplitAllocation[] | null;
+    totals: BillTotals;
     options: RequestPaymentOptions;
   }) {
     const { tableSessionId, visitId, method, amountCents, splitMode, splitAllocations } = input;
@@ -238,6 +264,9 @@ export class PaymentsService {
       paymentId: p.id,
       status: normalizeStatus(p.status),
       amountCents: p.amount_cents,
+      subtotalCents: input.totals.subtotalCents,
+      serviceFeeCents: input.totals.serviceFeeCents,
+      serviceFeePct: input.totals.serviceFeePct,
       method: p.method,
       pixQrCode: p.pix_qr_code,
       pixCopyPaste: p.pix_copy_paste,

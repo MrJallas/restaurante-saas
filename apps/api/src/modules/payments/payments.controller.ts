@@ -1,4 +1,5 @@
-import { Controller, Post, Get, Patch, Param, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Param, Body, UseGuards, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   IsString,
   IsNotEmpty,
@@ -15,6 +16,7 @@ import {
 import { Type } from 'class-transformer';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
 import { Session } from '../../common/decorators/session.decorator';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { PaymentsService, SplitAllocation } from './payments.service';
 
 class SplitAllocationDto implements SplitAllocation {
@@ -96,11 +98,22 @@ class NotifySplitDto {
 
 @Controller(':slug/payments')
 export class PaymentsController {
-  constructor(private readonly paymentsService: PaymentsService) {}
+  constructor(
+    private readonly paymentsService: PaymentsService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
   @Post()
   @UseGuards(SessionGuard)
-  async requestPayment(@Body() dto: RequestPaymentDto, @Session() session: SessionData) {
+  async requestPayment(
+    @Body() dto: RequestPaymentDto,
+    @Session() session: SessionData,
+    @Req() req: Request,
+  ) {
+    // "Pagar minha parte": o caller é resolvido pelo cookie recognition_token
+    // (server-side) — allocations casam por customerId e a comanda (visit)
+    // é derivada no service. O visitId do body vira só compat do fluxo antigo.
+    const callerCustomerId = await this.callerResolver.tryGetCustomerId(req);
     return this.paymentsService.requestPayment(
       session.sessionId,
       dto.visitId || null,
@@ -109,6 +122,7 @@ export class PaymentsController {
       {
         splitMode: dto.splitMode,
         allocations: dto.allocations,
+        callerCustomerId,
       },
     );
   }
