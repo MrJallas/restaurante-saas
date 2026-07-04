@@ -156,7 +156,8 @@ export class DashboardService {
     kitchenEtaMaxMinutes: number | null;
   }> {
     const activeRows = (await this.tenantConn.query(
-      `SELECT ts.id AS session_id, t.label AS table_label, t.number AS table_number,
+      `SELECT ts.id AS session_id, t.label AS table_label,
+              COALESCE(NULLIF(regexp_replace(t.code, '\\D', '', 'g'), ''), '0')::int AS table_number,
               EXTRACT(EPOCH FROM (now() - ts.created_at)) / 60 AS opened_minutes,
               (SELECT COUNT(*) FROM visits v WHERE v.table_session_id = ts.id)::int AS people,
               COALESCE((SELECT SUM(o.total_cents) FROM orders o
@@ -165,7 +166,7 @@ export class DashboardService {
          FROM table_sessions ts
          JOIN tables t ON t.id = ts.table_id
         WHERE ts.status = 'active'
-        ORDER BY t.number`,
+        ORDER BY table_number`,
       [],
     )) as Array<Record<string, unknown>>;
 
