@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
-import { ApiRequestError, apiGet, apiPost } from '../../../../lib/api';
+import { ApiRequestError, apiGet, apiPatch, apiPost } from '../../../../lib/api';
 import { useDraftOrder } from '../../../../providers/DraftOrderProvider';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
@@ -56,24 +56,43 @@ export default function PedidoRevisarPage() {
         setSubmitting(false);
         return;
       }
+      // Carrinho misto (individual + mesa) vira UM order POR billingMode —
+      // o split de pagamento filtra por billing_mode e assume orders
+      // homogêneos; antes tudo caía num order só com o modo do 1º item.
       const groupedByMode = items.reduce<Record<string, typeof items>>((acc, it) => {
         acc[it.commandMode] ??= [];
         acc[it.commandMode].push(it);
         return acc;
       }, {});
-      const firstMode = Object.keys(groupedByMode)[0] as 'individual' | 'table';
-      const orderItems = items.map((it) => ({
-        menuItemId: it.menuItemId,
-        quantity: it.quantity,
-        notes: it.note || undefined,
-        customerId: it.commandMode === 'individual' ? customerId : null,
-      }));
-      const res = await apiPost<{ id: string; autoConfirmAt?: string }>(`/${slug}/orders`, {
-        billingMode: firstMode,
-        visitId: visitId || undefined,
-        items: orderItems,
-      });
-      push(`/${slug}/pedido/confirmando?orderId=${res.id}`);
+      const groups = Object.entries(groupedByMode) as Array<['individual' | 'table', typeof items]>;
+      const createdIds: string[] = [];
+      try {
+        for (const [billingMode, groupItems] of groups) {
+          const res = await apiPost<{ id: string; autoConfirmAt?: string }>(`/${slug}/orders`, {
+            billingMode,
+            visitId: visitId || undefined,
+            items: groupItems.map((it) => ({
+              menuItemId: it.menuItemId,
+              quantity: it.quantity,
+              notes: it.note || undefined,
+              customerId: it.commandMode === 'individual' ? customerId : null,
+            })),
+          });
+          createdIds.push(res.id);
+        }
+      } catch (err) {
+        // Falha parcial: desfaz os já criados (janela pending_confirmation
+        // permite cancelar) pra não mandar meio carrinho pra cozinha.
+        await Promise.allSettled(
+          createdIds.map((id) => apiPatch(`/${slug}/orders/${id}/cancel`, {})),
+        );
+        throw err;
+      }
+      if (createdIds.length === 1) {
+        push(`/${slug}/pedido/confirmando?orderId=${createdIds[0]}`);
+      } else {
+        push(`/${slug}/pedido/confirmando?orderIds=${createdIds.join(',')}`);
+      }
     } catch (err) {
       if (
         err instanceof ApiRequestError &&

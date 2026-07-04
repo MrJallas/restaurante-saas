@@ -17,7 +17,13 @@ export default function PedidoConfirmandoPage() {
   const searchParams = useSearchParams();
   const { tableLabel } = useSession();
   const slug = params.slug as string;
-  const orderId = searchParams.get('orderId') ?? '';
+  // Carrinho misto cria um order POR billingMode — a confirmação cobre
+  // todos (`orderIds=a,b`); carrinho de modo único segue com `orderId=`.
+  const orderIdsParam = searchParams.get('orderIds');
+  const orderIds = (orderIdsParam ? orderIdsParam.split(',') : [searchParams.get('orderId') ?? ''])
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const orderId = orderIds[0] ?? '';
 
   const { items, totalCents, clear } = useDraftOrder();
   const [seconds, setSeconds] = useState(TOTAL_SECONDS);
@@ -51,27 +57,27 @@ export default function PedidoConfirmandoPage() {
   }, [seconds]);
 
   const confirmNow = useCallback(async () => {
-    if (busy || !orderId) return;
+    if (busy || orderIds.length === 0) return;
     setBusy(true);
     try {
-      await apiPatch(`/${slug}/orders/${orderId}/confirm`, {});
+      await Promise.all(orderIds.map((id) => apiPatch(`/${slug}/orders/${id}/confirm`, {})));
     } catch {
       /* backend may auto-confirm */
     }
     clear();
     router.replace(`/${slug}/pedido/enviado?orderId=${orderId}`);
-  }, [busy, clear, orderId, router, slug]);
+  }, [busy, clear, orderIds, orderId, router, slug]);
 
   const cancelEdit = useCallback(async () => {
-    if (busy || !orderId) return;
+    if (busy || orderIds.length === 0) return;
     setBusy(true);
     try {
-      await apiPatch(`/${slug}/orders/${orderId}/cancel`, {});
+      await Promise.all(orderIds.map((id) => apiPatch(`/${slug}/orders/${id}/cancel`, {})));
     } catch {
       /* ignore */
     }
     router.replace(`/${slug}/pedido/revisar`);
-  }, [busy, orderId, router, slug]);
+  }, [busy, orderIds, router, slug]);
 
   useEffect(() => {
     if (seconds === 0 && !autoSentRef.current) {

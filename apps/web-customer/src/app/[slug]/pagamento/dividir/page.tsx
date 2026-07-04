@@ -37,8 +37,6 @@ interface Allocation {
   amountCents: number;
 }
 
-const SERVICE_RATE = 0.1;
-
 export default function PagamentoDividirPage() {
   const params = useParams();
   const router = useRouter();
@@ -51,6 +49,9 @@ export default function PagamentoDividirPage() {
   const [participants, setParticipants] = useState<Participant[]>(sessionParticipants ?? []);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [loading, setLoading] = useState(true);
+  // Taxa vem do backend (settings.service_fee_pct via GET /orders/bill) —
+  // preview local usa o MESMO pct que o POST /payments cobra.
+  const [serviceFeePct, setServiceFeePct] = useState(10);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -58,13 +59,15 @@ export default function PagamentoDividirPage() {
     let stop = false;
     const load = async () => {
       try {
-        const [oRes, pRes] = await Promise.all([
+        const [oRes, pRes, bRes] = await Promise.all([
           apiGet<{ orders: ApiOrder[] }>(`/${slug}/orders?scope=table`),
           apiGet<{ participants: Participant[] }>(`/${slug}/table/participants`),
+          apiGet<{ serviceFeePct?: number }>(`/${slug}/orders/bill?mode=table`),
         ]);
         if (stop) return;
         setOrders(oRes.orders);
         if (pRes.participants?.length) setParticipants(pRes.participants);
+        if (typeof bRes.serviceFeePct === 'number') setServiceFeePct(bRes.serviceFeePct);
       } catch {
         /* ignore */
       } finally {
@@ -86,7 +89,7 @@ export default function PagamentoDividirPage() {
   );
 
   const subtotalCents = items.reduce((s, it) => s + it.subtotalCents, 0);
-  const serviceCents = Math.round(subtotalCents * SERVICE_RATE);
+  const serviceCents = Math.round((subtotalCents * serviceFeePct) / 100);
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 
   useEffect(() => {
@@ -112,11 +115,11 @@ export default function PagamentoDividirPage() {
       });
       const subtotalsByPerson = Array.from(totals.entries()).map(([cid, subtotal]) => ({
         customerId: cid,
-        amountCents: subtotal + Math.round(subtotal * SERVICE_RATE),
+        amountCents: subtotal + Math.round((subtotal * serviceFeePct) / 100),
       }));
       setAllocations(subtotalsByPerson);
     }
-  }, [mode, participants, items, subtotalCents, serviceCents]);
+  }, [mode, participants, items, subtotalCents, serviceCents, serviceFeePct]);
 
   const mineAlloc = allocations.find((a) => a.customerId === customerId);
   const mineAmount = mineAlloc?.amountCents ?? 0;
@@ -262,7 +265,7 @@ export default function PagamentoDividirPage() {
             {participants.map((p) => {
               const alloc = allocations.find((a) => a.customerId === p.customerId);
               const amt = alloc?.amountCents ?? 0;
-              const base = Math.round(amt / (1 + SERVICE_RATE));
+              const base = Math.round(amt / (1 + serviceFeePct / 100));
               const me = p.customerId === customerId;
               return (
                 <div
@@ -281,7 +284,9 @@ export default function PagamentoDividirPage() {
                         </span>
                       )}
                     </div>
-                    <div className="text-[11px] text-mute">base {fmt(base)} · + taxa 10%</div>
+                    <div className="text-[11px] text-mute">
+                      base {fmt(base)} · + taxa {String(serviceFeePct).replace('.', ',')}%
+                    </div>
                   </div>
                   <div className="text-[16px] font-semibold tabular-nums">{fmt(amt)}</div>
                 </div>

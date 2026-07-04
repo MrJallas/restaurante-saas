@@ -24,7 +24,11 @@ interface BillOrder {
 
 interface BillData {
   mode: string;
+  /** Total COM taxa — o mesmo valor que o backend cobra no POST /payments. */
   totalCents: number;
+  subtotalCents: number;
+  serviceFeePct: number;
+  serviceFeeCents: number;
   orderCount: number;
   orders: BillOrder[];
 }
@@ -42,8 +46,6 @@ const METHODS: MethodOption[] = [
   { key: 'credit', label: 'Cartão de crédito', description: 'Visa, Master, Elo' },
   { key: 'debit', label: 'Cartão de débito', description: 'Débito em conta' },
 ];
-
-const SERVICE_RATE = 0.1;
 
 export default function PagamentoPage() {
   const params = useParams();
@@ -126,9 +128,13 @@ export default function PagamentoPage() {
     return { items, subtotalCents };
   }, [bill]);
 
-  const { items, subtotalCents } = aggregated;
-  const serviceCents = Math.round(subtotalCents * SERVICE_RATE);
-  const totalCents = subtotalCents + serviceCents;
+  const { items } = aggregated;
+  // A conta vem TODA do backend (BillingService lê settings.service_fee_pct)
+  // — a tela não inventa taxa; exibe exatamente o que o POST /payments cobra.
+  const subtotalCents = bill?.subtotalCents ?? 0;
+  const serviceCents = bill?.serviceFeeCents ?? 0;
+  const totalCents = bill?.totalCents ?? 0;
+  const serviceFeeLabel = `Taxa ${String(bill?.serviceFeePct ?? 10).replace('.', ',')}%`;
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
   const totalItemCount = items.reduce((s, it) => s + it.quantity, 0);
 
@@ -246,7 +252,7 @@ export default function PagamentoPage() {
             ))}
             <div className="my-2.5 h-px bg-border-soft" />
             <Row label="Subtotal" value={fmt(subtotalCents)} />
-            <Row label="Taxa 10%" value={fmt(serviceCents)} />
+            <Row label={serviceFeeLabel} value={fmt(serviceCents)} />
             <div className="h-1.5" />
             <Row
               label={<b className="text-[15px] text-ink">Total</b>}
