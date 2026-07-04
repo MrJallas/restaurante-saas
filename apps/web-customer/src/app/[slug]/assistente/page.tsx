@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { apiPost, apiGet, ApiRequestError } from '../../../lib/api';
+import { apiPost, apiGet, apiPatch, ApiRequestError } from '../../../lib/api';
 import { clearDeliveredContinuationHint } from '../../../lib/continuationHints';
 import { recordCustomerEvent } from '../../../lib/customerEvents';
 import { listMessages } from '../../../lib/api/chat-history';
@@ -2333,7 +2333,59 @@ export default function AssistentePage() {
     }
 
     if (name === 'cancel_order') {
+      // P1-I fix: antes o handler SÓ limpava o rascunho local e ignorava um
+      // pedido REAL já enviado à cozinha — a IA respondia "cancelei" mas o
+      // pedido seguia vivo no KDS. Agora:
+      //  1) se há pedido real e ele ainda é cancelável pelo cliente
+      //     (`pending_confirmation`/`open` — a janela de confirmação; a
+      //     máquina de estado do backend REJEITA cancelamento de cliente após
+      //     o envio à cozinha, ver order-state-machine.ts
+      //     CUSTOMER_CANCELLABLE_STATUSES), chamamos o endpoint real e só
+      //     confirmamos "cancelei" APÓS o backend confirmar `cancelled`;
+      //  2) se há pedido real já na cozinha (received/in_progress/ready/…),
+      //     respondemos com honestidade — não dá pra cancelar sozinho aqui;
+      //  3) senão, cai no cancelamento de rascunho de sempre.
+      const realOrder = activeOrder;
+      const CUSTOMER_CANCELLABLE = new Set(['pending_confirmation', 'open']);
+      if (realOrder && CUSTOMER_CANCELLABLE.has(realOrder.status)) {
+        try {
+          const res = await apiPatch<{ orderId: string; status: string }>(
+            `/${slug}/orders/${realOrder.orderId}/cancel`,
+            {},
+          );
+          if (res.status === 'cancelled') {
+            clearDraftOrder();
+            refreshActiveOrder();
+            appendToolFeedback('Pronto, cancelei seu pedido.');
+          } else {
+            // Corrida: alguém já promoveu pra cozinha entre o poll e o PATCH.
+            refreshActiveOrder();
+            appendToolFeedback(
+              'Seu pedido já entrou em preparo e não dá pra cancelar por aqui. Posso chamar um garçom pra te ajudar.',
+            );
+          }
+        } catch {
+          refreshActiveOrder();
+          appendToolFeedback(
+            'Não consegui cancelar agora. Se o pedido já foi pra cozinha, chame um garçom que eu aviso.',
+          );
+        }
+        return;
+      }
+      if (realOrder) {
+        // Pedido real, mas já fora da janela de cancelamento do cliente.
+        appendToolFeedback(
+          'Seu pedido já entrou em preparo e não dá pra cancelar por aqui. Posso chamar um garçom pra te ajudar.',
+        );
+        return;
+      }
+      // Só rascunho (ou nada) — comportamento de sempre.
+      if (draftItems.length === 0) {
+        appendToolFeedback('Não há pedido ativo pra cancelar agora.');
+        return;
+      }
       clearDraftOrder();
+      appendToolFeedback('Beleza, limpei o pedido que você estava montando.');
       return;
     }
 
@@ -2396,7 +2448,10 @@ export default function AssistentePage() {
     );
   };
 
-  const sendMessage = async (text: string, options?: { skipUserBubble?: boolean }) => {
+  const sendMessage = async (
+    text: string,
+    options?: { skipUserBubble?: boolean; flowIntent?: 'join' | 'merge' },
+  ) => {
     const trimmed = text.trim();
     if (!trimmed) return;
     setExpandedInputPlaceholder(null);
@@ -2515,7 +2570,22 @@ export default function AssistentePage() {
       }
     }
 
-    if (activeTableMergeMessage?.tableMerge?.kind === 'incoming') {
+    // P1-J fix (cross-flow join/merge): o card de ENTRADA (join) dispara
+    // `sendMessage('Agora não')` / `sendMessage('Pode entrar')` como texto
+    // livre. Quando havia TAMBÉM um convite de MERGE incoming ativo, este
+    // atalho parseava "agora nao" como REJECT do merge (MERGE_REJECT_DIRECT_RE
+    // casa "agora nao") e rejeitava a JUNÇÃO por engano — sem tocar no join.
+    // O fix b16966d foi intra-fluxo (fullmatch da frase), mas não resolvia a
+    // colisão ENTRE fluxos quando os dois convites coexistem. Agora o dismiss
+    // sabe QUAL fluxo está ativo: se o botão veio do card de join
+    // (`flowIntent === 'join'`), NÃO tocamos no merge — o texto segue pro
+    // servidor com `pendingJoinRequest` e só a entrada é decidida. Só rodamos
+    // o atalho client-side de merge quando o intent não é join (texto digitado
+    // à mão ou botão do próprio card de merge).
+    if (
+      options?.flowIntent !== 'join' &&
+      activeTableMergeMessage?.tableMerge?.kind === 'incoming'
+    ) {
       const decision = tableMergeDecisionFromText(trimmed);
       if (decision) {
         await decideTableMergeFromChat(activeTableMergeMessage.id, decision);
@@ -2922,7 +2992,7 @@ export default function AssistentePage() {
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => sendMessage('Pode entrar')}
+                          onClick={() => sendMessage('Pode entrar', { flowIntent: 'join' })}
                           disabled={loading || busy}
                           className="rounded-full bg-ink px-3.5 py-2 text-[13px] font-semibold text-white disabled:opacity-55"
                         >
@@ -2930,7 +3000,7 @@ export default function AssistentePage() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => sendMessage('Agora não')}
+                          onClick={() => sendMessage('Agora não', { flowIntent: 'join' })}
                           disabled={loading || busy}
                           className="rounded-full border border-ink/30 bg-bg px-3.5 py-2 text-[13px] font-semibold text-ink disabled:opacity-55"
                         >
