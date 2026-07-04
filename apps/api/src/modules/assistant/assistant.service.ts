@@ -851,7 +851,42 @@ export function rankCandidatesByHistory(
   };
 }
 
-function enrichRecommendationToolCalls(
+interface RecommendationChip {
+  id: string;
+  label: string;
+  action: string;
+  payload: string;
+  primary: boolean;
+}
+
+/** Grava message/chips/actionPayload no tool call `recommend_dish` (result + top-level). */
+function withRecommendationResult(
+  toolCalls: Array<Record<string, unknown>>,
+  idx: number,
+  message: string,
+  chips: RecommendationChip[],
+  actionPayload: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const nextCalls = [...toolCalls];
+  const current = nextCalls[idx];
+  const result = ((current.result ?? {}) as Record<string, unknown>) || {};
+  const resultPayload = isPlainRecord(result.actionPayload) ? result.actionPayload : {};
+  const currentPayload = isPlainRecord(current.actionPayload) ? current.actionPayload : {};
+  nextCalls[idx] = {
+    ...current,
+    result: {
+      ...result,
+      message,
+      chips,
+      actionPayload: { ...resultPayload, ...actionPayload },
+    },
+    actionPayload: { ...currentPayload, ...actionPayload },
+    chips,
+  };
+  return nextCalls;
+}
+
+export function enrichRecommendationToolCalls(
   message: string,
   response: string,
   toolCalls: Array<Record<string, unknown>>,
@@ -893,6 +928,21 @@ function enrichRecommendationToolCalls(
   const pickedSource = preferredCandidates.length >= 3 ? preferredCandidates : candidates;
   const ranked = rankCandidatesByHistory(pickedSource, lastItems, favoriteItems);
   const picked = ranked.ordered.slice(0, 3);
+  // Com restrição alimentar ativa e ZERO candidatos aprovados pelo filtro
+  // determinístico, NÃO existe fallback — o cardápio sem filtro não pode
+  // responder por um alérgico. Resposta honesta, sem chips de item.
+  if (dietary && picked.length === 0) {
+    const noOptionsResponse =
+      'Não encontrei opções sem glúten declarado no cardápio. Se quiser, chame o garçom pra confirmar os ingredientes com a cozinha.';
+    return {
+      response: noOptionsResponse,
+      toolCalls: withRecommendationResult(toolCalls, idx, noOptionsResponse, [], {
+        category,
+        dietary,
+        count: 0,
+      }),
+    };
+  }
   const items = picked.length > 0 ? picked : menuItems.slice(0, 3);
   if (items.length === 0) {
     return { response, toolCalls };
@@ -911,34 +961,14 @@ function enrichRecommendationToolCalls(
     payload: `quero o ${item.name}`,
     primary: false,
   }));
-  const nextCalls = [...toolCalls];
-  const current = nextCalls[idx];
-  const result = ((current.result ?? {}) as Record<string, unknown>) || {};
-  const resultPayload = isPlainRecord(result.actionPayload) ? result.actionPayload : {};
-  const currentPayload = isPlainRecord(current.actionPayload) ? current.actionPayload : {};
-  nextCalls[idx] = {
-    ...current,
-    result: {
-      ...result,
-      message: recommendationResponse,
-      chips,
-      actionPayload: {
-        ...resultPayload,
-        category,
-        dietary,
-        count: items.length,
-      },
-    },
-    actionPayload: {
-      ...currentPayload,
+  return {
+    response: recommendationResponse,
+    toolCalls: withRecommendationResult(toolCalls, idx, recommendationResponse, chips, {
       category,
       dietary,
       count: items.length,
-    },
-    chips,
+    }),
   };
-
-  return { response: recommendationResponse, toolCalls: nextCalls };
 }
 
 @Injectable()
