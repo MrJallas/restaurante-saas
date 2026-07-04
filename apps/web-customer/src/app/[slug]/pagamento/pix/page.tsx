@@ -9,6 +9,20 @@ import { AppShell } from '../../../../components/layout/AppShell';
 import { PillButton } from '../../../../components/ui/PillButton';
 import { QRPattern } from '../../../../components/ui/QRPattern';
 
+/**
+ * ⚠️ PIX É UM STUB DE DEMONSTRAÇÃO — NÃO É BUG. Ver docs/PIX-STATUS.md.
+ *
+ * Esta tela mostra um QR/copia-e-cola de DEMONSTRAÇÃO: o `pixCopyPaste` que ela
+ * renderiza é uma string gerada localmente no backend, NÃO um BR Code emitido
+ * por um banco/PSP — o app de banco real não o honra. Não há webhook nem
+ * integração de PSP; em produção o pagamento nunca chega a 'confirmed' (fica em
+ * 'awaiting_settlement'). Isso é uma DECISÃO DE PRODUTO do Caleb (2026-07-04):
+ * o Pix real só será implementado depois que houver um cliente fechado. NÃO
+ * "conserte" isso gerando QR real nem religando auto-confirm — o caminho de
+ * implementação (PSP + webhook = a verificação de que o Pix chegou) está em
+ * docs/PIX-STATUS.md. A tela é mantida como está de propósito, pra demo.
+ */
+
 interface PaymentData {
   paymentId: string;
   status: string;

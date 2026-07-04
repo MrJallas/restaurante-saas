@@ -6,6 +6,14 @@ import { RedisService } from '../../infra/redis/redis.service';
 import { BillingService, BillTotals } from '../billing/billing.service';
 import { EventsGateway } from '../websocket/events.gateway';
 
+/**
+ * ⚠️ Pix é STUB de demonstração (decisão de produto Caleb 2026-07-04) — ver
+ * docs/PIX-STATUS.md. O QR/copia-e-cola gerado aqui NÃO é um BR Code de banco;
+ * não há PSP nem webhook. Em prod o pagamento nunca chega a 'confirmed'. Isso é
+ * INTENCIONAL até haver um cliente fechado — não é bug. O caminho real (PixProvider
+ * + webhook = a verificação de que o Pix chegou) está documentado no doc acima.
+ */
+
 /** Pix QR codes expire 10 minutes after generation (design S9b). */
 const PIX_EXPIRY_SECONDS = 600;
 

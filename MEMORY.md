@@ -444,6 +444,18 @@ E2E; use como apoio, nao como unico criterio de PASS.
 
 ## Decisoes E Pendencias De Produto
 
+**PIX = STUB INTENCIONAL ate haver cliente fechado (decisao Caleb 2026-07-04).**
+O Pix NAO esta implementado — a tela `/:slug/pagamento/pix` mostra um QR/copia-e-cola
+de DEMONSTRACAO (string gerada localmente, NAO um BR Code de banco), nao ha PSP nem
+webhook, e em prod o pagamento nunca chega a `confirmed` (fica `awaiting_settlement`).
+Isso e DE PROPOSITO, **nao e bug** — nao "consertar" gerando QR real nem religando
+auto-confirm. Verificacao real de Pix exige integrar um PSP (webhook = a prova de que
+o dinheiro chegou); nao existe "API do governo" chamavel direto por comerciante. Sera
+implementado DEPOIS de fechar o 1o cliente (decide-se qual PSP entao). Caminho de
+implementacao + dicas pro proximo agente: **`docs/PIX-STATUS.md`**. Recomendacao de
+PSP pra comecar: Mercado Pago (token, sem cert). Qualquer scan que apontar "Pix sem
+estado terminal / QR nao honrado / sem webhook" e ISTO, esperado.
+
 Decisoes confirmadas por Caleb em 2026-06-09:
 
 - Late-arrival = pessoa chega atrasada e precisa se juntar a uma mesa/sessao
