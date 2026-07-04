@@ -76,19 +76,48 @@ export class PaymentsService {
 
   /**
    * P1-A (re-scan 2026-07-04): soma dos pagamentos JÁ liquidados ou em voo
-   * (confirmed/paid/awaiting_settlement) no escopo — mesa (visit_id NULL) ou
-   * comanda (visit_id = $2). É o que precisa sair do devido pra não re-cobrar:
-   * awaiting_settlement é um Pix em voo, cobrar de novo dobraria a cobrança.
-   * 'pending'/'expired'/'cancelled' NÃO contam (o dedup de pending é separado).
+   * (confirmed/paid/awaiting_settlement) no escopo. É o que precisa sair do
+   * devido pra não re-cobrar: awaiting_settlement é um Pix em voo, cobrar de
+   * novo dobraria a cobrança. 'pending'/'expired'/'cancelled' NÃO contam (o
+   * dedup de pending é separado).
+   *
+   * Re-scan 2026-07-04 (cross-mode scope contamination): o escopo do
+   * "já pago" TEM que bater com o escopo do "total devido" de cada modo.
+   * A comanda INDIVIDUAL e a parte do RATEIO da mesa compartilham o MESMO
+   * visit_id — filtrar só por visit_id somava os pagamentos dos dois modos,
+   * fazendo um abater o devido do outro (UNDERCHARGE). Discriminamos por
+   * `split_mode`:
+   *   - scope 'table'      → visit_id IS NULL (conta cheia da mesa).
+   *   - scope 'individual' → visit_id = X AND split_mode IS NULL (comanda).
+   *   - scope 'split'      → visit_id = X AND split_mode IS NOT NULL
+   *     (parte do rateio da mesa paga por este cliente).
    */
-  private async sumSettled(tableSessionId: string, visitId: string | null): Promise<number> {
+  private async sumSettled(
+    tableSessionId: string,
+    visitId: string | null,
+    scope: 'table' | 'individual' | 'split',
+  ): Promise<number> {
+    let scopeClause: string;
+    if (scope === 'table') {
+      // Conta cheia da mesa: pagamentos table-scoped nunca têm visit_id.
+      scopeClause = 'AND visit_id IS NULL';
+    } else if (scope === 'split') {
+      // Parte do rateio: mesmo visit_id, mas só os pagamentos de rateio
+      // (split_mode não-nulo) contam contra a parte canônica da mesa.
+      scopeClause = 'AND visit_id = $2 AND split_mode IS NOT NULL';
+    } else {
+      // Comanda individual: mesmo visit_id, mas só os pagamentos da comanda
+      // (sem split_mode) — o rateio da mesa é dívida separada.
+      scopeClause = 'AND visit_id = $2 AND split_mode IS NULL';
+    }
+    const params = scope === 'table' ? [tableSessionId] : [tableSessionId, visitId];
     const rows = (await this.tenantConn.query(
       `SELECT COALESCE(SUM(amount_cents), 0) as paid
          FROM payments
         WHERE table_session_id = $1
           AND status IN ('confirmed', 'paid', 'awaiting_settlement')
-          ${visitId ? 'AND visit_id = $2' : 'AND visit_id IS NULL'}`,
-      visitId ? [tableSessionId, visitId] : [tableSessionId],
+          ${scopeClause}`,
+      params,
     )) as { paid: number | string }[];
     return Number(rows[0]?.paid ?? 0);
   }
@@ -133,11 +162,6 @@ export class PaymentsService {
       // O devido inclui a taxa de serviço server-side (settings.service_fee_pct
       // via BillingService) — o backend cobra o MESMO total que exibe.
       billTotals = await this.billing.computeTotals(rows[0].total);
-      // P1-A (re-scan 2026-07-04): subtrai o já-pago da MINHA comanda —
-      // pagamento confirmed/paid/awaiting_settlement reduz o devido. Sem
-      // isso, um 2º request re-cobrava a conta inteira (double-charge).
-      const settledForVisit = await this.sumSettled(tableSessionId, effectiveVisitId);
-      const outstanding = billTotals.totalCents - settledForVisit;
       if (
         options.splitMode === 'equal' ||
         options.splitMode === 'by_item' ||
@@ -169,14 +193,34 @@ export class PaymentsService {
             'Você não está entre os participantes desta divisão. Atualize a tela e tente novamente.',
           );
         }
-        const sent = options.allocations?.find((a) => a.customerId === callerCustomerId);
-        if (!sent || sent.amountCents !== mine.amountCents) {
+        // Re-scan 2026-07-04 (check tautológico no custom): comparar o valor
+        // ENVIADO pelo cliente contra o CANÔNICO server-side. Snapshot do
+        // enviado ANTES de qualquer normalização — no custom, computeSplit
+        // devolvia `options.allocations` verbatim, então `mine` e o find em
+        // `options.allocations` eram o MESMO objeto e `sent !== mine` nunca
+        // barrava nada. Guardamos o amountCents enviado por primitivo.
+        const sentAmount = options.allocations?.find(
+          (a) => a.customerId === callerCustomerId,
+        )?.amountCents;
+        if (sentAmount === undefined || sentAmount !== mine.amountCents) {
           throw new BadRequestException(
             `Sua parte na divisão é de ${mine.amountCents} centavos — atualize a tela e tente novamente.`,
           );
         }
-        // P1-A: se já paguei parte da minha cota, cobra só o restante.
-        amountCents = mine.amountCents - settledForVisit;
+        // A parte canônica do caller tem que ser estritamente positiva: no
+        // custom a soma bater com o total da mesa NÃO impede um caller de se
+        // cobrar 0/negativo e jogar a conta nos outros (o check tautológico
+        // deixava passar). Ninguém "paga a própria parte" com <= 0.
+        if (mine.amountCents <= 0) {
+          throw new BadRequestException(
+            'Sua parte na divisão precisa ser maior que zero. Atualize a tela e tente novamente.',
+          );
+        }
+        // P1-A + cross-mode scope: subtrai só o já-pago DO RATEIO da mesa
+        // (mesmo visit, split_mode não-nulo). Um pagamento da comanda
+        // individual (split_mode NULL) NÃO abate a parte do rateio.
+        const settledForSplit = await this.sumSettled(tableSessionId, effectiveVisitId, 'split');
+        amountCents = mine.amountCents - settledForSplit;
         billTotals = {
           subtotalCents: split.subtotalCents,
           serviceFeePct: split.serviceFeePct,
@@ -184,7 +228,15 @@ export class PaymentsService {
           totalCents: split.totalCents,
         };
       } else {
-        amountCents = outstanding;
+        // Comanda individual pura: subtrai só o já-pago DA COMANDA (mesmo
+        // visit, split_mode NULL). Um pagamento do rateio da mesa
+        // (split_mode não-nulo) NÃO abate a comanda individual.
+        const settledForVisit = await this.sumSettled(
+          tableSessionId,
+          effectiveVisitId,
+          'individual',
+        );
+        amountCents = billTotals.totalCents - settledForVisit;
       }
     } else {
       const rows = (await this.tenantConn.query(
@@ -198,7 +250,7 @@ export class PaymentsService {
       billTotals = await this.billing.computeTotals(rows[0].total);
       // P1-A: subtrai o já-pago no escopo da MESA (pagamentos table-scoped,
       // visit_id NULL). Sem isso a conta da mesa era re-cobrada inteira.
-      amountCents = billTotals.totalCents - (await this.sumSettled(tableSessionId, null));
+      amountCents = billTotals.totalCents - (await this.sumSettled(tableSessionId, null, 'table'));
     }
 
     if (amountCents <= 0) {
