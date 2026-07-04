@@ -35,6 +35,8 @@ import type {
   SessionFlagToggleResponseDto,
   LgpdRequestDto,
   CustomerWelcomeResponseDto,
+  SessionTimelineResponse,
+  TableSessionsHistoryResponse,
 } from '@restaurant/shared-types';
 
 // ─────────────────────────────────────────────────────────────
@@ -636,6 +638,36 @@ export interface OrderTimelineResponse {
 
 export function getOrderTimeline(slug: string, orderId: string): Promise<OrderTimelineResponse> {
   return staffGet<OrderTimelineResponse>(`/${slug}/orders/${encodeURIComponent(orderId)}/timeline`);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Session timeline (M6/M7) — leitura da timeline da SESSÃO
+// (event store) + histórico de sessões da mesa. Types canônicos
+// em @restaurant/shared-types (timeline.ts) — só types, os
+// valores de runtime (kinds) vivem no api.
+// ─────────────────────────────────────────────────────────────
+
+export function getSessionTimeline(
+  slug: string,
+  sessionId: string,
+  opts?: { limit?: number; before?: string },
+): Promise<SessionTimelineResponse> {
+  const search = new URLSearchParams();
+  if (opts?.limit) search.set('limit', String(opts.limit));
+  if (opts?.before) search.set('before', opts.before);
+  const query = search.toString();
+  return staffGet<SessionTimelineResponse>(
+    `/${slug}/sessions/${encodeURIComponent(sessionId)}/timeline${query ? `?${query}` : ''}`,
+  );
+}
+
+export function getTableSessionsHistory(
+  slug: string,
+  tableNumber: number,
+  opts?: { limit?: number },
+): Promise<TableSessionsHistoryResponse> {
+  const query = opts?.limit ? `?limit=${opts.limit}` : '';
+  return staffGet<TableSessionsHistoryResponse>(`/${slug}/tables/${tableNumber}/sessions${query}`);
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -32,6 +32,8 @@ import {
   Icon,
 } from '../../../../components/manager';
 import { listHostTables, type HostTableEntry } from '../../../../lib/api/host';
+import { getTableSessionsHistory } from '../../../../lib/api/manager';
+import type { TableSessionHistoryItem } from '@restaurant/shared-types';
 
 type LookupState =
   | { kind: 'loading' }
@@ -128,16 +130,43 @@ function ManagerMesaInner() {
       <div
         style={{
           flex: 1,
-          display: 'grid',
-          placeItems: 'center',
+          display: 'flex',
+          overflowY: 'auto',
           padding: '32px 24px 40px',
         }}
       >
-        {state.kind === 'loading' && <Loading C={C} />}
-        {state.kind === 'redirecting' && <Redirecting C={C} />}
-        {state.kind === 'free' && <FreeTable C={C} table={state.table} onBack={back} />}
-        {state.kind === 'not_found' && <NotFound C={C} n={state.n} onBack={back} />}
-        {state.kind === 'error' && <ErrorState C={C} message={state.message} onBack={back} />}
+        {/* `margin: auto` centra igual ao grid/place-items anterior, mas sem
+            clipar o topo quando a lista de sessões anteriores estoura a
+            altura (aí vira scroll). */}
+        <div
+          style={{
+            margin: 'auto',
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+          }}
+        >
+          {state.kind === 'loading' && <Loading C={C} />}
+          {state.kind === 'redirecting' && <Redirecting C={C} />}
+          {state.kind === 'free' && (
+            <>
+              <FreeTable C={C} table={state.table} onBack={back} />
+              <PreviousSessions
+                C={C}
+                slug={slug}
+                n={state.table.number}
+                onOpen={(sessionId) => {
+                  const qs = new URLSearchParams({ slug });
+                  if (dark) qs.set('dark', '1');
+                  router.push(`/manager/session-timeline/${sessionId}?${qs.toString()}`);
+                }}
+              />
+            </>
+          )}
+          {state.kind === 'not_found' && <NotFound C={C} n={state.n} onBack={back} />}
+          {state.kind === 'error' && <ErrorState C={C} message={state.message} onBack={back} />}
+        </div>
       </div>
     </div>
   );
@@ -288,6 +317,209 @@ function ErrorState({
         </GButton>
       </div>
     </Hero>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Sessões anteriores (fatia M7 — timeline de sessão)
+//
+// Mesa livre é o único estado onde não há sessão ativa pra abrir;
+// aqui entra o histórico (GET /:slug/tables/:n/sessions, M6), cada
+// item linkando pra /manager/session-timeline/[sessionId]. Erro do
+// backend (ex.: Mongo off → 503) aparece na tela — nunca lista
+// vazia silenciosa.
+// ─────────────────────────────────────────────────────────────
+
+type SessionsState =
+  | { kind: 'loading' }
+  | { kind: 'error'; message: string }
+  | { kind: 'ready'; sessions: TableSessionHistoryItem[] };
+
+function formatSessionWindow(item: TableSessionHistoryItem): string {
+  const fmt = new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const opened = new Date(item.createdAt);
+  const openedTxt = Number.isNaN(opened.getTime()) ? '—' : fmt.format(opened);
+  if (!item.closedAt) return `${openedTxt} · ainda aberta`;
+  const closed = new Date(item.closedAt);
+  const closedTxt = Number.isNaN(closed.getTime())
+    ? ''
+    : new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(closed);
+  return closedTxt ? `${openedTxt} → ${closedTxt}` : openedTxt;
+}
+
+function formatPaidCents(cents: number): string {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100);
+}
+
+function PreviousSessions({
+  C,
+  slug,
+  n,
+  onOpen,
+}: {
+  C: ReturnType<typeof useG>;
+  slug: string;
+  n: number;
+  onOpen: (sessionId: string) => void;
+}) {
+  const [state, setState] = useState<SessionsState>({ kind: 'loading' });
+
+  useEffect(() => {
+    let cancelled = false;
+    getTableSessionsHistory(slug, n)
+      .then((res) => {
+        if (!cancelled) setState({ kind: 'ready', sessions: res.sessions });
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setState({
+            kind: 'error',
+            message: err.message || 'Não foi possível carregar as sessões anteriores.',
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, n]);
+
+  return (
+    <div
+      style={{
+        width: '100%',
+        maxWidth: 360,
+        marginTop: 28,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      <span
+        style={{
+          fontFamily: MONO_FONT,
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: 1.5,
+          textTransform: 'uppercase',
+          color: C.faint,
+          paddingLeft: 4,
+        }}
+      >
+        Sessões anteriores
+      </span>
+
+      {state.kind === 'loading' && (
+        <div
+          style={{
+            padding: '14px 16px',
+            background: C.bg,
+            border: `1px solid ${C.borderSoft}`,
+            borderRadius: 14,
+            fontSize: 13,
+            fontWeight: 600,
+            color: C.faint,
+          }}
+        >
+          Carregando sessões…
+        </div>
+      )}
+
+      {state.kind === 'error' && (
+        <div
+          style={{
+            padding: '14px 16px',
+            background: C.dangerBg,
+            border: `1px solid ${C.danger}`,
+            borderRadius: 14,
+            fontSize: 13,
+            fontWeight: 600,
+            color: C.danger,
+          }}
+        >
+          {state.message}
+        </div>
+      )}
+
+      {state.kind === 'ready' && state.sessions.length === 0 && (
+        <div
+          style={{
+            padding: '14px 16px',
+            background: C.bg,
+            border: `1px solid ${C.borderSoft}`,
+            borderRadius: 14,
+            fontSize: 13,
+            fontWeight: 600,
+            color: C.faint,
+          }}
+        >
+          Nenhuma sessão anterior registrada nesta mesa.
+        </div>
+      )}
+
+      {state.kind === 'ready' && state.sessions.length > 0 && (
+        <div
+          style={{
+            background: C.bg,
+            border: `1px solid ${C.borderSoft}`,
+            borderRadius: 14,
+            overflow: 'hidden',
+          }}
+        >
+          {state.sessions.map((item, index) => (
+            <button
+              key={item.sessionId}
+              type="button"
+              onClick={() => onOpen(item.sessionId)}
+              style={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                padding: '12px 16px',
+                background: 'transparent',
+                border: 'none',
+                borderTop: index === 0 ? 'none' : `1px solid ${C.borderFaint}`,
+                cursor: 'pointer',
+                fontFamily: G_FONT,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'baseline',
+                  gap: 10,
+                }}
+              >
+                <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>
+                  {item.hostName ? `Mesa de ${item.hostName}` : 'Sessão sem host'}
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: C.faint,
+                    flexShrink: 0,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {formatSessionWindow(item)}
+                </span>
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 500, color: C.mute, marginTop: 2 }}>
+                {item.totalOrders} {item.totalOrders === 1 ? 'pedido' : 'pedidos'} ·{' '}
+                {formatPaidCents(item.totalPaidCents)}
+                {item.closedByLabel ? ` · fechada por ${item.closedByLabel}` : ''}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

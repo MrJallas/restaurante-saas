@@ -107,6 +107,14 @@ export function ScreenManagerTableMenu({
     router.push(`/manager/timeline/${timelineOrderId}?${qs}`);
   };
 
+  // Fatia M7 — timeline da SESSÃO inteira (event store M6), irmã da
+  // per-pedido acima. Não depende de pedido ativo: usa o tableSessionId
+  // que esta tela já recebe.
+  const goToSessionTimeline = () => {
+    const qs = new URLSearchParams({ slug: tenantSlug }).toString();
+    router.push(`/manager/session-timeline/${tableSessionId}?${qs}`);
+  };
+
   // Re-sync flags from API on mount (in case caller passed stale prop)
   useEffect(() => {
     let cancelled = false;
@@ -449,6 +457,13 @@ export function ScreenManagerTableMenu({
                 disabled={timelineLoading || !timelineOrderId}
               />
             )}
+            <ActionRow
+              dark={dark}
+              icon={Icon.history(18)}
+              label="Timeline da sessão"
+              sub="Tudo que aconteceu na mesa · pedidos, chamados, conta"
+              onClick={goToSessionTimeline}
+            />
             <ActionRow
               dark={dark}
               icon={Icon.arrow(18)}
