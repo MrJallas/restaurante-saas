@@ -7,7 +7,8 @@
     "build": "nest build",
     "start": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "backfill:timeline": "ts-node scripts/backfill-timeline.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",
