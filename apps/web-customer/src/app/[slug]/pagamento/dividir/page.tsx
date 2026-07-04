@@ -92,34 +92,30 @@ export default function PagamentoDividirPage() {
   const serviceCents = Math.round((subtotalCents * serviceFeePct) / 100);
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 
+  // Decisão Caleb 2026-07-04: o rateio é CANÔNICO no backend — o preview
+  // vem do POST bill/split/compute (mesa + taxa + participantes aprovados
+  // server-side) e "pagar minha parte" envia exatamente a parte calculada.
   useEffect(() => {
-    if (participants.length === 0 || items.length === 0) return;
-    if (mode === 'equal') {
-      const per = Math.round((subtotalCents + serviceCents) / participants.length);
-      setAllocations(participants.map((p) => ({ customerId: p.customerId, amountCents: per })));
-    } else if (mode === 'by_item') {
-      const totals = new Map<string, number>();
-      participants.forEach((p) => totals.set(p.customerId, 0));
-      const sharedItems: ApiOrderItem[] = [];
-      for (const it of items) {
-        if (it.customerId) {
-          totals.set(it.customerId, (totals.get(it.customerId) ?? 0) + it.subtotalCents);
-        } else {
-          sharedItems.push(it);
-        }
-      }
-      const sharedTotal = sharedItems.reduce((s, it) => s + it.subtotalCents, 0);
-      const share = participants.length > 0 ? Math.round(sharedTotal / participants.length) : 0;
-      participants.forEach((p) => {
-        totals.set(p.customerId, (totals.get(p.customerId) ?? 0) + share);
+    if (mode === 'custom') return; // custom segue manual (épico pagamento)
+    let stop = false;
+    apiPost<{
+      allocations: Allocation[];
+      serviceFeePct: number;
+      subtotalCents: number;
+      totalCents: number;
+    }>(`/${slug}/payments/bill/split/compute`, { mode, participants: [] })
+      .then((res) => {
+        if (stop) return;
+        setAllocations(res.allocations);
+        if (typeof res.serviceFeePct === 'number') setServiceFeePct(res.serviceFeePct);
+      })
+      .catch(() => {
+        if (!stop) setAllocations([]);
       });
-      const subtotalsByPerson = Array.from(totals.entries()).map(([cid, subtotal]) => ({
-        customerId: cid,
-        amountCents: subtotal + Math.round((subtotal * serviceFeePct) / 100),
-      }));
-      setAllocations(subtotalsByPerson);
-    }
-  }, [mode, participants, items, subtotalCents, serviceCents, serviceFeePct]);
+    return () => {
+      stop = true;
+    };
+  }, [mode, slug, participants.length, items.length]);
 
   const mineAlloc = allocations.find((a) => a.customerId === customerId);
   const mineAmount = mineAlloc?.amountCents ?? 0;

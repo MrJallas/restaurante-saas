@@ -102,7 +102,37 @@ export class PaymentsService {
       // via BillingService) — o backend cobra o MESMO total que exibe.
       billTotals = await this.billing.computeTotals(rows[0].total);
       const outstanding = billTotals.totalCents;
-      if (options.splitMode && options.allocations?.length) {
+      if (options.splitMode === 'equal' || options.splitMode === 'by_item') {
+        // Decisão Caleb 2026-07-04: "pagar minha parte" cobra a parte
+        // CANÔNICA do rateio da mesa, recalculada server-side — o valor
+        // enviado precisa bater exatamente (o FE exibe o que o backend
+        // calculou).
+        if (!callerCustomerId) {
+          throw new BadRequestException(
+            'Não foi possível identificar você na divisão. Escaneie o QR da mesa novamente.',
+          );
+        }
+        const split = await this.computeSplit(tableSessionId, options.splitMode, []);
+        const mine = split.allocations.find((a) => a.customerId === callerCustomerId);
+        if (!mine) {
+          throw new BadRequestException(
+            'Você não está entre os participantes aprovados desta divisão.',
+          );
+        }
+        const sent = options.allocations?.find((a) => a.customerId === callerCustomerId);
+        if (!sent || sent.amountCents !== mine.amountCents) {
+          throw new BadRequestException(
+            `Sua parte na divisão é de ${mine.amountCents} centavos — atualize a tela e tente novamente.`,
+          );
+        }
+        amountCents = mine.amountCents;
+        billTotals = {
+          subtotalCents: split.subtotalCents,
+          serviceFeePct: split.serviceFeePct,
+          serviceFeeCents: split.serviceFeeCents,
+          totalCents: split.totalCents,
+        };
+      } else if (options.splitMode && options.allocations?.length) {
         // A allocation do caller casa por customerId (as allocations são
         // chaveadas assim no FE) — antes casava por visitId e nunca batia.
         const myAllocation = callerCustomerId
@@ -494,76 +524,115 @@ export class PaymentsService {
   async computeSplit(
     tableSessionId: string,
     mode: string,
-    participantIds: string[],
+    _participantIds: string[],
     customAllocations?: SplitAllocation[],
   ): Promise<{
     mode: string;
+    subtotalCents: number;
+    serviceFeePct: number;
+    serviceFeeCents: number;
     totalCents: number;
     allocations: SplitAllocation[];
   }> {
     if (!VALID_SPLIT_MODES.has(mode)) {
       throw new BadRequestException(`splitMode invalido: ${mode}.`);
     }
+
+    // Decisão Caleb 2026-07-04: o rateio é CANÔNICO no backend.
+    // Participantes vêm da sessão (aprovados), NUNCA do body.
+    const partRows = (await this.tenantConn.query(
+      `SELECT customer_id
+         FROM session_participants
+        WHERE table_session_id = $1
+          AND status = 'approved'
+          AND left_at IS NULL
+        ORDER BY joined_at ASC`,
+      [tableSessionId],
+    )) as Array<{ customer_id: string }>;
+    const participantIds = partRows.map((r) => r.customer_id);
     if (!participantIds.length) {
-      throw new BadRequestException('Informe ao menos um participante.');
+      throw new BadRequestException('Nenhum participante aprovado na sessão pra dividir.');
     }
 
+    // Conta da MESA (mesma cerca do getBill/POST payments da fatia 1A):
+    // comanda individual fica fora — o dono paga a própria.
     const items = (await this.tenantConn.query(
       `SELECT oi.subtotal_cents, oi.customer_id
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
        WHERE o.table_session_id = $1
+         AND o.billing_mode = 'table'
          AND o.status NOT IN ('cancelled', 'pending_confirmation')`,
       [tableSessionId],
     )) as { subtotal_cents: number; customer_id: string | null }[];
 
-    const totalCents = items.reduce((s, it) => s + it.subtotal_cents, 0);
-    if (totalCents <= 0) {
+    const subtotalCents = items.reduce((s, it) => s + Number(it.subtotal_cents), 0);
+    if (subtotalCents <= 0) {
       throw new BadRequestException('Nenhum valor pendente para dividir.');
     }
+    const totals = await this.billing.computeTotals(subtotalCents);
 
     let allocations: SplitAllocation[] = [];
     if (mode === 'equal') {
-      const share = Math.floor(totalCents / participantIds.length);
-      const remainder = totalCents - share * participantIds.length;
+      // Total COM taxa dividido igual; floor + resto pro primeiro (regra
+      // de arredondamento estável — o primeiro participante absorve os
+      // centavos, nunca a casa).
+      const share = Math.floor(totals.totalCents / participantIds.length);
+      const remainder = totals.totalCents - share * participantIds.length;
       allocations = participantIds.map((cid, idx) => ({
         customerId: cid,
         amountCents: share + (idx === 0 ? remainder : 0),
       }));
     } else if (mode === 'by_item') {
-      const totals = new Map<string, number>(participantIds.map((id) => [id, 0]));
+      // Cada um paga os próprios itens + share igual dos compartilhados,
+      // e a taxa sobre a PRÓPRIA parte.
+      const totalsByPerson = new Map<string, number>(participantIds.map((id) => [id, 0]));
       const sharedItems = items.filter((it) => !it.customer_id);
       for (const it of items) {
-        if (it.customer_id && totals.has(it.customer_id)) {
-          totals.set(it.customer_id, (totals.get(it.customer_id) ?? 0) + it.subtotal_cents);
+        if (it.customer_id && totalsByPerson.has(it.customer_id)) {
+          totalsByPerson.set(
+            it.customer_id,
+            (totalsByPerson.get(it.customer_id) ?? 0) + Number(it.subtotal_cents),
+          );
         }
       }
-      const sharedTotal = sharedItems.reduce((s, it) => s + it.subtotal_cents, 0);
+      const sharedTotal = sharedItems.reduce((s, it) => s + Number(it.subtotal_cents), 0);
       const sharedShare = Math.floor(sharedTotal / participantIds.length);
       const sharedRemainder = sharedTotal - sharedShare * participantIds.length;
       participantIds.forEach((cid, idx) => {
         const bonus = idx === 0 ? sharedRemainder : 0;
-        totals.set(cid, (totals.get(cid) ?? 0) + sharedShare + bonus);
+        totalsByPerson.set(cid, (totalsByPerson.get(cid) ?? 0) + sharedShare + bonus);
       });
-      allocations = Array.from(totals.entries()).map(([cid, amount]) => ({
-        customerId: cid,
-        amountCents: amount,
-      }));
+      allocations = participantIds.map((cid) => {
+        const sub = totalsByPerson.get(cid) ?? 0;
+        return {
+          customerId: cid,
+          amountCents: sub + Math.round((sub * totals.serviceFeePct) / 100),
+        };
+      });
     } else {
-      // custom — trust the caller but bound-check sum against totalCents
+      // custom — soma deve bater com o total da mesa COM taxa (tolerância
+      // de arredondamento de 1 centavo por participante).
       if (!customAllocations?.length) {
         throw new BadRequestException('Para split customizado, envie as allocations.');
       }
       const sum = customAllocations.reduce((s, a) => s + a.amountCents, 0);
-      if (Math.abs(sum - totalCents) > participantIds.length) {
+      if (Math.abs(sum - totals.totalCents) > participantIds.length) {
         throw new BadRequestException(
-          `Soma das alocacoes (${sum}) diferente do total (${totalCents}).`,
+          `Soma das alocacoes (${sum}) diferente do total com taxa (${totals.totalCents}).`,
         );
       }
       allocations = customAllocations;
     }
 
-    return { mode, totalCents, allocations };
+    return {
+      mode,
+      subtotalCents: totals.subtotalCents,
+      serviceFeePct: totals.serviceFeePct,
+      serviceFeeCents: totals.serviceFeeCents,
+      totalCents: totals.totalCents,
+      allocations,
+    };
   }
 
   /**
