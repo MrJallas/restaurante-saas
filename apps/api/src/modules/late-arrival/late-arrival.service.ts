@@ -82,6 +82,8 @@ export class LateArrivalService {
         requesterName: result.requesterName,
         visitContext: result.visitContext,
         expiresAt: result.ttlExpiresAt,
+        // M2 (timeline): timestamp do ato (row created_at).
+        occurredAt: result.createdAt,
       });
     }
 
@@ -207,6 +209,9 @@ export class LateArrivalService {
     const result = this.mapRow(updated[0]);
 
     if (slug && this.events && result.tableSessionId) {
+      // M2 (timeline): occurredAt = decided_at carimbado pelo UPDATE;
+      // decidedByCustomerId = host validado pelo controller
+      // (isCallerHostOfRequest) — null quando quem decidiu foi staff.
       if (status === 'approved') {
         // TODO(payload): tableNumber, requesterName and partySize would
         // require joins with visits / customers / participants. Defaulting
@@ -219,6 +224,8 @@ export class LateArrivalService {
           requesterCustomerId: result.customerId,
           requesterName: '',
           partySize: 0,
+          occurredAt: result.decidedAt ?? new Date().toISOString(),
+          decidedByCustomerId: by.customerId ?? null,
         });
       } else {
         this.events.emitLateArrivalRejected(slug, {
@@ -226,6 +233,12 @@ export class LateArrivalService {
           tableSessionId: result.tableSessionId,
           requesterCustomerId: result.customerId,
           reason: by.staffId ? 'host_rejected' : 'host_rejected',
+          occurredAt: result.decidedAt ?? new Date().toISOString(),
+          decidedByCustomerId: by.customerId ?? null,
+          // tableNumber só entra quando REAL — o RETURNING * do UPDATE não
+          // tem o join de tables, então o mapRow devolve o default 0 e
+          // mandar 0 mentiria "mesa 0" pro FE/event-store.
+          ...(result.tableNumber > 0 ? { tableNumber: result.tableNumber } : {}),
         });
       }
     }

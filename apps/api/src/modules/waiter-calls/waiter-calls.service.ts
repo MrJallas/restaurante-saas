@@ -82,6 +82,10 @@ export class WaiterCallsService {
         tableLabel: tableInfo.label,
         tableCode: tableInfo.code,
         reason: call.reason,
+        // M2 (timeline): sessão + customer resolvido SERVER-SIDE (round 8
+        // B-NEW-27: controller deriva do cookie, nunca do body).
+        tableSessionId,
+        customerId: options.customerId ?? null,
       });
     }
 
@@ -289,7 +293,13 @@ export class WaiterCallsService {
       throw new BadRequestException('Chamado ja foi atendido.');
     }
 
-    this.eventsGateway.emitWaiterCallAcknowledged(slug, callId, updated[0].table_session_id);
+    // M2 (timeline): quem atendeu + ETA agora vão no WS (antes só no
+    // response REST). staffId é identidade validada server-side
+    // (requireActiveStaffId); effectiveStaffName vem do banco.
+    this.eventsGateway.emitWaiterCallAcknowledged(slug, callId, updated[0].table_session_id, {
+      acknowledgedBy: { id: staffId, name: effectiveStaffName },
+      etaMinutes: etaMinutes ?? null,
+    });
 
     return {
       callId,

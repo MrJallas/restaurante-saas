@@ -393,6 +393,8 @@ export class OrdersService {
         billingMode,
         totalCents,
         createdAt: order.created_at,
+        // M2 (timeline): correlação explícita pro event-store (aditivo).
+        tableSessionId,
         timestamp: new Date().toISOString(),
       });
     }
@@ -540,6 +542,8 @@ export class OrdersService {
         billingMode: 'table',
         totalCents,
         createdAt: order.created_at,
+        // M2 (timeline): correlação explícita pro event-store (aditivo).
+        tableSessionId: session.id,
         timestamp: new Date().toISOString(),
       });
     }
@@ -551,8 +555,15 @@ export class OrdersService {
         totalCents,
         itemCount: input.items.length,
         itemNames: input.items.map((i) => menuItemMap.get(i.menuItemId)?.name ?? 'Item'),
+        // M2 (timeline): sessão + mesa disponíveis neste caller (aditivo).
+        tableSessionId: session.id,
+        tableLabel: session.table_label,
       });
-      this.eventsGateway.emitOrderStatusUpdate(input.slug, order.id, 'received');
+      this.eventsGateway.emitOrderStatusUpdate(input.slug, order.id, 'received', undefined, {
+        tableSessionId: session.id,
+        // Actor server-side: staff validado no SELECT de staff ativo acima.
+        changedBy: { type: 'staff', id: input.staffId },
+      });
     }
 
     return {
@@ -682,11 +693,22 @@ export class OrdersService {
         totalCents: order.total_cents,
         itemCount: items.length,
         itemNames: items.map((i) => i.name),
+        // M2 (timeline): sessão disponível neste caller (aditivo). tableLabel
+        // NÃO está no escopo do confirm — fica de fora em vez de mentir ''.
+        tableSessionId: order.table_session_id,
       });
-      this.eventsGateway.emitOrderStatusUpdate(slug, orderId, 'received');
+      this.eventsGateway.emitOrderStatusUpdate(slug, orderId, 'received', undefined, {
+        tableSessionId: order.table_session_id,
+        // Actor server-side: rota SessionGuard — quem confirma é o customer
+        // da sessão; não há customer_id resolvido no escopo (id fica null).
+        changedBy: { type: 'customer', id: null },
+      });
       this.eventsGateway.emitToSession(order.table_session_id, 'order:status', {
         orderId,
         status: 'received',
+        // M2 (timeline): correlação + actor server-side (aditivo).
+        tableSessionId: order.table_session_id,
+        changedBy: { type: 'customer', id: null },
         timestamp: new Date().toISOString(),
       });
     }
@@ -742,11 +764,18 @@ export class OrdersService {
       this.eventsGateway.emitToSession(order.table_session_id, 'order:status', {
         orderId,
         status: 'cancelled',
+        // M2 (timeline): correlação + actor server-side (aditivo). Rota
+        // SessionGuard — cancel é do customer da sessão (id não resolvido).
+        tableSessionId: order.table_session_id,
+        changedBy: { type: 'customer', id: null },
         timestamp: new Date().toISOString(),
       });
     }
     if (slug && this.eventsGateway) {
-      this.eventsGateway.emitOrderStatusUpdate(slug, orderId, 'cancelled');
+      this.eventsGateway.emitOrderStatusUpdate(slug, orderId, 'cancelled', undefined, {
+        tableSessionId: order.table_session_id,
+        changedBy: { type: 'customer', id: null },
+      });
     }
     return { orderId, status: 'cancelled' };
   }
@@ -1609,18 +1638,55 @@ export class OrdersService {
       }
     }
 
+    // M2 (timeline): actor SEMPRE derivado server-side — o guard carimba
+    // req.actorType; `changedBy` (param) é INPUT DO CLIENT e por isso NÃO
+    // vira id do ator (vai só pro order_status_history como antes). O staff
+    // desta rota autentica via chave compartilhada (TV/estação) — sem id de
+    // pessoa server-side, id fica null.
+    const changedByActor = actor
+      ? {
+          type: actor.actorType === 'session' ? ('customer' as const) : ('staff' as const),
+          id: null,
+        }
+      : undefined;
+
     if (this.eventsGateway) {
       // Pra todos os customers na mesma mesa.
       this.eventsGateway.emitToSession(tableSessionId, 'order:status', {
         orderId,
         status: newStatus,
+        // M2 (timeline): correlação + actor (aditivo).
+        tableSessionId,
+        ...(changedByActor ? { changedBy: changedByActor } : {}),
         timestamp: new Date().toISOString(),
       });
     }
     if (slug && this.eventsGateway) {
-      this.eventsGateway.emitOrderStatusUpdate(slug, orderId, newStatus);
+      this.eventsGateway.emitOrderStatusUpdate(slug, orderId, newStatus, undefined, {
+        tableSessionId,
+        ...(changedByActor ? { changedBy: changedByActor } : {}),
+      });
       if (newStatus === 'ready') {
-        this.eventsGateway.emitOrderReady(slug, orderId, '');
+        // M2 (timeline): antes emitia tableLabel:'' hardcoded (card "pronto"
+        // sem mesa na tela do garçom). Lookup LAZY só na transição ready —
+        // mantém o SELECT quente do updateStatus intacto. Best-effort: falha
+        // do lookup degrada pro '' antigo em vez de derrubar a transição.
+        let tableLabel = '';
+        try {
+          const labelRows = (await this.tenantConn.query(
+            `SELECT t.label AS table_label
+               FROM table_sessions ts
+               JOIN tables t ON t.id = ts.table_id
+              WHERE ts.id = $1`,
+            [tableSessionId],
+          )) as { table_label: string | null }[];
+          tableLabel = labelRows[0]?.table_label ?? '';
+        } catch (err) {
+          this.ordersLogger.warn(
+            `order:ready sem tableLabel (lookup falhou): ${(err as Error).message}`,
+          );
+        }
+        this.eventsGateway.emitOrderReady(slug, orderId, tableLabel);
       }
     }
 

@@ -41,6 +41,9 @@ import type {
   WsStaffMessageRead,
   WsCourtesyCreated,
   WsCourtesyUpdated,
+  WsOrderStatus,
+  WsOrderClaimed,
+  WsWaiterAcknowledged,
   WsZonePauseStarted,
   WsZonePauseEnded,
   WsSessionFlagChanged,
@@ -638,8 +641,14 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   // EventsEmitterService direto.
   // ───────────────────────────────────────────────────────────────────────
 
-  emitOrderStatusUpdate(slug: string, orderId: string, status: string, tableLabel?: string) {
-    return this.emitter.emitOrderStatusUpdate(slug, orderId, status, tableLabel);
+  emitOrderStatusUpdate(
+    slug: string,
+    orderId: string,
+    status: string,
+    tableLabel?: string,
+    extra?: Pick<WsOrderStatus['payload'], 'tableSessionId' | 'changedBy'>,
+  ) {
+    return this.emitter.emitOrderStatusUpdate(slug, orderId, status, tableLabel, extra);
   }
 
   emitNewOrder(slug: string, orderData: Record<string, unknown>) {
@@ -650,8 +659,13 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     return this.emitter.emitOrderReady(slug, orderId, tableLabel);
   }
 
-  emitOrderClaimed(slug: string, orderId: string, claimedBy: string) {
-    return this.emitter.emitOrderClaimed(slug, orderId, claimedBy);
+  emitOrderClaimed(
+    slug: string,
+    orderId: string,
+    claimedBy: string,
+    extra?: Pick<WsOrderClaimed['payload'], 'tableSessionId' | 'tableLabel'>,
+  ) {
+    return this.emitter.emitOrderClaimed(slug, orderId, claimedBy, extra);
   }
 
   emitOrderHandoffCalled(
@@ -664,6 +678,8 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       zoneName?: string | null;
       targetWaiterId: string | null;
       targetWaiterName?: string | null;
+      tableSessionId?: string;
+      calledBy?: string | null;
     },
   ) {
     return this.emitter.emitOrderHandoffCalled(slug, data);
@@ -720,13 +736,20 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       tableLabel: string;
       tableCode: string;
       reason?: string;
+      tableSessionId?: string;
+      customerId?: string | null;
     },
   ) {
     return this.emitter.emitWaiterCall(slug, callData);
   }
 
-  emitWaiterCallAcknowledged(slug: string, callId: string, sessionId: string) {
-    return this.emitter.emitWaiterCallAcknowledged(slug, callId, sessionId);
+  emitWaiterCallAcknowledged(
+    slug: string,
+    callId: string,
+    sessionId: string,
+    extra?: Pick<WsWaiterAcknowledged['payload'], 'acknowledgedBy' | 'etaMinutes'>,
+  ) {
+    return this.emitter.emitWaiterCallAcknowledged(slug, callId, sessionId, extra);
   }
 
   emitToSession(sessionId: string, event: string, data: unknown) {

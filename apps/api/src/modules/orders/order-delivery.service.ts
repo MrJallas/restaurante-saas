@@ -100,8 +100,15 @@ export class OrderDeliveryService {
       zoneName: order.zone_name,
       targetWaiterId: delivery.target_waiter_id,
       targetWaiterName,
+      // M2 (timeline): sessão + quem chamou (staff validado no controller
+      // via requireActiveStaffId; null = estação/TV sem x-staff-id).
+      tableSessionId: order.table_session_id,
+      calledBy: staffId,
     });
-    this.eventsGateway?.emitOrderStatusUpdate(slug, orderId, 'ready', order.table_label);
+    this.eventsGateway?.emitOrderStatusUpdate(slug, orderId, 'ready', order.table_label, {
+      tableSessionId: order.table_session_id,
+      changedBy: { type: 'staff', id: staffId },
+    });
 
     return {
       orderId,
@@ -234,11 +241,21 @@ export class OrderDeliveryService {
       };
     });
 
-    this.eventsGateway?.emitOrderClaimed(slug, orderId, staffId);
-    this.eventsGateway?.emitOrderStatusUpdate(slug, orderId, 'in_transit', result.tableLabel);
+    // M2 (timeline): campos aditivos — staffId aqui é identidade validada
+    // server-side (requireActiveStaffId no controller).
+    this.eventsGateway?.emitOrderClaimed(slug, orderId, staffId, {
+      tableSessionId: result.tableSessionId,
+      tableLabel: result.tableLabel,
+    });
+    this.eventsGateway?.emitOrderStatusUpdate(slug, orderId, 'in_transit', result.tableLabel, {
+      tableSessionId: result.tableSessionId,
+      changedBy: { type: 'staff', id: staffId },
+    });
     this.eventsGateway?.emitToSession(result.tableSessionId, 'order:status', {
       orderId,
       status: 'in_transit',
+      tableSessionId: result.tableSessionId,
+      changedBy: { type: 'staff', id: staffId },
       timestamp: new Date().toISOString(),
     });
     return result;
@@ -351,10 +368,17 @@ export class OrderDeliveryService {
       }
     }
 
-    this.eventsGateway?.emitOrderStatusUpdate(slug, orderId, 'delivered', result.tableLabel);
+    this.eventsGateway?.emitOrderStatusUpdate(slug, orderId, 'delivered', result.tableLabel, {
+      tableSessionId: result.tableSessionId,
+      changedBy: { type: 'staff', id: staffId },
+    });
     this.eventsGateway?.emitToSession(result.tableSessionId, 'order:status', {
       orderId,
       status: 'delivered',
+      // M2 (timeline): correlação + staff que confirmou a entrega (identidade
+      // validada server-side; espelha o claimed_by persistido acima).
+      tableSessionId: result.tableSessionId,
+      deliveredBy: staffId,
       timestamp: new Date().toISOString(),
     });
     return result;

@@ -165,6 +165,7 @@ export class TtlTickService {
         id: string;
         source_table_session_id: string;
         target_table_session_id: string;
+        decided_at: string;
       }>(
         await qr.query(
           `UPDATE table_merge_requests
@@ -173,7 +174,7 @@ export class TtlTickService {
                   updated_at = now()
               WHERE status = 'pending'
                 AND ttl_expires_at < now()
-          RETURNING id, source_table_session_id, target_table_session_id`,
+          RETURNING id, source_table_session_id, target_table_session_id, decided_at`,
         ),
       ),
     );
@@ -186,6 +187,9 @@ export class TtlTickService {
         {
           requestId: row.id,
           rejectedBy: 'timeout',
+          // M2 (timeline): timestamp do ato (decided_at do sweep). Timeout
+          // não tem decisor humano — sem decidedByCustomerId.
+          decidedAt: row.decided_at,
         },
       );
     }
@@ -274,6 +278,7 @@ export class TtlTickService {
         table_session_id: string;
         customer_id: string;
         escalation_chain_id: string | null;
+        decided_at: string;
       }>(
         await qr.query(
           `UPDATE late_arrival_requests
@@ -282,7 +287,7 @@ export class TtlTickService {
                   updated_at = now()
             WHERE status = 'pending'
               AND ttl_expires_at < now()
-          RETURNING id, table_session_id, customer_id, escalation_chain_id`,
+          RETURNING id, table_session_id, customer_id, escalation_chain_id, decided_at`,
         ),
       );
       return rows;
@@ -292,6 +297,8 @@ export class TtlTickService {
       this.gateway.emitLateArrivalExpired(slug, row.customer_id, {
         requestId: row.id,
         tableSessionId: row.table_session_id,
+        // M2 (timeline): timestamp do ato (decided_at do sweep).
+        occurredAt: row.decided_at,
       });
 
       // Auto-advance any attached escalation chain — letting the host slot

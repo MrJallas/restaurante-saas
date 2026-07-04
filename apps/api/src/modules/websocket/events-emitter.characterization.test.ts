@@ -19,6 +19,13 @@
  * `server` (papel do @WebSocketServer()) e chama `afterInit` se o
  * gateway o expuser (papel do adapter pós OnGatewayInit). Assim o teste
  * congela COMPORTAMENTO, não wiring de DI.
+ *
+ * M2 (timeline · 2026-07-04) — emenda ADITIVA autorizada pelo protocolo:
+ * os testes h1-h2, i1-i2, j1-j2 e k1-k3 (e os campos novos em b1/d3)
+ * fixam os campos OPCIONAIS que os emit* passaram a REPASSAR
+ * (tableSessionId, actor server-side, timestamps do ato) preparando o
+ * tap do event-store (M4). NENHUMA asserção de room ou wire name
+ * pré-existente foi alterada — payloads só GANHAM campos.
  */
 
 import 'reflect-metadata';
@@ -26,9 +33,14 @@ import { EventsGateway } from './events.gateway';
 import type {
   WsEscalationCreated,
   WsComplaintRead,
+  WsLateArrivalApproved,
+  WsLateArrivalRejected,
   WsLateArrivalExpired,
   WsStaffMessageReceived,
   WsStaffMessageRead,
+  WsTableMergeCreated,
+  WsTableMergeApproved,
+  WsTableMergeRejected,
 } from '@restaurant/shared-types';
 
 const SLUG = 'resto_dev';
@@ -115,6 +127,9 @@ describe('EventsGateway emit* — characterization de rooms/wire/payload', () =>
       zoneName: 'Salão',
       targetWaiterId: 'waiter-77',
       targetWaiterName: 'Rui',
+      // M2 (timeline): campos aditivos nascidos no caller (order-delivery).
+      tableSessionId: 'ts-3',
+      calledBy: 'staff-9',
     });
 
     expect(emitted).toHaveLength(2);
@@ -129,6 +144,8 @@ describe('EventsGateway emit* — characterization de rooms/wire/payload', () =>
         zoneName: 'Salão',
         targetWaiterId: 'waiter-77',
         targetWaiterName: 'Rui',
+        tableSessionId: 'ts-3',
+        calledBy: 'staff-9',
       });
       expectIsoTimestamp(record.payload.timestamp);
     }
@@ -203,6 +220,8 @@ describe('EventsGateway emit* — characterization de rooms/wire/payload', () =>
     const payload: WsLateArrivalExpired['payload'] = {
       requestId: 'late-1',
       tableSessionId: 'ts-9',
+      // M2 (timeline): campo aditivo — nasce no caller (ttl-tick).
+      occurredAt: '2026-07-04T12:00:00.000Z',
     };
 
     gateway.emitLateArrivalExpired(SLUG, null, payload);
@@ -273,5 +292,217 @@ describe('EventsGateway emit* — characterization de rooms/wire/payload', () =>
     expect(emitted[0].rooms).toBe(`tenant:${SLUG}`);
     expect(emitted[0].event).toBe('staff_message.read');
     expect(emitted[0].payload).toBe(payload);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // M2 (timeline) — campos aditivos repassados pelos emit* (os valores
+  // nascem nos CALLERS; aqui fixamos só o repasse + rooms/wire imutáveis).
+  // ─────────────────────────────────────────────────────────────────────
+
+  it('h1. [M2·order] emitOrderStatusUpdate repassa extra (tableSessionId + changedBy) pros MESMOS rooms waiter/kitchen', () => {
+    const { gateway, emitted } = createHarness();
+
+    gateway.emitOrderStatusUpdate(SLUG, 'order-9', 'delivered', 'Mesa 2', {
+      tableSessionId: 'ts-42',
+      changedBy: { type: 'staff', id: 'staff-7' },
+    });
+
+    expect(emitted).toHaveLength(2);
+    expect(emitted.map((e) => e.rooms)).toEqual([
+      `tenant:${SLUG}:waiter`,
+      `tenant:${SLUG}:kitchen`,
+    ]);
+    for (const record of emitted) {
+      expect(record.event).toBe('order:status');
+      expect(record.payload).toMatchObject({
+        orderId: 'order-9',
+        status: 'delivered',
+        tableLabel: 'Mesa 2',
+        tableSessionId: 'ts-42',
+        changedBy: { type: 'staff', id: 'staff-7' },
+      });
+      expectIsoTimestamp(record.payload.timestamp);
+    }
+  });
+
+  it('h2. [M2·order] emitOrderClaimed repassa extra (tableSessionId + tableLabel) — room waiter inalterada', () => {
+    const { gateway, emitted } = createHarness();
+
+    gateway.emitOrderClaimed(SLUG, 'order-10', 'staff-7', {
+      tableSessionId: 'ts-42',
+      tableLabel: 'Mesa 2',
+    });
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].rooms).toBe(`tenant:${SLUG}:waiter`);
+    expect(emitted[0].event).toBe('order:claimed');
+    expect(emitted[0].payload).toMatchObject({
+      orderId: 'order-10',
+      claimedBy: 'staff-7',
+      tableSessionId: 'ts-42',
+      tableLabel: 'Mesa 2',
+    });
+    expectIsoTimestamp(emitted[0].payload.timestamp);
+  });
+
+  it('i1. [M2·waiter-call] emitWaiterCall repassa tableSessionId + customerId — room tenant:<slug>:waiter', () => {
+    const { gateway, emitted } = createHarness();
+
+    gateway.emitWaiterCall(SLUG, {
+      callId: 'call-1',
+      tableLabel: 'Mesa 5',
+      tableCode: 'M5',
+      reason: 'ask_bill',
+      tableSessionId: 'ts-5',
+      customerId: 'cust-1',
+    });
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].rooms).toBe(`tenant:${SLUG}:waiter`);
+    expect(emitted[0].event).toBe('waiter:call');
+    expect(emitted[0].payload).toMatchObject({
+      callId: 'call-1',
+      tableLabel: 'Mesa 5',
+      tableCode: 'M5',
+      reason: 'ask_bill',
+      tableSessionId: 'ts-5',
+      customerId: 'cust-1',
+    });
+    expectIsoTimestamp(emitted[0].payload.timestamp);
+  });
+
+  it('i2. [M2·waiter-call] emitWaiterCallAcknowledged → session:<id> + tenant:<slug>:waiter, payload ganha tableSessionId + acknowledgedBy + etaMinutes', () => {
+    const { gateway, emitted } = createHarness();
+
+    gateway.emitWaiterCallAcknowledged(SLUG, 'call-2', 'ts-6', {
+      acknowledgedBy: { id: 'staff-3', name: 'Rui' },
+      etaMinutes: 5,
+    });
+
+    expect(emitted).toHaveLength(2);
+    expect(emitted.map((e) => e.rooms)).toEqual(['session:ts-6', `tenant:${SLUG}:waiter`]);
+    for (const record of emitted) {
+      expect(record.event).toBe('waiter:acknowledged');
+      expect(record.payload).toMatchObject({
+        callId: 'call-2',
+        tableSessionId: 'ts-6',
+        acknowledgedBy: { id: 'staff-3', name: 'Rui' },
+        etaMinutes: 5,
+      });
+      expectIsoTimestamp(record.payload.timestamp);
+    }
+  });
+
+  it('j1. [M2·late-arrival] emitLateArrivalApproved repassa occurredAt + decidedByCustomerId — rooms tenant + customer + session', () => {
+    const { gateway, emitted } = createHarness();
+    const payload: WsLateArrivalApproved['payload'] = {
+      requestId: 'late-2',
+      tableSessionId: 'ts-7',
+      tableNumber: 7,
+      requesterCustomerId: 'cust-9',
+      requesterName: 'Bia',
+      partySize: 3,
+      occurredAt: '2026-07-04T12:00:00.000Z',
+      decidedByCustomerId: 'cust-host',
+    };
+
+    gateway.emitLateArrivalApproved(SLUG, payload);
+
+    expect(emitted).toHaveLength(3);
+    expect(emitted.map((e) => e.rooms)).toEqual([
+      `tenant:${SLUG}`,
+      'customer:cust-9',
+      'session:ts-7',
+    ]);
+    expect(emitted.every((e) => e.event === 'late_arrival.approved')).toBe(true);
+    expect(emitted.every((e) => e.payload === payload)).toBe(true);
+  });
+
+  it('j2. [M2·late-arrival] emitLateArrivalRejected repassa occurredAt + decidedByCustomerId + tableNumber — rooms tenant + customer', () => {
+    const { gateway, emitted } = createHarness();
+    const payload: WsLateArrivalRejected['payload'] = {
+      requestId: 'late-3',
+      tableSessionId: 'ts-8',
+      requesterCustomerId: 'cust-10',
+      reason: 'host_rejected',
+      occurredAt: '2026-07-04T12:00:00.000Z',
+      decidedByCustomerId: 'cust-host',
+      tableNumber: 8,
+    };
+
+    gateway.emitLateArrivalRejected(SLUG, payload);
+
+    expect(emitted).toHaveLength(2);
+    expect(emitted.map((e) => e.rooms)).toEqual([`tenant:${SLUG}`, 'customer:cust-10']);
+    expect(emitted.every((e) => e.event === 'late_arrival.rejected')).toBe(true);
+    expect(emitted.every((e) => e.payload === payload)).toBe(true);
+  });
+
+  it('k1. [M2·merge] emitTableMergeCreated repassa createdAt — rooms tenant + ambos customers + ambas sessions', () => {
+    const { gateway, emitted } = createHarness();
+    const payload: WsTableMergeCreated['payload'] = {
+      requestId: 'merge-1',
+      originSessionId: 'ts-a',
+      targetSessionId: 'ts-b',
+      originTableNumber: 1,
+      targetTableNumber: 2,
+      originHostName: 'Ana',
+      targetHostName: 'Léo',
+      originPartySize: 2,
+      targetPartySize: 4,
+      expiresAt: '2026-07-04T12:05:00.000Z',
+      createdAt: '2026-07-04T12:00:00.000Z',
+    };
+
+    gateway.emitTableMergeCreated(SLUG, 'cust-a', 'cust-b', payload);
+
+    expect(emitted).toHaveLength(5);
+    expect(emitted.map((e) => e.rooms)).toEqual([
+      `tenant:${SLUG}`,
+      'customer:cust-a',
+      'customer:cust-b',
+      'session:ts-a',
+      'session:ts-b',
+    ]);
+    expect(emitted.every((e) => e.event === 'table_merge.created')).toBe(true);
+    expect(emitted.every((e) => e.payload === payload)).toBe(true);
+  });
+
+  it('k2. [M2·merge] emitTableMergeApproved repassa decidedAt + decidedByCustomerId — rooms tenant + ambas sessions', () => {
+    const { gateway, emitted } = createHarness();
+    const payload: WsTableMergeApproved['payload'] = {
+      requestId: 'merge-2',
+      side: 'both',
+      status: 'approved',
+      decidedAt: '2026-07-04T12:01:00.000Z',
+      decidedByCustomerId: 'cust-host-b',
+    };
+
+    gateway.emitTableMergeApproved(SLUG, 'ts-a', 'ts-b', payload);
+
+    expect(emitted).toHaveLength(3);
+    expect(emitted.map((e) => e.rooms)).toEqual([`tenant:${SLUG}`, 'session:ts-a', 'session:ts-b']);
+    for (const record of emitted) {
+      expect(record.event).toBe('table_merge.approved');
+      expect(record.payload).toBe(payload);
+    }
+  });
+
+  it('k3. [M2·merge] emitTableMergeRejected repassa decidedAt (sem decidedByCustomerId no timeout) — rooms tenant + ambas sessions', () => {
+    const { gateway, emitted } = createHarness();
+    const payload: WsTableMergeRejected['payload'] = {
+      requestId: 'merge-3',
+      rejectedBy: 'timeout',
+      decidedAt: '2026-07-04T12:02:00.000Z',
+    };
+
+    gateway.emitTableMergeRejected(SLUG, 'ts-a', 'ts-b', payload);
+
+    expect(emitted).toHaveLength(3);
+    expect(emitted.map((e) => e.rooms)).toEqual([`tenant:${SLUG}`, 'session:ts-a', 'session:ts-b']);
+    for (const record of emitted) {
+      expect(record.event).toBe('table_merge.rejected');
+      expect(record.payload).toBe(payload);
+    }
   });
 });

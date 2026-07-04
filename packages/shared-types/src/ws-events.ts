@@ -65,6 +65,8 @@ export interface WsLateArrivalCreated {
     requesterName: string;
     visitContext?: string;
     expiresAt: string;
+    /** M2 (timeline): timestamp do ato (row created_at). */
+    occurredAt?: string;
   };
 }
 
@@ -78,6 +80,10 @@ export interface WsLateArrivalApproved {
     requesterName: string;
     /** New party size after the approval. */
     partySize: number;
+    /** M2 (timeline): timestamp do ato (decided_at). */
+    occurredAt?: string;
+    /** M2 (timeline): host que aprovou — null quando staff decidiu. */
+    decidedByCustomerId?: string | null;
   };
 }
 
@@ -89,6 +95,12 @@ export interface WsLateArrivalRejected {
     requesterCustomerId: string;
     /** Why: host_rejected | host_timeout | walkin_no_host. */
     reason: 'host_rejected' | 'host_timeout' | 'walkin_no_host';
+    /** M2 (timeline): timestamp do ato (decided_at). */
+    occurredAt?: string;
+    /** M2 (timeline): host que rejeitou — null quando staff decidiu. */
+    decidedByCustomerId?: string | null;
+    /** M2 (timeline): número da mesa — só presente quando o caller tem o valor real. */
+    tableNumber?: number;
   };
 }
 
@@ -97,6 +109,8 @@ export interface WsLateArrivalExpired {
   payload: {
     requestId: string;
     tableSessionId: string;
+    /** M2 (timeline): timestamp do ato (decided_at do sweep). */
+    occurredAt?: string;
   };
 }
 
@@ -159,6 +173,8 @@ export interface WsTableMergeCreated {
     originPartySize: number;
     targetPartySize: number;
     expiresAt: string;
+    /** M2 (timeline): timestamp de criação do request (row created_at). */
+    createdAt?: string;
   };
 }
 
@@ -182,6 +198,10 @@ export interface WsTableMergeApproved {
     side: 'a' | 'b' | 'both';
     status: TableMergeStatus;
     mergeId?: string;
+    /** M2 (timeline): timestamp do ato (decided_at / now() do lado que agiu). */
+    decidedAt?: string;
+    /** M2 (timeline): host que decidiu — validado server-side; null em staff override. */
+    decidedByCustomerId?: string | null;
   } & WsTableMergeLifecycleDetails;
 }
 
@@ -191,6 +211,10 @@ export interface WsTableMergeRejected {
     requestId: string;
     /** Which side rejected ('timeout' on auto-expiration). */
     rejectedBy: 'a' | 'b' | 'timeout';
+    /** M2 (timeline): timestamp do ato (decided_at / now()). */
+    decidedAt?: string;
+    /** M2 (timeline): host que rejeitou — ausente no timeout. */
+    decidedByCustomerId?: string | null;
   } & WsTableMergeLifecycleDetails;
 }
 
@@ -363,6 +387,17 @@ export interface WsOrderStatus {
     status: string;
     tableLabel?: string | null;
     timestamp: string;
+    /** M2 (timeline): sessão dona do pedido — correlação pro event-store. */
+    tableSessionId?: string;
+    /**
+     * M2 (timeline): ator da transição, derivado SEMPRE de identidade
+     * server-side (staff autenticado / session guard) — nunca de input do
+     * client. `id` fica null quando o ator é uma estação compartilhada
+     * (TV x-staff-key) ou um customer sem id resolvido.
+     */
+    changedBy?: { type: 'staff' | 'customer'; id: string | null };
+    /** M2 (timeline): staff que confirmou a entrega (só no 'delivered'). */
+    deliveredBy?: string;
   };
 }
 
@@ -373,6 +408,10 @@ export interface WsOrderClaimed {
     orderId: string;
     claimedBy: string;
     timestamp: string;
+    /** M2 (timeline): sessão dona do pedido. */
+    tableSessionId?: string;
+    /** M2 (timeline): label da mesa (ex.: "Mesa 3"). */
+    tableLabel?: string;
   };
 }
 
@@ -384,6 +423,10 @@ export interface WsWaiterCall {
     tableCode: string;
     reason?: string;
     timestamp: string;
+    /** M2 (timeline): sessão que abriu o chamado. */
+    tableSessionId?: string;
+    /** M2 (timeline): customer resolvido server-side (cookie) — null se anônimo. */
+    customerId?: string | null;
   };
 }
 
@@ -392,6 +435,12 @@ export interface WsWaiterAcknowledged {
   payload: {
     callId: string;
     timestamp: string;
+    /** M2 (timeline): sessão do chamado. */
+    tableSessionId?: string;
+    /** M2 (timeline): staff autenticado que atendeu (nome efetivo do banco). */
+    acknowledgedBy?: { id: string; name: string | null };
+    /** M2 (timeline): ETA prometida — antes só ia pro response REST. */
+    etaMinutes?: number | null;
   };
 }
 
@@ -407,6 +456,10 @@ export interface WsOrderHandoffCalled {
     targetWaiterId: string | null;
     targetWaiterName?: string | null;
     timestamp: string;
+    /** M2 (timeline): sessão dona do pedido. */
+    tableSessionId?: string;
+    /** M2 (timeline): staff que chamou — null quando foi a estação (TV sem x-staff-id). */
+    calledBy?: string | null;
   };
 }
 

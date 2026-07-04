@@ -258,6 +258,8 @@ export class TableMergeService {
           originPartySize: result.originPartySize,
           targetPartySize: result.targetPartySize,
           expiresAt: result.ttlExpiresAt,
+          // M2 (timeline): timestamp do ato (row created_at).
+          createdAt: result.createdAt,
         },
       );
     }
@@ -448,6 +450,12 @@ export class TableMergeService {
           status: fullyApproved ? 'approved' : 'pending',
           ...details,
           expiresAt: result.expiresAt,
+          // M2 (timeline): decided_at só existe quando consumado; aprovação
+          // parcial usa now() (o ato acabou de acontecer server-side).
+          decidedAt: result.decidedAt ?? new Date().toISOString(),
+          // Host que agiu AGORA (validado via resolveConsentSide) — não o
+          // COALESCE persistido do 1º decisor.
+          decidedByCustomerId,
         },
       );
     }
@@ -564,6 +572,10 @@ export class TableMergeService {
           rejectedBy,
           ...details,
           expiresAt: enriched.expiresAt,
+          // M2 (timeline): timestamp do ato + host que rejeitou (validado
+          // via resolveConsentSide acima).
+          decidedAt: enriched.decidedAt ?? new Date().toISOString(),
+          decidedByCustomerId,
         },
       );
       this.events.emitMergeCooldownStarted(
@@ -718,6 +730,9 @@ export class TableMergeService {
           requestId: result.id as string,
           side: 'both',
           status: 'approved',
+          // M2 (timeline): decided_at = now() do INSERT do override. Sem
+          // decidedByCustomerId — decisor é staff (audit fica na chain).
+          decidedAt: (result.decided_at as string | null) ?? new Date().toISOString(),
         },
       );
     }
@@ -868,6 +883,9 @@ export class TableMergeService {
             rejectedBy: 'timeout',
             ...details,
             expiresAt: enriched.expiresAt,
+            // M2 (timeline): decided_at carimbado pelo UPDATE de expiração.
+            // Timeout não tem decisor humano — sem decidedByCustomerId.
+            decidedAt: enriched.decidedAt ?? new Date().toISOString(),
           },
         );
       } catch {

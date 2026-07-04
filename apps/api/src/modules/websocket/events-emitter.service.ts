@@ -41,6 +41,9 @@ import type {
   WsStaffMessageRead,
   WsCourtesyCreated,
   WsCourtesyUpdated,
+  WsOrderStatus,
+  WsOrderClaimed,
+  WsWaiterAcknowledged,
   WsZonePauseStarted,
   WsZonePauseEnded,
   WsSessionFlagChanged,
@@ -61,11 +64,23 @@ export class EventsEmitterService {
 
   // --- Existing emit helpers (orders + waiter calls) ---
 
-  emitOrderStatusUpdate(slug: string, orderId: string, status: string, tableLabel?: string) {
+  /**
+   * M2 (timeline): `extra` é o "payload object" aditivo — campos novos e
+   * OPCIONAIS (tableSessionId/changedBy) nascem nos CALLERS e são
+   * repassados aqui. Rooms e wire name intocados.
+   */
+  emitOrderStatusUpdate(
+    slug: string,
+    orderId: string,
+    status: string,
+    tableLabel?: string,
+    extra?: Pick<WsOrderStatus['payload'], 'tableSessionId' | 'changedBy'>,
+  ) {
     this.server.to(`tenant:${slug}:waiter`).emit('order:status', {
       orderId,
       status,
       tableLabel,
+      ...extra,
       timestamp: new Date().toISOString(),
     });
 
@@ -73,6 +88,7 @@ export class EventsEmitterService {
       orderId,
       status,
       tableLabel,
+      ...extra,
       timestamp: new Date().toISOString(),
     });
   }
@@ -97,10 +113,17 @@ export class EventsEmitterService {
     });
   }
 
-  emitOrderClaimed(slug: string, orderId: string, claimedBy: string) {
+  /** M2 (timeline): `extra` aditivo — tableSessionId/tableLabel nascem no caller. */
+  emitOrderClaimed(
+    slug: string,
+    orderId: string,
+    claimedBy: string,
+    extra?: Pick<WsOrderClaimed['payload'], 'tableSessionId' | 'tableLabel'>,
+  ) {
     this.server.to(`tenant:${slug}:waiter`).emit('order:claimed', {
       orderId,
       claimedBy,
+      ...extra,
       timestamp: new Date().toISOString(),
     });
   }
@@ -115,6 +138,10 @@ export class EventsEmitterService {
       zoneName?: string | null;
       targetWaiterId: string | null;
       targetWaiterName?: string | null;
+      /** M2 (timeline): sessão dona do pedido (aditivo, opcional). */
+      tableSessionId?: string;
+      /** M2 (timeline): staff que chamou — null quando estação/TV. */
+      calledBy?: string | null;
     },
   ) {
     const payload = {
@@ -204,6 +231,10 @@ export class EventsEmitterService {
       tableLabel: string;
       tableCode: string;
       reason?: string;
+      /** M2 (timeline): sessão que abriu o chamado (aditivo, opcional). */
+      tableSessionId?: string;
+      /** M2 (timeline): customer resolvido server-side — null se anônimo. */
+      customerId?: string | null;
     },
   ) {
     this.server.to(`tenant:${slug}:waiter`).emit('waiter:call', {
@@ -212,13 +243,27 @@ export class EventsEmitterService {
     });
   }
 
-  emitWaiterCallAcknowledged(slug: string, callId: string, sessionId: string) {
+  /**
+   * M2 (timeline): payload agora carrega `tableSessionId` (o próprio
+   * `sessionId` que sempre chegou do caller como room key) + `extra`
+   * aditivo (acknowledgedBy/etaMinutes — antes só iam pro response REST).
+   */
+  emitWaiterCallAcknowledged(
+    slug: string,
+    callId: string,
+    sessionId: string,
+    extra?: Pick<WsWaiterAcknowledged['payload'], 'acknowledgedBy' | 'etaMinutes'>,
+  ) {
     this.server.to(`session:${sessionId}`).emit('waiter:acknowledged', {
       callId,
+      tableSessionId: sessionId,
+      ...extra,
       timestamp: new Date().toISOString(),
     });
     this.server.to(`tenant:${slug}:waiter`).emit('waiter:acknowledged', {
       callId,
+      tableSessionId: sessionId,
+      ...extra,
       timestamp: new Date().toISOString(),
     });
   }
