@@ -46,6 +46,7 @@ import { ContinuationModule } from './modules/continuation/continuation.module';
 import { StaffAuthModule } from './modules/staff-auth/staff-auth.module';
 import { ManagerAccountModule } from './modules/manager-account/manager-account.module';
 import { SalonModule } from './modules/salon/salon.module';
+import { SessionTimelineModule } from './modules/session-timeline/session-timeline.module';
 
 @Module({
   imports: [
@@ -96,6 +97,10 @@ import { SalonModule } from './modules/salon/salon.module';
     ContinuationModule,
     ManagerAccountModule,
     SalonModule,
+    // M6 (timeline): já entra no graph via WebsocketModule (tap), mas o
+    // import explícito registra que o módulo agora expõe rotas HTTP
+    // (:slug/sessions/:id/timeline e :slug/tables/:n/sessions).
+    SessionTimelineModule,
   ],
   controllers: [AppController],
 })
