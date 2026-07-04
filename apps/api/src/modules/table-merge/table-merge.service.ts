@@ -2,16 +2,12 @@ import { Injectable, HttpException, HttpStatus, Logger, Optional } from '@nestjs
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
-
-/** Default merge request TTL: 60s (host has to react). */
-const REQUEST_TTL_SECONDS = 60;
-
-/**
- * Cooldown applied after a rejection or timeout to throttle the requester so
- * the target table is not spammed. 10 min keeps things calm without locking
- * the requester out of the whole night.
- */
-const COOLDOWN_MINUTES = 10;
+import {
+  COOLDOWN_MINUTES,
+  MERGE_CONSENT_MESSAGES,
+  REQUEST_TTL_SECONDS,
+  resolveConsentSide,
+} from './merge-consent-state-machine';
 
 interface CooldownRow {
   id: string;
@@ -483,7 +479,7 @@ export class TableMergeService {
   async approve(id: string, decidedByCustomerId?: string, slug?: string) {
     if (!decidedByCustomerId) {
       throw new HttpException(
-        'decidedByCustomerId obrigatorio para identificar o lado da junçao.',
+        MERGE_CONSENT_MESSAGES.deciderRequiredApprove,
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -510,16 +506,9 @@ export class TableMergeService {
       );
     }
     const { src_host, tgt_host } = sideRows[0];
-    let side: 'a' | 'b';
-    if (src_host && src_host === decidedByCustomerId) {
-      side = 'a';
-    } else if (tgt_host && tgt_host === decidedByCustomerId) {
-      side = 'b';
-    } else {
-      throw new HttpException(
-        'Apenas o host de cada mesa pode aprovar a juncao.',
-        HttpStatus.FORBIDDEN,
-      );
+    const side = resolveConsentSide(src_host, tgt_host, decidedByCustomerId);
+    if (!side) {
+      throw new HttpException(MERGE_CONSENT_MESSAGES.onlyHostCanApprove, HttpStatus.FORBIDDEN);
     }
 
     // Conditional stamp: COALESCE preserves the existing timestamp if the
@@ -598,10 +587,7 @@ export class TableMergeService {
     // bloqueava o host real de retentar. approve já tinha o check;
     // reject ficou esquecido.
     if (!decidedByCustomerId) {
-      throw new HttpException(
-        'decidedByCustomerId obrigatorio para identificar o host.',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException(MERGE_CONSENT_MESSAGES.deciderRequiredReject, HttpStatus.BAD_REQUEST);
     }
     const sideRows = (await this.tenantConn.query(
       `SELECT src.host_customer_id AS src_host,
@@ -619,16 +605,9 @@ export class TableMergeService {
       );
     }
     const { src_host, tgt_host } = sideRows[0];
-    let rejectedBy: 'a' | 'b';
-    if (src_host && decidedByCustomerId === src_host) {
-      rejectedBy = 'a';
-    } else if (tgt_host && decidedByCustomerId === tgt_host) {
-      rejectedBy = 'b';
-    } else {
-      throw new HttpException(
-        'Apenas o host de cada mesa pode rejeitar a juncao.',
-        HttpStatus.FORBIDDEN,
-      );
+    const rejectedBy = resolveConsentSide(src_host, tgt_host, decidedByCustomerId);
+    if (!rejectedBy) {
+      throw new HttpException(MERGE_CONSENT_MESSAGES.onlyHostCanReject, HttpStatus.FORBIDDEN);
     }
 
     const result = await this.tenantConn.transaction(async (tx) => {
