@@ -229,11 +229,18 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // por segundo (CPU spend em timingSafeEqual + Redis get). 30
     // tentativas por 60s é folgado pra reconnect normal mas mata DoS.
     const ip = this.handshakeIp(client);
-    const handshakeKey = `ws:handshake:${ip}`;
-    const attempts = await this.redis.incr(handshakeKey);
-    if (attempts === 1) {
-      await this.redis.expire(handshakeKey, 60);
-    }
+    // Auditoria 2026-07-03: (a) chave escopada por tenant+IP — o restaurante
+    // inteiro sai pelo mesmo IP (NAT) e um tenant não pode travar outro;
+    // (b) incrWithExpiry (Lua atômico) — INCR+EXPIRE separados deixavam a
+    // chave SEM TTL quando o EXPIRE falhava = lockout pra sempre;
+    // (c) handshake autenticado devolve a cota lá embaixo (refund) — 30+
+    // devices reconectando pós-deploy não podem travar a mesa.
+    const tenantHint =
+      (client.handshake.headers['x-tenant-slug'] as string) ??
+      (client.handshake.auth?.tenantSlug as string) ??
+      'shared';
+    const handshakeKey = `ws:handshake:${tenantHint}:${ip}`;
+    const attempts = await this.redis.incrWithExpiry(handshakeKey, 60);
     if (attempts > 30) {
       this.logger.warn(`WS handshake rate-limit hit: ${ip}`);
       client.emit('error', { message: 'Rate limit. Tente novamente em 60s.' });
@@ -299,6 +306,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.join(`tenant:${tenantSlug}`);
         this.logger.log(`Staff client connected: ${client.id}`);
         this.logger.log(`Client ${client.id} auto-joined staff room ${staffId}`);
+        // Handshake autenticado devolve a cota — só falha consome.
+        await this.redis.decr(handshakeKey);
         return;
       }
     }
@@ -331,6 +340,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             client.data.customerId = session.customerId;
           }
           this.logger.log(`Session client connected: ${client.id}`);
+          // Handshake autenticado devolve a cota — só falha consome.
+          await this.redis.decr(handshakeKey);
           return;
         }
       }
