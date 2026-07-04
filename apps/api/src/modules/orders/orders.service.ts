@@ -9,6 +9,7 @@ import {
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { BillingService } from '../billing/billing.service';
 import { planTransition } from './order-state-machine';
+import { ETA_QUEUED_STATUSES, ETA_STAGE_RANGE, computeEtaRange } from './eta-engine';
 import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -37,25 +38,6 @@ const PENDING_CONFIRMATION_WINDOW_SECONDS = 15;
 //     prioridade muda a posição e portanto o tempo;
 //  3. paralelismo da cozinha — pedidos à frente são divididos pelas linhas
 //     que preparam em paralelo.
-// Valores são heurística de dev (TODO: configuráveis por restaurante nas
-// settings junto com meta_minutes do KDS).
-const ETA_KITCHEN_PARALLEL_LINES = 2;
-const ETA_PER_QUEUED_ORDER_MIN = 4;
-const ETA_PER_QUEUED_ORDER_MAX = 7;
-const ETA_STAGE_RANGE: Record<string, [number, number]> = {
-  pending_confirmation: [10, 16],
-  received: [10, 16],
-  in_progress: [5, 9],
-  ready: [2, 5],
-  in_transit: [1, 3],
-  // aliases legados
-  open: [10, 16],
-  confirmed: [10, 16],
-  preparing: [5, 9],
-};
-// Estágios em que o pedido ainda disputa a fila da cozinha (a partir de
-// in_progress ele já está no fogão — fila à frente deixa de somar).
-const ETA_QUEUED_STATUSES = new Set(['pending_confirmation', 'received', 'open', 'confirmed']);
 
 export interface CreateOrderItemDto {
   menuItemId: string;
@@ -864,30 +846,6 @@ export class OrdersService {
     return ETA_STAGE_RANGE.received;
   }
 
-  private computeEtaRange(
-    status: string,
-    aheadCount: number,
-    base: [number, number],
-  ): { min: number; max: number } | null {
-    const stage = ETA_STAGE_RANGE[status];
-    if (!stage) return null; // delivered/cancelled — não há espera
-    let [min, max] = stage;
-    // Estágios de preparo derivam do range BASE configurado pela cozinha:
-    // na fila = base cheio; no fogão = metade restante. Pronto/a caminho
-    // são handoff/deslocamento — independem do tempo de preparo.
-    if (ETA_QUEUED_STATUSES.has(status)) {
-      [min, max] = base;
-    } else if (status === 'in_progress' || status === 'preparing') {
-      [min, max] = [Math.max(1, Math.ceil(base[0] / 2)), Math.max(2, Math.ceil(base[1] / 2))];
-    }
-    if (ETA_QUEUED_STATUSES.has(status) && aheadCount > 0) {
-      const slots = Math.ceil(aheadCount / ETA_KITCHEN_PARALLEL_LINES);
-      min += slots * ETA_PER_QUEUED_ORDER_MIN;
-      max += slots * ETA_PER_QUEUED_ORDER_MAX;
-    }
-    return { min, max };
-  }
-
   /**
    * Anota pedidos do cliente com ETA dinâmica (min/max) + posição na fila.
    * Uma consulta de snapshot por chamada; falha de snapshot degrada pra
@@ -910,7 +868,7 @@ export class OrdersService {
     }
     return orders.map((o) => {
       const ahead = position.get(o.id) ?? 0;
-      const eta = this.computeEtaRange(o.status, ahead, base);
+      const eta = computeEtaRange(o.status, ahead, base);
       return {
         ...o,
         etaMin: eta?.min ?? null,
