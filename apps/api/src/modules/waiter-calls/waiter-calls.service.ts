@@ -348,13 +348,26 @@ export class WaiterCallsService {
     if (call.status === 'cancelled') {
       return { callId, status: 'cancelled' };
     }
-    if (!ACTIVE_STATUSES.includes(call.status)) {
+    // P1-R (re-scan 2026-07-03): 'acknowledged' NÃO pode ser cancelado — o
+    // garçom já está a caminho (é o que o docstring promete). O gate antigo
+    // usava `ACTIVE_STATUSES` (que INCLUI 'acknowledged'), então acknowledged
+    // passava e caía no UPDATE sem `WHERE status='pending'`, cancelando um
+    // chamado já atendido sem NENHUM WS pro garçom — ele continuava andando
+    // pra um chamado que sumiu silenciosamente. Barrar é o conservador.
+    if (call.status === 'acknowledged') {
+      throw new BadRequestException('Chamado já atendido, não pode cancelar.');
+    }
+    if (call.status !== 'pending') {
+      // resolved/qualquer outro estado terminal — nada a cancelar.
       return { callId, status: call.status };
     }
 
+    // `WHERE status = 'pending'` como guarda de corrida: se o garçom atender
+    // no intervalo entre o SELECT e este UPDATE, o cancelamento não flipa
+    // um chamado já 'acknowledged'.
     await this.tenantConn.query(
       `UPDATE waiter_calls SET status = 'cancelled', cancelled_at = now()
-       WHERE id = $1`,
+       WHERE id = $1 AND status = 'pending'`,
       [callId],
     );
 
