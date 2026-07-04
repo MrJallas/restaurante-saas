@@ -769,6 +769,16 @@ export class TableMergeService {
 
   async getById(id: string) {
     await this.expireOverdueRequests();
+    return this.fetchById(id);
+  }
+
+  /**
+   * Busca enriquecida SEM o sweep de expiração. O sweep enriquece cada
+   * request expirado por aqui — se chamasse `getById` (que re-executa o
+   * sweep), qualquer shape inesperado no retorno do UPDATE viraria recursão
+   * mútua infinita (OOM 2026-07-04, ver table-merge.expire.test.ts).
+   */
+  private async fetchById(id: string) {
     const rows = (await this.tenantConn.query(
       `SELECT mr.*,
               CAST(NULLIF(regexp_replace(src_t.code, '[^0-9]', '', 'g'), '') AS INT) AS origin_table_number,
@@ -830,15 +840,21 @@ export class TableMergeService {
   }
 
   private async expireOverdueRequests() {
-    const expired = (await this.tenantConn.query(
-      `UPDATE table_merge_requests
-          SET status = 'expired',
-              decided_at = now(),
-              updated_at = now()
-        WHERE status = 'pending'
-          AND ttl_expires_at < now()
-        RETURNING id`,
-    )) as Array<{ id: string }>;
+    // unwrapRows é obrigatório: UPDATE…RETURNING chega como `[rows, count]`
+    // (pg/TypeORM). O cast cru fazia `expired.length === 0` nunca disparar
+    // e o for iterar `[[], 0]` → getById(undefined) → re-entrada no sweep →
+    // recursão infinita até OOM (2026-07-04).
+    const expired = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `UPDATE table_merge_requests
+            SET status = 'expired',
+                decided_at = now(),
+                updated_at = now()
+          WHERE status = 'pending'
+            AND ttl_expires_at < now()
+          RETURNING id`,
+      ),
+    );
 
     // Timeout precisa de evento: a waiting-approval e o assistente esperam
     // `table_merge.rejected` com rejectedBy='timeout' (o FE já tratava esse
@@ -848,7 +864,7 @@ export class TableMergeService {
     if (!slug || !this.events || expired.length === 0) return;
     for (const row of expired.slice(0, 10)) {
       try {
-        const enriched = await this.getById(row.id);
+        const enriched = await this.fetchById(row.id);
         const details = this.tableMergeLifecyclePayload({
           originSessionId: enriched.sourceTableSessionId,
           targetSessionId: enriched.targetTableSessionId,
