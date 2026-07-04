@@ -1211,10 +1211,31 @@ export class OrdersService {
    * entrega ativa remove o pedido da TV para evitar chamada duplicada.
    */
   async getActiveOrdersForKds(station: 'kitchen' | 'bar') {
+    // FASE 3 · cache-aside (decisão Caleb: caches alto impacto, KDS/TV
+    // primeiro): as TVs fazem polling de 5s por estação na query mais
+    // pesada do sistema. TTL 3s = staleness máx menor que o próprio
+    // polling; o WS realtime segue empurrando updates. Fail-open: Redis
+    // fora → sweep + query direto (cache nunca derruba a TV). No hit os
+    // timestamps voltam como string ISO (JSON) em vez de Date — o shape
+    // HTTP é idêntico, o Nest já serializava Date pra ISO.
+    const cacheKey = `cache:kds:${this.tenantConn.getTenantSlug() ?? 'unknown'}:${station}`;
+    try {
+      const cached = await this.redis.get(cacheKey);
+      if (cached) return JSON.parse(cached) as Array<Record<string, unknown>>;
+    } catch {
+      /* fail-open */
+    }
+
     // Sweep transversal fica aqui (usa confirmOrder do orders.service); a
     // leitura em si mora no KdsQueryService (FASE 2 · decomposição).
     await this.sweepAutoConfirmThrottled().catch(() => undefined);
-    return this.kdsQuery.getActiveOrdersForKds(station);
+    const rows = await this.kdsQuery.getActiveOrdersForKds(station);
+    try {
+      await this.redis.set(cacheKey, JSON.stringify(rows), 3);
+    } catch {
+      /* fail-open */
+    }
+    return rows;
   }
 
   async getKitchenQueue(): Promise<KitchenQueueItem[]> {
