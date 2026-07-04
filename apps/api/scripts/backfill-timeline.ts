@@ -33,7 +33,7 @@ import { MongoClient, MongoBulkWriteError } from 'mongodb';
 import type { Collection } from 'mongodb';
 import type { TimelineEntry, TimelineKind } from '@restaurant/shared-types';
 import { TIMELINE_KINDS } from '../src/modules/session-timeline/timeline-kinds';
-import { BACKFILL_SOURCES } from '../src/modules/session-timeline/backfill-sources';
+import { collectTenantEntries } from './timeline-collect';
 
 /**
  * Doc persistido — MESMO shape do TimelineDoc do TimelineStoreService (M4).
@@ -179,56 +179,29 @@ async function backfillTenant(
   tenant: TenantRow,
   args: CliArgs,
 ): Promise<TenantReport> {
-  // schema_name já foi validado por regex (SQL + SCHEMA_RE) — interpolação segura.
-  await client.query(`SET search_path = '${tenant.schema_name}'`);
-
-  const existing = new Set(
-    (
-      await client.query(
-        'SELECT table_name FROM information_schema.tables WHERE table_schema = $1',
-        [tenant.schema_name],
-      )
-    ).rows.map((r: { table_name: string }) => r.table_name),
-  );
+  // Núcleo compartilhado com o verify: computa a verdade-SQL do tenant
+  // (SET search_path, tabelas existentes, SELECTs + mappers → entries).
+  const collected = await collectTenantEntries(client, tenant.schema_name, args.session);
 
   const stats: SourceStats[] = [];
-  const byKind = new Map<TimelineKind, number>();
-
-  for (const source of BACKFILL_SOURCES) {
-    if (!existing.has(source.table)) {
-      // Tenant sem a migration da fonte — pula, não é erro.
-      stats.push({ table: source.table, rows: null, entries: 0, upserted: 0, matched: 0 });
-      continue;
-    }
-
-    const sql = args.session ? `${source.baseSql} ${source.sessionWhere}` : source.baseSql;
-    const result = await client.query(sql, args.session ? [args.session] : []);
-
-    const entries: TimelineEntry[] = [];
-    for (const row of result.rows as Record<string, unknown>[]) {
-      entries.push(...source.toEntries(row));
-    }
-    for (const entry of entries) {
-      byKind.set(entry.kind, (byKind.get(entry.kind) ?? 0) + 1);
-    }
-
+  for (const source of collected.sources) {
     let upserted = 0;
     let matched = 0;
-    if (!args.dryRun && entries.length > 0) {
+    if (!args.dryRun && source.entries.length > 0) {
       const col = await getTimelineCollection();
-      ({ upserted, matched } = await upsertEntries(col, entries, tenant.slug));
+      ({ upserted, matched } = await upsertEntries(col, source.entries, tenant.slug));
     }
 
     stats.push({
       table: source.table,
-      rows: result.rows.length,
-      entries: entries.length,
+      rows: source.rows,
+      entries: source.entries.length,
       upserted,
       matched,
     });
   }
 
-  return { stats, byKind };
+  return { stats, byKind: collected.byKind };
 }
 
 // ─── Relatório ─────────────────────────────────────────────────────────────
