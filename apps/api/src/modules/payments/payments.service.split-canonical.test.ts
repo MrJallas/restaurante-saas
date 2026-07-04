@@ -181,3 +181,64 @@ describe('requestPayment — "pagar minha parte" cobra a parte canônica do rate
     expect(res.amountCents).toBe(5_500);
   });
 });
+
+describe('requestPayment — split CUSTOM é table-canônico (soma = total da mesa)', () => {
+  // Mesa: Ana 6000 + compartilhado 4000 = 10000, taxa 10% → total 11000.
+  // No custom, os participantes dividem manualmente: Ana 7000, Beto+Carla
+  // 2000 cada. Soma = 11000 = total da mesa → aceito.
+  const customAllocations = [
+    { customerId: ANA, amountCents: 7_000 },
+    { customerId: BETO, amountCents: 2_000 },
+    { customerId: CARLA, amountCents: 2_000 },
+  ];
+  const baseOpts = {
+    serviceFeePct: '10.00',
+    tableItems: [
+      { subtotal_cents: 6_000, customer_id: ANA },
+      { subtotal_cents: 4_000, customer_id: null },
+    ],
+    participants: [ANA, BETO, CARLA],
+    visitForCustomer: { [ANA]: '22222222-2222-4222-8222-222222222222' },
+  };
+
+  it('cobra exatamente a allocation customizada do caller quando a soma bate', async () => {
+    const { service } = makeService(baseOpts);
+    const res = await service.requestPayment(SESSION, null, 'individual', 'pix', {
+      callerCustomerId: ANA,
+      splitMode: 'custom',
+      allocations: customAllocations,
+    });
+    expect(res.amountCents).toBe(7_000);
+  });
+
+  it('rejeita quando a soma das allocations não bate com o total da mesa (short-pay)', async () => {
+    const { service } = makeService(baseOpts);
+    await expect(
+      service.requestPayment(SESSION, null, 'individual', 'pix', {
+        callerCustomerId: ANA,
+        splitMode: 'custom',
+        // soma = 9000 ≠ 11000 → mesa a descoberto
+        allocations: [
+          { customerId: ANA, amountCents: 5_000 },
+          { customerId: BETO, amountCents: 2_000 },
+          { customerId: CARLA, amountCents: 2_000 },
+        ],
+      }),
+    ).rejects.toThrow(/Soma das aloca/i);
+  });
+
+  it('rejeita quando o allocation enviado do caller não bate com o que ele mesmo mandou (tamper)', async () => {
+    const { service } = makeService(baseOpts);
+    // O caller não aparece nas allocations enviadas → não achamos a parte dele.
+    await expect(
+      service.requestPayment(SESSION, null, 'individual', 'pix', {
+        callerCustomerId: ANA,
+        splitMode: 'custom',
+        allocations: [
+          { customerId: BETO, amountCents: 5_500 },
+          { customerId: CARLA, amountCents: 5_500 },
+        ],
+      }),
+    ).rejects.toThrow(/participante|sua parte/i);
+  });
+});

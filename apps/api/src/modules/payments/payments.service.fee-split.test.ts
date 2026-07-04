@@ -28,12 +28,21 @@ function fakePaymentsDb(opts: {
   individualSubtotal?: number;
   tableSubtotal?: number;
   visitForCustomer?: Record<string, string>;
+  /** Itens da conta da MESA p/ o rateio canônico do split custom. */
+  tableItems?: Array<{ subtotal_cents: number; customer_id: string | null }>;
+  participants?: string[];
 }) {
   const inserts: Array<{ params: unknown[] }> = [];
   const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
     const s = sql.replace(/\s+/g, ' ').trim();
     if (s.includes('SELECT service_fee_pct FROM settings')) {
       return [{ service_fee_pct: opts.serviceFeePct ?? '10.00' }];
+    }
+    if (s.includes('FROM session_participants')) {
+      return (opts.participants ?? []).map((cid) => ({ customer_id: cid }));
+    }
+    if (s.includes('FROM order_items oi')) {
+      return opts.tableItems ?? [];
     }
     if (s.startsWith('SELECT COALESCE(SUM(amount_cents)')) return [{ paid: '0' }];
     if (s.startsWith('SELECT COALESCE(SUM(total_cents)')) {
@@ -125,43 +134,43 @@ describe('requestPayment — "pagar minha parte" via reconhecimento', () => {
     expect(db.inserts[0].params[1]).toBe(VISIT);
   });
 
+  // custom é table-canônico: a conta da mesa (5000 + taxa 10% = 5500) com
+  // UMA participante (CUSTOMER) dona da conta inteira → parte dela = 5500.
+  // A soma das allocations tem que bater com o total da mesa COM taxa.
+  const soloTableOpts = {
+    tableItems: [{ subtotal_cents: 5_000, customer_id: CUSTOMER }],
+    participants: [CUSTOMER],
+    visitForCustomer: { [CUSTOMER]: VISIT },
+  };
+
   it('allocation é casada por customerId (short-pay do próprio caller rejeitado)', async () => {
-    const { service } = makeService({
-      individualSubtotal: 5_000,
-      visitForCustomer: { [CUSTOMER]: VISIT },
-    });
+    const { service } = makeService(soloTableOpts);
     await expect(
       service.requestPayment(SESSION, null, 'individual', 'pix', {
         callerCustomerId: CUSTOMER,
         splitMode: 'custom',
-        allocations: [{ customerId: CUSTOMER, amountCents: 5_200 }], // < 5.500 devido
+        allocations: [{ customerId: CUSTOMER, amountCents: 5_200 }], // < 5.500 total da mesa
       }),
-    ).rejects.toThrow(/abaixo do saldo/i);
+    ).rejects.toThrow(/Soma das aloca/i);
   });
 
   it('allocation sem a taxa embutida é short-pay (subtotal seco não basta)', async () => {
-    const { service } = makeService({
-      individualSubtotal: 5_000,
-      visitForCustomer: { [CUSTOMER]: VISIT },
-    });
+    const { service } = makeService(soloTableOpts);
     await expect(
       service.requestPayment(SESSION, null, 'individual', 'pix', {
         callerCustomerId: CUSTOMER,
         splitMode: 'custom',
         allocations: [{ customerId: CUSTOMER, amountCents: 5_000 }],
       }),
-    ).rejects.toThrow(/abaixo do saldo/i);
+    ).rejects.toThrow(/Soma das aloca/i);
   });
 
-  it('allocation acima do devido é clampada ao saldo real (com taxa)', async () => {
-    const { service } = makeService({
-      individualSubtotal: 5_000,
-      visitForCustomer: { [CUSTOMER]: VISIT },
-    });
+  it('allocation cuja soma bate com o total da mesa (com taxa) é aceita e cobrada', async () => {
+    const { service } = makeService(soloTableOpts);
     const res = await service.requestPayment(SESSION, null, 'individual', 'pix', {
       callerCustomerId: CUSTOMER,
       splitMode: 'custom',
-      allocations: [{ customerId: CUSTOMER, amountCents: 9_999 }],
+      allocations: [{ customerId: CUSTOMER, amountCents: 5_500 }],
     });
     expect(res.amountCents).toBe(5_500);
   });

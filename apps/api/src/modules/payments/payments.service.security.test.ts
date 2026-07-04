@@ -41,6 +41,17 @@ function fakeTenantConn(opts: {
     if (sql.includes('SELECT service_fee_pct FROM settings')) {
       return [{ service_fee_pct: '0' }]; // taxa zero: short-pay testado sem ruído de fee
     }
+    // 'custom' agora é table-canônico: computeSplit rateia a conta da MESA
+    // sobre os participantes aprovados e valida a soma das allocations. O
+    // fake devolve UMA participante (CUSTOMER) dona da conta inteira da mesa,
+    // então a "parte" canônica dela = outstandingCents. Short-pay = mandar
+    // allocation abaixo desse total.
+    if (sql.includes('FROM session_participants')) {
+      return [{ customer_id: CUSTOMER }];
+    }
+    if (sql.includes('FROM order_items oi')) {
+      return [{ subtotal_cents: opts.outstandingCents, customer_id: CUSTOMER }];
+    }
     if (sql.startsWith('SELECT COALESCE(SUM(total_cents)')) {
       // pg devolve SUM() como STRING (NUMERIC) — imitar o driver real.
       return [{ total: String(opts.outstandingCents) }];
@@ -159,8 +170,12 @@ describe('PaymentsService security (A04-PAY-01 / A04-PAY-02)', () => {
     });
   });
 
-  describe('A04-PAY-02: short-pay bloqueado no split individual', () => {
-    it('rejeita allocation abaixo do saldo devido (1 centavo por R$ 200)', async () => {
+  describe('A04-PAY-02: short-pay bloqueado no split customizado (table-canônico)', () => {
+    // custom agora é table-canônico: a conta da mesa (20000, taxa 0) tem UMA
+    // participante (CUSTOMER), então a "parte" canônica dela = 20000. A soma
+    // das allocations DEVE bater com o total da mesa — é o que barra o
+    // short-pay: mandar menos que o total deixa a mesa a descoberto.
+    it('rejeita soma das allocations abaixo do total da mesa (1 centavo por R$ 200)', async () => {
       const conn = fakeTenantConn({ outstandingCents: 20000 });
       const svc = new PaymentsService(conn, fakeRedis(), new BillingService(conn));
 
@@ -170,10 +185,10 @@ describe('PaymentsService security (A04-PAY-01 / A04-PAY-02)', () => {
           splitMode: 'custom',
           allocations: [{ customerId: CUSTOMER, amountCents: 1 }],
         }),
-      ).rejects.toThrow(/abaixo do saldo/i);
+      ).rejects.toThrow(/Soma das aloca/i);
     });
 
-    it('aceita allocation igual ao saldo devido', async () => {
+    it('aceita allocation cuja soma bate com o total da mesa', async () => {
       const conn = fakeTenantConn({ outstandingCents: 20000 });
       const svc = new PaymentsService(conn, fakeRedis(), new BillingService(conn));
 
@@ -185,16 +200,17 @@ describe('PaymentsService security (A04-PAY-01 / A04-PAY-02)', () => {
       expect(res.amountCents).toBe(20000);
     });
 
-    it('clampa allocation acima do saldo devido ao saldo real', async () => {
+    it('rejeita soma das allocations acima do total da mesa', async () => {
       const conn = fakeTenantConn({ outstandingCents: 20000 });
       const svc = new PaymentsService(conn, fakeRedis(), new BillingService(conn));
 
-      const res = await svc.requestPayment(SESSION, VISIT, 'individual', 'pix', {
-        callerCustomerId: CUSTOMER,
-        splitMode: 'custom',
-        allocations: [{ customerId: CUSTOMER, amountCents: 999999 }],
-      });
-      expect(res.amountCents).toBe(20000);
+      await expect(
+        svc.requestPayment(SESSION, VISIT, 'individual', 'pix', {
+          callerCustomerId: CUSTOMER,
+          splitMode: 'custom',
+          allocations: [{ customerId: CUSTOMER, amountCents: 999999 }],
+        }),
+      ).rejects.toThrow(/Soma das aloca/i);
     });
   });
 });

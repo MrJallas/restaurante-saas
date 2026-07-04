@@ -130,21 +130,35 @@ export class PaymentsService {
       // isso, um 2º request re-cobrava a conta inteira (double-charge).
       const settledForVisit = await this.sumSettled(tableSessionId, effectiveVisitId);
       const outstanding = billTotals.totalCents - settledForVisit;
-      if (options.splitMode === 'equal' || options.splitMode === 'by_item') {
+      if (
+        options.splitMode === 'equal' ||
+        options.splitMode === 'by_item' ||
+        options.splitMode === 'custom'
+      ) {
         // Decisão Caleb 2026-07-04: "pagar minha parte" cobra a parte
-        // CANÔNICA do rateio da mesa, recalculada server-side — o valor
+        // CANÔNICA do rateio da MESA, recalculada server-side — o valor
         // enviado precisa bater exatamente (o FE exibe o que o backend
-        // calculou).
+        // calculou). Para 'custom', o FE também manda as allocations de
+        // TODOS os participantes: o computeSplit valida que a soma bate com
+        // o total da mesa (com taxa) antes de aceitar a divisão — é assim
+        // que o short-pay (A04-PAY-02) fica barrado no modo customizado.
         if (!callerCustomerId) {
           throw new BadRequestException(
             'Não foi possível identificar você na divisão. Escaneie o QR da mesa novamente.',
           );
         }
-        const split = await this.computeSplit(tableSessionId, options.splitMode, []);
+        // custom precisa das allocations completas (a soma é validada contra
+        // o total da mesa dentro do computeSplit); equal/by_item ignoram.
+        const split = await this.computeSplit(
+          tableSessionId,
+          options.splitMode,
+          [],
+          options.splitMode === 'custom' ? options.allocations : undefined,
+        );
         const mine = split.allocations.find((a) => a.customerId === callerCustomerId);
         if (!mine) {
           throw new BadRequestException(
-            'Você não está entre os participantes aprovados desta divisão.',
+            'Você não está entre os participantes desta divisão. Atualize a tela e tente novamente.',
           );
         }
         const sent = options.allocations?.find((a) => a.customerId === callerCustomerId);
@@ -161,24 +175,6 @@ export class PaymentsService {
           serviceFeeCents: split.serviceFeeCents,
           totalCents: split.totalCents,
         };
-      } else if (options.splitMode && options.allocations?.length) {
-        // A allocation do caller casa por customerId (as allocations são
-        // chaveadas assim no FE) — antes casava por visitId e nunca batia.
-        const myAllocation = callerCustomerId
-          ? options.allocations.find((a) => a.customerId === callerCustomerId)
-          : undefined;
-        if (!myAllocation) {
-          throw new BadRequestException(
-            'Não encontrei a sua parte na divisão. Atualize a página e tente novamente.',
-          );
-        }
-        // A04-PAY-02 (short-pay): o allocation vem CRU do body (validado só
-        // por @Min/@Max no DTO). Clampamos ao saldo real e rejeitamos valor
-        // abaixo dele — pagar a menos nunca é fluxo válido do cliente.
-        if (myAllocation.amountCents < outstanding) {
-          throw new BadRequestException('Valor do pagamento individual abaixo do saldo devido.');
-        }
-        amountCents = Math.min(myAllocation.amountCents, outstanding);
       } else {
         amountCents = outstanding;
       }
