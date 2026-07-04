@@ -288,6 +288,38 @@ submitted_at IS NULL` — a resposta real do cliente COMPLETA a row do prompt
   da rehidratacao do SessionProvider no primeiro load (lazy compile em dev)
   e bounca pra home; no segundo load passa.
 
+Fatia 1A (2026-07-04, branch fix/framework-bugfixes) — cluster de dinheiro:
+
+- BillingService NOVO (`apps/api/src/modules/billing/`) e a fonte UNICA da
+  taxa de servico: le `settings.service_fee_pct` (migration 050 — nunca era
+  lida) e calcula subtotal/taxa/total. `GET /orders/bill` devolve o breakdown
+  (`subtotalCents`/`serviceFeePct`/`serviceFeeCents`; `totalCents` agora e
+  COM taxa) e `POST /payments` cobra o MESMO total. O FE nao inventa mais
+  taxa (SERVICE_RATE 0.1 removido de pagamento/ e dividir/).
+- "Pagar minha parte": caller resolvido server-side pelo cookie
+  `recognition_token` (CallerResolverService no PaymentsController); a
+  comanda (visit) e derivada de (session, customerId); allocation casa por
+  customerId (antes casava por visitId e NUNCA batia). Short-pay segue
+  barrado com o devido fee-inclusive; allocation sem dono = 400 explicito.
+- `PATCH /orders/:id/status` com caller session exige origem
+  `pending_confirmation`/`open` pra cancelar (mesma regra do cancelOrder) —
+  cliente cancelava em qualquer estagio burlando a janela de 15s. Staff
+  continua livre; repeat de cancel segue idempotente.
+- Carrinho misto: `revisar/` cria UM order POR billingMode (rollback dos ja
+  criados se um POST falhar); `confirmando/` aceita `orderIds=a,b` e
+  confirma/cancela todos (modo unico segue `orderId=`).
+- `getBill(mode=table)` agora filtra `billing_mode='table'` (mesma cerca do
+  payment e do perVisit) — a tela "Conta da mesa" somava pedidos de comanda
+  individual que o Pix nao cobrava.
+- GOTCHA de driver pego no E2E: pg devolve SUM()/NUMERIC como STRING;
+  `'790' + 79` virou `'79079'`. Coercao na fonte unica
+  (BillingService.applyServiceFee) e fakes de teste agora imitam o driver
+  devolvendo string.
+- Pendencia de PRODUTO pro dono (nao mexida): a tela `dividir/` rateia a
+  conta DA MESA entre participantes, mas o pagamento individual cobra so a
+  comanda individual do caller — se a parte rateada exceder a comanda, o
+  backend clampa pro devido individual. Alinhar semantica na fatia 1D/Balde 3.
+
 Por workspace:
 
 ```bash
