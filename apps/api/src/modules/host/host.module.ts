@@ -7,6 +7,7 @@ import { AlertsModule } from '../alerts/alerts.module';
 import { HostAssistController } from './host-assist.controller';
 import { HostController } from './host.controller';
 import { HostService } from './host.service';
+import { HostInboxService } from './host-inbox.service';
 import { HostWaitlistService } from './host-waitlist.service';
 
 /**
@@ -26,7 +27,7 @@ import { HostWaitlistService } from './host-waitlist.service';
   controllers: [HostController, HostAssistController],
   // Round 9 (B-NEW-33): HostOrManagerGuard registrado como provider pra
   // que Nest possa injetar TenantConnectionProvider (DI deps do guard).
-  providers: [HostService, HostWaitlistService, HostOrManagerGuard],
+  providers: [HostService, HostInboxService, HostWaitlistService, HostOrManagerGuard],
   exports: [HostService],
 })
 export class HostModule {}

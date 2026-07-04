@@ -13,6 +13,7 @@
 
 import { NotFoundException } from '@nestjs/common';
 import { HostService } from './host.service';
+import { HostInboxService } from './host-inbox.service';
 import { HostWaitlistService } from './host-waitlist.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 
@@ -67,7 +68,7 @@ function fakeDb(opts: { waiting?: FakeWaitlistRow[]; updateAffects?: number } = 
 }
 
 function makeService(conn: TenantConnectionProvider) {
-  return new HostService(conn, new HostWaitlistService(conn));
+  return new HostService(conn, new HostWaitlistService(conn), new HostInboxService(conn));
 }
 
 describe('Host waitlist — characterization', () => {
