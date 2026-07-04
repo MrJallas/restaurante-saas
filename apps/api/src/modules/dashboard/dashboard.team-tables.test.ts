@@ -11,6 +11,15 @@
 
 import { DashboardService } from './dashboard.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import type { RedisService } from '../../infra/redis/redis.service';
+
+// Cache-aside transparente (FASE 3): estes testes exercitam a query, não o
+// cache — Redis que sempre erra o get e ignora o set mantém cada chamada
+// batendo no fakeDb.
+const noCacheRedis = {
+  get: async () => null,
+  set: async () => {},
+} as unknown as RedisService;
 
 function fakeDb(opts: {
   teamRows?: Array<Record<string, unknown>>;
@@ -28,7 +37,7 @@ function fakeDb(opts: {
     }
     throw new Error(`fake dashboard: SQL não roteado: ${s}`);
   };
-  return { query } as unknown as TenantConnectionProvider;
+  return { query, getTenantSlug: () => 'restaurant_dev' } as unknown as TenantConnectionProvider;
 }
 
 describe('DashboardService.getTeamKpis — só métricas com fonte real', () => {
@@ -58,6 +67,7 @@ describe('DashboardService.getTeamKpis — só métricas com fonte real', () => 
           },
         ],
       }),
+      noCacheRedis,
     );
     const kpis = await service.getTeamKpis();
     expect(kpis.team).toHaveLength(2);
@@ -101,6 +111,7 @@ describe('DashboardService.getActiveTables — mesas com conta e alerta reais', 
           },
         ],
       }),
+      noCacheRedis,
     );
     const res = await service.getActiveTables();
     expect(res.tables[0]).toEqual({
@@ -118,6 +129,7 @@ describe('DashboardService.getActiveTables — mesas com conta e alerta reais', 
   it('sem meta configurada, lateOrders vem vazio (sem alerta inventado)', async () => {
     const service = new DashboardService(
       fakeDb({ kitchenEtaMax: null, activeRows: [], lateRows: [] }),
+      noCacheRedis,
     );
     const res = await service.getActiveTables();
     expect(res.lateOrders).toEqual([]);

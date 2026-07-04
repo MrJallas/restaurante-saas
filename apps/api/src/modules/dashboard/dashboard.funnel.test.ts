@@ -8,6 +8,15 @@
 
 import { DashboardService } from './dashboard.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import type { RedisService } from '../../infra/redis/redis.service';
+
+// Cache-aside transparente (FASE 3): estes testes exercitam a query, não o
+// cache — Redis que sempre erra o get e ignora o set mantém cada chamada
+// batendo no fakeDb.
+const noCacheRedis = {
+  get: async () => null,
+  set: async () => {},
+} as unknown as RedisService;
 
 function fakeDb(opts: {
   funnelRows?: Array<{
@@ -29,7 +38,7 @@ function fakeDb(opts: {
     }
     throw new Error(`fake dashboard: SQL não roteado: ${s}`);
   };
-  return { query } as unknown as TenantConnectionProvider;
+  return { query, getTenantSlug: () => 'restaurant_dev' } as unknown as TenantConnectionProvider;
 }
 
 describe('DashboardService.getOrderFunnel — funil real do dia', () => {
@@ -43,6 +52,7 @@ describe('DashboardService.getOrderFunnel — funil real do dia', () => {
           { stage: 'Em preparo', ord: 3, count: '38', median_min: '21.0', p95_min: '34.5' },
         ],
       }),
+      noCacheRedis,
     );
 
     const funnel = await service.getOrderFunnel();
@@ -69,6 +79,7 @@ describe('DashboardService.getOrderFunnel — funil real do dia', () => {
           { stage: 'Em preparo', ord: 3, count: '5', median_min: '40.0', p95_min: '55.0' },
         ],
       }),
+      noCacheRedis,
     );
     const funnel = await service.getOrderFunnel();
     expect(funnel.stages[0].ok).toBe(true);
@@ -76,7 +87,7 @@ describe('DashboardService.getOrderFunnel — funil real do dia', () => {
   });
 
   it('dia sem transições → stages vazio (a tela mostra empty-state, não demo)', async () => {
-    const service = new DashboardService(fakeDb({ funnelRows: [] }));
+    const service = new DashboardService(fakeDb({ funnelRows: [] }), noCacheRedis);
     const funnel = await service.getOrderFunnel();
     expect(funnel.stages).toEqual([]);
   });

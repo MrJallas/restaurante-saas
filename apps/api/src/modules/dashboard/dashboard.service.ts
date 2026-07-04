@@ -1,9 +1,43 @@
 import { Injectable } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { RedisService } from '../../infra/redis/redis.service';
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+  constructor(
+    private readonly tenantConn: TenantConnectionProvider,
+    private readonly redis: RedisService,
+  ) {}
+
+  /**
+   * FASE 3 · cache-aside das leituras do dashboard (mesmo padrão provado no
+   * MenuService). Duas faixas de TTL por volatilidade:
+   *  - AO VIVO (10s): funnel/team-kpis/active-tables/overview mudam a cada
+   *    pedido e o manager observa em tempo quase-real; 10s absorve o burst
+   *    de refresh do painel sem esconder mudança por muito tempo.
+   *  - ANALÍTICO (60s): revenue/top-items/feedback/ai-usage são séries
+   *    históricas (janelas de dias); 60s de atraso é irrelevante e alivia
+   *    bem mais o Postgres.
+   * Métodos com argumento (getRevenueChart(days), getTopItems(limit)) põem o
+   * arg na key — como o MenuService faz com items:<catId>. Fail-open dos dois
+   * lados (get E set em try/catch): Redis fora → query direto.
+   */
+  private async cached<T>(view: string, ttlSeconds: number, load: () => Promise<T>): Promise<T> {
+    const key = `cache:dash:${this.tenantConn.getTenantSlug() ?? 'unknown'}:${view}`;
+    try {
+      const hit = await this.redis.get(key);
+      if (hit) return JSON.parse(hit) as T;
+    } catch {
+      /* fail-open */
+    }
+    const fresh = await load();
+    try {
+      await this.redis.set(key, JSON.stringify(fresh), ttlSeconds);
+    } catch {
+      /* fail-open */
+    }
+    return fresh;
+  }
 
   /**
    * Funil real do dia (decisão Caleb 2026-07-04, gate 1D): tempos por
@@ -11,6 +45,20 @@ export class DashboardService {
    * kitchen_eta configurado — sem meta, sem julgamento inventado.
    */
   async getOrderFunnel(): Promise<{
+    stages: Array<{
+      stage: string;
+      count: number;
+      medianMinutes: number;
+      p95Minutes: number;
+      ok: boolean;
+      note: string;
+    }>;
+  }> {
+    // AO VIVO · TTL 10s (muda a cada mudança de status de pedido).
+    return this.cached('funnel', 10, () => this.loadOrderFunnel());
+  }
+
+  private async loadOrderFunnel(): Promise<{
     stages: Array<{
       stage: string;
       count: number;
@@ -98,6 +146,22 @@ export class DashboardService {
       ratingsCount: number;
     }>;
   }> {
+    // AO VIVO · TTL 10s (calls/deliveries do dia sobem em tempo real).
+    return this.cached('team-kpis', 10, () => this.loadTeamKpis());
+  }
+
+  private async loadTeamKpis(): Promise<{
+    team: Array<{
+      staffId: string;
+      name: string;
+      role: string;
+      callsAcknowledged: number;
+      avgResponseMinutes: number | null;
+      deliveries: number;
+      avgRating: number | null;
+      ratingsCount: number;
+    }>;
+  }> {
     const rows = (await this.tenantConn.query(
       `SELECT s.id AS staff_id, s.name, s.role,
               COUNT(DISTINCT wc.id)::int AS calls_acknowledged,
@@ -175,6 +239,27 @@ export class DashboardService {
     }>;
     kitchenEtaMaxMinutes: number | null;
   }> {
+    // AO VIVO · TTL 10s (idade da mesa/subtotal andam com cada pedido).
+    return this.cached('active-tables', 10, () => this.loadActiveTables());
+  }
+
+  private async loadActiveTables(): Promise<{
+    tables: Array<{
+      sessionId: string;
+      tableLabel: string;
+      tableNumber: number;
+      openedMinutes: number;
+      people: number;
+      subtotalCents: number;
+    }>;
+    lateOrders: Array<{
+      orderId: string;
+      tableLabel: string;
+      minutesInPrep: number;
+      itemCount: number;
+    }>;
+    kitchenEtaMaxMinutes: number | null;
+  }> {
     const activeRows = (await this.tenantConn.query(
       `SELECT ts.id AS session_id, t.label AS table_label,
               COALESCE(NULLIF(regexp_replace(t.code, '\\D', '', 'g'), ''), '0')::int AS table_number,
@@ -233,6 +318,11 @@ export class DashboardService {
   }
 
   async getOverview() {
+    // AO VIVO · TTL 10s (pedidos/receita de hoje sobem em tempo real).
+    return this.cached('overview', 10, () => this.loadOverview());
+  }
+
+  private async loadOverview() {
     // Today's stats
     const todayOrders = (await this.tenantConn.query(
       `SELECT COUNT(*) as count, COALESCE(SUM(total_cents), 0) as revenue
@@ -268,6 +358,11 @@ export class DashboardService {
   }
 
   async getRevenueChart(days = 7) {
+    // ANALÍTICO · TTL 60s (série histórica de dias; arg entra na key).
+    return this.cached(`revenue:${days}`, 60, () => this.loadRevenueChart(days));
+  }
+
+  private async loadRevenueChart(days: number) {
     const rows = (await this.tenantConn.query(
       `SELECT DATE(created_at) as date, COALESCE(SUM(total_cents), 0) as revenue, COUNT(*) as orders
        FROM orders
@@ -285,6 +380,11 @@ export class DashboardService {
   }
 
   async getTopItems(limit = 10) {
+    // ANALÍTICO · TTL 60s (ranking acumulado; arg entra na key).
+    return this.cached(`top-items:${limit}`, 60, () => this.loadTopItems(limit));
+  }
+
+  private async loadTopItems(limit: number) {
     return this.tenantConn.query(
       `SELECT mi.id, mi.name, mi.price_cents, mi.total_orders, mc.name as category_name
        FROM menu_items mi
@@ -296,6 +396,11 @@ export class DashboardService {
   }
 
   async getFeedbackSummary() {
+    // ANALÍTICO · TTL 60s (distribuição/comentários históricos, sem janela do dia).
+    return this.cached('feedback', 60, () => this.loadFeedbackSummary());
+  }
+
+  private async loadFeedbackSummary() {
     const distribution = (await this.tenantConn.query(
       `SELECT overall_rating, COUNT(*) as count
        FROM feedbacks
@@ -316,6 +421,11 @@ export class DashboardService {
   }
 
   async getAiUsage() {
+    // ANALÍTICO · TTL 60s (agregado de 30 dias de uso de IA).
+    return this.cached('ai-usage', 60, () => this.loadAiUsage());
+  }
+
+  private async loadAiUsage() {
     const rows = (await this.tenantConn.query(
       `SELECT COUNT(*) as total_messages,
               SUM(tokens_in + tokens_out) as total_tokens,
