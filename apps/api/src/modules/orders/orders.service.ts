@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { BillingService } from '../billing/billing.service';
+import { planTransition } from './order-state-machine';
 import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -23,19 +24,6 @@ const IDEMPOTENCY_TTL_SECONDS = 5 * 60;
 // Valid order status transitions. `pending_confirmation` is the transient state
 // entered by POST /orders before the kitchen sees it. Auto-confirmed after the
 // 15s window via the sweep job, or promoted manually via PATCH /confirm.
-const VALID_TRANSITIONS: Record<string, string[]> = {
-  pending_confirmation: ['received', 'cancelled'],
-  received: ['in_progress', 'cancelled'],
-  in_progress: ['ready', 'cancelled'],
-  ready: ['in_transit', 'delivered', 'cancelled'],
-  in_transit: ['delivered', 'cancelled'],
-  delivered: [],
-  cancelled: [],
-  // legacy aliases for forward-compat while we migrate existing rows
-  open: ['confirmed', 'received', 'cancelled'],
-  confirmed: ['preparing', 'in_progress', 'cancelled'],
-  preparing: ['ready', 'cancelled'],
-};
 
 const PENDING_CONFIRMATION_WINDOW_SECONDS = 15;
 
@@ -2190,47 +2178,16 @@ export class OrdersService {
     const tableSessionId = orderRows[0].table_session_id;
     const currentStatus = orderRows[0].status;
 
-    // Round 7 (B-NEW-24): branch session vs staff. Customer só pode
-    // transicionar pra `cancelled` E só em ordens da sua própria mesa.
-    // Staff continua livre. Sem este check: customer cancelava/marcava
-    // delivered qualquer order do tenant.
-    if (actor?.actorType === 'session') {
-      if (newStatus !== 'cancelled') {
-        throw new ForbiddenException(
-          'Customer só pode cancelar pedido. Mude de status só permitido pra staff.',
-        );
-      }
-      if (!actor.sessionTableId || actor.sessionTableId !== tableSessionId) {
-        throw new ForbiddenException('Pedido não pertence à sua mesa.');
-      }
-      // Mesma regra de ORIGEM do cancelOrder dedicado: cliente só cancela
-      // dentro da janela de confirmação. Sem isto o PATCH genérico burlava
-      // os 15s (VALID_TRANSITIONS permite cancelled de received/ready/…,
-      // mas essas transições são do staff). Repeat de já-cancelado segue
-      // pro retorno idempotente abaixo.
-      if (
-        currentStatus !== 'cancelled' &&
-        !['pending_confirmation', 'open'].includes(currentStatus)
-      ) {
-        throw new BadRequestException(
-          'Pedido ja foi enviado para a cozinha e nao pode ser cancelado aqui.',
-        );
-      }
-    }
-
-    // Idempotência: se já está no status alvo, não re-transiciona nem duplica
-    // history. Cobre tanto um repeat quanto o "perdedor" de uma corrida que
-    // chega aqui já vendo o estado final.
-    if (currentStatus === newStatus) {
+    // FASE 2 · 2A: a validação vive na máquina de estados pura
+    // (order-state-machine.ts) — mesmo comportamento, um lugar só.
+    const plan = planTransition({
+      currentStatus,
+      newStatus,
+      orderTableSessionId: tableSessionId,
+      actor,
+    });
+    if (plan.idempotent) {
       return { orderId, previousStatus: currentStatus, newStatus };
-    }
-
-    const allowed = VALID_TRANSITIONS[currentStatus] || [];
-
-    if (!allowed.includes(newStatus)) {
-      throw new BadRequestException(
-        `Transicao invalida: ${currentStatus} -> ${newStatus}. Permitidos: ${allowed.join(', ')}`,
-      );
     }
 
     // CAS atômico (mesmo padrão de confirmOrder/cancelOrder): UPDATE com
