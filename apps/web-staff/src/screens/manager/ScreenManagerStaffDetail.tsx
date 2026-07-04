@@ -25,7 +25,12 @@ import {
   MBottomNav,
   Icon,
 } from '../../components/manager';
-import { manager, type StaffPerformance, type StaffRosterEntry } from '../../lib/api/manager';
+import {
+  manager,
+  type StaffPerformance,
+  type StaffResetPinResponse,
+  type StaffRosterEntry,
+} from '../../lib/api/manager';
 
 type StaffComparisonMetric = NonNullable<StaffPerformance['teamComparison']>[number]['metric'];
 
@@ -136,6 +141,27 @@ export function ScreenManagerStaffDetail({
   const [performanceLoading, setPerformanceLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeWindow, setActiveWindow] = useState<Window>('7d');
+  // TROCAR-PIN (2026-07-04): reset de PIN pelo gerente — confirmação →
+  // POST /staff/:id/reset-pin → tempPin exibido UMA vez num modal copiável.
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetResult, setResetResult] = useState<StaffResetPinResponse | null>(null);
+
+  const doResetPin = async () => {
+    if (resetBusy) return;
+    setResetBusy(true);
+    setResetError(null);
+    try {
+      const result = await manager(slug).staffRoster.resetPin(staffId);
+      setResetConfirmOpen(false);
+      setResetResult(result);
+    } catch (e) {
+      setResetError((e as Error).message || 'Não foi possível resetar o PIN.');
+    } finally {
+      setResetBusy(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -497,15 +523,286 @@ export function ScreenManagerStaffDetail({
             background: C.bg,
             borderTop: `1px solid ${C.borderSoft}`,
             flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
           }}
         >
           <GButton dark={dark} full kind="primary" onClick={goEdit}>
             Editar funcionário
           </GButton>
+          <GButton dark={dark} full kind="ghost" onClick={() => setResetConfirmOpen(true)}>
+            Resetar PIN
+          </GButton>
         </div>
       )}
 
       <MBottomNav active="staff" dark={dark} onTo={(r) => router.push(r)} />
+
+      {resetConfirmOpen && staff && (
+        <ResetPinConfirmSheet
+          C={C}
+          staffName={staff.name}
+          busy={resetBusy}
+          error={resetError}
+          onCancel={() => {
+            setResetConfirmOpen(false);
+            setResetError(null);
+          }}
+          onConfirm={doResetPin}
+        />
+      )}
+
+      {resetResult && (
+        <ResetPinResultSheet C={C} result={resetResult} onClose={() => setResetResult(null)} />
+      )}
+    </div>
+  );
+}
+
+// ─── ResetPinConfirmSheet — confirmação antes do reset (ação destrutiva:
+// derruba as sessões do staff e invalida o PIN atual dele).
+function ResetPinConfirmSheet({
+  C,
+  staffName,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  C: ReturnType<typeof useG>;
+  staffName: string;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 120,
+        background: 'rgba(0,0,0,0.32)',
+        display: 'flex',
+        alignItems: 'flex-end',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          borderRadius: '18px 18px 0 0',
+          background: C.bg,
+          color: C.ink,
+          padding: '18px 16px 20px',
+          boxShadow: '0 -16px 34px rgba(0,0,0,0.22)',
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>
+          Resetar o PIN de {staffName}?
+        </div>
+        <div
+          style={{ marginTop: 8, fontSize: 13, lineHeight: 1.45, color: C.mute, fontWeight: 500 }}
+        >
+          O PIN atual deixa de funcionar na hora e todas as sessões abertas são desconectadas. Você
+          recebe um PIN temporário de 6 dígitos pra informar ao funcionário — no próximo login o
+          sistema obriga a troca.
+        </div>
+        {error && (
+          <div
+            role="alert"
+            style={{
+              marginTop: 12,
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: '#FFF1F1',
+              border: '1px solid #F4C7C7',
+              color: '#A12626',
+              fontSize: 12.5,
+              fontWeight: 600,
+            }}
+          >
+            {error}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            style={{
+              all: 'unset',
+              cursor: busy ? 'not-allowed' : 'pointer',
+              flex: 1,
+              textAlign: 'center',
+              padding: '13px 10px',
+              borderRadius: 12,
+              border: `1px solid ${C.borderSoft}`,
+              fontSize: 14,
+              fontWeight: 800,
+              color: C.ink,
+            }}
+          >
+            Voltar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            style={{
+              all: 'unset',
+              cursor: busy ? 'wait' : 'pointer',
+              flex: 1,
+              textAlign: 'center',
+              padding: '13px 10px',
+              borderRadius: 12,
+              background: '#9A7212',
+              color: '#fff',
+              fontSize: 14,
+              fontWeight: 800,
+            }}
+          >
+            {busy ? 'Resetando…' : 'Resetar PIN'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ResetPinResultSheet — exibe o tempPin UMA vez (copiável). Fechar
+// descarta pra sempre; o backend não devolve o PIN de novo.
+function ResetPinResultSheet({
+  C,
+  result,
+  onClose,
+}: {
+  C: ReturnType<typeof useG>;
+  result: StaffResetPinResponse;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(result.tempPin);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard indisponível (http) — o PIN segue visível na tela */
+    }
+  };
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 130,
+        background: 'rgba(0,0,0,0.34)',
+        display: 'flex',
+        alignItems: 'flex-end',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          borderRadius: '18px 18px 0 0',
+          background: C.bg,
+          color: C.ink,
+          padding: '18px 16px 20px',
+          boxShadow: '0 -16px 34px rgba(0,0,0,0.22)',
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>
+          PIN temporário de {result.staff.name}
+        </div>
+        <div
+          style={{ marginTop: 6, fontSize: 12.5, lineHeight: 1.45, color: C.mute, fontWeight: 500 }}
+        >
+          Informe este PIN ao funcionário agora. Ele entra com o PIN temporário e o sistema obriga a
+          troca no primeiro acesso.
+        </div>
+
+        <div
+          style={{
+            marginTop: 14,
+            padding: '18px 16px',
+            borderRadius: 12,
+            border: `1px solid ${C.borderSoft}`,
+            background: C.surface,
+            textAlign: 'center',
+          }}
+        >
+          <div
+            style={{
+              fontFamily: MONO_FONT,
+              fontSize: 32,
+              fontWeight: 800,
+              letterSpacing: 8,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {result.tempPin}
+          </div>
+          <button
+            type="button"
+            onClick={copy}
+            style={{
+              all: 'unset',
+              cursor: 'pointer',
+              marginTop: 10,
+              padding: '8px 18px',
+              borderRadius: 999,
+              border: `1px solid ${C.borderSoft}`,
+              fontSize: 12.5,
+              fontWeight: 700,
+              color: C.ink,
+            }}
+          >
+            {copied ? 'Copiado ✓' : 'Copiar PIN'}
+          </button>
+        </div>
+
+        <div
+          style={{
+            marginTop: 12,
+            padding: '10px 12px',
+            borderRadius: 10,
+            background: '#FFF7E6',
+            border: '1px solid #F0DCB6',
+            color: '#7A4D10',
+            fontSize: 12,
+            fontWeight: 600,
+            lineHeight: 1.4,
+          }}
+        >
+          Este PIN não será exibido de novo. Ao fechar, só um novo reset gera outro.
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            all: 'unset',
+            cursor: 'pointer',
+            width: '100%',
+            boxSizing: 'border-box',
+            marginTop: 16,
+            textAlign: 'center',
+            padding: '13px 10px',
+            borderRadius: 12,
+            background: C.ink,
+            color: C.bg,
+            fontSize: 14,
+            fontWeight: 800,
+          }}
+        >
+          Fechar
+        </button>
+      </div>
     </div>
   );
 }

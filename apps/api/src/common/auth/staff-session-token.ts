@@ -37,9 +37,33 @@ function redisKey(token: string): string {
 }
 
 /**
+ * Índice REVERSO por staff (TROCAR-PIN, decisão Caleb 2026-07-04): set com
+ * as keys `staff-session:v1:<sha256>` de cada sessão viva do staff. Sem ele,
+ * trocar/resetar o PIN não tinha como derrubar as OUTRAS sessões (device
+ * roubado ficava logado por até 12h). Guarda a KEY hasheada, nunca o token.
+ */
+function sessionIndexKey(slug: string, staffId: string): string {
+  return `staff-sessions:v1:${slug}:${staffId}`;
+}
+
+/**
+ * Suporte a sets é feature-detected: o RedisService real sempre tem
+ * sadd/smembers, mas fakes legados (ex.: auth-guards.spec, ts-node fora do
+ * jest) só implementam get/set/del — o issue não pode explodir neles. A
+ * REVOGAÇÃO, essa sim, exige um redis com sets.
+ */
+type SessionSetRedis = Pick<RedisService, 'sadd' | 'smembers' | 'expire' | 'del'>;
+
+function supportsSets(redis: RedisService): redis is RedisService & SessionSetRedis {
+  const candidate = redis as Partial<SessionSetRedis>;
+  return typeof candidate.sadd === 'function' && typeof candidate.smembers === 'function';
+}
+
+/**
  * Emite um token opaco vinculado ao staff autenticado e persiste o payload
  * no Redis com TTL. Retorna `{ token, expiresIn }` pro caller devolver ao
- * client (que passa a mandar em `x-staff-token`).
+ * client (que passa a mandar em `x-staff-token`). Registra a sessão no
+ * índice reverso do staff pra `revokeStaffSessions` alcançá-la depois.
  */
 export async function issueStaffSessionToken(
   redis: RedisService,
@@ -54,7 +78,33 @@ export async function issueStaffSessionToken(
     exp,
   };
   await redis.set(redisKey(token), JSON.stringify(payload), STAFF_SESSION_TTL_SECONDS);
+  if (supportsSets(redis)) {
+    const indexKey = sessionIndexKey(input.slug, input.staffId);
+    await redis.sadd(indexKey, redisKey(token));
+    // TTL do set realinhado a cada emissão — nunca menor que o TTL da
+    // sessão mais nova, então o índice não morre antes das sessões.
+    await redis.expire(indexKey, STAFF_SESSION_TTL_SECONDS);
+  }
   return { token, expiresIn: STAFF_SESSION_TTL_SECONDS };
+}
+
+/**
+ * Revoga TODAS as sessões vivas de um staff (troca de PIN, reset pelo
+ * gerente, desligamento): SMEMBERS do índice reverso → DEL de cada
+ * `staff-session:v1:<sha256>` → DEL do próprio set. Retorna quantas
+ * sessões foram derrubadas.
+ */
+export async function revokeStaffSessions(
+  redis: RedisService,
+  input: { staffId: string; slug: string },
+): Promise<number> {
+  const indexKey = sessionIndexKey(input.slug, input.staffId);
+  const sessionKeys = await redis.smembers(indexKey);
+  for (const sessionKey of sessionKeys) {
+    await redis.del(sessionKey);
+  }
+  await redis.del(indexKey);
+  return sessionKeys.length;
 }
 
 function slugsMatch(a: string, b: string): boolean {

@@ -55,6 +55,13 @@ export default function StaffLoginPage() {
         },
         remember,
       );
+      // Reset do gerente (TROCAR-PIN 2026-07-04): PIN temporário obriga a
+      // troca antes de liberar o app — o backend também manda nextPath
+      // '/trocar-pin', mas a flag é o contrato explícito.
+      if (result.mustChangePin) {
+        router.replace('/trocar-pin');
+        return;
+      }
       router.replace(result.nextPath || homeForStaffRole(result.staff.role));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível entrar.');

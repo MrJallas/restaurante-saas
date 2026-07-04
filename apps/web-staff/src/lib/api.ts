@@ -29,6 +29,19 @@ export interface StaffAuthLoginResponse {
     staffRole: StaffRole;
   };
   nextPath: string;
+  /** PIN temporário (reset do gerente) — o FE força a troca em /trocar-pin. */
+  mustChangePin?: boolean;
+}
+
+export interface StaffChangePinResponse {
+  message_user: string;
+  code: string;
+  staff: {
+    id: string;
+    name: string;
+    role: StaffRole;
+  };
+  nextPath: string;
 }
 
 export interface StaffForgotResponse {
@@ -294,4 +307,17 @@ export function staffAuthResetPin(
   body: { resetToken: string; pin: string },
 ): Promise<{ message_user: string; code: string }> {
   return staffAuthApi<{ message_user: string; code: string }>(slug, '/reset-pin', body);
+}
+
+/**
+ * Troca de PIN logado (TROCAR-PIN 2026-07-04). A autenticação vai no cookie
+ * httpOnly `staff_token` (credentials: include) — o proxy o vira
+ * x-staff-token e, na resposta, troca o cookie pelo token NOVO que o
+ * backend emite (todas as sessões antigas são revogadas).
+ */
+export function staffAuthChangePin(
+  slug: string,
+  body: { currentPin: string; newPin: string },
+): Promise<StaffChangePinResponse> {
+  return staffAuthApi<StaffChangePinResponse>(slug, '/change-pin', body);
 }

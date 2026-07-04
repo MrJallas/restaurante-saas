@@ -4,7 +4,11 @@ import { RedisService } from '../../infra/redis/redis.service';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { hashPin, timingSafeEqualHex } from '../staff/staff-pin.util';
-import { issueStaffSessionToken } from '../../common/auth/staff-session-token';
+import {
+  issueStaffSessionToken,
+  revokeStaffSessions,
+  verifyStaffSessionToken,
+} from '../../common/auth/staff-session-token';
 
 type StaffRole = 'manager' | 'host' | 'waiter' | 'cook' | 'bartender' | 'cashier';
 
@@ -16,6 +20,8 @@ interface StaffAuthRow {
   cpf: string | null;
   phone: string | null;
   email: string | null;
+  /** Migration 061 — setada pelo reset do gerente; o change-pin limpa. */
+  must_change_pin?: boolean;
 }
 
 interface RecoveryPayload {
@@ -44,7 +50,15 @@ const RECOVERY_TTL_SECONDS = 10 * 60;
 const RESET_TOKEN_TTL_SECONDS = 10 * 60;
 const RECOVERY_MAX_ATTEMPTS = 5;
 const RECOVERY_ATTEMPTS_TTL_SECONDS = RECOVERY_TTL_SECONDS;
+// TROCAR-PIN (2026-07-04): mesma disciplina do login — 5 tentativas de
+// currentPin errado por staffId numa janela de 15min → lock de 15min. A
+// chave é por staffId (não cpf:ip) porque a rota já exige sessão válida.
+const CHANGE_PIN_MAX_ATTEMPTS = 5;
+const CHANGE_PIN_WINDOW_SECONDS = 15 * 60;
+const CHANGE_PIN_LOCK_SECONDS = 15 * 60;
 const DUMMY_PIN_HASH = hashPin('000000');
+const PIN_RE = /^\d{4,6}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @Injectable()
 export class StaffAuthService {
@@ -103,6 +117,11 @@ export class StaffAuthService {
       slug: this.tenantSlug(),
     });
 
+    // Reset pelo gerente (TROCAR-PIN 2026-07-04): staff entra com o PIN
+    // temporário mas é FORÇADO pra troca — o FE lê a flag/nextPath e leva
+    // pro /trocar-pin; o change-pin limpa a flag.
+    const mustChangePin = staff!.must_change_pin === true;
+
     return {
       staff: {
         id: staff!.id,
@@ -117,7 +136,157 @@ export class StaffAuthService {
       // `x-staff-token` nas rotas privilegiadas.
       staffToken: session.token,
       staffTokenExpiresIn: session.expiresIn,
-      nextPath: this.nextPathForRole(staff!.role),
+      mustChangePin,
+      nextPath: mustChangePin ? '/trocar-pin' : this.nextPathForRole(staff!.role),
+    };
+  }
+
+  /**
+   * Troca de PIN LOGADO (TROCAR-PIN, decisão Caleb 2026-07-04). A prova de
+   * identidade é dupla: o token de sessão (quem está portando) + o PIN
+   * atual (quem conhece o segredo) — token roubado sozinho não troca PIN.
+   * Sucesso revoga TODAS as sessões do staff (device perdido/emprestado
+   * morre na hora) e emite um token NOVO pra sessão corrente não cair.
+   */
+  async changePin(input: { token: string | undefined; currentPin: string; newPin: string }) {
+    const payload = await verifyStaffSessionToken(this.redis, input.token, this.tenantSlug());
+    if (!payload) {
+      throw this.structuredError(
+        HttpStatus.UNAUTHORIZED,
+        'Sessão expirada. Faça login novamente.',
+        'AUTH_MISSING',
+      );
+    }
+
+    if (!PIN_RE.test(input.newPin)) {
+      throw this.structuredError(
+        HttpStatus.BAD_REQUEST,
+        'Novo PIN deve ter 4 a 6 dígitos.',
+        'INVALID_PIN',
+      );
+    }
+
+    const throttleKey = this.changePinThrottleKey(payload.staffId);
+    if (await this.redis.get(`${throttleKey}:lock`)) {
+      throw this.structuredError(
+        HttpStatus.TOO_MANY_REQUESTS,
+        'Muitas tentativas. Aguarde alguns minutos.',
+        'AUTH_THROTTLED',
+      );
+    }
+
+    // O staff vem do TOKEN verificado, nunca de body/header. Dummy hash pra
+    // staff inexistente/desativado — comparação sempre roda (timing-safe).
+    const staff = await this.findActiveById(payload.staffId);
+    const expectedHash = staff?.pin_hash ?? DUMMY_PIN_HASH;
+    const pinMatches = timingSafeEqualHex(expectedHash, hashPin(input.currentPin));
+
+    if (!staff || !pinMatches) {
+      // currentPin errado é TENTATIVA — 5 falhas em 15min travam por 15min.
+      await this.recordLoginFailure(
+        throttleKey,
+        CHANGE_PIN_MAX_ATTEMPTS,
+        CHANGE_PIN_LOCK_SECONDS,
+        CHANGE_PIN_WINDOW_SECONDS,
+      );
+      throw this.structuredError(
+        HttpStatus.UNAUTHORIZED,
+        'PIN atual incorreto.',
+        'CURRENT_PIN_INVALID',
+      );
+    }
+
+    await this.redis.del(`${throttleKey}:attempts`);
+    await this.redis.del(`${throttleKey}:lock`);
+
+    const updated = unwrapRows<{ id: string; name: string; role: StaffRole }>(
+      await this.tenantConn.query(
+        `UPDATE staff
+            SET pin_hash = $1, must_change_pin = false, updated_at = now()
+          WHERE id = $2
+            AND is_active = true
+          RETURNING id, name, role`,
+        [hashPin(input.newPin), payload.staffId],
+      ),
+    );
+
+    if (!updated.length) {
+      // Staff sumiu/desativou entre o SELECT e o UPDATE — trata como sessão
+      // inválida em vez de fingir sucesso.
+      throw this.structuredError(
+        HttpStatus.UNAUTHORIZED,
+        'Sessão expirada. Faça login novamente.',
+        'AUTH_MISSING',
+      );
+    }
+
+    // Revoga TODAS as sessões (inclusive a corrente) e emite uma nova pra
+    // este portador — o proxy troca o cookie e o app segue logado.
+    await revokeStaffSessions(this.redis, {
+      staffId: payload.staffId,
+      slug: this.tenantSlug(),
+    });
+    const session = await issueStaffSessionToken(this.redis, {
+      staffId: updated[0].id,
+      role: updated[0].role,
+      slug: this.tenantSlug(),
+    });
+
+    return {
+      message_user: 'PIN atualizado.',
+      code: 'PIN_CHANGED',
+      staff: {
+        id: updated[0].id,
+        name: updated[0].name,
+        role: updated[0].role,
+      },
+      staffToken: session.token,
+      staffTokenExpiresIn: session.expiresIn,
+      nextPath: this.nextPathForRole(updated[0].role),
+    };
+  }
+
+  /**
+   * Reset de PIN pelo GERENTE (TROCAR-PIN, decisão Caleb 2026-07-04) —
+   * rota manager-only. Gera PIN temporário de 6 dígitos (devolvido UMA vez
+   * no body; o gerente fala pro staff), seta `must_change_pin = true` (o
+   * login força a troca) e revoga todas as sessões do alvo.
+   */
+  async managerResetPin(targetStaffId: string) {
+    if (!UUID_RE.test(targetStaffId)) {
+      throw this.staffNotFound();
+    }
+
+    const tempPin = String(randomInt(100000, 1000000));
+
+    const updated = unwrapRows<{ id: string; name: string }>(
+      await this.tenantConn.query(
+        `UPDATE staff
+            SET pin_hash = $1, must_change_pin = true, updated_at = now()
+          WHERE id = $2
+            AND is_active = true
+          RETURNING id, name`,
+        [hashPin(tempPin), targetStaffId],
+      ),
+    );
+
+    if (!updated.length) {
+      throw this.staffNotFound();
+    }
+
+    await revokeStaffSessions(this.redis, {
+      staffId: targetStaffId,
+      slug: this.tenantSlug(),
+    });
+
+    return {
+      message_user: 'PIN temporário gerado. Informe ao funcionário — não será exibido de novo.',
+      code: 'PIN_RESET_TEMP',
+      tempPin,
+      staff: {
+        id: updated[0].id,
+        name: updated[0].name,
+      },
     };
   }
 
@@ -266,12 +435,24 @@ export class StaffAuthService {
 
   private async findActiveByCpf(cpf: string): Promise<StaffAuthRow | null> {
     const rows = (await this.tenantConn.query(
-      `SELECT id, name, role, pin_hash, cpf, phone, email
+      `SELECT id, name, role, pin_hash, cpf, phone, email, must_change_pin
          FROM staff
         WHERE cpf = $1
           AND is_active = true
         LIMIT 1`,
       [cpf],
+    )) as StaffAuthRow[];
+    return rows[0] ?? null;
+  }
+
+  private async findActiveById(staffId: string): Promise<StaffAuthRow | null> {
+    const rows = (await this.tenantConn.query(
+      `SELECT id, name, role, pin_hash, must_change_pin
+         FROM staff
+        WHERE id = $1
+          AND is_active = true
+        LIMIT 1`,
+      [staffId],
     )) as StaffAuthRow[];
     return rows[0] ?? null;
   }
@@ -301,6 +482,12 @@ export class StaffAuthService {
   // rotação de IP (ver LOGIN_CPF_MAX_ATTEMPTS).
   private loginCpfThrottleKey(cpf: string): string {
     return `staff-auth:login:cpf:${this.tenantSlug()}:${cpf}`;
+  }
+
+  // Throttle da troca de PIN — por staffId (a rota exige sessão, então o
+  // sujeito já está identificado; cpf:ip não agrega aqui).
+  private changePinThrottleKey(staffId: string): string {
+    return `staff-auth:change-pin:${this.tenantSlug()}:${staffId}`;
   }
 
   private recoveryKey(cpf: string): string {
@@ -368,6 +555,14 @@ export class StaffAuthService {
       HttpStatus.TOO_MANY_REQUESTS,
       'Muitas tentativas. Solicite outro código.',
       'RECOVERY_THROTTLED',
+    );
+  }
+
+  private staffNotFound(): HttpException {
+    return this.structuredError(
+      HttpStatus.NOT_FOUND,
+      'Funcionário não encontrado.',
+      'STAFF_NOT_FOUND',
     );
   }
 

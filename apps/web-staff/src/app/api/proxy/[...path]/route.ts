@@ -34,6 +34,12 @@ const TV_ROUTES: { method: string; re: RegExp }[] = [
 ];
 const LOGIN_RE = /^[\w-]+\/staff-auth\/login$/;
 const LOGOUT_RE = /^[\w-]+\/staff-auth\/logout$/;
+// Rotas que EMITEM staffToken novo no body (login e change-pin — a troca de
+// PIN revoga todas as sessões e devolve um token novo pra sessão corrente
+// não morrer junto). O proxy captura o token, seta o cookie httpOnly e
+// OMITE o segredo do body devolvido ao browser. O change-pin, ao contrário
+// do login, continua exigindo o cookie de sessão pra passar do portão.
+const TOKEN_ISSUING_RE = /^[\w-]+\/staff-auth\/(login|change-pin)$/;
 
 function tvPinValid(req: NextRequest): boolean {
   const expected = process.env.TV_ACCESS_PIN;
@@ -60,6 +66,7 @@ async function handle(req: NextRequest, ctx: { params: { path: string[] } }) {
   const isTv = TV_ROUTES.some((r) => r.method === method && r.re.test(pathWithSearch));
   const isLogin = method === 'POST' && LOGIN_RE.test(pathWithSearch);
   const isLogout = method === 'POST' && LOGOUT_RE.test(pathWithSearch);
+  const issuesToken = method === 'POST' && TOKEN_ISSUING_RE.test(pathWithSearch);
   const sessionToken = req.cookies.get(STAFF_TOKEN_COOKIE)?.value;
 
   // Autorização por tipo de rota.
@@ -103,9 +110,11 @@ async function handle(req: NextRequest, ctx: { params: { path: string[] } }) {
     );
   }
 
-  // LOGIN: extrai o staffToken da resposta, seta cookie httpOnly, devolve o
-  // body SEM o token (o browser nunca recebe o segredo).
-  if (isLogin) {
+  // LOGIN / CHANGE-PIN: extrai o staffToken da resposta, seta cookie
+  // httpOnly, devolve o body SEM o token (o browser nunca recebe o segredo).
+  // No change-pin isso é o que mantém o usuário logado: o backend revogou
+  // TODAS as sessões (inclusive a do cookie atual) e emitiu uma nova.
+  if (issuesToken) {
     const bodyText = await upstream.text();
     if (!upstream.ok) {
       return new NextResponse(bodyText, {

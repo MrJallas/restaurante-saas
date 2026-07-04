@@ -96,6 +96,19 @@ export class RedisService implements OnModuleDestroy {
     await this.timed(() => this.client.expire(key, ttlSeconds));
   }
 
+  /**
+   * TROCAR-PIN (decisão Caleb 2026-07-04): sets nativos pro índice reverso
+   * de sessões de staff (`staff-sessions:v1:<slug>:<staffId>`), que permite
+   * revogar TODAS as sessões de um staff ao trocar/resetar o PIN.
+   */
+  async sadd(key: string, ...members: string[]): Promise<number> {
+    return this.timed(() => this.client.sadd(key, ...members));
+  }
+
+  async smembers(key: string): Promise<string[]> {
+    return this.timed(() => this.client.smembers(key));
+  }
+
   async ping(): Promise<boolean> {
     try {
       const res = await this.timed(() => this.client.ping());

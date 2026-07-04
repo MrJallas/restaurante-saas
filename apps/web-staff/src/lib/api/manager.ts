@@ -755,7 +755,18 @@ export const staffRosterApi = (slug: string) => ({
       body: JSON.stringify({ isActive: false }),
     }),
   delete: (id: string) => staffDelete<{ deleted: true }>(`/${slug}/staff/${id}`),
+  // TROCAR-PIN (2026-07-04): gerente reseta o PIN de um staff — o backend
+  // gera PIN temporário de 6 dígitos, revoga as sessões do alvo e força a
+  // troca no próximo login. O tempPin volta UMA vez; mostrar e descartar.
+  resetPin: (id: string) => staffPost<StaffResetPinResponse>(`/${slug}/staff/${id}/reset-pin`, {}),
 });
+
+export interface StaffResetPinResponse {
+  message_user: string;
+  code: string;
+  tempPin: string;
+  staff: { id: string; name: string };
+}
 
 // ─────────────────────────────────────────────────────────────
 // Courtesies (round 18 Onda 1 wiring) — `/courtesies` not

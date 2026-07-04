@@ -47,6 +47,21 @@ class ResetPinDto {
   pin!: string;
 }
 
+class ChangePinDto {
+  // currentPin só limitado em tamanho (não em formato): valor errado é
+  // TENTATIVA contada no throttle do service — rejeitar formatos no DTO
+  // deixaria brute-force "grátis" fora do contador.
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(12)
+  currentPin!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{4,6}$/)
+  newPin!: string;
+}
+
 @Controller(':slug/staff-auth')
 export class StaffAuthController {
   constructor(private readonly staffAuth: StaffAuthService) {}
@@ -75,6 +90,30 @@ export class StaffAuthController {
   @HttpCode(200)
   resetPin(@Body() dto: ResetPinDto) {
     return this.staffAuth.resetPin(dto);
+  }
+
+  /**
+   * Troca de PIN LOGADO (TROCAR-PIN, decisão Caleb 2026-07-04). Este
+   * controller não usa StaffOnlyGuard (as rotas irmãs são públicas de
+   * propósito — são o próprio login/recovery), então a rota autentica
+   * EXPLICITAMENTE: lê o `x-staff-token` (o proxy web-staff injeta a partir
+   * do cookie httpOnly) e o service o verifica com verifyStaffSessionToken
+   * — 401 sem token válido. O staff alvo vem do PAYLOAD do token, nunca de
+   * body/header client-controlled.
+   */
+  @Post('change-pin')
+  @HttpCode(200)
+  changePin(@Body() dto: ChangePinDto, @Req() req: Request) {
+    return this.staffAuth.changePin({
+      token: this.staffToken(req),
+      currentPin: dto.currentPin,
+      newPin: dto.newPin,
+    });
+  }
+
+  private staffToken(req: Request): string | undefined {
+    const raw = req.headers['x-staff-token'];
+    return Array.isArray(raw) ? raw[0] : raw;
   }
 
   /**

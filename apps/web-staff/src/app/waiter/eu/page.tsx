@@ -63,6 +63,7 @@ function WaiterProfilePageInner() {
         onOpenMessages={() =>
           router.push(`/waiter/mensagens?tenant=${tenantSlug}&waiterId=${waiterId}`)
         }
+        onEditPin={() => router.push('/trocar-pin')}
         onEndShift={async () => {
           if (endingShift) return;
           setEndingShift(true);

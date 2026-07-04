@@ -39,6 +39,8 @@ export interface ScreenWaiterProfileProps {
   onTabChange?: (tab: 'home' | 'calls' | 'scan' | 'shift' | 'me') => void;
   onNewEntry?: () => void;
   onOpenMessages?: () => void;
+  /** TROCAR-PIN (2026-07-04): abre /trocar-pin (row "Editar PIN"). */
+  onEditPin?: () => void;
 }
 
 export const ScreenWaiterProfile: React.FC<ScreenWaiterProfileProps> = ({
@@ -57,6 +59,7 @@ export const ScreenWaiterProfile: React.FC<ScreenWaiterProfileProps> = ({
   onTabChange,
   onNewEntry,
   onOpenMessages,
+  onEditPin,
 }) => {
   const C = useG(dark);
   const initials =
@@ -220,7 +223,7 @@ export const ScreenWaiterProfile: React.FC<ScreenWaiterProfileProps> = ({
             label="Tema"
             value={dark ? 'Escuro' : 'Claro'}
           />
-          <Row dark={dark} icon={Icon.user(18)} label="Editar PIN" last />
+          <Row dark={dark} icon={Icon.user(18)} label="Editar PIN" onClick={onEditPin} last />
         </CardGroup>
 
         {/* SESSÃO · Encerrar turno + Sair em vermelho */}

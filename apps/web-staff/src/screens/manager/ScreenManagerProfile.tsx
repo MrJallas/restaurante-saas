@@ -365,6 +365,13 @@ export function ScreenManagerProfile({
             <ActionRow
               dark={dark}
               icon={Icon.shield(18)}
+              lbl="Trocar PIN"
+              sub="PIN de acesso ao app · desconecta outras sessões"
+              onClick={() => router.push('/trocar-pin')}
+            />
+            <ActionRow
+              dark={dark}
+              icon={Icon.shield(18)}
               lbl="Segurança e senha"
               sub="Trocar senha · 2FA · sessões ativas"
               onClick={() => router.push(`/manager/seguranca?slug=${tenantSlug}`)}
