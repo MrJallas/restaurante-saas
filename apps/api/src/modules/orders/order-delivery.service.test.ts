@@ -232,3 +232,73 @@ describe('OrderDeliveryService — characterization (extraído do orders.service
     expect(calls.filter((c) => c.sql.startsWith('UPDATE'))).toEqual([]); // nenhuma escrita
   });
 });
+
+describe('OrderDeliveryService — roteamento por ZONA prioritária (decisão 2026-07-04)', () => {
+  // Cadeia nova: ZONA (atribuídos hoje, em turno, sem pausa; round-robin
+  // por last_called) → último-que-atendeu → turno → simples. O teste
+  // unitário fixa a ORDEM da cadeia e os retornos; os filtros de
+  // pausa/turno/work_date vivem no SQL e são provados vivos (psql seed).
+  const upsertDelivery = (targetId: string) => ({
+    match: (s: string) => s.startsWith('INSERT INTO order_deliveries (order_id, status, called_by'),
+    rows: [{ id: 'del-z', status: 'pending', called_at: '2026-07-04', target_waiter_id: targetId }],
+  });
+
+  it('zona VENCE o último-que-atendeu: garçom da zona é o alvo e waiter_calls nem é consultado', async () => {
+    const { calls, conn } = fakeConn([
+      readyOrderLookup,
+      {
+        match: (s) => s.includes('waiter_zone_assignments'),
+        rows: [{ id: STAFF_ANA, name: 'Ana' }],
+      },
+      // waiter_calls (Bruno) existe mas NÃO deve ser alcançado
+      {
+        match: (s) => s.includes('wc.acknowledged_by'),
+        rows: [{ id: STAFF_BRUNO, name: 'Bruno' }],
+      },
+      upsertDelivery(STAFF_ANA),
+    ]);
+    const svc = new OrderDeliveryService(conn, fakeConsumption().svc, fakeGateway().gw);
+    const out = await svc.callWaiterForOrder(ORDER, 'restaurant_dev', null);
+
+    expect(out.targetWaiterId).toBe(STAFF_ANA);
+    expect(out.targetWaiterName).toBe('Ana');
+    expect(calls.some((c) => c.sql.includes('wc.acknowledged_by'))).toBe(false);
+  });
+
+  it('zona sem elegível (vazia/pausado/fora de turno) → cai no último-que-atendeu', async () => {
+    const { conn } = fakeConn([
+      readyOrderLookup,
+      { match: (s) => s.includes('waiter_zone_assignments'), rows: [] },
+      {
+        match: (s) => s.includes('wc.acknowledged_by'),
+        rows: [{ id: STAFF_BRUNO, name: 'Bruno' }],
+      },
+      upsertDelivery(STAFF_BRUNO),
+    ]);
+    const svc = new OrderDeliveryService(conn, fakeConsumption().svc, fakeGateway().gw);
+    const out = await svc.callWaiterForOrder(ORDER, 'restaurant_dev', null);
+
+    expect(out.targetWaiterId).toBe(STAFF_BRUNO);
+    expect(out.targetWaiterName).toBe('Bruno');
+  });
+
+  it('query de zona explodindo (tenant sem migration 060) degrada pro fluxo antigo sem 500', async () => {
+    const { conn } = fakeConn([
+      readyOrderLookup,
+      {
+        match: (s) => s.includes('waiter_zone_assignments'),
+        rows: () => {
+          throw new Error('relation "waiter_zone_assignments" does not exist');
+        },
+      },
+      {
+        match: (s) => s.includes('wc.acknowledged_by'),
+        rows: [{ id: STAFF_BRUNO, name: 'Bruno' }],
+      },
+      upsertDelivery(STAFF_BRUNO),
+    ]);
+    const svc = new OrderDeliveryService(conn, fakeConsumption().svc, fakeGateway().gw);
+    const out = await svc.callWaiterForOrder(ORDER, 'restaurant_dev', null);
+    expect(out.targetWaiterId).toBe(STAFF_BRUNO);
+  });
+});

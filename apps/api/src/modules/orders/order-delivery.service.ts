@@ -363,6 +363,80 @@ export class OrderDeliveryService {
   private async resolveTargetWaiter(
     tableSessionId: string,
   ): Promise<{ id: string | null; name: string | null }> {
+    // ZONA PRIORITÁRIA (decisão Caleb 2026-07-04): a mesa tem zona e o
+    // gerente atribuiu garçons a ela hoje (waiter_zone_assignments) →
+    // a entrega vai pra um deles, VENCENDO o último-que-atendeu. Elegível =
+    // atribuído hoje + ativo + EM TURNO agora + SEM pausa ativa; 2+ =
+    // round-robin pelo menos recentemente acionado (last_called ASC).
+    // Zona sem elegível (pausa/fora de turno/sem atribuição) → fallback
+    // global abaixo. Nunca entrega pra quem está em pausa — o filtro de
+    // pausa se repete nos fallbacks. Degrada sem 500 se o tenant ainda não
+    // tem a migration 060 (mesmo espírito do fallback de timezone).
+    try {
+      const zoneWaiters = (await this.tenantConn.query(
+        `WITH local_now AS (
+           SELECT now() AT TIME ZONE COALESCE(
+             (SELECT timezone FROM settings LIMIT 1),
+             'America/Sao_Paulo'
+           ) AS ts
+         )
+         SELECT s.id, s.name
+           FROM table_sessions tsn
+           JOIN tables t ON t.id = tsn.table_id
+           JOIN waiter_zone_assignments wza
+             ON wza.zone_id = t.zone_id
+            AND wza.removed_at IS NULL
+            AND wza.work_date = (SELECT ts::date FROM local_now)
+           JOIN staff s ON s.id = wza.staff_id
+            AND s.role = 'waiter'
+            AND s.is_active = true
+           LEFT JOIN LATERAL (
+             SELECT max(od.called_at) AS last_called
+               FROM order_deliveries od
+              WHERE od.target_waiter_id = s.id
+                AND od.status != 'cancelled'
+           ) recent ON true
+           JOIN LATERAL (
+             SELECT 1 AS on_shift
+               FROM staff_shift_assignments sa
+               JOIN staff_shifts sh ON sh.id = sa.shift_id
+              CROSS JOIN local_now ln
+              WHERE sa.staff_id = s.id
+                AND sa.removed_at IS NULL
+                AND (
+                  (sh.time_start <= sh.time_end
+                    AND sa.work_date = ln.ts::date
+                    AND ln.ts::time >= sh.time_start
+                    AND ln.ts::time < sh.time_end)
+                  OR (sh.time_start > sh.time_end AND (
+                    (sa.work_date = ln.ts::date AND ln.ts::time >= sh.time_start)
+                    OR (sa.work_date = (ln.ts - interval '1 day')::date
+                      AND ln.ts::time < sh.time_end)
+                  ))
+                )
+              LIMIT 1
+           ) shift ON true
+          WHERE tsn.id = $1
+            AND t.zone_id IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM zone_pauses zp
+               WHERE zp.waiter_id = s.id
+                 AND zp.ended_at IS NULL
+                 AND (zp.ends_at IS NULL OR zp.ends_at > now())
+            )
+          ORDER BY recent.last_called ASC NULLS FIRST, s.name ASC
+          LIMIT 1`,
+        [tableSessionId],
+      )) as Array<{ id: string; name: string }>;
+      if (zoneWaiters[0]) {
+        return zoneWaiters[0];
+      }
+    } catch (err) {
+      this.logger.warn(
+        `resolveTargetWaiter: rota por zona falhou (${(err as Error).message}) — usando fallback global.`,
+      );
+    }
+
     const recentWaiter = (await this.tenantConn.query(
       `SELECT wc.acknowledged_by AS id,
               COALESCE(s.name, wc.assigned_waiter_name) AS name
@@ -370,6 +444,14 @@ export class OrderDeliveryService {
          LEFT JOIN staff s ON s.id = wc.acknowledged_by
         WHERE wc.table_session_id = $1
           AND wc.acknowledged_by IS NOT NULL
+          -- Nunca entrega pra quem está em pausa (decisão 2026-07-04) —
+          -- vale também no último-que-atendeu.
+          AND NOT EXISTS (
+            SELECT 1 FROM zone_pauses zp
+             WHERE zp.waiter_id = wc.acknowledged_by
+               AND zp.ended_at IS NULL
+               AND (zp.ends_at IS NULL OR zp.ends_at > now())
+          )
         ORDER BY wc.acknowledged_at DESC NULLS LAST, wc.created_at DESC
         LIMIT 1`,
       [tableSessionId],
@@ -430,6 +512,13 @@ export class OrderDeliveryService {
            ) shift ON true
           WHERE s.role = 'waiter'
             AND s.is_active = true
+            -- Nunca entrega pra quem está em pausa (decisão 2026-07-04).
+            AND NOT EXISTS (
+              SELECT 1 FROM zone_pauses zp
+               WHERE zp.waiter_id = s.id
+                 AND zp.ended_at IS NULL
+                 AND (zp.ends_at IS NULL OR zp.ends_at > now())
+            )
           ORDER BY (shift.on_shift IS NULL) ASC,
                    recent.last_called ASC NULLS FIRST,
                    s.name ASC
@@ -444,9 +533,16 @@ export class OrderDeliveryService {
       );
       fallback = (await this.tenantConn.query(
         `SELECT id, name
-           FROM staff
+           FROM staff s
           WHERE role = 'waiter'
             AND is_active = true
+            -- Nunca entrega pra quem está em pausa (decisão 2026-07-04).
+            AND NOT EXISTS (
+              SELECT 1 FROM zone_pauses zp
+               WHERE zp.waiter_id = s.id
+                 AND zp.ended_at IS NULL
+                 AND (zp.ends_at IS NULL OR zp.ends_at > now())
+            )
           ORDER BY name ASC
           LIMIT 1`,
       )) as Array<{ id: string; name: string }>;
