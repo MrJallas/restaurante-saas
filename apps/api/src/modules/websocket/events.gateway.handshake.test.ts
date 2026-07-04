@@ -10,6 +10,7 @@
  */
 
 import { EventsGateway } from './events.gateway';
+import { EventsEmitterService } from './events-emitter.service';
 import type { RedisService } from '../../infra/redis/redis.service';
 import type { DataSource } from 'typeorm';
 
@@ -88,7 +89,9 @@ function staffHeaders(tenant: string): Record<string, string> {
 }
 
 function makeGateway(redis: RedisService) {
-  return new EventsGateway(redis, {} as unknown as DataSource);
+  // 3º arg: extração do EventsEmitterService (2026-07-04) — wiring apenas;
+  // os cenários de handshake nunca emitem.
+  return new EventsGateway(redis, {} as unknown as DataSource, new EventsEmitterService());
 }
 
 function wasRateLimited(socket: FakeSocket): boolean {
