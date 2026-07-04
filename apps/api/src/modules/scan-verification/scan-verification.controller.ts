@@ -1,18 +1,8 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpException,
-  HttpStatus,
-  Param,
-  Post,
-  Query,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import type { Request } from 'express';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { ScanVerificationService } from './scan-verification.service';
 import type { ScanVerificationRequestDto, ScanVerificationStatus } from '@restaurant/shared-types';
 
@@ -32,7 +22,10 @@ class RejectScanVerificationDto {
 @Controller(':slug/scan-verification-requests')
 @UseGuards(StaffOnlyGuard)
 export class ScanVerificationController {
-  constructor(private readonly service: ScanVerificationService) {}
+  constructor(
+    private readonly service: ScanVerificationService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
   @Get()
   async list(@Query() q: ListScanVerificationQuery): Promise<ScanVerificationRequestDto[]> {
@@ -44,13 +37,24 @@ export class ScanVerificationController {
     return this.service.getById(id);
   }
 
+  /**
+   * P1-D (gate #34): o ator que aprova/rejeita a verificação de scan físico
+   * (libera sessão/mesa) deriva do token de sessão VERIFICADO — `req.staffAuth`
+   * carimbado pelo StaffOnlyGuard — via `requireActiveStaffId`, que prefere o
+   * token e só cai no header `x-staff-id` no fluxo key/TV legado. Antes, um
+   * helper local lia o header cru (spoofável): staff com x-staff-key +
+   * x-staff-id de OUTRO aprovava scan em nome dele. `requireActiveStaffId`
+   * ainda cross-checka `is_active` no DB (rota só StaffOnlyGuard, sem
+   * ManagerOnlyGuard).
+   */
   @Post(':id/approve')
   async approve(
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Req() req: Request,
   ): Promise<ScanVerificationRequestDto> {
-    return this.service.approve(id, this.requireStaffId(req), slug);
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
+    return this.service.approve(id, staffId, slug);
   }
 
   @Post(':id/reject')
@@ -60,21 +64,7 @@ export class ScanVerificationController {
     @Body() dto: RejectScanVerificationDto,
     @Req() req: Request,
   ): Promise<ScanVerificationRequestDto> {
-    return this.service.reject(id, this.requireStaffId(req), dto.reason, slug);
-  }
-
-  private requireStaffId(req: Request): string {
-    const raw = req.headers['x-staff-id'];
-    const staffId = Array.isArray(raw) ? raw[0] : raw;
-    if (
-      !staffId ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(staffId)
-    ) {
-      throw new HttpException(
-        { message_user: 'Sessão expirada. Faça login novamente.', code: 'AUTH_INVALID' },
-        HttpStatus.UNAUTHORIZED,
-      );
-    }
-    return staffId;
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
+    return this.service.reject(id, staffId, dto.reason, slug);
   }
 }
