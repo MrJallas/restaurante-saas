@@ -8,6 +8,28 @@ const PIX_EXPIRY_SECONDS = 600;
 
 const VALID_SPLIT_MODES = new Set(['equal', 'by_item', 'custom']);
 
+/**
+ * A04-PAY-01 (auto-confirm / refeicao gratis): o endpoint de confirm roda
+ * sob SessionGuard, então QUALQUER cliente na mesa pode chama-lo. Como NÃO
+ * existe webhook de PSP no codigo, esse era o unico caminho pra status
+ * 'confirmed'/paid_at — ou seja, o cliente marcava o proprio Pix como pago
+ * sem pagar nada.
+ *
+ * Regra defensiva: o confirm iniciado pelo cliente NUNCA marca como pago em
+ * produção. Ele apenas registra 'awaiting_settlement' (aguardando
+ * compensação) — que a home/continuation NÃO tratam como conta paga
+ * (elas filtram por status IN ('confirmed','paid') + paid_at). O status
+ * 'confirmed'/paid_at só deve ser gravado por um webhook de PSP autenticado
+ * ou por confirmação manual de staff/manager (guard próprio + x-staff-id).
+ *
+ * Só liberamos a auto-confirmação do cliente quando explicitamente ligada
+ * via env (PAYMENTS_ALLOW_CLIENT_CONFIRM=true) — para mocks/dev/e2e. Em
+ * produção a flag fica desligada e o caminho de auto-confirm não existe.
+ */
+function clientConfirmMarksPaid(): boolean {
+  return process.env.PAYMENTS_ALLOW_CLIENT_CONFIRM === 'true';
+}
+
 export interface SplitAllocation {
   customerId: string;
   amountCents: number;
@@ -64,7 +86,20 @@ export class PaymentsService {
            AND status NOT IN ('cancelled', 'pending_confirmation')`,
         [tableSessionId, visitId],
       )) as { total: number }[];
-      amountCents = myAllocation?.amountCents ?? rows[0].total;
+      // A04-PAY-02 (short-pay): o allocation vem CRU do body (validado só
+      // por @Min/@Max no DTO). Sem bound-check contra o saldo devido, o
+      // cliente cobrava o proprio pagamento individual por 1 centavo. Aqui
+      // clampamos ao saldo real e rejeitamos qualquer valor abaixo dele —
+      // pagar a menos que a conta nunca é um fluxo válido do lado do cliente.
+      const outstanding = rows[0].total;
+      if (myAllocation) {
+        if (myAllocation.amountCents < outstanding) {
+          throw new BadRequestException('Valor do pagamento individual abaixo do saldo devido.');
+        }
+        amountCents = Math.min(myAllocation.amountCents, outstanding);
+      } else {
+        amountCents = outstanding;
+      }
     } else {
       const rows = (await this.tenantConn.query(
         `SELECT COALESCE(SUM(total_cents), 0) as total
@@ -244,6 +279,11 @@ export class PaymentsService {
     if (payment.status === 'confirmed' || payment.status === 'paid') {
       return { paymentId, status: 'confirmed' };
     }
+    // Confirm idempotente também quando já está aguardando compensação: o
+    // cliente pode chamar /confirm mais de uma vez (poll/retry) sem erro.
+    if (payment.status === 'awaiting_settlement') {
+      return { paymentId, status: 'awaiting_settlement' };
+    }
     if (payment.status !== 'pending') {
       throw new BadRequestException(
         `Pagamento nao esta pendente (status atual: ${payment.status}).`,
@@ -260,6 +300,22 @@ export class PaymentsService {
         [paymentId],
       );
       throw new BadRequestException('Pagamento expirado. Solicite um novo Pix.');
+    }
+
+    // A04-PAY-01: o cliente NÃO pode marcar como pago. Sem a flag de
+    // mock/dev explicitamente ligada, o confirm só move o pagamento para
+    // 'awaiting_settlement' — nunca grava paid_at nem 'confirmed'. A
+    // conta continua em aberto até um webhook de PSP autenticado ou uma
+    // confirmação manual de staff transicionar de verdade para pago.
+    if (!clientConfirmMarksPaid()) {
+      await this.tenantConn.query(
+        `UPDATE payments
+         SET status = 'awaiting_settlement',
+             psp_transaction_id = $2, updated_at = now()
+         WHERE id = $1`,
+        [paymentId, pspTransactionId || null],
+      );
+      return { paymentId, status: 'awaiting_settlement' };
     }
 
     await this.tenantConn.query(

@@ -5,9 +5,11 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { createRequestTimingMiddleware } from './common/performance/request-timing';
 import { UserMessageExceptionFilter } from './common/filters/user-message-exception.filter';
+import { assertStaffKeyConfigured } from './common/config/assert-staff-key';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
+  assertStaffKeyConfigured(logger);
   const app = await NestFactory.create(AppModule);
 
   app.use(createRequestTimingMiddleware());

@@ -1,11 +1,11 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-// Chave de staff. Backend exige `x-staff-key` em endpoints protegidos
-// por `StaffOrSessionGuard` (ex.: PATCH /orders/:id/status, antes
-// publico — qualquer um podia avancar status ou cancelar pedido em
-// qualquer tenant). Em prod evolui pra JWT via PIN.
-const STAFF_API_KEY =
-  process.env.NEXT_PUBLIC_STAFF_API_KEY ||
-  (process.env.NODE_ENV !== 'production' ? 'dev-staff-api-key-change-in-prod' : '');
+// P1-F: o x-staff-key NAO vive mais no client. Toda var NEXT_PUBLIC_* e
+// inlinada no bundle JS, entao carregar o segredo aqui vazava credencial
+// de nivel staff/kitchen pra qualquer visitante via DevTools. O literal
+// committado `dev-staff-api-key-change-in-prod` era pior ainda — segredo
+// publico conhecido. A chave agora e injetada SO server-side pelo proxy
+// (/api/proxy, STAFF_API_KEY sem prefixo NEXT_PUBLIC_). Manter vazio aqui.
+const STAFF_API_KEY = process.env.NEXT_PUBLIC_STAFF_API_KEY || '';
 
 const STAFF_ID_QUERY_KEYS = ['staffId', 'hostId', 'managerId', 'waiterId', 'cookId'] as const;
 

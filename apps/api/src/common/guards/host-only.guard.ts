@@ -6,8 +6,10 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
+import { RedisService } from '../../infra/redis/redis.service';
 import { authErrorResponse } from './auth-error-response';
 import { getCachedActiveStaffRole } from './staff-role-cache';
+import { resolveAuthenticatedStaff } from './staff-auth-context';
 
 /**
  * Host-or-manager guard · second layer on top of `StaffOnlyGuard`.
@@ -18,34 +20,37 @@ import { getCachedActiveStaffRole } from './staff-role-cache';
  * bypassa todo o módulo host (waitlist, reservations, swap, liberate,
  * VIP via TableMenu).
  *
- * AGORA: lê `x-staff-id` (UUID v4 sanitized), faz `SELECT role FROM
- * staff WHERE id = $1 AND is_active = true`, aceita `role IN ('host',
- * 'manager')`. Manager pode tudo que host pode (canon do projeto).
+ * Round 20 — binding criptográfico: mesmo fix do `ManagerOnlyGuard`.
+ * Prefere `x-staff-token` (emitido no login CPF+PIN, verificado
+ * server-side no Redis, confinado ao tenant); `x-staff-id` legado só
+ * como fallback até `STAFF_SESSION_REQUIRED=true`. O role ativo é
+ * reconferido no DB, aceita `role IN ('host', 'manager')`.
  *
  * Compose com `@UseGuards(StaffOnlyGuard, HostOrManagerGuard)` — o
  * StaffOnlyGuard valida `x-staff-key` shared secret antes.
  */
 @Injectable()
 export class HostOrManagerGuard implements CanActivate {
-  constructor(private readonly tenantConn: TenantConnectionProvider) {}
+  constructor(
+    private readonly tenantConn: TenantConnectionProvider,
+    private readonly redis: RedisService,
+  ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<{
       headers: Record<string, string | string[] | undefined>;
     }>();
 
-    const staffIdHeader = req.headers['x-staff-id'];
-    const staffId = Array.isArray(staffIdHeader) ? staffIdHeader[0] : staffIdHeader;
+    const resolved = await resolveAuthenticatedStaff(req, this.tenantConn, this.redis);
 
-    if (!staffId || typeof staffId !== 'string') {
+    if (resolved.error === 'missing') {
       throw new UnauthorizedException(authErrorResponse('AUTH_MISSING', 'Sessão expirada'));
     }
-
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(staffId)) {
+    if (resolved.error) {
       throw new UnauthorizedException(authErrorResponse('AUTH_INVALID', 'Sessão expirada'));
     }
 
-    const role = await getCachedActiveStaffRole(this.tenantConn, staffId);
+    const role = await getCachedActiveStaffRole(this.tenantConn, resolved.staffId);
 
     if (!role) {
       throw new UnauthorizedException(authErrorResponse('AUTH_INVALID', 'Sessão expirada'));

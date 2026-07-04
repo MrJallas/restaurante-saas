@@ -67,8 +67,18 @@ class VerifyPinDto {
 }
 
 /**
- * Endpoints de staff. List/getById ainda publicos pra que o login
- * inicial possa listar staffs antes de digitar PIN.
+ * Endpoints de staff.
+ *
+ * Security fix — list/getById passaram a exigir StaffOnlyGuard
+ * (x-staff-key). Antes eram publicos "pra que o login inicial pudesse
+ * listar staffs antes do PIN", mas o roster completo inclui PII (cpf,
+ * phone, email) + o mapeamento id→role (que é o próprio x-staff-id dos
+ * guards de manager/host). Como o único requisito era conhecer o :slug
+ * (público na URL do QR/cardápio), qualquer não-autenticado lia todo o
+ * quadro de funcionários do tenant em texto claro (LGPD) e coletava os
+ * UUIDs pra escalar acesso. O login real (staff-auth, CPF+PIN) não
+ * consome essas rotas — todos os consumidores legítimos já mandam
+ * x-staff-key. Alinha com as irmãs tables-overview / tables/:tableRef.
  *
  * Round 7 (B-NEW-19): mutações (POST/PATCH/DELETE) trocadas
  * StaffOrSessionGuard → StaffOnlyGuard. Antes (round 3) virou public→
@@ -92,6 +102,7 @@ export class StaffController {
   ) {}
 
   @Get()
+  @UseGuards(StaffOnlyGuard)
   async list(@Query('role') role?: string, @Query('activeOnly') activeOnly?: string) {
     const staff = await this.staffService.list(role, activeOnly === 'true');
     return { staff };
@@ -156,6 +167,7 @@ export class StaffController {
   }
 
   @Get(':id')
+  @UseGuards(StaffOnlyGuard)
   async getById(@Param('id') id: string) {
     return this.staffService.getById(id);
   }

@@ -120,11 +120,7 @@ describe('rankCandidatesByHistory', () => {
         fav('Risoto de Funghi', 'Pratos Principais', 3),
         fav('Picanha na Brasa', 'Pratos Principais', 5),
       ];
-      const r = rankCandidatesByHistory(
-        asMenu([PUDIM, SUCO, RISOTO, PICANHA, FILE]),
-        last,
-        favs,
-      );
+      const r = rankCandidatesByHistory(asMenu([PUDIM, SUCO, RISOTO, PICANHA, FILE]), last, favs);
       expect(r.personalized).toBe(true);
       expect(r.repeat?.name).toBe('Picanha na Brasa');
       expect(r.favoriteName).toBe('Risoto de Funghi');

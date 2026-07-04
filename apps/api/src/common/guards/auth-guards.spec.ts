@@ -12,6 +12,9 @@ import { authErrorResponse, type AuthErrorResponse } from './auth-error-response
 import { HostOrManagerGuard } from './host-only.guard';
 import { ManagerOnlyGuard } from './manager-only.guard';
 import { StaffOnlyGuard } from './staff-only.guard';
+import { issueStaffSessionToken, verifyStaffSessionToken } from '../auth/staff-session-token';
+import type { RedisService } from '../../infra/redis/redis.service';
+import type { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
 
 const MANAGER_ID = '11111111-1111-4111-8111-111111111111';
 const HOST_ID = '22222222-2222-4222-8222-222222222222';
@@ -40,6 +43,24 @@ function fakeTenantConn() {
   };
 }
 
+// Fake Redis backing store para o token de sessão de staff. Sem token
+// (`x-staff-token`) e sem `STAFF_SESSION_REQUIRED`, os guards caem no
+// fallback legado `x-staff-id` e o Redis nunca é consultado.
+function fakeRedis() {
+  const store = new Map<string, string>();
+  return {
+    async get(key: string) {
+      return store.get(key) ?? null;
+    },
+    async set(key: string, value: string) {
+      store.set(key, value);
+    },
+    async del(key: string) {
+      store.delete(key);
+    },
+  };
+}
+
 function responseOf(err: unknown): AuthErrorResponse {
   if (err instanceof HttpException) {
     return err.getResponse() as AuthErrorResponse;
@@ -63,10 +84,12 @@ function assertAuthResponse(err: unknown, expected: AuthErrorResponse): void {
 /* eslint-disable no-console */
 export async function runAuthGuardAssertions(): Promise<void> {
   const managerGuard = new ManagerOnlyGuard(
-    fakeTenantConn() as import('../../modules/tenant/tenant-connection.provider').TenantConnectionProvider,
+    fakeTenantConn() as unknown as TenantConnectionProvider,
+    fakeRedis() as unknown as RedisService,
   );
   const hostGuard = new HostOrManagerGuard(
-    fakeTenantConn() as import('../../modules/tenant/tenant-connection.provider').TenantConnectionProvider,
+    fakeTenantConn() as unknown as TenantConnectionProvider,
+    fakeRedis() as unknown as RedisService,
   );
 
   try {
@@ -106,6 +129,75 @@ export async function runAuthGuardAssertions(): Promise<void> {
     throw new Error('ManagerOnlyGuard accepted inactive staff.');
   } catch (err) {
     assertAuthResponse(err, authErrorResponse('AUTH_INVALID', 'Sessão expirada'));
+  }
+
+  // --- Token de sessão de staff (binding server-side ao PIN) ---------
+  // Um guard com Redis compartilhado + tenant fixo, pra emitir e verificar
+  // tokens na MESMA store/slug.
+  const tokenRedis = fakeRedis();
+  const TENANT_SLUG = 'token-binding-tenant';
+  const fixedTenantConn = {
+    getTenantSlug: () => TENANT_SLUG,
+    async query(_sql: string, params: unknown[]) {
+      const id = params[0];
+      if (id === MANAGER_ID) return [{ role: 'manager' }];
+      if (id === WAITER_ID) return [{ role: 'waiter' }];
+      return [];
+    },
+  } as unknown as TenantConnectionProvider;
+  const tokenManagerGuard = new ManagerOnlyGuard(
+    fixedTenantConn,
+    tokenRedis as unknown as RedisService,
+  );
+
+  // Token de manager legítimo → autoriza.
+  const managerToken = await issueStaffSessionToken(tokenRedis as unknown as RedisService, {
+    staffId: MANAGER_ID,
+    role: 'manager',
+    slug: TENANT_SLUG,
+  });
+  if (!(await tokenManagerGuard.canActivate(fakeCtx({ 'x-staff-token': managerToken.token })))) {
+    throw new Error('ManagerOnlyGuard rejected a valid staff session token.');
+  }
+
+  // Token de WAITER, mesmo forjando role no header, NÃO escala — o role
+  // vem do payload verificado + reconferência no DB (waiter).
+  const waiterToken = await issueStaffSessionToken(tokenRedis as unknown as RedisService, {
+    staffId: WAITER_ID,
+    role: 'waiter',
+    slug: TENANT_SLUG,
+  });
+  try {
+    await tokenManagerGuard.canActivate(
+      fakeCtx({ 'x-staff-token': waiterToken.token, 'x-staff-role': 'manager' }),
+    );
+    throw new Error('ManagerOnlyGuard escalated a waiter token to manager.');
+  } catch (err) {
+    assertAuthResponse(
+      err,
+      authErrorResponse('AUTH_FORBIDDEN', 'Acesso não permitido para este perfil'),
+    );
+  }
+
+  // Token inválido presente → rejeita e NÃO faz downgrade pro x-staff-id
+  // legado (ainda que um UUID de manager válido seja mandado junto).
+  try {
+    await tokenManagerGuard.canActivate(
+      fakeCtx({ 'x-staff-token': 'garbage-token', 'x-staff-id': MANAGER_ID }),
+    );
+    throw new Error('ManagerOnlyGuard fell back to x-staff-id despite an invalid token.');
+  } catch (err) {
+    assertAuthResponse(err, authErrorResponse('AUTH_INVALID', 'Sessão expirada'));
+  }
+
+  // Token de OUTRO tenant não vale aqui (confinamento por slug).
+  const crossTenant = verifyStaffSessionToken(
+    tokenRedis as unknown as RedisService,
+    managerToken.token,
+    'a-different-tenant',
+  );
+  if ((await crossTenant) !== null) {
+    throw new Error('verifyStaffSessionToken accepted a token from another tenant.');
   }
 
   const staffOnly = new StaffOnlyGuard();

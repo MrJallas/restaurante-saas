@@ -3,10 +3,11 @@ import { RedisModule } from '../../infra/redis/redis.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { StaffAuthController } from './staff-auth.controller';
 import { StaffAuthService } from './staff-auth.service';
+import { RecoveryThrottleGuard } from './recovery-throttle.guard';
 
 @Module({
   imports: [TenantModule, RedisModule],
   controllers: [StaffAuthController],
-  providers: [StaffAuthService],
+  providers: [StaffAuthService, RecoveryThrottleGuard],
 })
 export class StaffAuthModule {}

@@ -114,12 +114,14 @@ export class PaymentsController {
   }
 
   /**
-   * Customer-initiated confirm (Pix manual / mock-pago). Quando integramos
-   * PSP de verdade, o webhook precisa de auth propria (API key) — esse
-   * endpoint nao serve pra isso. SessionGuard garante que so quem ta na
-   * mesa que originou o pagamento pode marcar como pago, e o service
-   * valida (a) ownership por table_session_id, (b) expires_at < now —
-   * sem isso bug-hunter conseguia confirmar Pix vencido.
+   * Customer-initiated confirm. A04-PAY-01: rodando sob SessionGuard,
+   * QUALQUER cliente da mesa pode chamar isso — e NAO existe webhook de PSP
+   * no codigo. Por isso o service NAO marca como pago aqui: sem a flag de
+   * mock (PAYMENTS_ALLOW_CLIENT_CONFIRM), o confirm apenas registra
+   * 'awaiting_settlement' (aguardando compensacao) — nunca 'confirmed'/
+   * paid_at. O status pago de verdade so deve vir de um webhook de PSP
+   * autenticado ou de confirmacao manual de staff/manager. O service ainda
+   * valida (a) ownership por table_session_id e (b) expires_at < now.
    */
   @Post(':paymentId/confirm')
   @UseGuards(SessionGuard)

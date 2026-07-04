@@ -3,6 +3,7 @@ import { randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { RedisService } from '../../infra/redis/redis.service';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { hashPin, timingSafeEqualHex } from '../staff/staff-pin.util';
+import { issueStaffSessionToken } from '../../common/auth/staff-session-token';
 
 type StaffRole = 'manager' | 'host' | 'waiter' | 'cook' | 'bartender' | 'cashier';
 
@@ -30,8 +31,18 @@ interface ResetPayload {
 const LOGIN_MAX_ATTEMPTS = 5;
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_LOCK_SECONDS = 15 * 60;
+// Defense-in-depth: lockout por (slug:cpf) INDEPENDENTE de IP. O lock por
+// cpf:ip sozinho é derrotado por rotação de IP (botnet / XFF forjável); este
+// contador acumula por CPF em qualquer origem, então N falhas globais travam
+// o brute-force do PIN mesmo variando o IP a cada tentativa. Limite mais
+// folgado (staff legítimo pode errar de vários IPs), mas ainda finito.
+const LOGIN_CPF_MAX_ATTEMPTS = 20;
+const LOGIN_CPF_WINDOW_SECONDS = 15 * 60;
+const LOGIN_CPF_LOCK_SECONDS = 15 * 60;
 const RECOVERY_TTL_SECONDS = 10 * 60;
 const RESET_TOKEN_TTL_SECONDS = 10 * 60;
+const RECOVERY_MAX_ATTEMPTS = 5;
+const RECOVERY_ATTEMPTS_TTL_SECONDS = RECOVERY_TTL_SECONDS;
 const DUMMY_PIN_HASH = hashPin('000000');
 
 @Injectable()
@@ -48,7 +59,11 @@ export class StaffAuthService {
     }
 
     const throttleKey = this.loginThrottleKey(cpf, ip);
-    if (await this.redis.get(`${throttleKey}:lock`)) {
+    const cpfThrottleKey = this.loginCpfThrottleKey(cpf);
+    if (
+      (await this.redis.get(`${throttleKey}:lock`)) ||
+      (await this.redis.get(`${cpfThrottleKey}:lock`))
+    ) {
       throw this.structuredError(
         HttpStatus.TOO_MANY_REQUESTS,
         'Muitas tentativas. Aguarde alguns minutos.',
@@ -62,12 +77,30 @@ export class StaffAuthService {
     const authenticated = Boolean(staff && pinMatches);
 
     if (!authenticated) {
-      await this.recordLoginFailure(throttleKey);
+      await this.recordLoginFailure(throttleKey, LOGIN_MAX_ATTEMPTS, LOGIN_LOCK_SECONDS);
+      await this.recordLoginFailure(
+        cpfThrottleKey,
+        LOGIN_CPF_MAX_ATTEMPTS,
+        LOGIN_CPF_LOCK_SECONDS,
+        LOGIN_CPF_WINDOW_SECONDS,
+      );
       throw this.authFailure();
     }
 
     await this.redis.del(`${throttleKey}:attempts`);
     await this.redis.del(`${throttleKey}:lock`);
+    await this.redis.del(`${cpfThrottleKey}:attempts`);
+    await this.redis.del(`${cpfThrottleKey}:lock`);
+
+    // Emite o token de sessão de staff vinculado ao staffId/role recém
+    // autenticado via PIN. É o segredo verificado server-side que os
+    // guards de manager/host passam a exigir (x-staff-token) — o par
+    // x-staff-key shared + x-staff-id enumerável não escala mais sozinho.
+    const session = await issueStaffSessionToken(this.redis, {
+      staffId: staff!.id,
+      role: staff!.role,
+      slug: this.tenantSlug(),
+    });
 
     return {
       staff: {
@@ -79,6 +112,10 @@ export class StaffAuthService {
         staffId: staff!.id,
         staffRole: staff!.role,
       },
+      // Token vinculado ao login — o client passa a mandá-lo em
+      // `x-staff-token` nas rotas privilegiadas.
+      staffToken: session.token,
+      staffTokenExpiresIn: session.expiresIn,
       nextPath: this.nextPathForRole(staff!.role),
     };
   }
@@ -113,6 +150,8 @@ export class StaffAuthService {
       code: devCode,
     };
     await this.redis.set(this.recoveryKey(cpf), JSON.stringify(payload), RECOVERY_TTL_SECONDS);
+    // Novo código emitido → zera o contador de tentativas do fluxo anterior.
+    await this.redis.del(this.recoveryAttemptsKey(cpf));
 
     return {
       message_user: 'Código de recuperação enviado.',
@@ -131,9 +170,26 @@ export class StaffAuthService {
       throw this.invalidRecoveryCode();
     }
 
+    // Throttle fail-closed espelhando login(): sem isto, o código de 6 dígitos
+    // (~1M combinações) poderia ser varrido dentro da janela de 10 min sem
+    // qualquer lock → takeover de qualquer staff/manager. Conta cada tentativa
+    // (INCR+EXPIRE atômico) ANTES de validar; ao estourar o limite, deleta a
+    // recoveryKey pra invalidar o código em vez de deixá-lo vivo por 10 min.
+    const attemptsKey = this.recoveryAttemptsKey(cpf);
+    const attempts = await this.redis.incrWithExpiry(attemptsKey, RECOVERY_ATTEMPTS_TTL_SECONDS);
+    if (attempts > RECOVERY_MAX_ATTEMPTS) {
+      await this.redis.del(this.recoveryKey(cpf));
+      throw this.recoveryThrottled();
+    }
+
     const raw = await this.redis.get(this.recoveryKey(cpf));
     const payload = raw ? this.parseJson<RecoveryPayload>(raw) : null;
     if (!payload || payload.cpf !== cpf || !this.safeEqual(payload.code, input.code)) {
+      // Ao atingir o limite exato numa tentativa errada, rotaciona/invalida o
+      // código pra bruteforce não continuar no mesmo valor.
+      if (attempts >= RECOVERY_MAX_ATTEMPTS) {
+        await this.redis.del(this.recoveryKey(cpf));
+      }
       throw this.invalidRecoveryCode();
     }
 
@@ -148,6 +204,7 @@ export class StaffAuthService {
       RESET_TOKEN_TTL_SECONDS,
     );
     await this.redis.del(this.recoveryKey(cpf));
+    await this.redis.del(this.recoveryAttemptsKey(cpf));
 
     return {
       message_user: 'Código validado.',
@@ -213,14 +270,19 @@ export class StaffAuthService {
     return rows[0] ?? null;
   }
 
-  private async recordLoginFailure(throttleKey: string): Promise<void> {
+  private async recordLoginFailure(
+    throttleKey: string,
+    maxAttempts: number,
+    lockSeconds: number,
+    windowSeconds: number = LOGIN_WINDOW_SECONDS,
+  ): Promise<void> {
     const attemptsKey = `${throttleKey}:attempts`;
     const attempts = await this.redis.incr(attemptsKey);
     if (attempts === 1) {
-      await this.redis.expire(attemptsKey, LOGIN_WINDOW_SECONDS);
+      await this.redis.expire(attemptsKey, windowSeconds);
     }
-    if (attempts >= LOGIN_MAX_ATTEMPTS) {
-      await this.redis.set(`${throttleKey}:lock`, '1', LOGIN_LOCK_SECONDS);
+    if (attempts >= maxAttempts) {
+      await this.redis.set(`${throttleKey}:lock`, '1', lockSeconds);
       await this.redis.del(attemptsKey);
     }
   }
@@ -229,8 +291,18 @@ export class StaffAuthService {
     return `staff-auth:login:${this.tenantSlug()}:${cpf}:${ip}`;
   }
 
+  // Chave de lockout por (slug:cpf), sem IP — não pode ser derrotada por
+  // rotação de IP (ver LOGIN_CPF_MAX_ATTEMPTS).
+  private loginCpfThrottleKey(cpf: string): string {
+    return `staff-auth:login:cpf:${this.tenantSlug()}:${cpf}`;
+  }
+
   private recoveryKey(cpf: string): string {
     return `staff-auth:recovery:${this.tenantSlug()}:${cpf}`;
+  }
+
+  private recoveryAttemptsKey(cpf: string): string {
+    return `staff-auth:recovery:attempts:${this.tenantSlug()}:${cpf}`;
   }
 
   private resetTokenKey(token: string): string {
@@ -283,6 +355,14 @@ export class StaffAuthService {
 
   private authFailure(): HttpException {
     return this.structuredError(HttpStatus.UNAUTHORIZED, 'CPF ou PIN inválidos.', 'AUTH_INVALID');
+  }
+
+  private recoveryThrottled(): HttpException {
+    return this.structuredError(
+      HttpStatus.TOO_MANY_REQUESTS,
+      'Muitas tentativas. Solicite outro código.',
+      'RECOVERY_THROTTLED',
+    );
   }
 
   private invalidRecoveryCode(): HttpException {

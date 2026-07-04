@@ -2323,7 +2323,13 @@ export class OrdersService {
          last_categories = $4::text[],
          favorite_items = $5::jsonb,
          updated_at = now()`,
-      [order.customer_id, order.total_cents, JSON.stringify(lastItems), categories, JSON.stringify(favoriteItems)],
+      [
+        order.customer_id,
+        order.total_cents,
+        JSON.stringify(lastItems),
+        categories,
+        JSON.stringify(favoriteItems),
+      ],
     );
   }
 
