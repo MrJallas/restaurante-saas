@@ -200,11 +200,11 @@ export async function runAuthGuardAssertions(): Promise<void> {
     throw new Error('verifyStaffSessionToken accepted a token from another tenant.');
   }
 
-  const staffOnly = new StaffOnlyGuard();
+  const staffOnly = new StaffOnlyGuard(tokenRedis as unknown as RedisService);
   const oldStaffKey = process.env.STAFF_API_KEY;
   process.env.STAFF_API_KEY = 'expected-key';
   try {
-    staffOnly.canActivate(fakeCtx({ 'x-staff-key': 'wrong-key' }));
+    await staffOnly.canActivate(fakeCtx({ 'x-staff-key': 'wrong-key' }));
     throw new Error('StaffOnlyGuard accepted an invalid key.');
   } catch (err) {
     assertAuthResponse(

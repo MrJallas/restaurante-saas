@@ -13,6 +13,7 @@ import { Server, Socket } from 'socket.io';
 import { timingSafeEqual } from 'crypto';
 import { RedisService } from '../../infra/redis/redis.service';
 import { safeJsonParse } from '../../common/utils/safe-json';
+import { verifyStaffSessionToken } from '../../common/auth/staff-session-token';
 import type {
   WsEscalationCreated,
   WsEscalationAdvanced,
@@ -131,6 +132,14 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * tenant da sessão, ele DEFINE o customerId da conexão; sem ele, cai
    * no fallback do payload compartilhado (comportamento anterior).
    */
+  /** Lê o cookie httpOnly `staff_token` do handshake (ignora porta). */
+  private readStaffTokenCookie(client: AuthedSocket): string | null {
+    const rawCookie = client.handshake.headers.cookie;
+    if (!rawCookie) return null;
+    const match = /(?:^|;\s*)staff_token=([^;]+)/.exec(rawCookie);
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
   private async resolveRecognizedCustomer(
     client: AuthedSocket,
     schemaName: string | undefined,
@@ -244,6 +253,42 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (attempts > 30) {
       this.logger.warn(`WS handshake rate-limit hit: ${ip}`);
       client.emit('error', { message: 'Rate limit. Tente novamente em 60s.' });
+      client.disconnect(true);
+      return;
+    }
+
+    // Ciclo 2 (decisão Caleb 2026-07-04): autenticação de staff no WS pelo
+    // COOKIE de sessão `staff_token` — o mesmo que o proxy seta no login.
+    // Cookies ignoram porta, então o cookie de :3002 chega no handshake do
+    // gateway em :3001 (mesmo host), igual o recognition_token do customer.
+    // A identidade (staffId/role/slug) vem do PAYLOAD verificado no Redis,
+    // nunca de header client-controlled. Sem token válido, cai no fallback
+    // da key (legado / TV que injeta server-side).
+    const staffCookieToken = this.readStaffTokenCookie(client);
+    if (staffCookieToken) {
+      const tenantHintForToken =
+        (client.handshake.headers['x-tenant-slug'] as string) ??
+        (client.handshake.auth?.tenantSlug as string) ??
+        tenantHint;
+      const payload = await verifyStaffSessionToken(
+        this.redis,
+        staffCookieToken,
+        tenantHintForToken,
+      );
+      if (payload) {
+        client.data.authType = 'staff';
+        client.data.staffId = payload.staffId;
+        client.data.staffRole = payload.role;
+        client.data.staffTenantSlug = payload.slug;
+        client.join(`staff:${payload.staffId}`);
+        client.join(`tenant:${payload.slug}`);
+        this.logger.log(`Staff WS connected via session token: ${client.id}`);
+        await this.redis.decr(handshakeKey);
+        return;
+      }
+      // Token presente mas inválido → não faz downgrade pra key.
+      this.logger.warn(`Staff WS session token inválido: ${client.id}`);
+      client.emit('error', { message: 'Sessão de equipe inválida. Faça login novamente.' });
       client.disconnect(true);
       return;
     }

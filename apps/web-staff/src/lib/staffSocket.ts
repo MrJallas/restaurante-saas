@@ -62,7 +62,12 @@ export function acquireStaffSocket(
     return existing;
   }
 
-  const staffKey = process.env.NEXT_PUBLIC_STAFF_API_KEY ?? undefined;
+  // Ciclo 2 (decisão Caleb 2026-07-04): o WS autentica pelo COOKIE de sessão
+  // `staff_token` (setado no login pelo proxy), não mais pela key no bundle.
+  // `withCredentials: true` faz o cookie subir no handshake do socket — como
+  // cookies ignoram porta, o cookie do web-staff (:3002) chega no gateway
+  // (:3001) no mesmo host. staffId/tenantSlug/role seguem no `auth` só pra
+  // os join:* rooms; a IDENTIDADE quem prova é o token verificado no gateway.
   let socket: Socket;
   try {
     socket = io(wsUrl, {
@@ -70,8 +75,8 @@ export function acquireStaffSocket(
       transports: ['websocket'],
       reconnection: true,
       autoConnect: false,
+      withCredentials: true,
       auth: {
-        staffKey,
         staffId,
         tenantSlug,
         staffRole: role,
