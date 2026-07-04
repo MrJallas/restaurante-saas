@@ -1,8 +1,9 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import type { Request } from 'express';
 import { authErrorResponse } from '../guards/auth-error-response';
 import { CustomersService } from '../../modules/customers/customers.service';
 import { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
+import type { StaffAuthRequest } from '../auth/staff-auth-request';
 
 /**
  * Resolve `customerId` do caller a partir do cookie `recognition_token`.
@@ -29,6 +30,8 @@ import { TenantConnectionProvider } from '../../modules/tenant/tenant-connection
  */
 @Injectable()
 export class CallerResolverService {
+  private readonly logger = new Logger(CallerResolverService.name);
+
   constructor(
     private readonly customers: CustomersService,
     private readonly tenantConn: TenantConnectionProvider,
@@ -78,6 +81,13 @@ export class CallerResolverService {
    * em quem AUTENTICOU (header pós-StaffOnlyGuard/ManagerOnlyGuard),
    * não em UUID arbitrário do body.
    *
+   * Gate #34 (decisão Caleb, opção A): quando o guard verificou o
+   * `x-staff-token` de sessão, a identidade VERIFICADA fica carimbada em
+   * `req.staffAuth` — e ela VENCE: o header `x-staff-id` é ignorado (se
+   * vier divergente do token, loga warn — tentativa de spoof ou bug de
+   * client). Só sem staffAuth (fluxo key/TV legado) cai no fallback do
+   * header validado por shape, comportamento anterior intacto.
+   *
    * Use em controllers staff-side via DI:
    *   const staffId = this.callerResolver.requireStaffId(req);
    *   service.action(..., { staffId });   // ignora dto.staffId
@@ -89,6 +99,19 @@ export class CallerResolverService {
     const headers = req.headers as Record<string, string | string[] | undefined>;
     const headerVal = headers['x-staff-id'];
     const staffId = Array.isArray(headerVal) ? headerVal[0] : headerVal;
+
+    // Identidade do token de sessão verificado (carimbada pelo guard) —
+    // fonte canônica; o header client-controlled não manda mais aqui.
+    const staffAuth = (req as Request & StaffAuthRequest).staffAuth;
+    if (staffAuth?.staffId) {
+      if (staffId && staffId.toLowerCase() !== staffAuth.staffId.toLowerCase()) {
+        this.logger.warn(
+          `x-staff-id divergente do token de sessão (header=${staffId}, token=${staffAuth.staffId}) — ` +
+            'possível spoof ou bug de client; usando a identidade do token (gate #34)',
+        );
+      }
+      return staffAuth.staffId;
+    }
 
     if (!staffId || typeof staffId !== 'string') {
       throw new HttpException(
@@ -115,6 +138,10 @@ export class CallerResolverService {
    * com só StaffOnlyGuard (sem ManagerOnlyGuard que já checava DB)
    * propagavam o spoof. Use em controllers staff-side com somente
    * StaffOnlyGuard.
+   *
+   * Gate #34: o cross-check DB continua IGUAL mesmo quando o staffId vem
+   * do token verificado (`req.staffAuth`) — o token vive até 12h; staff
+   * demitido/desativado no meio do turno perde acesso na hora.
    */
   async requireActiveStaffId(req: Request): Promise<string> {
     const staffId = this.requireStaffId(req);

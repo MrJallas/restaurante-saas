@@ -10,7 +10,7 @@
 import { HttpException } from '@nestjs/common';
 import { StaffOnlyGuard } from './staff-only.guard';
 import type { RedisService } from '../../infra/redis/redis.service';
-import { issueStaffSessionToken } from '../auth/staff-session-token';
+import { issueStaffSessionToken, type StaffSessionPayload } from '../auth/staff-session-token';
 
 const STAFF_KEY = 'staff-key-secreta';
 
@@ -91,5 +91,65 @@ describe('StaffOnlyGuard — key OU token de sessão', () => {
     await expect(
       guard.canActivate(ctx({ 'x-staff-token': token }, 'restaurant_dev')),
     ).rejects.toThrow(HttpException);
+  });
+});
+
+/**
+ * Gate #34 (decisão Caleb, opção A): a identidade que AGE deriva do token
+ * de sessão verificado. O guard, ao autorizar via token, carimba
+ * `req.staffAuth` com o payload VERIFICADO (staffId/role/slug) pro
+ * CallerResolver ler de lá em vez do header client-controlled
+ * `x-staff-id`. Autorização via key legada NÃO carimba (req.staffAuth
+ * ausente) — o fluxo TV/estação continua caindo no fallback atual.
+ */
+describe('StaffOnlyGuard — carimbo req.staffAuth (gate #34)', () => {
+  const OLD = process.env.STAFF_API_KEY;
+  beforeEach(() => {
+    process.env.STAFF_API_KEY = STAFF_KEY;
+  });
+  afterEach(() => {
+    if (OLD === undefined) delete process.env.STAFF_API_KEY;
+    else process.env.STAFF_API_KEY = OLD;
+  });
+
+  /** Ctx com request ESTÁVEL (mesmo objeto em todo getRequest) pra inspecionar o carimbo. */
+  function stableCtx(headers: Record<string, string>, slug = 'restaurant_dev') {
+    const request: {
+      headers: Record<string, string>;
+      params: { slug: string };
+      staffAuth?: StaffSessionPayload;
+    } = { headers, params: { slug } };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as never;
+    return { request, context };
+  }
+
+  it('token válido → carimba req.staffAuth com o payload verificado', async () => {
+    const redis = fakeRedis();
+    const { token } = await issueStaffSessionToken(redis, {
+      staffId: 'aaaaaaaa-0000-4000-8000-00000000000a',
+      role: 'waiter',
+      slug: 'restaurant_dev',
+    });
+    const guard = new StaffOnlyGuard(redis);
+    const { request, context } = stableCtx({ 'x-staff-token': token });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+
+    expect(request.staffAuth).toMatchObject({
+      staffId: 'aaaaaaaa-0000-4000-8000-00000000000a',
+      role: 'waiter',
+      slug: 'restaurant_dev',
+    });
+  });
+
+  it('x-staff-key legada (sem token) → NÃO carimba req.staffAuth', async () => {
+    const guard = new StaffOnlyGuard(fakeRedis());
+    const { request, context } = stableCtx({ 'x-staff-key': STAFF_KEY });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+
+    expect(request.staffAuth).toBeUndefined();
   });
 });

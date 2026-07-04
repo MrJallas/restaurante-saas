@@ -1,6 +1,7 @@
 import { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
 import { RedisService } from '../../infra/redis/redis.service';
 import { verifyStaffSessionToken } from '../auth/staff-session-token';
+import type { StaffAuthRequest } from '../auth/staff-auth-request';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -46,7 +47,7 @@ export interface ResolvedStaffError {
  * UUID sanitizado que o guard ainda reconfere no DB.
  */
 export async function resolveAuthenticatedStaff(
-  req: { headers: Record<string, string | string[] | undefined> },
+  req: { headers: Record<string, string | string[] | undefined> } & StaffAuthRequest,
   tenantConn: TenantConnectionProvider,
   redis: RedisService,
 ): Promise<ResolvedStaff | ResolvedStaffError> {
@@ -60,6 +61,10 @@ export async function resolveAuthenticatedStaff(
       // fallback pro header (evita downgrade attack).
       return { error: 'invalid' };
     }
+    // Gate #34: carimba a identidade VERIFICADA pro CallerResolver ler do
+    // token, não do header client-controlled. O fallback legado (header,
+    // abaixo) NÃO carimba.
+    req.staffAuth = payload;
     return { staffId: payload.staffId, tokenRole: payload.role, source: 'token' };
   }
 

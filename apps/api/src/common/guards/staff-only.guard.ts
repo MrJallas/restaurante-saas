@@ -9,6 +9,7 @@ import { timingSafeEqual } from 'crypto';
 import { authErrorResponse } from './auth-error-response';
 import { RedisService } from '../../infra/redis/redis.service';
 import { verifyStaffSessionToken } from '../auth/staff-session-token';
+import type { StaffAuthRequest } from '../auth/staff-auth-request';
 
 /**
  * "É staff?" — porta dos 64 endpoints StaffOnly. Aceita DUAS provas de
@@ -27,17 +28,25 @@ export class StaffOnlyGuard implements CanActivate {
   constructor(private readonly redis: RedisService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<{
-      headers: Record<string, string>;
-      params?: { slug?: string };
-    }>();
+    const request = context.switchToHttp().getRequest<
+      {
+        headers: Record<string, string>;
+        params?: { slug?: string };
+      } & StaffAuthRequest
+    >();
 
     // 1. Token de sessão (identidade individual verificada server-side).
     const token = request.headers['x-staff-token'];
     if (token) {
       const slug = request.params?.slug ?? 'unknown';
       const payload = await verifyStaffSessionToken(this.redis, token, slug);
-      if (payload) return true;
+      if (payload) {
+        // Gate #34: carimba a identidade VERIFICADA pro CallerResolver ler
+        // do token, não do header client-controlled `x-staff-id`. O caminho
+        // da key (abaixo) NÃO carimba — TV/estação segue no fallback.
+        request.staffAuth = payload;
+        return true;
+      }
       // Token presente mas inválido → NUNCA faz downgrade pra key (mesma
       // proteção do resolveAuthenticatedStaff).
       throw new HttpException(
