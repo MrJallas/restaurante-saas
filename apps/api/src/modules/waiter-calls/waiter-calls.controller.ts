@@ -147,7 +147,7 @@ export class WaiterCallsController {
 
   @Post(':callId/resolve')
   @UseGuards(StaffOnlyGuard)
-  async resolveCall(@Param('callId') callId: string) {
-    return this.waiterCallsService.resolveCall(callId);
+  async resolveCall(@Param('callId') callId: string, @Param('slug') slug: string) {
+    return this.waiterCallsService.resolveCall(callId, slug);
   }
 }

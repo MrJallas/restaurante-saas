@@ -12,6 +12,7 @@ import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitives';
 import {
   acknowledgeCall,
+  resolveCall,
   getCallStaffDetail,
   type WaiterCallStaffDetail,
 } from '../../lib/api/waiter';
@@ -98,6 +99,7 @@ export function ScreenWaiterCallDetail({
   const copy = VISUAL_BY_TYPE[callType];
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [acked, setAcked] = useState(false);
+  const [resolved, setResolved] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [detail, setDetail] = useState<WaiterCallStaffDetail | null>(null);
   const [detailFailed, setDetailFailed] = useState(false);
@@ -109,7 +111,12 @@ export function ScreenWaiterCallDetail({
     let stop = false;
     getCallStaffDetail(tenantSlug, callId)
       .then((d) => {
-        if (!stop) setDetail(d);
+        if (stop) return;
+        setDetail(d);
+        // Um chamado já 'acknowledged' abre direto no estágio "Atendido" —
+        // e um já 'resolved' abre concluído (não re-oferece as ações).
+        if (d.status === 'acknowledged' || d.status === 'resolved') setAcked(true);
+        if (d.status === 'resolved') setResolved(true);
       })
       .catch(() => {
         // Anti-placebo: sem dado real a tela mostra "—", nunca um número
@@ -143,14 +150,16 @@ export function ScreenWaiterCallDetail({
       : 'Carregando detalhes do chamado…';
   const tableLine = detail ? detail.tableLabel : `Mesa ${tableNumber}`;
 
+  // Estágio 1: "A caminho" (acknowledge). NÃO navega mais de volta na hora —
+  // o garçom precisa poder concluir o chamado ('resolved') depois de atender,
+  // senão o chamado morre em 'acknowledged' e a sheet do cliente trava (P1).
   const ack = async () => {
     if (acked || submitting) return;
     setSubmitting(true);
     try {
       await acknowledgeCall(tenantSlug, callId);
       setAcked(true);
-      showToast('Chamado registrado.');
-      setTimeout(() => router.back(), 700);
+      showToast('A caminho. Conclua quando atender a mesa.');
     } catch (error) {
       console.error('[waiter-call-detail] acknowledge failed', error);
       showToast('Não foi possível registrar o atendimento.');
@@ -158,6 +167,37 @@ export function ScreenWaiterCallDetail({
       setSubmitting(false);
     }
   };
+
+  // Estágio 2: "Atendido" (resolve). Move o chamado pra 'resolved' (terminal)
+  // e o backend emite `waiter:resolved` — a sheet do cliente destrava.
+  const resolve = async () => {
+    if (resolved || submitting) return;
+    setSubmitting(true);
+    try {
+      await resolveCall(tenantSlug, callId);
+      setResolved(true);
+      showToast('Chamado concluído.');
+      setTimeout(() => router.back(), 700);
+    } catch (error) {
+      console.error('[waiter-call-detail] resolve failed', error);
+      showToast('Não foi possível concluir o chamado.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Label + ação do CTA primário dependem do estágio: antes de atender,
+  // "A caminho"; depois, "Atendido" (conclui).
+  const primaryLabel = submitting
+    ? acked
+      ? 'Concluindo…'
+      : 'Registrando…'
+    : resolved
+      ? 'Concluído'
+      : acked
+        ? 'Atendido'
+        : copy.primary;
+  const onPrimary = acked ? resolve : ack;
 
   return (
     <div
@@ -382,8 +422,14 @@ export function ScreenWaiterCallDetail({
           Voltar
         </GButton>
         <div style={{ flex: 1 }}>
-          <GButton kind="primary" dark={dark} full onClick={ack} disabled={acked || submitting}>
-            {submitting ? 'Registrando…' : acked ? 'Registrado…' : copy.primary}
+          <GButton
+            kind="primary"
+            dark={dark}
+            full
+            onClick={onPrimary}
+            disabled={resolved || submitting}
+          >
+            {primaryLabel}
           </GButton>
         </div>
       </div>

@@ -55,13 +55,32 @@ export class WaiterCallsService {
     // concorrentes todos resolvem na MESMA linha (mesmo callId) via
     // ON CONFLICT, em vez do antigo SELECT-then-INSERT que corria e abria N
     // chamados. A UI do cliente mostra "Aguardando garçom" até cancelar/resolver.
+    // P1 (re-scan 2026-07-04): `reason_changed` NÃO pode sair do RETURNING do
+    // upsert — o Postgres 16 não expõe OLD/EXCLUDED em RETURNING (só PG18+;
+    // testado contra o container real: `ERROR: missing FROM-clause entry for
+    // table "old"`). O CTE `prior` fotografa a reason do call ATIVO ANTES do
+    // upsert sobrescrever; `reason_changed` só é verdadeiro quando NÃO inseriu
+    // E a reason antiga difere (num INSERT puro `prev_reason` é NULL, mas o
+    // `NOT was_inserted` já zera — sem falso-positivo no caminho feliz).
     const rows = (await this.tenantConn.query(
-      `INSERT INTO waiter_calls (table_session_id, status, reason, customer_id, visit_id)
-       VALUES ($1, 'pending', $2, $3, $4)
-       ON CONFLICT (table_session_id) WHERE status IN ('pending', 'acknowledged')
-       DO UPDATE SET reason = EXCLUDED.reason
-       RETURNING id, status, reason, created_at, assigned_waiter_name, eta_minutes,
-                 (xmax = 0) AS was_inserted`,
+      `WITH prior AS (
+         SELECT reason AS prev_reason
+           FROM waiter_calls
+          WHERE table_session_id = $1 AND status IN ('pending', 'acknowledged')
+          LIMIT 1
+       ),
+       upsert AS (
+         INSERT INTO waiter_calls (table_session_id, status, reason, customer_id, visit_id)
+         VALUES ($1, 'pending', $2, $3, $4)
+         ON CONFLICT (table_session_id) WHERE status IN ('pending', 'acknowledged')
+         DO UPDATE SET reason = EXCLUDED.reason
+         RETURNING id, status, reason, created_at, assigned_waiter_name, eta_minutes,
+                   (xmax = 0) AS was_inserted
+       )
+       SELECT u.id, u.status, u.reason, u.created_at, u.assigned_waiter_name,
+              u.eta_minutes, u.was_inserted,
+              (NOT u.was_inserted AND u.reason IS DISTINCT FROM p.prev_reason) AS reason_changed
+         FROM upsert u LEFT JOIN prior p ON true`,
       [tableSessionId, reason, options.customerId ?? null, options.visitId ?? null],
     )) as {
       id: string;
@@ -71,13 +90,24 @@ export class WaiterCallsService {
       assigned_waiter_name: string | null;
       eta_minutes: number | null;
       was_inserted: boolean;
+      reason_changed: boolean;
     }[];
 
     const call = rows[0];
 
-    // Só emite o WS de "novo chamado" quando REALMENTE inseriu — um re-POST
-    // que caiu no ON CONFLICT não deve re-notificar o garçom.
-    if (call.was_inserted) {
+    // Notifica o garçom em DOIS casos:
+    //  (1) chamado REALMENTE novo (inserido) — caminho original.
+    //  (2) P1 (re-scan 2026-07-04): re-chamado numa mesa com call ATIVO
+    //      (pending/acknowledged) onde a REASON MUDOU — antes o
+    //      `ON CONFLICT DO UPDATE SET reason` colapsava a nova reason na row
+    //      e `was_inserted=false` engolia o WS: cliente pedia ask_bill, garçom
+    //      ack, cliente pedia serve_drink → garçom nunca sabia e a reason era
+    //      sobrescrita silenciosamente. Agora re-emite `waiter:call` com a
+    //      reason nova (mesma room/shape que a lista do garçom já consome),
+    //      sem criar row duplicada (preserva o índice 1-ativo-por-mesa).
+    //      O dedup de spam do MESMO botão fica intacto: reason IGUAL →
+    //      reason_changed=false → sem WS.
+    if (call.was_inserted || call.reason_changed) {
       this.eventsGateway.emitWaiterCall(slug, {
         callId: call.id,
         tableLabel: tableInfo.label,
@@ -315,13 +345,33 @@ export class WaiterCallsService {
     };
   }
 
-  async resolveCall(callId: string) {
-    await this.tenantConn.query(
-      `UPDATE waiter_calls
+  /**
+   * P1 (re-scan 2026-07-04): era DEAD CODE — zero call-sites. O chamado
+   * morria em 'acknowledged' pra sempre e a sheet do cliente travava
+   * ("Chamar de novo" desabilitado, "Cancelar" estourando 'já atendido').
+   * Agora o garçom conclui o chamado pelo ScreenWaiterCallDetail: move pra
+   * 'resolved' (terminal) E EMITE `waiter:resolved` pro cliente (destrava a
+   * sheet — 'resolved' já está em DONE_STATUSES do lado dele) e pro garçom
+   * (lista limpa). RETURNING + unwrapRows pra carregar o table_session_id
+   * real no WS (mesmo footgun do acknowledge: cast cru → session undefined).
+   */
+  async resolveCall(callId: string, slug: string) {
+    const updated = unwrapRows<{ id: string; table_session_id: string }>(
+      await this.tenantConn.query(
+        `UPDATE waiter_calls
        SET status = 'resolved', resolved_at = now()
-       WHERE id = $1 AND status IN ('pending', 'acknowledged')`,
-      [callId],
+       WHERE id = $1 AND status IN ('pending', 'acknowledged')
+       RETURNING id, table_session_id`,
+        [callId],
+      ),
     );
+
+    // Só emite quando REALMENTE resolveu uma row ativa — re-resolve de um
+    // chamado já terminal (ou inexistente) não re-notifica ninguém.
+    if (updated.length) {
+      this.eventsGateway.emitWaiterCallResolved(slug, callId, updated[0].table_session_id);
+    }
+
     return { callId, status: 'resolved' };
   }
 

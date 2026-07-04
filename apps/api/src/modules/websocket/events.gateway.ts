@@ -753,6 +753,10 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     return this.emitter.emitWaiterCallAcknowledged(slug, callId, sessionId, extra);
   }
 
+  emitWaiterCallResolved(slug: string, callId: string, sessionId: string) {
+    return this.emitter.emitWaiterCallResolved(slug, callId, sessionId);
+  }
+
   emitToSession(sessionId: string, event: string, data: unknown) {
     return this.emitter.emitToSession(sessionId, event, data);
   }

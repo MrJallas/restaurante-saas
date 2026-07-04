@@ -494,6 +494,16 @@ export interface WsWaiterAcknowledged {
   };
 }
 
+export interface WsWaiterResolved {
+  event: 'waiter:resolved';
+  payload: {
+    callId: string;
+    timestamp: string;
+    /** Sessão do chamado — destrava a sheet do cliente em realtime. */
+    tableSessionId?: string;
+  };
+}
+
 export interface WsOrderHandoffCalled {
   event: 'order:handoff_called';
   payload: {
@@ -725,6 +735,7 @@ export type WsEvent =
   | WsKitchenPriorityResponse
   | WsWaiterCall
   | WsWaiterAcknowledged
+  | WsWaiterResolved
   | WsZonePauseStarted
   | WsZonePauseEnded
   | WsSessionFlagChanged

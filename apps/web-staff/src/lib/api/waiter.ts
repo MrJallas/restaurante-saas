@@ -159,6 +159,18 @@ export function acknowledgeCall(
   return staffPost(`/${tenantSlug}/waiter-calls/${callId}/acknowledge`, {});
 }
 
+/**
+ * Conclui o chamado (garçom atendeu). Move pra 'resolved' (terminal) e o
+ * backend emite `waiter:resolved` — a sheet do cliente destrava. Sem isto o
+ * chamado morria em 'acknowledged' pra sempre (P1 re-scan 2026-07-04).
+ */
+export function resolveCall(
+  tenantSlug: string,
+  callId: string,
+): Promise<{ callId: string; status: string }> {
+  return staffPost(`/${tenantSlug}/waiter-calls/${callId}/resolve`, {});
+}
+
 // ─── Tables / sessions ───
 export function listMyTables(tenantSlug: string): Promise<ActiveTableSummary[]> {
   return staffGet<ActiveTableSummary[]>(`/${tenantSlug}/staff/my-tables`);

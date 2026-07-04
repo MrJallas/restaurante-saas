@@ -306,6 +306,25 @@ export class EventsEmitterService {
     );
   }
 
+  /**
+   * P1 (re-scan 2026-07-04): o garçom concluiu o chamado. Espelha o
+   * roteamento do acknowledged — vai pro session room (destrava a sheet do
+   * cliente em realtime, além do poll de 5s que já enxerga 'resolved') E pro
+   * tenant:<slug>:waiter (a lista do garçom limpa o chamado terminal).
+   */
+  emitWaiterCallResolved(slug: string, callId: string, sessionId: string) {
+    this.server.to(`session:${sessionId}`).emit('waiter:resolved', {
+      callId,
+      tableSessionId: sessionId,
+      timestamp: new Date().toISOString(),
+    });
+    this.server.to(`tenant:${slug}:waiter`).emit('waiter:resolved', {
+      callId,
+      tableSessionId: sessionId,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   emitToSession(sessionId: string, event: string, data: unknown) {
     this.server.to(`session:${sessionId}`).emit(event, data);
   }
