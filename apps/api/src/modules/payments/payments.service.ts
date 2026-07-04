@@ -1,8 +1,10 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
 import { BillingService, BillTotals } from '../billing/billing.service';
+import { EventsGateway } from '../websocket/events.gateway';
 
 /** Pix QR codes expire 10 minutes after generation (design S9b). */
 const PIX_EXPIRY_SECONDS = 600;
@@ -59,6 +61,9 @@ export class PaymentsService {
     private readonly tenantConn: TenantConnectionProvider,
     private readonly redis: RedisService,
     private readonly billing: BillingService,
+    // M3 (timeline): @Optional segue o padrão order-delivery.service —
+    // param novo opcional não quebra os construtores posicionais dos testes.
+    @Optional() private readonly eventsGateway?: EventsGateway,
   ) {}
 
   async requestPayment(
@@ -312,8 +317,11 @@ export class PaymentsService {
    * GET /:id and redirects to the feedback screen when it sees 'confirmed'.
    */
   async confirmPayment(paymentId: string, tableSessionId: string, pspTransactionId?: string) {
+    // M3 (timeline): amount_cents/method/split_mode/visit_id são lidos só
+    // pra montar o payload do WS payment.confirmed — nenhuma validação nova.
     const rows = (await this.tenantConn.query(
-      `SELECT id, status, table_session_id, expires_at
+      `SELECT id, status, table_session_id, expires_at,
+              amount_cents, method, split_mode, visit_id
        FROM payments WHERE id = $1`,
       [paymentId],
     )) as {
@@ -321,6 +329,10 @@ export class PaymentsService {
       status: string;
       table_session_id: string;
       expires_at: string | null;
+      amount_cents: number | string;
+      method: string | null;
+      split_mode: string | null;
+      visit_id: string | null;
     }[];
 
     if (!rows.length) {
@@ -377,13 +389,34 @@ export class PaymentsService {
       return { paymentId, status: 'awaiting_settlement' };
     }
 
-    await this.tenantConn.query(
-      `UPDATE payments
+    const confirmedRows = unwrapRows<{ paid_at: string | Date | null }>(
+      await this.tenantConn.query(
+        `UPDATE payments
        SET status = 'confirmed', paid_at = now(),
            psp_transaction_id = $2, updated_at = now()
-       WHERE id = $1`,
-      [paymentId, pspTransactionId || null],
+       WHERE id = $1
+       RETURNING paid_at`,
+        [paymentId, pspTransactionId || null],
+      ),
     );
+
+    // M3 (timeline): payment.confirmed — primeiro evento WS da família
+    // payments. Emitido DEPOIS do UPDATE (auto-commit) resolver, seguindo o
+    // padrão markOrderInTransit: emissão nunca segura/aborta o pagamento.
+    // Só o caminho 'confirmed' de verdade emite — awaiting_settlement NÃO é
+    // conta paga (A04-PAY-01). customerId fica de fora: payments não tem
+    // customer_id (só visit_id) e não inventamos identidade aqui.
+    const paidAtRaw = confirmedRows[0]?.paid_at;
+    this.eventsGateway?.emitPaymentConfirmed(this.tenantConn.getTenantSlug() ?? '', {
+      paymentId,
+      tableSessionId,
+      amountCents: Number(payment.amount_cents),
+      method: payment.method ?? undefined,
+      splitMode: payment.split_mode ?? undefined,
+      visitId: payment.visit_id ?? undefined,
+      confirmedAt: paidAtRaw ? new Date(paidAtRaw).toISOString() : new Date().toISOString(),
+      timestamp: new Date().toISOString(),
+    });
 
     return { paymentId, status: 'confirmed' };
   }

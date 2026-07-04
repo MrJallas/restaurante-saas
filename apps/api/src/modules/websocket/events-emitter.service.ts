@@ -41,6 +41,7 @@ import type {
   WsStaffMessageRead,
   WsCourtesyCreated,
   WsCourtesyUpdated,
+  WsPaymentConfirmed,
   WsOrderStatus,
   WsOrderClaimed,
   WsWaiterAcknowledged,
@@ -667,6 +668,24 @@ export class EventsEmitterService {
   emitCourtesyUpdated(slug: string, payload: WsCourtesyUpdated['payload']) {
     this.server.to(`tenant:${slug}`).emit('courtesy.updated', payload);
     this.server.to(`session:${payload.tableSessionId}`).emit('courtesy.updated', payload);
+  }
+
+  /**
+   * M3 (timeline): pagamento transicionou pra 'confirmed' (paid_at gravado)
+   * — primeiro evento WS da família payments (antes não emitia nada).
+   *
+   * Routing (mesmo padrão courtesy/session-flag da família financeira):
+   *  - `tenant:<slug>`  : staff dashboards (manager/host fecham o card de
+   *                       conta em aberto sem polling);
+   *  - `session:<id>`   : todos os devices da mesa transicionam pra tela
+   *                       de pago em tempo real.
+   * Payload passthrough — nasce completo no caller (payments.service
+   * .confirmPayment, APÓS o UPDATE commitar), incluindo confirmedAt
+   * (paid_at) e timestamp.
+   */
+  emitPaymentConfirmed(slug: string, payload: WsPaymentConfirmed['payload']) {
+    this.server.to(`tenant:${slug}`).emit('payment.confirmed', payload);
+    this.server.to(`session:${payload.tableSessionId}`).emit('payment.confirmed', payload);
   }
 
   /**

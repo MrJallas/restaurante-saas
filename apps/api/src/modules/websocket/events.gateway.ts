@@ -41,6 +41,7 @@ import type {
   WsStaffMessageRead,
   WsCourtesyCreated,
   WsCourtesyUpdated,
+  WsPaymentConfirmed,
   WsOrderStatus,
   WsOrderClaimed,
   WsWaiterAcknowledged,
@@ -932,6 +933,10 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
 
   emitCourtesyUpdated(slug: string, payload: WsCourtesyUpdated['payload']) {
     return this.emitter.emitCourtesyUpdated(slug, payload);
+  }
+
+  emitPaymentConfirmed(slug: string, payload: WsPaymentConfirmed['payload']) {
+    return this.emitter.emitPaymentConfirmed(slug, payload);
   }
 
   emitZonePauseStarted(slug: string, payload: WsZonePauseStarted['payload']) {

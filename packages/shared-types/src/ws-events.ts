@@ -368,6 +368,40 @@ export interface WsCourtesyUpdated {
   payload: CustomerCourtesyDto;
 }
 
+// ─── Payments ───
+
+/**
+ * M3 (timeline): pagamento transicionou pra 'confirmed' (paid_at gravado).
+ * Antes o pagamento não emitia NADA — este é o primeiro evento WS da
+ * família. Payload alinhado ao TimelineEntry kind 'payment.confirmed' (M1):
+ * refs.paymentId + sessionId + payload financeiro. Emitido APÓS o UPDATE
+ * commitar — emissão nunca segura/aborta o pagamento.
+ */
+export interface WsPaymentConfirmed {
+  event: 'payment.confirmed';
+  payload: {
+    paymentId: string;
+    tableSessionId: string;
+    amountCents: number;
+    /** pix | card | cash | credit | debit — ausente se a row legacy não tiver. */
+    method?: string;
+    /** equal | by_item | custom — só em pagamento de conta dividida. */
+    splitMode?: string;
+    /** Comanda individual paga — ausente em pagamento de mesa. */
+    visitId?: string | null;
+    /**
+     * payments NÃO tem customer_id (só visit_id) — este campo só vem
+     * preenchido quando um caller futuro (webhook PSP / confirm de staff)
+     * resolver o customer server-side. Nunca derivado de input do client.
+     */
+    customerId?: string | null;
+    /** ISO do ATO — paid_at gravado no UPDATE (fallback now()). */
+    confirmedAt: string;
+    /** ISO da emissão (padrão da família). */
+    timestamp: string;
+  };
+}
+
 // ─── Waiter calls / order handoff ───
 
 export interface WsOrderReady {
@@ -666,6 +700,7 @@ export type WsEvent =
   | WsStaffMessagesCustomerReplied
   | WsCourtesyCreated
   | WsCourtesyUpdated
+  | WsPaymentConfirmed
   | WsOrderReady
   | WsOrderStatus
   | WsOrderClaimed

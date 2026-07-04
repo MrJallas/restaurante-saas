@@ -41,6 +41,7 @@ import type {
   WsTableMergeCreated,
   WsTableMergeApproved,
   WsTableMergeRejected,
+  WsPaymentConfirmed,
 } from '@restaurant/shared-types';
 
 const SLUG = 'resto_dev';
@@ -486,6 +487,54 @@ describe('EventsGateway emit* — characterization de rooms/wire/payload', () =>
       expect(record.event).toBe('table_merge.approved');
       expect(record.payload).toBe(payload);
     }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // M3 (timeline) — payment.confirmed: evento NOVO (pagamento não emitia
+  // nada). Casos ADITIVOS: rooms + wire + payload passthrough. Nenhuma
+  // asserção pré-existente foi alterada.
+  // ─────────────────────────────────────────────────────────────────────
+
+  it('l1. [M3·payment] emitPaymentConfirmed → tenant:<slug> + session:<tableSessionId>, wire payment.confirmed, payload passthrough', () => {
+    const { gateway, emitted, globalEmit } = createHarness();
+    const payload: WsPaymentConfirmed['payload'] = {
+      paymentId: 'pay-1',
+      tableSessionId: 'ts-11',
+      amountCents: 12345,
+      method: 'pix',
+      splitMode: 'equal',
+      visitId: 'visit-3',
+      confirmedAt: '2026-07-04T12:03:00.000Z',
+      timestamp: '2026-07-04T12:03:00.500Z',
+    };
+
+    gateway.emitPaymentConfirmed(SLUG, payload);
+
+    expect(globalEmit).not.toHaveBeenCalled();
+    expect(emitted).toHaveLength(2);
+    expect(emitted.map((e) => e.rooms)).toEqual([`tenant:${SLUG}`, 'session:ts-11']);
+    expect(emitted.every((e) => e.event === 'payment.confirmed')).toBe(true);
+    // Passthrough: MESMA referência — o payload nasce completo no caller
+    // (payments.service), incluindo confirmedAt (paid_at) e timestamp.
+    expect(emitted.every((e) => e.payload === payload)).toBe(true);
+  });
+
+  it('l2. [M3·payment] emitPaymentConfirmed com payload mínimo (sem method/splitMode/visitId/customerId) → mesmas rooms/wire', () => {
+    const { gateway, emitted } = createHarness();
+    const payload: WsPaymentConfirmed['payload'] = {
+      paymentId: 'pay-2',
+      tableSessionId: 'ts-12',
+      amountCents: 990,
+      confirmedAt: '2026-07-04T12:04:00.000Z',
+      timestamp: '2026-07-04T12:04:00.100Z',
+    };
+
+    gateway.emitPaymentConfirmed(SLUG, payload);
+
+    expect(emitted).toHaveLength(2);
+    expect(emitted.map((e) => e.rooms)).toEqual([`tenant:${SLUG}`, 'session:ts-12']);
+    expect(emitted.every((e) => e.event === 'payment.confirmed')).toBe(true);
+    expect(emitted.every((e) => e.payload === payload)).toBe(true);
   });
 
   it('k3. [M2·merge] emitTableMergeRejected repassa decidedAt (sem decidedByCustomerId no timeout) — rooms tenant + ambas sessions', () => {
