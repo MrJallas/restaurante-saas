@@ -320,6 +320,35 @@ Fatia 1A (2026-07-04, branch fix/framework-bugfixes) — cluster de dinheiro:
   comanda individual do caller — se a parte rateada exceder a comanda, o
   backend clampa pro devido individual. Alinhar semantica na fatia 1D/Balde 3.
 
+Fatia 1D (2026-07-04, branch fix/framework-bugfixes) — staff ops + botoes mortos:
+
+- forceMerge (override manager) funcionava 0%: INSERT em colunas inexistentes
+  de escalation_chains. Agora usa o schema real (kind='table_merge',
+  source_id=request, steps jsonb staff_override, completed_at,
+  resolution_notes) e liga a chain ao request. Provado no schema real via
+  POST /staff/table-merges/force (era 500; agora approved + chain de audit).
+- staff-messages overnight: assignment de ONTEM casa no trecho pos-00h
+  (start > end AND localtime < end) e a thread de ontem so fecha apos o fim
+  do turno. Matriz provada no Postgres real com horarios sinteticos.
+- GET /waiter-calls/:id/staff-detail NOVO (StaffOnly): mesa real + conta
+  real da sessao (todos os billing modes; e o fechamento presencial) com a
+  MESMA taxa do POST /payments. ScreenWaiterCallDetail deixou de ser placebo
+  (R$612,40 hardcoded) — sem dado real mostra '—'.
+- Balde 1 (anti-placebo): enviar avaliacao, cancelar Pix, cancelar chamado e
+  encerrar turno mostram erro visivel e NAO fingem sucesso; dispensar alerta
+  do manager faz POST /alerts/:id/dismiss com rollback; managerMe (helper
+  morto de rota inexistente) removido.
+- Balde 2: ScreenManagerOps liga alertas no GET /alerts e mapa no
+  GET /staff/tables-overview (ocupada/livre reais; sem tempos/valores
+  fabricados; secao 'carga por garcom' fake sumiu por falta de dado);
+  funil ganhou selo 'Dados de demonstracao' ate existir backend (round19).
+  ScreenManagerHomeA: 3 alertas fake viram fetch + dismiss reais.
+- Balde 3 (decisoes de produto) NAO implementado — pacote levado ao dono no
+  gate da 1D: pagamento demo vs PSP real; telas de leitura fabricadas do
+  manager (funil/drill-downs/KPIs por funcionario); conta do host e waiter
+  profile stubs; botoes de late-arrival do manager (401 + contradiz doutrina
+  staff-passivo); semantica do dividir (rateio mesa vs cobranca individual).
+
 Fatia 1C (2026-07-04, branch fix/framework-bugfixes) — realtime + rule-layer:
 
 - Decisao de join/merge exige frase INEQUIVOCA (fullmatch curto) — um "nao"
