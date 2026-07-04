@@ -320,6 +320,31 @@ Fatia 1A (2026-07-04, branch fix/framework-bugfixes) — cluster de dinheiro:
   comanda individual do caller — se a parte rateada exceder a comanda, o
   backend clampa pro devido individual. Alinhar semantica na fatia 1D/Balde 3.
 
+Fatia 1C (2026-07-04, branch fix/framework-bugfixes) — realtime + rule-layer:
+
+- Decisao de join/merge exige frase INEQUIVOCA (fullmatch curto) — um "nao"
+  solto no meio de qualquer frase rejeitava o convite pendente ("nao sei o
+  que pedir" recusava a juncao). Gemeo aplicado no FE
+  (tableMergeDecisionFromText). Bateria: tests/test_join_decision_guard.py.
+- view_order ganhou guard de negacao (igual ao bloco de pagamento):
+  "nao quero ver meu pedido" vai pro LLM.
+- dispatch_tool (sincrono: httpx.Client/redis-py) agora roda em
+  asyncio.to_thread nas rotas async — tool no timeout de 10s congelava o
+  event loop inteiro (ate /health). Teste de concorrencia:
+  tests/test_event_loop_not_blocked.py.
+- Handshake WS: cota via incrWithExpiry (Lua atomico; INCR+EXPIRE separados
+  deixavam chave sem TTL = lockout eterno), chave ws:handshake:<tenant>:<ip>,
+  e handshake AUTENTICADO devolve a cota (decr) — 30+ devices reconectando
+  pos-deploy nao travam mais a mesa. RedisService ganhou decr().
+  customerSocket manda tenantSlug (do path) no auth como hint de escopo.
+- Sockets staff: registry compartilhado extraido pra
+  apps/web-staff/src/lib/staffSocket.ts (1 socket por url|tenant|staff|role,
+  refcount, retry pos 'io server disconnect') — manager/host abriam socket
+  novo POR TELA sem retry. Waiter migrado pra mesma lib; hooks nem conectam
+  sem staffId.
+- TV KDS: AudioContext SINGLETON com resume() em playBeep — contexto novo
+  por beep estourava o limite do browser e a TV ficava muda apos ~6 pedidos.
+
 Por workspace:
 
 ```bash
