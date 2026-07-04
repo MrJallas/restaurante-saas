@@ -12,7 +12,9 @@ import {
   HttpException,
   HttpStatus,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   IsString,
   IsNotEmpty,
@@ -26,6 +28,9 @@ import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { RedisService } from '../../infra/redis/redis.service';
 import { StaffService } from './staff.service';
+import { ZoneAssignmentsService } from './zone-assignments.service';
+import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 
 // Round 8 (B-NEW-30) — throttle GLOBAL por IP em verify-pin. Antes só
 // throttle por staffId (5/5min individual): atacante com lista de N
@@ -99,6 +104,8 @@ export class StaffController {
   constructor(
     private readonly staffService: StaffService,
     private readonly redis: RedisService,
+    private readonly zoneAssignments: ZoneAssignmentsService,
+    private readonly callerResolver: CallerResolverService,
   ) {}
 
   @Get()
@@ -141,6 +148,33 @@ export class StaffController {
    * ativas do tenant agrupáveis por zona. Declarado ANTES do wildcard
    * `@Get(':id')` pra Nest matcher não cair em getById('tables-overview').
    */
+  /**
+   * Atribuição garçom→zona do DIA (decisão Caleb 2026-07-04): fonte real
+   * da carga por garçom. Leitura: qualquer staff. Escrita: manager.
+   * Declaradas ANTES do wildcard :id (mesmo motivo do tables-overview).
+   */
+  @Get('zone-assignments')
+  @UseGuards(StaffOnlyGuard)
+  async listZoneAssignments() {
+    return this.zoneAssignments.listToday();
+  }
+
+  @Post('zone-assignments')
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
+  async assignZone(@Body() dto: { staffId: string; zoneId: string }, @Req() req: Request) {
+    const managerId = await this.callerResolver.requireActiveStaffId(req);
+    if (!dto?.staffId || !dto?.zoneId) {
+      throw new BadRequestException('staffId e zoneId são obrigatórios.');
+    }
+    return this.zoneAssignments.assign(dto.staffId, dto.zoneId, managerId);
+  }
+
+  @Delete('zone-assignments/:assignmentId')
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
+  async removeZoneAssignment(@Param('assignmentId') assignmentId: string) {
+    return this.zoneAssignments.remove(assignmentId);
+  }
+
   @Get('tables-overview')
   @UseGuards(StaffOnlyGuard)
   async tablesOverview() {

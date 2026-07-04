@@ -14,7 +14,10 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { StaffController } from './staff.controller';
 import { StaffService } from './staff.service';
+import { ZoneAssignmentsService } from './zone-assignments.service';
 import { RedisService } from '../../infra/redis/redis.service';
+import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 
 const STAFF_KEY = 'test-staff-key-regression';
 
@@ -34,6 +37,11 @@ describe('GET /:slug/staff roster — StaffOnlyGuard enforcement (regression)', 
         { provide: StaffService, useValue: { list, getById } },
         // RedisService só é usado no verifyPin — stub mínimo pro DI.
         { provide: RedisService, useValue: {} },
+        // Deps das rotas de zone-assignments (2026-07-04) — stubs pro DI;
+        // este teste cobre só o guard do roster.
+        { provide: ZoneAssignmentsService, useValue: {} },
+        { provide: TenantConnectionProvider, useValue: { query: async () => [] } },
+        { provide: CallerResolverService, useValue: {} },
       ],
     }).compile();
 
