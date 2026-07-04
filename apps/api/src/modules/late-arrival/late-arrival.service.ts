@@ -55,23 +55,57 @@ export class LateArrivalService {
     const expectedArrivalAt =
       input.expectedArrivalAt ?? new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
-    const rows = (await this.tenantConn.query(
-      `INSERT INTO late_arrival_requests
-         (visit_id, table_session_id, customer_id, expected_arrival_at,
-          status, ttl_expires_at, message)
-       VALUES ($1, $2, $3, $4, 'pending', $5, $6)
-       RETURNING *`,
-      [
-        input.visitId ?? null,
-        input.tableSessionId ?? null,
-        input.customerId,
-        expectedArrivalAt,
-        ttlExpiresAt,
-        input.message ?? null,
-      ],
-    )) as LateArrivalRow[];
+    // P1-T: create the request AND its escalation chain atomically, then link
+    // them. The migration 024 column `escalation_chain_id` (and the whole
+    // late_arrival escalation ladder in ttl-tick's sweep) had ZERO writers —
+    // nobody ever created the chain, so a host who ignored a late-arrival
+    // request never rolled up to the manager. Mirrors the scan-verification
+    // create() pattern (kind='late_arrival', level 0 -> zone_host -> manager).
+    const requestId = await this.tenantConn.transaction(async (tx) => {
+      const inserted = unwrapRows<LateArrivalRow>(
+        await tx.query(
+          `INSERT INTO late_arrival_requests
+             (visit_id, table_session_id, customer_id, expected_arrival_at,
+              status, ttl_expires_at, message)
+           VALUES ($1, $2, $3, $4, 'pending', $5, $6)
+           RETURNING *`,
+          [
+            input.visitId ?? null,
+            input.tableSessionId ?? null,
+            input.customerId,
+            expectedArrivalAt,
+            ttlExpiresAt,
+            input.message ?? null,
+          ],
+        ),
+      );
+      const id = inserted[0].id;
 
-    const result = await this.getById(rows[0].id);
+      const chains = unwrapRows<{ id: string }>(
+        await tx.query(
+          `INSERT INTO escalation_chains
+             (kind, source_id, level, current_assignee_role,
+              ttl_expires_at, steps)
+           VALUES ('late_arrival', $1, 0, 'host', $2,
+                   '[{"role":"host"},{"role":"zone_host"},{"role":"manager"}]'::jsonb)
+           RETURNING id`,
+          [id, ttlExpiresAt],
+        ),
+      );
+      const chainId = chains[0]?.id;
+      if (chainId) {
+        await tx.query(
+          `UPDATE late_arrival_requests
+              SET escalation_chain_id = $2,
+                  updated_at = now()
+            WHERE id = $1`,
+          [id, chainId],
+        );
+      }
+      return id;
+    });
+
+    const result = await this.getById(requestId);
 
     if (slug && this.events && result.tableSessionId) {
       this.events.emitLateArrivalCreated(slug, null, {

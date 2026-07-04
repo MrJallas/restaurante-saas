@@ -94,6 +94,40 @@ export class TtlTickService {
     }
   }
 
+  /**
+   * Same as `withTenant` but wraps `work` in an explicit BEGIN…COMMIT so any
+   * `FOR UPDATE`/`FOR UPDATE SKIP LOCKED` row lock taken inside survives until
+   * the block finishes. Without this the runner runs in autocommit and the
+   * lock is dropped the instant the SELECT statement returns (P1-S) — a
+   * concurrent tick then re-selects the same "due" row and double-processes.
+   * The single runner is reused for the whole block so the lock and the
+   * follow-up UPDATE share one transaction. Rolls back on error.
+   */
+  private async withTenantTx<T>(
+    schemaName: string,
+    work: (qr: import('typeorm').QueryRunner) => Promise<T>,
+  ): Promise<T> {
+    if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schemaName)) {
+      throw new Error(`Invalid schema name: ${schemaName}`);
+    }
+    const qr = this.dataSource.createQueryRunner();
+    try {
+      await qr.connect();
+      await qr.query(`SET search_path = '${schemaName}'`);
+      await qr.startTransaction();
+      try {
+        const result = await work(qr);
+        await qr.commitTransaction();
+        return result;
+      } catch (err) {
+        await qr.rollbackTransaction();
+        throw err;
+      }
+    } finally {
+      await qr.release();
+    }
+  }
+
   private async sweepTenant(slug: string, schemaName: string) {
     const tables = await this.existingTables(schemaName, [
       'alerts',
@@ -316,8 +350,15 @@ export class TtlTickService {
   // ───────────── Escalation chains ─────────────
 
   private async sweepEscalations(slug: string, schemaName: string) {
-    const due = await this.withTenant(schemaName, async (qr) => {
-      const rows = (await qr.query(
+    // P1-S: the SELECT FOR UPDATE SKIP LOCKED and the advance/UPDATE MUST run
+    // in one transaction on the SAME runner, so the row lock is held until we
+    // commit. Previously the SELECT ran under `withTenant` (autocommit) and
+    // then `advanceChain` opened a *fresh* runner — the lock was long gone, so
+    // two concurrent ticks both grabbed the same due chain and double-emitted
+    // the escalation. Holding the tx serialises them: the loser's SKIP LOCKED
+    // finds the rows locked and returns [], processing nothing.
+    await this.withTenantTx(schemaName, async (qr) => {
+      const due = (await qr.query(
         `SELECT id, kind, source_id, level, current_assignee_role,
                 current_assignee_staff_id, ttl_expires_at
            FROM escalation_chains
@@ -334,16 +375,17 @@ export class TtlTickService {
         current_assignee_staff_id: string | null;
         ttl_expires_at: string;
       }>;
-      return rows;
-    });
 
-    for (const chain of due) {
-      try {
-        await this.advanceChain(slug, schemaName, chain.id, chain);
-      } catch (e) {
-        this.logger.error(`[${slug}] advanceChain ${chain.id}`, e as Error);
+      for (const chain of due) {
+        try {
+          await this.advanceChain(slug, schemaName, chain.id, chain, qr);
+        } catch (e) {
+          // Swallow per-chain so one bad row doesn't roll back the locks on
+          // the siblings we already advanced in this tick.
+          this.logger.error(`[${slug}] advanceChain ${chain.id}`, e as Error);
+        }
       }
-    }
+    });
   }
 
   /**
@@ -368,8 +410,17 @@ export class TtlTickService {
       level: number;
       current_assignee_staff_id: string | null;
     },
+    // P1-S: when the caller already holds a locked transaction (sweepEscalations
+    // grabbed this chain under FOR UPDATE), reuse ITS runner so the advance runs
+    // inside the same tx and the row lock keeps holding. Callers without a
+    // locked context (sweepLateArrivals) pass no runner and get the old
+    // per-call `withTenant`.
+    runner?: import('typeorm').QueryRunner,
   ) {
-    const result = await this.withTenant(schemaName, async (qr) => {
+    const run = <T>(work: (qr: import('typeorm').QueryRunner) => Promise<T>): Promise<T> =>
+      runner ? work(runner) : this.withTenant(schemaName, work);
+
+    const result = await run(async (qr) => {
       const rows = preloaded
         ? [preloaded]
         : ((await qr.query(
