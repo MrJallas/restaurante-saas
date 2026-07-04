@@ -6,6 +6,7 @@ import { ScreenWaiterProfile } from '../../../screens/waiter/ScreenWaiterProfile
 import { readStaffSession } from '../../../lib/api';
 import { requestWaiterShiftEnd } from '../../../lib/api/waiter';
 import { useStaffTheme } from '../../../lib/theme';
+import { useG, G_FONT } from '../../../components/waiter/tokens';
 
 function WaiterProfilePageInner() {
   const router = useRouter();
@@ -16,7 +17,13 @@ function WaiterProfilePageInner() {
   const waiterName = params.get('name') ?? 'Garçom';
   const initials = params.get('initials') ?? undefined;
   const { dark } = useStaffTheme();
+  const C = useG(dark);
   const [endingShift, setEndingShift] = React.useState(false);
+  const [toastMsg, setToastMsg] = React.useState<string | null>(null);
+  const showToast = (m: string) => {
+    setToastMsg(m);
+    setTimeout(() => setToastMsg(null), 2800);
+  };
 
   React.useEffect(() => {
     setSessionWaiterId(readStaffSession()?.staffId ?? '');
@@ -31,49 +38,77 @@ function WaiterProfilePageInner() {
   };
 
   return (
-    <ScreenWaiterProfile
-      waiterName={waiterName}
-      waiterInitials={initials}
-      dark={dark}
-      onBack={() => router.back()}
-      onLogout={() => {
-        try {
-          window.sessionStorage.clear();
-          window.localStorage.removeItem('staffId');
-          window.localStorage.removeItem('staffRole');
-          window.localStorage.removeItem('staffName');
-        } catch {
-          /* ignore */
-        }
-        router.push('/');
-      }}
-      onTabChange={(tab) => {
-        if (tab === 'me') return;
-        router.push(tabHref(tab));
-      }}
-      onNewEntry={() => router.push(`/waiter/new-entry?tenant=${tenantSlug}`)}
-      onOpenMessages={() =>
-        router.push(`/waiter/mensagens?tenant=${tenantSlug}&waiterId=${waiterId}`)
-      }
-      onEndShift={async () => {
-        if (endingShift) return;
-        setEndingShift(true);
-        try {
-          const request = await requestWaiterShiftEnd(tenantSlug, {});
-          if (request.threadId) {
-            router.push(
-              `/waiter/mensagens/${request.threadId}?tenant=${tenantSlug}&waiterId=${waiterId}`,
-            );
-          } else {
-            router.push(`/waiter/mensagens?tenant=${tenantSlug}&waiterId=${waiterId}`);
+    <>
+      <ScreenWaiterProfile
+        waiterName={waiterName}
+        waiterInitials={initials}
+        dark={dark}
+        onBack={() => router.back()}
+        onLogout={() => {
+          try {
+            window.sessionStorage.clear();
+            window.localStorage.removeItem('staffId');
+            window.localStorage.removeItem('staffRole');
+            window.localStorage.removeItem('staffName');
+          } catch {
+            /* ignore */
           }
-        } catch {
-          router.push(`/waiter/mensagens?tenant=${tenantSlug}&waiterId=${waiterId}`);
-        } finally {
-          setEndingShift(false);
+          router.push('/');
+        }}
+        onTabChange={(tab) => {
+          if (tab === 'me') return;
+          router.push(tabHref(tab));
+        }}
+        onNewEntry={() => router.push(`/waiter/new-entry?tenant=${tenantSlug}`)}
+        onOpenMessages={() =>
+          router.push(`/waiter/mensagens?tenant=${tenantSlug}&waiterId=${waiterId}`)
         }
-      }}
-    />
+        onEndShift={async () => {
+          if (endingShift) return;
+          setEndingShift(true);
+          try {
+            const request = await requestWaiterShiftEnd(tenantSlug, {});
+            if (request.threadId) {
+              router.push(
+                `/waiter/mensagens/${request.threadId}?tenant=${tenantSlug}&waiterId=${waiterId}`,
+              );
+            } else {
+              router.push(`/waiter/mensagens?tenant=${tenantSlug}&waiterId=${waiterId}`);
+            }
+          } catch (error) {
+            // Falha na solicitação: NÃO navegar (navegar fingiria sucesso).
+            console.error('[waiter-profile] shift end request failed', error);
+            showToast('Não foi possível solicitar o encerramento do turno. Tente novamente.');
+          } finally {
+            setEndingShift(false);
+          }
+        }}
+      />
+      {toastMsg && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 90,
+            transform: 'translateX(-50%)',
+            zIndex: 80,
+            padding: '12px 18px',
+            borderRadius: 999,
+            background: C.ink,
+            color: C.bg,
+            fontFamily: G_FONT,
+            fontSize: 13,
+            fontWeight: 600,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            maxWidth: 'calc(100vw - 32px)',
+            textAlign: 'center',
+          }}
+        >
+          {toastMsg}
+        </div>
+      )}
+    </>
   );
 }
 

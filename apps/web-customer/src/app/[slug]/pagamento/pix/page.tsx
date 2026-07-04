@@ -42,6 +42,7 @@ export default function PagamentoPixPage() {
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!paymentId || !slug) return;
@@ -122,10 +123,15 @@ export default function PagamentoPixPage() {
   const handleCancel = useCallback(async () => {
     if (cancelling || !paymentId) return;
     setCancelling(true);
+    setCancelError(null);
     try {
       await apiPatch(`/${slug}/payments/${paymentId}/cancel`, {});
     } catch {
-      /* ignore */
+      // Falha no cancelamento: fica na tela e mostra erro visível —
+      // navegar aqui fingiria sucesso (anti-placebo).
+      setCancelError('Não consegui cancelar agora. Tente novamente.');
+      setCancelling(false);
+      return;
     }
     // router.back() vai pra /assistente quando o usuario abriu /pix
     // direto via URL compartilhada (history vazio). Fallback explicito
@@ -217,6 +223,11 @@ export default function PagamentoPixPage() {
       </div>
 
       <div className="shrink-0 px-[22px] pb-safe pb-6 pt-2.5">
+        {cancelError && (
+          <div role="alert" className="mb-2 text-center text-[12px] text-red-600">
+            {cancelError}
+          </div>
+        )}
         <PillButton fullWidth onClick={handleCancel} disabled={cancelling}>
           {cancelling ? 'Cancelando…' : 'Cancelar pagamento'}
         </PillButton>

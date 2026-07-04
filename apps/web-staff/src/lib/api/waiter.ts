@@ -128,6 +128,30 @@ export function listPendingCalls(tenantSlug: string): Promise<WaiterCallSummary[
   return staffGet<WaiterCallSummary[]>(`/${tenantSlug}/waiter-calls/pending`);
 }
 
+export interface WaiterCallStaffDetail {
+  callId: string;
+  status: string;
+  reason: string;
+  createdAt: string;
+  acknowledgedAt: string | null;
+  tableLabel: string;
+  tableCode: string;
+  bill: {
+    subtotalCents: number;
+    serviceFeePct: number;
+    serviceFeeCents: number;
+    totalCents: number;
+  };
+}
+
+/** Detalhe REAL do chamado (mesa + conta com taxa) — mata o placebo R$612,40. */
+export function getCallStaffDetail(
+  tenantSlug: string,
+  callId: string,
+): Promise<WaiterCallStaffDetail> {
+  return staffGet<WaiterCallStaffDetail>(`/${tenantSlug}/waiter-calls/${callId}/staff-detail`);
+}
+
 export function acknowledgeCall(
   tenantSlug: string,
   callId: string,

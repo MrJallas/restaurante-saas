@@ -21,6 +21,7 @@ export default function PagamentoFeedbackPage() {
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     recordContinuationHint('pagou');
@@ -33,6 +34,7 @@ export default function PagamentoFeedbackPage() {
   const handleSubmit = async () => {
     if (submitting || rating === 0) return;
     setSubmitting(true);
+    setError(null);
     try {
       await apiPost(`/${slug}/feedbacks`, {
         visitId: visitId || undefined,
@@ -42,7 +44,9 @@ export default function PagamentoFeedbackPage() {
         comment: comment || undefined,
       });
     } catch {
-      /* ignore */
+      setError('Não consegui enviar sua avaliação. Tente novamente.');
+      setSubmitting(false);
+      return;
     }
     setSent(true);
     setTimeout(() => push(`/${slug}/cardapio`), 1600);
@@ -145,6 +149,11 @@ export default function PagamentoFeedbackPage() {
       </div>
 
       <div className="shrink-0 px-[22px] pb-safe pb-6 pt-2.5">
+        {error && (
+          <div role="alert" className="mb-2 text-center text-[12px] text-red-600">
+            {error}
+          </div>
+        )}
         <PillButton
           variant="filled"
           fullWidth

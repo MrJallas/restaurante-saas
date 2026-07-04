@@ -27,7 +27,8 @@ import {
   MAvatar,
   MQuickActionsBar,
 } from '../../components/manager';
-import { manager } from '../../lib/api/manager';
+import { manager, type AlertRow } from '../../lib/api/manager';
+import { listTablesOverview } from '../../lib/api/waiter';
 
 export type OpsTab = 'alerts' | 'map' | 'funnel';
 
@@ -37,43 +38,40 @@ export interface ScreenManagerOpsProps {
   tab?: OpsTab;
 }
 
-// Mock data fallback bate com canvas garcom-screens-c.jsx M_BOTTLENECKS.
-const FALLBACK_ALERTS = [
-  {
-    id: 1,
-    sev: 'high' as const,
-    msg: 'Cozinha · Risoto cogumelos esperando há 22 min',
-    sub: 'Mesa 14 · meta 12 min',
-    ts: 'agora',
-    actions: ['Avisar cozinha', 'Contactar cliente'] as const,
-  },
-  {
-    id: 2,
-    sev: 'high' as const,
-    msg: 'Henrique · 3 chamados sem resposta há > 4 min',
-    sub: 'Mesas 7, 9, 12',
-    ts: '2 min',
-    actions: ['Realocar mesa', 'Chamar Henrique'] as const,
-  },
-  {
-    id: 3,
-    sev: 'med' as const,
-    msg: 'Mesa 14 · pedido pronto há 9 min, ainda na pass',
-    sub: '2 pratos esperando',
-    ts: '5 min',
-    actions: ['Entregar agora', 'Avisar Caleb'] as const,
-  },
-  {
-    id: 4,
-    sev: 'med' as const,
-    msg: 'Cozinha · fila com 11 pedidos',
-    sub: 'capacidade é 8',
-    ts: '8 min',
-    actions: ['Pausar pedidos', 'Ver fila'] as const,
-  },
-];
+// Auditoria 2026-07-03 (Balde 2): os alertas "AO VIVO", as 12 mesas e a
+// carga por garçom eram 100% INVENTADOS (nomes reais + números fake — o
+// gerente podia agir sobre ficção). Alertas e mapa agora vêm dos endpoints
+// reais (/alerts e /staff/tables-overview); o funil segue DEMO com selo
+// explícito até existir backend (round19, não construído).
+interface OpsAlert {
+  id: string;
+  sev: 'high' | 'med';
+  msg: string;
+  sub: string;
+  ts: string;
+  actions: string[];
+}
 
-const FALLBACK_FUNNEL = [
+function relativeTs(iso: string): string {
+  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (!Number.isFinite(min) || min < 1) return 'agora';
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)}h`;
+}
+
+function toOpsAlert(row: AlertRow): OpsAlert {
+  return {
+    id: row.id,
+    sev: row.sev === 'crítica' ? 'high' : 'med',
+    msg: row.title,
+    sub: row.sub ?? '',
+    ts: relativeTs(row.created_at),
+    actions: (row.actions ?? []).map((a) => a.label).slice(0, 2),
+  };
+}
+
+// DEMO explícito — backend do funil (round19) não existe; selo na UI.
+const DEMO_FUNNEL = [
   { stage: 'Pedido lançado', median: 0.3, p95: 0.8, count: 142, ok: true, note: '' },
   { stage: 'Confirmado', median: 0.2, p95: 0.5, count: 142, ok: true, note: '' },
   {
@@ -103,21 +101,6 @@ interface MapTable {
   val?: number;
 }
 
-const FALLBACK_TABLES: MapTable[] = [
-  { n: 1, st: 'ok', wait: 4, waiter: 'CS', val: 142 },
-  { n: 2, st: 'ok', wait: 7, waiter: 'CS', val: 88 },
-  { n: 3, st: 'warn', wait: 22, waiter: 'HL', val: 312 },
-  { n: 4, st: 'ok', wait: 11, waiter: 'OM', val: 64 },
-  { n: 5, st: 'free' },
-  { n: 6, st: 'warn', wait: 18, waiter: 'OM', val: 184 },
-  { n: 7, st: 'ok', wait: 9, waiter: 'CS', val: 96 },
-  { n: 8, st: 'ok', wait: 5, waiter: 'HL', val: 220 },
-  { n: 9, st: 'ok', wait: 14, waiter: 'CS', val: 412 },
-  { n: 10, st: 'free' },
-  { n: 11, st: 'crit', wait: 28, waiter: 'OM', val: 156 },
-  { n: 12, st: 'ok', wait: 8, waiter: 'HL', val: 78 },
-];
-
 const WAITER_PALETTE: Record<string, string> = {
   CS: '#4F6BFF',
   OM: '#E37D2F',
@@ -132,11 +115,41 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
   const [active, setActive] = useState<OpsTab>(tab);
   const api = manager(tenantSlug);
 
-  // Round 18 (Onda 2A): alerts é state mutável pra Dispensar funcionar.
-  // Antes era const sem setter — clique no X era silencioso.
-  const [alerts, setAlerts] = useState(FALLBACK_ALERTS);
-  const dismissAlert = (id: number) => {
+  const [alerts, setAlerts] = useState<OpsAlert[]>([]);
+  const [tables, setTables] = useState<MapTable[]>([]);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    let stop = false;
+    Promise.all([api.alerts.list({ status: 'open' }), listTablesOverview(tenantSlug)])
+      .then(([alertRows, tableRows]) => {
+        if (stop) return;
+        setAlerts(alertRows.map(toOpsAlert));
+        setTables(
+          tableRows.map((t) => ({
+            n: t.number,
+            st: t.occupied ? ('ok' as const) : ('free' as const),
+          })),
+        );
+        setLoadError(false);
+      })
+      .catch(() => {
+        if (!stop) setLoadError(true);
+      });
+    return () => {
+      stop = true;
+    };
+  }, [api, tenantSlug]);
+
+  // Dispensar REAL (Balde 1): otimista + POST /alerts/:id/dismiss +
+  // rollback — antes só removia do state local e o alerta renascia no F5.
+  const dismissAlert = (id: string) => {
+    const snapshot = alerts;
     setAlerts((prev) => prev.filter((a) => a.id !== id));
+    api.alerts.dismiss(id).catch(() => {
+      setAlerts(snapshot);
+      setLoadError(true);
+    });
   };
   const handleAlertAction = (action: string) => {
     const qs = `?slug=${tenantSlug}`;
@@ -227,6 +240,21 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
           </MTab>
         </div>
 
+        {loadError && (
+          <div
+            style={{
+              margin: '10px 16px 0',
+              padding: '8px 12px',
+              borderRadius: 10,
+              border: '1px solid #F4C7C7',
+              color: '#A12626',
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            Não consegui falar com o servidor agora — dados podem estar incompletos.
+          </div>
+        )}
         {active === 'alerts' && (
           <OpsAlerts
             dark={dark}
@@ -237,8 +265,8 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
             onAction={handleAlertAction}
           />
         )}
-        {active === 'map' && <OpsMap dark={dark} tables={FALLBACK_TABLES} />}
-        {active === 'funnel' && <OpsFunnel dark={dark} stages={FALLBACK_FUNNEL} />}
+        {active === 'map' && <OpsMap dark={dark} tables={tables} />}
+        {active === 'funnel' && <OpsFunnel dark={dark} stages={DEMO_FUNNEL} />}
 
         <style jsx global>{`
           @keyframes gPulse {
@@ -273,10 +301,10 @@ function OpsAlerts({
   onAction,
 }: {
   dark?: boolean;
-  alerts: typeof FALLBACK_ALERTS;
+  alerts: OpsAlert[];
   high: number;
   med: number;
-  onDismiss?: (id: number) => void;
+  onDismiss?: (id: string) => void;
   onAction?: (label: string) => void;
 }) {
   const C = useG(!!dark);
@@ -660,34 +688,38 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
                 )}
               </div>
               <div>
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 800,
-                    color: c.fg,
-                    letterSpacing: -0.2,
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {t.wait}m
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                {t.wait != null && (
                   <div
                     style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: '50%',
-                      background: WAITER_PALETTE[t.waiter ?? ''] ?? '#777',
-                      color: '#fff',
-                      fontSize: 8,
+                      fontSize: 14,
                       fontWeight: 800,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      color: c.fg,
+                      letterSpacing: -0.2,
+                      fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    {t.waiter}
+                    {t.wait}m
                   </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                  {t.waiter && (
+                    <div
+                      style={{
+                        width: 14,
+                        height: 14,
+                        borderRadius: '50%',
+                        background: WAITER_PALETTE[t.waiter ?? ''] ?? '#777',
+                        color: '#fff',
+                        fontSize: 8,
+                        fontWeight: 800,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {t.waiter}
+                    </div>
+                  )}
                   <div
                     style={{
                       fontSize: 9,
@@ -697,7 +729,7 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    R${t.val}
+                    {t.val != null ? `R$${t.val}` : 'ocupada'}
                   </div>
                 </div>
               </div>
@@ -769,15 +801,34 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
 }
 
 // ─── FUNIL sub-tab ───────────────────────────────────────────────
-function OpsFunnel({ dark, stages }: { dark?: boolean; stages: typeof FALLBACK_FUNNEL }) {
+function OpsFunnel({ dark, stages }: { dark?: boolean; stages: typeof DEMO_FUNNEL }) {
   const C = useG(!!dark);
   const max = Math.max(...stages.map((s) => s.median), 1);
   return (
     <div style={{ padding: 16 }}>
       <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '4px 10px',
+          borderRadius: 100,
+          border: `1px solid ${C.borderSoft}`,
+          color: C.faint,
+          fontSize: 10,
+          fontWeight: 800,
+          letterSpacing: 1,
+          textTransform: 'uppercase',
+          fontFamily: MONO_FONT,
+          marginBottom: 10,
+        }}
+      >
+        Dados de demonstração
+      </div>
+      <div
         style={{ fontSize: 12, color: C.faint, fontWeight: 500, marginBottom: 14, lineHeight: 1.5 }}
       >
-        Tempo médio em cada etapa do pedido.{' '}
+        Tempo médio em cada etapa do pedido (exemplo ilustrativo — métricas reais em construção).{' '}
         <span style={{ color: '#C43A3A', fontWeight: 700 }}>Vermelho</span> = passou da meta ·{' '}
         <span style={{ color: C.ink, fontWeight: 700 }}>preto</span> = no ritmo.
       </div>

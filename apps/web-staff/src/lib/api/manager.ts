@@ -285,22 +285,6 @@ export async function fetchSmartSuggestions(params: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Generic staff/me lookup — used by header greetings + bell badge.
-// ─────────────────────────────────────────────────────────────
-
-export interface ManagerProfileDto {
-  staffId: string;
-  name: string;
-  role: 'manager' | 'owner';
-  tenantSlug: string;
-  tenantId: string;
-}
-
-export const managerMe = (slug: string) => ({
-  get: () => staffGet<ManagerProfileDto>(`/${slug}/staff/me`).catch(() => null),
-});
-
-// ─────────────────────────────────────────────────────────────
 // Assistant — manager → cliente direct bubble (Onda 4 batch 2).
 //
 // Substitui o mis-routing previo em MContactClientSheet que batia
@@ -783,7 +767,6 @@ export function manager(slug: string) {
     orderTimeline: {
       get: (orderId: string) => getOrderTimeline(slug, orderId),
     },
-    me: managerMe(slug),
   };
 }
 

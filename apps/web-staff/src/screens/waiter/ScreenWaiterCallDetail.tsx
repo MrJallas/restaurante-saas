@@ -5,30 +5,34 @@
 // Mostra detalhe de UM chamado (pediu-conta, chamou-garcom, pronto-cozinha).
 // CTAs: "A caminho" (acknowledge) / "Voltar".
 //
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useG, G_FONT, MONO_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitives';
-import { acknowledgeCall } from '../../lib/api/waiter';
+import {
+  acknowledgeCall,
+  getCallStaffDetail,
+  type WaiterCallStaffDetail,
+} from '../../lib/api/waiter';
 
 type CallType = 'pediu-conta' | 'chamou-garcom' | 'pronto-cozinha' | 'mais-bebida';
 
-interface CallCopy {
+interface CallVisual {
   title: string;
-  bigText: string;
-  hint: string;
   reminder?: string;
   primary: string;
   tint: string;
   priority: 'high' | 'med' | 'low';
 }
 
-const COPY_BY_TYPE: Record<CallType, CallCopy> = {
+// Auditoria 2026-07-03: a tela era PLACEBO — R$ 612,40, itens e mesa
+// hardcoded (garçom levava a maquininha com valor errado). O visual por
+// tipo fica; TODO dado (valor, mesa, motivo, tempos) vem do
+// GET /waiter-calls/:id/staff-detail.
+const VISUAL_BY_TYPE: Record<CallType, CallVisual> = {
   'pediu-conta': {
     title: 'Pediu a conta',
-    bigText: 'R$ 612,40',
-    hint: 'Cliente solicitou pelo cardápio digital. Forma de pagamento ainda não escolhida.',
     reminder: 'Lembre-se de levar a maquininha de cartão',
     primary: 'A caminho',
     tint: '#C43A3A',
@@ -36,29 +40,42 @@ const COPY_BY_TYPE: Record<CallType, CallCopy> = {
   },
   'chamou-garcom': {
     title: 'Chamou garçom',
-    bigText: 'há 30s',
-    hint: 'Cliente acionou o botão "chamar garçom" pelo cardápio. Sem motivo informado.',
     primary: 'A caminho',
     tint: '#D98E2B',
     priority: 'high',
   },
   'pronto-cozinha': {
     title: 'Pronto · cozinha',
-    bigText: '2 pratos',
-    hint: 'Risoto de camarão · Filé ao vinho. Bandeja na bancada de retirada.',
     primary: 'Vou servir',
     tint: '#2F7D4F',
     priority: 'high',
   },
   'mais-bebida': {
     title: 'Pediu bebida',
-    bigText: '1 drink',
-    hint: 'Aperol Spritz · sem azeitona.',
     primary: 'A caminho',
     tint: '#1F3784',
     priority: 'med',
   },
 };
+
+const REASON_LABEL: Record<string, string> = {
+  bring_menu: 'Trazer cardápio',
+  place_order: 'Fazer pedido',
+  serve_drink: 'Servir bebida',
+  ask_bill: 'Pedir conta',
+  other: 'Outro motivo',
+};
+
+const fmtCents = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
+
+function elapsedLabel(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return 'agora';
+  if (min < 60) return `há ${min}min`;
+  return `há ${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`;
+}
 
 export interface ScreenWaiterCallDetailProps {
   dark?: boolean;
@@ -75,18 +92,57 @@ export function ScreenWaiterCallDetail({
   tenantSlug,
   callType = 'chamou-garcom',
   tableNumber = 18,
-  partySize = 4,
 }: ScreenWaiterCallDetailProps) {
   const C = useG(dark);
   const router = useRouter();
-  const copy = COPY_BY_TYPE[callType];
+  const copy = VISUAL_BY_TYPE[callType];
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [acked, setAcked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [detail, setDetail] = useState<WaiterCallStaffDetail | null>(null);
+  const [detailFailed, setDetailFailed] = useState(false);
   const showToast = (m: string) => {
     setToastMsg(m);
     setTimeout(() => setToastMsg(null), 2800);
   };
+  useEffect(() => {
+    let stop = false;
+    getCallStaffDetail(tenantSlug, callId)
+      .then((d) => {
+        if (!stop) setDetail(d);
+      })
+      .catch(() => {
+        // Anti-placebo: sem dado real a tela mostra "—", nunca um número
+        // inventado — e o garçom fica sabendo que não carregou.
+        if (!stop) {
+          setDetailFailed(true);
+          setToastMsg('Não consegui carregar os dados do chamado.');
+        }
+      });
+    return () => {
+      stop = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantSlug, callId]);
+
+  const isBill = callType === 'pediu-conta';
+  const bigText = detail
+    ? isBill
+      ? fmtCents(detail.bill.totalCents)
+      : elapsedLabel(detail.createdAt)
+    : detailFailed
+      ? '—'
+      : '…';
+  const reasonLabel = detail ? (REASON_LABEL[detail.reason] ?? detail.reason) : null;
+  const hint = detail
+    ? isBill
+      ? `Cliente pediu a conta pelo cardápio digital. Total já inclui a taxa de serviço (${String(detail.bill.serviceFeePct).replace('.', ',')}%).`
+      : `Motivo: ${reasonLabel}. Chamado aberto ${elapsedLabel(detail.createdAt)}.`
+    : detailFailed
+      ? 'Não consegui carregar os detalhes — confirme com a mesa.'
+      : 'Carregando detalhes do chamado…';
+  const tableLine = detail ? detail.tableLabel : `Mesa ${tableNumber}`;
+
   const ack = async () => {
     if (acked || submitting) return;
     setSubmitting(true);
@@ -181,7 +237,7 @@ export function ScreenWaiterCallDetail({
             )}
           </div>
           <div style={{ fontSize: 14, marginTop: 14, opacity: 0.85, fontWeight: 500 }}>
-            Mesa {tableNumber} · {partySize} pessoas
+            {tableLine}
           </div>
           <div
             style={{
@@ -193,11 +249,9 @@ export function ScreenWaiterCallDetail({
               lineHeight: 1,
             }}
           >
-            {copy.bigText}
+            {bigText}
           </div>
-          <div style={{ fontSize: 14, marginTop: 14, lineHeight: 1.5, opacity: 0.95 }}>
-            {copy.hint}
-          </div>
+          <div style={{ fontSize: 14, marginTop: 14, lineHeight: 1.5, opacity: 0.95 }}>{hint}</div>
         </div>
 
         {/* Lembrete (só pra pediu-conta) */}
@@ -279,12 +333,23 @@ export function ScreenWaiterCallDetail({
               overflow: 'hidden',
             }}
           >
-            {[
-              ['Aberta há', '64 min'],
-              ['Itens lançados', '12'],
-              ['Última ação', 'Sobremesa servida há 6 min'],
-              ['Forma de pgto', 'A definir'],
-            ].map(([k, v], i, a) => (
+            {(detail
+              ? [
+                  ['Subtotal', fmtCents(detail.bill.subtotalCents)],
+                  [
+                    `Taxa ${String(detail.bill.serviceFeePct).replace('.', ',')}%`,
+                    fmtCents(detail.bill.serviceFeeCents),
+                  ],
+                  ['Total da mesa', fmtCents(detail.bill.totalCents)],
+                  ['Chamado aberto', elapsedLabel(detail.createdAt)],
+                ]
+              : [
+                  ['Subtotal', '—'],
+                  ['Taxa de serviço', '—'],
+                  ['Total da mesa', '—'],
+                  ['Chamado aberto', '—'],
+                ]
+            ).map(([k, v], i, a) => (
               <div
                 key={k}
                 style={{

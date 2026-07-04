@@ -38,6 +38,7 @@ export default function GarcomChamandoPage() {
   const [call, setCall] = useState<WaiterCall | null>(null);
   const [dots, setDots] = useState(0);
   const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setInterval(() => setDots((d) => (d + 1) % 4), 500);
@@ -70,10 +71,15 @@ export default function GarcomChamandoPage() {
   const handleCancel = useCallback(async () => {
     if (cancelling || !callId) return;
     setCancelling(true);
+    setCancelError(null);
     try {
       await apiPatch(`/${slug}/waiter-calls/${callId}/cancel`, {});
     } catch {
-      /* ignore */
+      // Falha no cancelamento: fica na tela e mostra erro visível —
+      // navegar aqui deixaria o chamado ativo fingindo cancelado.
+      setCancelError('Não consegui cancelar agora. Tente novamente.');
+      setCancelling(false);
+      return;
     }
     // replace em vez de push: assim o swipe-back do iOS Safari nao
     // traz o usuario de volta pra tela "CHAMADO RECEBIDO" de um chamado
@@ -165,6 +171,11 @@ export default function GarcomChamandoPage() {
         </div>
       </div>
 
+      {cancelError && (
+        <div role="alert" className="shrink-0 px-[22px] pb-1 text-center text-[12px] text-red-600">
+          {cancelError}
+        </div>
+      )}
       <div className="flex shrink-0 gap-2.5 px-[22px] pb-safe pb-6 pt-2.5">
         <PillButton onClick={handleCancel} disabled={cancelling} className="flex-1">
           Cancelar chamado

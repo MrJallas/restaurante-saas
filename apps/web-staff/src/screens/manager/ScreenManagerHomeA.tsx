@@ -39,37 +39,24 @@ import type { ComplaintDto } from '@restaurant/shared-types';
 // ─── Mock data — bottlenecks + reservations ────────────────────
 // Will be wired to /alerts and /host/reservations once those endpoints land.
 
-// P1 #34 — DEFAULT_ALERTS removed of name-bound copy. The /alerts
-// endpoint will populate this with real data; until then we render
-// a structurally identical but generic message set so QA can still
-// see the alert shape without polluting screenshots with hardcoded
-// staff names.
-const DEFAULT_ALERTS = [
-  {
-    id: 1,
-    sev: 'high' as const,
-    msg: 'Cozinha · Risoto cogumelos esperando há 22 min',
-    sub: 'Mesa 14 · meta 12 min',
-    ts: 'agora',
-    actions: ['Avisar cozinha', 'Contactar cliente'] as const,
-  },
-  {
-    id: 2,
-    sev: 'high' as const,
-    msg: 'Garçom · 3 chamados sem resposta há > 4 min',
-    sub: 'Mesas 7, 9, 12',
-    ts: '2 min',
-    actions: ['Realocar mesa', 'Chamar garçom'] as const,
-  },
-  {
-    id: 3,
-    sev: 'med' as const,
-    msg: 'Mesa 14 · pedido pronto há 9 min, ainda na pass',
-    sub: '2 pratos esperando',
-    ts: '5 min',
-    actions: ['Entregar agora', 'Avisar garçom'] as const,
-  },
-];
+// Auditoria 2026-07-03 (Balde 2): os 3 alertas eram FAKE — agora vêm do
+// GET /alerts (status=open) e o Dispensar faz POST /alerts/:id/dismiss
+// com rollback. Sem alertas reais, o card mostra o empty-state.
+interface HomeAlert {
+  id: string;
+  sev: 'high' | 'med';
+  msg: string;
+  sub: string;
+  ts: string;
+  actions: string[];
+}
+
+function homeRelativeTs(iso: string): string {
+  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (!Number.isFinite(min) || min < 1) return 'agora';
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)}h`;
+}
 
 // P1 #32 — empty until /staff loads. Empty-state copy below covers gap.
 const M_TEAM_FALLBACK: Array<{
@@ -149,13 +136,38 @@ export function ScreenManagerHomeA({
   const [replyComplaint, setReplyComplaint] = useState<ComplaintDto | null>(null);
   const [team, setTeam] = useState(M_TEAM_FALLBACK);
   const [, setRefreshTick] = useState(0);
-  // Round 18 (Onda 2A): alerts agora é state pra que o X (Dispensar)
-  // funcione. Antes era array hardcoded — clicar no X não fazia nada.
-  // Quando endpoint /alerts shipar (canvas docs/features/alerts.md), o
-  // dismiss vai virar PATCH /alerts/:id/dismiss. Por ora UI-only.
-  const [alerts, setAlerts] = useState(DEFAULT_ALERTS);
-  const dismissAlert = (id: number) => {
+  const [alerts, setAlerts] = useState<HomeAlert[]>([]);
+
+  useEffect(() => {
+    let stop = false;
+    api.alerts
+      .list({ status: 'open' })
+      .then((rows) => {
+        if (stop) return;
+        setAlerts(
+          rows.map((row) => ({
+            id: row.id,
+            sev: row.sev === 'crítica' ? ('high' as const) : ('med' as const),
+            msg: row.title,
+            sub: row.sub ?? '',
+            ts: homeRelativeTs(row.created_at),
+            actions: (row.actions ?? []).map((a) => a.label).slice(0, 2),
+          })),
+        );
+      })
+      .catch(() => {
+        /* sem servidor → card fica no empty-state, sem inventar alerta */
+      });
+    return () => {
+      stop = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantSlug]);
+
+  const dismissAlert = (id: string) => {
+    const snapshot = alerts;
     setAlerts((prev) => prev.filter((a) => a.id !== id));
+    api.alerts.dismiss(id).catch(() => setAlerts(snapshot));
   };
   const runAlertAction = (action: string) => {
     const label = action.toLowerCase();
