@@ -149,6 +149,99 @@ describe('HostService.findTableByNumber — resolução determinística (P1-P)',
 });
 
 /**
+ * P1-W (re-scan): `listTables` precisa EXPOR o cliente host da sessão ativa
+ * (`table_sessions.host_customer_id` + `customers.name`) pra que o deep-link
+ * `/manager/mesa/[n]` propague `customerId` pro "Contactar cliente" da
+ * `ScreenManagerTableMenu`. Sem isso o botão fica sempre disabled (dado
+ * existe no backend, só não vinha no payload).
+ */
+describe('HostService.listTables — expõe cliente host da sessão ativa (P1-W)', () => {
+  function listTablesDb(rows: unknown[]) {
+    const conn = {
+      query: async (sql: string) => {
+        const s = sql.replace(/\s+/g, ' ').trim();
+        if (s.startsWith('SELECT t.id,')) return rows;
+        throw new Error(`fake host: SQL não roteado: ${s}`);
+      },
+    } as unknown as TenantConnectionProvider;
+    return makeService(conn);
+  }
+
+  it('mesa ocupada com host identificado → customer_id + customer_name no DTO', async () => {
+    const svc = listTablesDb([
+      {
+        id: 'table-1',
+        number: 7,
+        capacity: 4,
+        zone_name: 'Salão',
+        active_session_id: 'sess-1',
+        active_session_started_at: '2026-07-04T12:00:00Z',
+        participant_count: 2,
+        staff_party_override: null,
+        staff_note: null,
+        has_vip: false,
+        host_customer_id: 'cust-42',
+        host_customer_name: 'Ana',
+        open_release_id: null,
+        open_release_expires_at: null,
+      },
+    ]);
+    const [table] = await svc.listTables();
+    expect(table.customer_id).toBe('cust-42');
+    expect(table.customer_name).toBe('Ana');
+  });
+
+  it('mesa ocupada SEM host identificado (host_customer_id null) → customer_id null', async () => {
+    const svc = listTablesDb([
+      {
+        id: 'table-2',
+        number: 8,
+        capacity: 4,
+        zone_name: 'Salão',
+        active_session_id: 'sess-2',
+        active_session_started_at: '2026-07-04T12:00:00Z',
+        participant_count: 1,
+        staff_party_override: null,
+        staff_note: null,
+        has_vip: false,
+        host_customer_id: null,
+        host_customer_name: null,
+        open_release_id: null,
+        open_release_expires_at: null,
+      },
+    ]);
+    const [table] = await svc.listTables();
+    expect(table.customer_id).toBeNull();
+    expect(table.customer_name).toBeNull();
+  });
+
+  it('mesa livre (sem sessão) → customer_id null', async () => {
+    const svc = listTablesDb([
+      {
+        id: 'table-3',
+        number: 9,
+        capacity: 2,
+        zone_name: 'Varanda',
+        active_session_id: null,
+        active_session_started_at: null,
+        participant_count: null,
+        staff_party_override: null,
+        staff_note: null,
+        has_vip: null,
+        host_customer_id: null,
+        host_customer_name: null,
+        open_release_id: null,
+        open_release_expires_at: null,
+      },
+    ]);
+    const [table] = await svc.listTables();
+    expect(table.status).toBe('livre');
+    expect(table.customer_id).toBeNull();
+    expect(table.customer_name).toBeNull();
+  });
+});
+
+/**
  * P1-O (re-scan data-integrity): completar um swap NÃO pode deixar 2 sessões
  * ativas na mesma mesa.
  *

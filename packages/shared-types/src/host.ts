@@ -38,6 +38,15 @@ export interface HostTableDto {
    * mesa esta livre.
    */
   active_session_id?: string | null;
+  /**
+   * UUID do cliente HOST da sessão ativa (`table_sessions.host_customer_id`).
+   * `null` quando ninguém se identificou ainda na mesa. Necessário pro
+   * "Contactar cliente" da `ScreenManagerTableMenu` (mensagem privada por
+   * cliente exige `toCustomerId`).
+   */
+  customer_id?: string | null;
+  /** Nome do cliente host (`customers.name`). `null` sem host identificado. */
+  customer_name?: string | null;
 }
 
 // ─── Inbox ───

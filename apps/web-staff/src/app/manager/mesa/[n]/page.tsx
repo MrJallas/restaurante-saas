@@ -74,6 +74,10 @@ function ManagerMesaInner() {
           const party = t.party ?? t.seats;
           if (party != null) qs.set('party', String(party));
           if (t.observation) qs.set('observation', t.observation);
+          // P1-W: propaga o cliente host pra habilitar "Contactar cliente"
+          // na ScreenManagerTableMenu (backend agora expõe em /host/tables).
+          if (t.customer_id) qs.set('customerId', t.customer_id);
+          if (t.customer_name) qs.set('customerName', t.customer_name);
           router.replace(`/manager/table-menu/${t.active_session_id}?${qs.toString()}`);
           setState({ kind: 'redirecting', sessionId: t.active_session_id });
         } else {

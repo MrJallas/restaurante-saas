@@ -37,6 +37,8 @@ interface TableRow {
   staff_party_override: number | null;
   staff_note: string | null;
   has_vip: boolean | null;
+  host_customer_id: string | null;
+  host_customer_name: string | null;
   open_release_id: string | null;
   open_release_expires_at: string | null;
 }
@@ -148,6 +150,8 @@ export class HostService {
          active_ts.staff_party_override          AS staff_party_override,
          active_ts.staff_note                    AS staff_note,
          active_ts.has_vip                       AS has_vip,
+         active_ts.host_customer_id              AS host_customer_id,
+         active_ts.host_customer_name            AS host_customer_name,
          open_release.id                         AS open_release_id,
          open_release.expires_at                 AS open_release_expires_at
        FROM tables t
@@ -158,8 +162,11 @@ export class HostService {
                 ts.staff_party_override,
                 ts.staff_note,
                 COALESCE(ts.staff_party_override, pc.cnt, 0)      AS participant_count,
-                ('vip' = ANY(COALESCE(ts.flags, '{}'::text[])))  AS has_vip
+                ('vip' = ANY(COALESCE(ts.flags, '{}'::text[])))  AS has_vip,
+                ts.host_customer_id                              AS host_customer_id,
+                hc.name                                          AS host_customer_name
          FROM table_sessions ts
+         LEFT JOIN customers hc ON hc.id = ts.host_customer_id
          LEFT JOIN (
            SELECT table_session_id, COUNT(*)::int AS cnt
              FROM session_participants
@@ -811,6 +818,8 @@ export class HostService {
       party: row.participant_count ?? undefined,
       observation: row.staff_note ?? null,
       active_session_id: row.active_session_id,
+      customer_id: row.host_customer_id,
+      customer_name: row.host_customer_name,
     };
   }
 

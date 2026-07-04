@@ -98,13 +98,23 @@ export function ScreenManagerTableMenu({
     router.push(`/manager/compensate?${qs}`);
   };
 
+  // P1-W (re-scan): "Ver timeline" saía da tela pra mesa que já COMEU tudo.
+  // A fonte era `kitchen.queue()`, que exclui pedidos 'delivered' — mesa
+  // sem pedido ativo perdia o botão inteiro. Fix: se há um pedido ativo na
+  // fila abre a timeline granular dele; se não (tudo entregue mas sessão
+  // ainda ativa/pagando) cai na timeline da SESSÃO, que inclui os eventos
+  // de todos os pedidos (order.status_changed vem de order_status_history,
+  // não da fila). Assim o botão nunca é um beco sem saída.
   const goToTimeline = () => {
-    if (!timelineOrderId) return;
-    const qs = new URLSearchParams({
-      slug: tenantSlug,
-      tableNumber: String(tableNumber),
-    }).toString();
-    router.push(`/manager/timeline/${timelineOrderId}?${qs}`);
+    if (timelineOrderId) {
+      const qs = new URLSearchParams({
+        slug: tenantSlug,
+        tableNumber: String(tableNumber),
+      }).toString();
+      router.push(`/manager/timeline/${timelineOrderId}?${qs}`);
+    } else {
+      goToSessionTimeline();
+    }
   };
 
   // Fatia M7 — timeline da SESSÃO inteira (event store M6), irmã da
@@ -439,24 +449,28 @@ export function ScreenManagerTableMenu({
               dark={dark}
               icon={Icon.chat(18)}
               label="Contactar cliente"
-              sub="Mandar mensagem rápida · sugestões inteligentes"
+              sub={
+                customerId
+                  ? 'Mandar mensagem rápida · sugestões inteligentes'
+                  : 'Cliente não identificado nesta mesa'
+              }
               onClick={() => setContactOpen(true)}
               disabled={!customerId}
             />
-            {(timelineLoading || timelineOrderId) && (
-              <ActionRow
-                dark={dark}
-                icon={Icon.history(18)}
-                label="Ver timeline"
-                sub={
-                  timelineLoading
-                    ? 'Buscando pedido ativo desta mesa'
-                    : 'Histórico real do pedido ativo'
-                }
-                onClick={goToTimeline}
-                disabled={timelineLoading || !timelineOrderId}
-              />
-            )}
+            <ActionRow
+              dark={dark}
+              icon={Icon.history(18)}
+              label="Ver timeline"
+              sub={
+                timelineLoading
+                  ? 'Buscando pedido ativo desta mesa'
+                  : timelineOrderId
+                    ? 'Histórico real do pedido ativo'
+                    : 'Sem pedido ativo · abre a timeline da sessão'
+              }
+              onClick={goToTimeline}
+              disabled={timelineLoading}
+            />
             <ActionRow
               dark={dark}
               icon={Icon.history(18)}

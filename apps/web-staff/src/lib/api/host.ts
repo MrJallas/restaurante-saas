@@ -21,6 +21,10 @@ export interface HostTableEntry {
   waiter_initial?: string | null;
   /** UUID do table_sessions ativo (null se livre). */
   active_session_id?: string | null;
+  /** UUID do cliente host da sessão ativa (null se ninguém se identificou). */
+  customer_id?: string | null;
+  /** Nome do cliente host (null se sem host). */
+  customer_name?: string | null;
 }
 
 export interface WaitlistEntry {
