@@ -44,11 +44,11 @@ export interface ScreenWaiterProfileProps {
 export const ScreenWaiterProfile: React.FC<ScreenWaiterProfileProps> = ({
   waiterName,
   waiterInitials,
-  roleLabel = 'Garçom · Trattoria Luna',
+  roleLabel = 'Garçom',
   shiftDurationMin = 0,
   unreadMessages = 0,
   prefs = {},
-  establishment = 'Trattoria Luna',
+  establishment = '',
   appVersion = '2.4.1',
   dark = false,
   onBack,
@@ -239,7 +239,7 @@ export const ScreenWaiterProfile: React.FC<ScreenWaiterProfileProps> = ({
 
         {/* FOOTER · estabelecimento + versão */}
         <div style={{ textAlign: 'center', fontSize: 11, color: C.faint, padding: 16 }}>
-          {establishment} · v {appVersion}
+          {establishment ? `${establishment} · ` : ''}v {appVersion}
         </div>
       </div>
 

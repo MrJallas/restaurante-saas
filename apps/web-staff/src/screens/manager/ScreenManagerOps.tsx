@@ -531,16 +531,11 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
       buckets[t.waiter].load += 1;
       buckets[t.waiter].val += t.val ?? 0;
     }
-    const NAME: Record<string, string> = {
-      CS: 'Caleb Souza',
-      OM: 'Olivia Martins',
-      HL: 'Henrique Lima',
-      BP: 'Bruno Pacheco',
-      JA: 'Júlia Andrade',
-    };
+    // Limpeza de demo (decisão #5): o rótulo é o próprio valor vindo da API
+    // (nome real do garçom) — o dicionário de personas fake foi removido.
     return Object.entries(buckets).map(([init, b]) => ({
       init,
-      name: NAME[init] ?? init,
+      name: init,
       load: b.load,
       total: 7,
       val: b.val,

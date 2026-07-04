@@ -16,8 +16,9 @@ export default function CozinhaTvPage() {
       <TvKdsBoard
         station="kitchen"
         title="Cozinha · KDS"
-        subtitle="Trattoria Luna · Estação principal"
-        iconLabel="TL"
+        subtitle="Estação principal"
+        iconLabel="🍳"
+        iconIsEmoji
         gridColumns={4}
       />
     </>

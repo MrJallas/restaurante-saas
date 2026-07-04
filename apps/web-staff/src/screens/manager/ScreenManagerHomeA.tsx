@@ -374,7 +374,7 @@ export function ScreenManagerHomeA({
         <MAppHeader
           dark={dark}
           title="Painel"
-          greetingName={greetingName ?? 'Renata Albuquerque'}
+          greetingName={greetingName}
           bellBadge={bellBadge ?? inProgress.length}
         />
 

@@ -41,7 +41,6 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
   const [table, setTable] = useState<number>(initialTable);
   const [problem, setProblem] = useState<ProblemId>('borrado');
   const [description, setDescription] = useState('');
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +53,6 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
       await reportQrIssue(tenantSlug, {
         table_number: table,
         description: text ? `[${problem}] ${text}` : `[${problem}]`,
-        photo_url: photoUrl ?? undefined,
       });
       setSent(true);
       setTimeout(() => onSent?.(), 1200);
@@ -335,35 +333,6 @@ export const ScreenWaiterReportQrIssue: React.FC<ScreenWaiterReportQrIssueProps>
           >
             {description.length} / 200
           </div>
-        </div>
-
-        {/* Foto opcional · placeholder pra capture (camera attach) */}
-        <div style={{ paddingTop: 12 }}>
-          <button
-            type="button"
-            onClick={() => {
-              const url = window.prompt('URL da foto (placeholder)');
-              if (url) setPhotoUrl(url);
-            }}
-            style={{
-              all: 'unset',
-              cursor: 'pointer',
-              boxSizing: 'border-box',
-              width: '100%',
-              padding: '12px 14px',
-              borderRadius: 12,
-              border: `1.3px dashed ${C.borderSoft}`,
-              background: C.bg,
-              fontSize: 13,
-              color: C.mute,
-              fontWeight: 600,
-              textAlign: 'center',
-            }}
-          >
-            {photoUrl
-              ? `Foto adicionada · ${photoUrl.slice(0, 30)}…`
-              : '+ Adicionar foto (opcional)'}
-          </button>
         </div>
 
         {error && (

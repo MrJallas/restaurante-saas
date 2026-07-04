@@ -16,7 +16,7 @@ export default function BarTvPage() {
       <TvKdsBoard
         station="bar"
         title="Bar · Bebidas"
-        subtitle="Trattoria Luna"
+        subtitle="Estação do bar"
         iconLabel="🍷"
         iconIsEmoji
         gridColumns={3}

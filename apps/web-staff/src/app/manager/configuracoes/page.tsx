@@ -3,12 +3,13 @@
 import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ScreenManagerProfile } from '../../../screens/manager/ScreenManagerProfile';
+import { readStaffSession } from '../../../lib/api';
 import { useStaffTheme } from '../../../lib/theme';
 
 function ManagerProfileInner() {
   const params = useSearchParams();
   const { dark } = useStaffTheme();
-  const name = params.get('name') ?? undefined;
+  const name = params.get('name') ?? readStaffSession()?.staffName ?? undefined;
   const slug =
     params.get('slug') ||
     process.env.NEXT_PUBLIC_DEFAULT_TENANT ||

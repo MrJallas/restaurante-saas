@@ -7,8 +7,10 @@
 // Mobile-first; all interactive elements have aria-label/role.
 
 import type { CSSProperties, ReactNode, MouseEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useG, G_FONT, MONO_FONT } from './tokens';
+import { readStaffSession } from '../../lib/api';
 import { Icon } from './Icons';
 
 // ─── preserveQuery — anexa a query string atual da rota ao destino ─
@@ -702,9 +704,9 @@ export function MAppHeader({
   dark,
   title,
   bellBadge = 0,
-  greetingName = 'Renata Albuquerque',
-  greeting = 'Boa noite,',
-  live = 'AO VIVO · TURNO DA NOITE',
+  greetingName,
+  greeting,
+  live,
   onBell,
 }: {
   dark?: boolean;
@@ -717,6 +719,33 @@ export function MAppHeader({
 }) {
   const C = useG(!!dark);
   const router = useRouter();
+  // Limpeza de demo (decisão #5, 2026-07-04): sem prop explícita, o nome vem
+  // da SESSÃO logada (antes o fallback era a persona de mock "Renata
+  // Albuquerque" — vazava em tela real) e saudação/turno derivam da hora
+  // local. Derivados pós-mount (useEffect) pra não divergir do SSR.
+  const [derived, setDerived] = useState<{ name: string; greeting: string; live: string }>({
+    name: '',
+    greeting: 'Olá,',
+    live: 'AO VIVO',
+  });
+  useEffect(() => {
+    const h = new Date().getHours();
+    const [g, turno] =
+      h >= 5 && h < 12
+        ? ['Bom dia,', 'MANHÃ']
+        : h >= 12 && h < 18
+          ? ['Boa tarde,', 'TARDE']
+          : ['Boa noite,', 'NOITE'];
+    setDerived({
+      name: readStaffSession()?.staffName || 'Equipe',
+      greeting: g,
+      live: `AO VIVO · TURNO DA ${turno}`,
+    });
+  }, []);
+  const shownGreetingName = greetingName ?? derived.name;
+  const shownGreeting = greeting ?? derived.greeting;
+  // live: undefined → derivado da hora; null → esconde (contrato preservado).
+  const shownLive = live === undefined ? derived.live : live;
   // Round 18 placebo-fix · campainha do header passa a navegar pra
   // `/manager/notifications` por padrão (consumer pode override via prop).
   const bellHandler = onBell ?? (() => router.push('/manager/notifications'));
@@ -736,14 +765,14 @@ export function MAppHeader({
         }
       />
       <div style={{ padding: '4px 16px 14px' }}>
-        <div style={{ fontSize: 13, color: C.faint, fontWeight: 500 }}>{greeting}</div>
+        <div style={{ fontSize: 13, color: C.faint, fontWeight: 500 }}>{shownGreeting}</div>
         <div
           style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.4, color: C.ink, marginTop: 2 }}
         >
-          {greetingName}
+          {shownGreetingName}
         </div>
       </div>
-      {live && (
+      {shownLive && (
         <div style={{ padding: '0 16px 4px' }}>
           <div
             style={{
@@ -765,7 +794,7 @@ export function MAppHeader({
                 background: '#1E8C5A',
               }}
             />
-            {live}
+            {shownLive}
           </div>
         </div>
       )}

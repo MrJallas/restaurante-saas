@@ -111,7 +111,7 @@ function FinanceiroInner() {
       }}
     >
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: 80 }}>
-        <MAppHeader title="Financeiro" greetingName="Renata Albuquerque" bellBadge={0} />
+        <MAppHeader title="Financeiro" bellBadge={0} />
 
         {errorMsg && (
           <div

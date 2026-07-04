@@ -46,7 +46,7 @@ export interface ScreenManagerProfileProps {
 
 export function ScreenManagerProfile({
   dark,
-  managerName = 'Renata Albuquerque',
+  managerName = 'Gerente',
   managerInitials,
   managerColor = '#7A4FBE',
   shift = 'Turno da noite (17h–02h)',
