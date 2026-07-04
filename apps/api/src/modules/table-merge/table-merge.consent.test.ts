@@ -18,6 +18,7 @@
 
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { TableMergeService } from './table-merge.service';
+import { MergeTargetResolver } from './merge-target-resolver';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import type { EventsGateway } from '../websocket/events.gateway';
 
@@ -151,7 +152,11 @@ function makeService() {
     emitTableMergeRejected: jest.fn(),
     emitMergeCooldownStarted: jest.fn(),
   };
-  const service = new TableMergeService(conn, events as unknown as EventsGateway);
+  const service = new TableMergeService(
+    conn,
+    new MergeTargetResolver(conn),
+    events as unknown as EventsGateway,
+  );
   return { service, events, request };
 }
 

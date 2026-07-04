@@ -11,6 +11,7 @@
  */
 
 import { TableMergeService } from './table-merge.service';
+import { MergeTargetResolver } from './merge-target-resolver';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 
 const SOURCE = 'aaaa1111-0000-4000-8000-000000000001';
@@ -112,7 +113,7 @@ function fakeMergeDb() {
 describe('TableMergeService.forceMerge — colunas reais de escalation_chains', () => {
   it('cria o request approved + chain de audit sem estourar 42703', async () => {
     const { conn, chains } = fakeMergeDb();
-    const service = new TableMergeService(conn);
+    const service = new TableMergeService(conn, new MergeTargetResolver(conn));
 
     const result = await service.forceMerge({
       sourceTableSessionId: SOURCE,
@@ -133,7 +134,7 @@ describe('TableMergeService.forceMerge — colunas reais de escalation_chains', 
 
   it('chain fica ligada ao request (escalation_chain_id preenchido)', async () => {
     const { conn, requests } = fakeMergeDb();
-    const service = new TableMergeService(conn);
+    const service = new TableMergeService(conn, new MergeTargetResolver(conn));
     await service.forceMerge({
       sourceTableSessionId: SOURCE,
       targetTableSessionId: TARGET,

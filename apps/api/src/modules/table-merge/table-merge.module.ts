@@ -6,6 +6,7 @@ import { CallerResolverModule } from '../../common/services/caller-resolver.modu
 import { TableMergeController } from './table-merge.controller';
 import { StaffTableMergeController } from './staff-table-merge.controller';
 import { TableMergeService } from './table-merge.service';
+import { MergeTargetResolver } from './merge-target-resolver';
 
 @Module({
   // Round 8 (B-NEW-27): CallerResolverModule pra resolver caller customerId.
@@ -14,7 +15,8 @@ import { TableMergeService } from './table-merge.service';
   // pra override de manager (V16 spec). Customer-side stays separate.
   controllers: [TableMergeController, StaffTableMergeController],
   // Round 7 (B-NEW-22): ManagerOnlyGuard registrado pro DI lookup.
-  providers: [TableMergeService, ManagerOnlyGuard],
+  // MergeTargetResolver: extração da resolução de alvo (fase framework).
+  providers: [TableMergeService, MergeTargetResolver, ManagerOnlyGuard],
   exports: [TableMergeService],
 })
 export class TableMergeModule {}
