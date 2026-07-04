@@ -208,6 +208,10 @@ NEGATIVE_CASES = [
     "quero juntar com a mesa 5",                # intenção de merge → tool/LLM, não rule
     "tira a cebola do meu prato",               # modificação de pedido → LLM
     "queria muito ver o cardápio de sobremesas especiais hoje",  # >6 palavras → LLM
+    # AUDITORIA 2026-07-03: view_order não tinha guard de negação (o bloco
+    # de pagamento tem) — "não quero ver meu pedido" caía no atalho.
+    "não quero ver meu pedido",
+    "não precisa mostrar o status do pedido",
 ]
 
 

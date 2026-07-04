@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 import re
@@ -148,12 +149,18 @@ _TABLE_MERGE_REQUEST_INTENT_RE = re.compile(
     r"\bjuntar\b[^.!?]*\b(com|na|à|a)\s+(a\s+|outra\s+|essa\s+|aquela\s+)?mesa\b",
     re.IGNORECASE,
 )
-_JOIN_ACCEPT_RE = re.compile(
-    r"\b(pode|pode\s+entrar|sim|s[ií]m|claro|libera|liberar|autoriza|autorizar|deixa|deixe|deixa\s+entrar|ok|beleza)\b",
+_JOIN_ACCEPT_DIRECT_RE = re.compile(
+    r"^(sim[,!\s]+)?"
+    r"(pode(\s+entrar)?(\s+sim)?|sim|s[ií]m|claro|libera(r)?|autoriza(r)?"
+    r"|deixa(\s+entrar)?|ok|beleza)"
+    r"[\s!.…]*$",
     re.IGNORECASE,
 )
-_JOIN_REJECT_RE = re.compile(
-    r"\b(n[aã]o|agora\s+n[aã]o|melhor\s+n[aã]o|recusa|recusar|rejeita|rejeitar|n[aã]o\s+deixa|n[aã]o\s+pode|bloqueia)\b",
+_JOIN_REJECT_DIRECT_RE = re.compile(
+    r"^(n[aã]o[,!\s]+)?"
+    r"(n[aã]o|agora\s+n[aã]o|melhor\s+n[aã]o|recusa(r)?|rejeita(r)?"
+    r"|n[aã]o\s+deixa|n[aã]o\s+pode(\s+entrar)?|bloqueia(r)?)"
+    r"[\s!.…]*$",
     re.IGNORECASE,
 )
 
@@ -281,7 +288,7 @@ def _last_assistant_requested_manager_message(history: list["ChatMessage"]) -> b
     return False
 
 
-def _rule_tool_response(
+async def _rule_tool_response(
     name: str,
     args: dict,
     req: "ChatRequest",
@@ -297,7 +304,10 @@ def _rule_tool_response(
         api_client=_context_api_client(req.tenantId, req.sessionId),
         raw_message=text,
     )
-    tool_result = dispatch_tool(name, args, ctx)
+    # dispatch_tool é SÍNCRONO (httpx.Client/redis-py) — rodar no
+    # threadpool pra não congelar o event loop (timeout de 10s do
+    # api_client travava TODAS as rotas, inclusive /health).
+    tool_result = await asyncio.to_thread(dispatch_tool, name, args, ctx)
     return ChatResponse(
         response=tool_result.message or "",
         tokens_in=0,
@@ -351,11 +361,16 @@ def _pending_join_request(customer_context: dict | None) -> dict | None:
 
 
 def _join_decision_tool(text: str, pending_join: dict | None) -> str | None:
+    """Auditoria 2026-07-03: um "não" SOLTO no meio de qualquer frase
+    rejeitava o convite ("não sei o que pedir" recusava a Bianca). A
+    decisão agora exige frase de decisão INEQUÍVOCA (fullmatch curto);
+    o resto segue o fluxo normal com o convite pendente intacto."""
     if not pending_join:
         return None
-    if _JOIN_REJECT_RE.search(text):
+    normalized = text.strip()
+    if _JOIN_REJECT_DIRECT_RE.match(normalized):
         return "reject_join_request"
-    if _JOIN_ACCEPT_RE.search(text):
+    if _JOIN_ACCEPT_DIRECT_RE.match(normalized):
         return "accept_join_request"
     return None
 
@@ -708,7 +723,7 @@ async def chat(req: ChatRequest):
     pending_join = _pending_join_request(req.customer_context)
     join_decision_tool = _join_decision_tool(text, pending_join)
     if join_decision_tool and pending_join:
-        return _rule_tool_response(
+        return await _rule_tool_response(
             join_decision_tool,
             {
                 "targetCustomerId": pending_join["targetCustomerId"],
@@ -778,8 +793,12 @@ async def chat(req: ChatRequest):
             tool_calls=[],
         )
 
-    if _ORDER_STATUS_RE.search(text) or _VIEW_ORDER_RE.search(text):
-        return _rule_tool_response(
+    # Guard de negação (auditoria 2026-07-03): "não quero ver meu pedido"
+    # não é pedido de status — mesmo guard do bloco de pagamento.
+    if (
+        _ORDER_STATUS_RE.search(text) or _VIEW_ORDER_RE.search(text)
+    ) and not _DIRECT_NEGATION_RE.search(text):
+        return await _rule_tool_response(
             "view_order",
             {},
             req,
@@ -806,7 +825,7 @@ async def chat(req: ChatRequest):
             tool_name = "pay_individual"
         elif _PAYMENT_FULL_RE.search(text):
             tool_name = "pay_full"
-        return _rule_tool_response(
+        return await _rule_tool_response(
             tool_name,
             {},
             req,
@@ -819,7 +838,7 @@ async def chat(req: ChatRequest):
     # glúten que chegue rápido?" precisa de raciocínio (LLM), "opções sem
     # glúten" é comando.
     if _GLUTEN_FREE_RE.search(text) and _is_direct_phrase(text):
-        return _rule_tool_response(
+        return await _rule_tool_response(
             "recommend_dish",
             {"dietary": "gluten_free"},
             req,
@@ -832,7 +851,7 @@ async def chat(req: ChatRequest):
         _last_assistant_requested_manager_message(req.history)
         and not _CANCEL_MANAGER_MESSAGE_RE.search(text)
     ):
-        return _rule_tool_response(
+        return await _rule_tool_response(
             "send_message_to_manager",
             {"text": text},
             req,
@@ -847,7 +866,7 @@ async def chat(req: ChatRequest):
     if _is_direct_phrase(text):
         menu_category = _direct_menu_category(text)
         if menu_category:
-            return _rule_tool_response(
+            return await _rule_tool_response(
                 "view_menu",
                 {"category": menu_category},
                 req,
@@ -856,7 +875,7 @@ async def chat(req: ChatRequest):
                 layer="rule-view-menu",
             )
         if _VIEW_MENU_RE.search(text) or _BARE_MENU_RE.match(text):
-            return _rule_tool_response(
+            return await _rule_tool_response(
                 "view_menu",
                 {},
                 req,
@@ -869,7 +888,7 @@ async def chat(req: ChatRequest):
             # _DIETARY_RESTRICTION_RE) — nunca recomendar às cegas pra
             # quem declarou alergia/restrição.
             rec_category = _recommend_category(text)
-            return _rule_tool_response(
+            return await _rule_tool_response(
                 "recommend_dish",
                 {"category": rec_category} if rec_category else {},
                 req,
@@ -878,7 +897,7 @@ async def chat(req: ChatRequest):
                 layer="rule-recommend-dish",
             )
         if _CALL_WAITER_RE.search(text):
-            return _rule_tool_response(
+            return await _rule_tool_response(
                 "call_waiter",
                 {},
                 req,
@@ -887,7 +906,7 @@ async def chat(req: ChatRequest):
                 layer="rule-call-waiter",
             )
         if _COURTESY_RE.search(text):
-            return _rule_tool_response(
+            return await _rule_tool_response(
                 "view_courtesy",
                 {},
                 req,
@@ -964,7 +983,7 @@ async def chat(req: ChatRequest):
             raw_message=text,
         )
         try:
-            tool_result = dispatch_tool(name, args, ctx)
+            tool_result = await asyncio.to_thread(dispatch_tool, name, args, ctx)
             tc_record = dict(tc)
             tc_record["result"] = {
                 "message": tool_result.message,
@@ -1150,7 +1169,7 @@ async def tools_dispatch(req: ToolDispatchRequest):
     )
 
     try:
-        result = dispatch_tool(req.name, req.args or {}, ctx)
+        result = await asyncio.to_thread(dispatch_tool, req.name, req.args or {}, ctx)
     except ToolNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ToolValidationError as e:

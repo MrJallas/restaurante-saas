@@ -670,16 +670,21 @@ function numberValue(value: unknown): number | null {
   return null;
 }
 
+// Auditoria 2026-07-03 (gêmeo do fix no ai-service): um "não" SOLTO no
+// meio de qualquer frase decidia o merge — "não sei o que pedir" recusava
+// a junção. Decisão exige frase INEQUÍVOCA (fullmatch curto); o resto
+// segue como mensagem normal com o convite intacto.
+const MERGE_REJECT_DIRECT_RE =
+  /^(nao[,!\s]+)?(nao|agora nao|melhor nao|recusa(r)?|rejeita(r)?|separad[oa]s?|nao pode( juntar)?|nao junta)[\s!.…]*$/;
+const MERGE_APPROVE_DIRECT_RE =
+  /^(sim[,!\s]+)?(pode( juntar)?( sim)?|sim|claro|libera(r)?|aceita(r)?|junta(r)?|ok|beleza)[\s!.…]*$/;
+
 function tableMergeDecisionFromText(text: string): 'approve' | 'reject' | null {
-  const normalized = stripDiacritics(text);
-  if (/\b(agora nao|melhor nao|nao|recusa|recusar|separad[oa]s?)\b/.test(normalized)) {
+  const normalized = stripDiacritics(text).trim();
+  if (MERGE_REJECT_DIRECT_RE.test(normalized)) {
     return 'reject';
   }
-  if (
-    /\b(pode|pode juntar|sim|claro|libera|liberar|aceita|aceitar|junta|ok|beleza)\b/.test(
-      normalized,
-    )
-  ) {
+  if (MERGE_APPROVE_DIRECT_RE.test(normalized)) {
     return 'approve';
   }
   return null;
