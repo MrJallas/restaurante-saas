@@ -9,13 +9,48 @@ import { cleanCpf, validateCpf } from '../../lib/cpf';
 import { identifyCustomer, createLateArrivalRequest } from '../../lib/api/customer-host';
 import type { CustomerIdentifyResponse } from '@restaurant/shared-types';
 
+/**
+ * Two distinct reasons the customer can land on this CPF gate:
+ *
+ *  - `'late-arrival'` — customer B genuinely scanned an occupied table and
+ *    wants to JOIN it. Submitting creates a `late_arrival_request` and sends
+ *    them to `/waiting-approval` so a host can approve (the P1-K flow).
+ *
+ *  - `'gate'` (DEFAULT) — a customer who is ALREADY seated just needs to prove
+ *    their CPF to reach some other screen (feedback, /eu, histórico, o
+ *    assistente via `?next=`). The bounce came from `useRequireCustomerId` /
+ *    ScreenCustomerMe / assistente because `customerId` was missing from the
+ *    bundle. Submitting must ONLY identify + route to `next`; it must NOT
+ *    create a late_arrival_request nor land on waiting-approval — doing so
+ *    stranded the customer waiting for a phantom host and spawned an orphan
+ *    request that escalated to the manager after the 60s TTL (regression the
+ *    re-scan flagged on P1-K commit 1c84355).
+ */
+export type IdentifyIntent = 'late-arrival' | 'gate';
+
 interface ScreenCustomerIdentifyBeforeJoinProps {
   slug: string;
   /**
-   * Where to go after identify succeeds. Default: the waiting-approval screen,
-   * which then triggers the late-arrival request.
+   * Which flow this gate is serving. Defaults to `'gate'` — the common,
+   * safe case (prove CPF, then continue). Only `'late-arrival'` (or a
+   * `redirectTo` that explicitly points at a waiting-approval path) opts into
+   * creating the late_arrival_request + waiting-approval routing.
+   */
+  intent?: IdentifyIntent;
+  /**
+   * Where to go after identify succeeds.
+   *  - late-arrival flow: destino da waiting-approval (default
+   *    `/${slug}/waiting-approval`).
+   *  - gate flow: destino pretendido (a tela que bouncou o cliente pra cá).
+   * Aceita path absoluto (`/slug/foo`) ou segmento slug-relativo (`assistente`).
    */
   redirectTo?: string;
+  /**
+   * Onde voltar depois de identificar no fluxo `gate`. Escrito pelo caller que
+   * bouncou (ex.: `?next=assistente`). Path absoluto ou segmento relativo ao
+   * slug. Ignorado no fluxo late-arrival (lá o destino é a waiting-approval).
+   */
+  next?: string;
   /**
    * Optional override for the host name shown in the sub-text. When unset,
    * the screen uses generic "host da mesa".
@@ -48,11 +83,23 @@ interface ScreenCustomerIdentifyBeforeJoinProps {
  */
 export function ScreenCustomerIdentifyBeforeJoin({
   slug,
+  intent,
   redirectTo,
+  next,
   hostName,
 }: ScreenCustomerIdentifyBeforeJoinProps) {
   const router = useRouter();
   const { setCustomer, sessionId } = useSession();
+
+  // Distingue o late-arrival REAL do gate-de-CPF. Só entra no fluxo
+  // late-arrival (cria request + waiting-approval) quando há sinal EXPLÍCITO:
+  // `intent==='late-arrival'` OU um `redirectTo` que aponta de propósito pra
+  // uma waiting-approval. Qualquer outra chegada (o caso comum: cliente
+  // sentado que só precisa provar CPF) é tratada como `gate` — a intenção
+  // default e segura.
+  const isLateArrival =
+    intent === 'late-arrival' ||
+    (!!redirectTo && /(?:^|\/)waiting-approval(?:\/|\?|$)/.test(redirectTo));
 
   const [name, setName] = useState('');
   const [cpf, setCpf] = useState('');
@@ -92,46 +139,68 @@ export function ScreenCustomerIdentifyBeforeJoin({
         isReturning: result.isReturning,
       });
 
-      // P1-K (re-scan): identify só rodava o lookup e navegava pra
-      // /waiting-approval SEM criar a late_arrival_request no backend —
-      // `createLateArrivalRequest` tinha 0 call-sites. Resultado: a tela de
-      // espera renderizava "aguardando host" permanentemente porque não havia
-      // request nenhum pra o host aprovar nem `requestId`/`expiresAt` pra
-      // rastrear via WS. Aqui criamos o pedido de verdade (o backend deriva
-      // customerId do cookie recognition_token e tableSessionId da session —
-      // o body só precisa satisfazer o @IsUUID customerId do DTO) e roteamos
-      // com o `id` + `expiresAt` que o create realmente devolve
-      // (LateArrivalRequestDto), não um campo `next`/`redirect` inexistente.
-      const request = await createLateArrivalRequest({
-        slug,
-        customerId: result.customerId,
-      });
+      // Decide o destino a partir da INTENÇÃO, não incondicionalmente.
+      let destination: string;
 
-      const waitingUrl = buildWaitingUrl({
-        base: redirectTo ?? `/${slug}/waiting-approval`,
-        requestId: request.id,
-        expiresAt: request.expiresAt,
-        hostName,
-      });
+      if (isLateArrival) {
+        // Fluxo late-arrival REAL (o que o P1-K consertou — preservado):
+        // cria a late_arrival_request de verdade (o backend deriva customerId
+        // do cookie recognition_token e tableSessionId da session — o body só
+        // precisa satisfazer o @IsUUID customerId do DTO) e roteia com o `id`
+        // + `expiresAt` que o create devolve (LateArrivalRequestDto), pra que
+        // a waiting-approval case o requestId nos eventos WS `late_arrival.*`
+        // e dirija o countdown. Sem isso a tela ficava presa em "aguardando
+        // host" pra sempre.
+        const request = await createLateArrivalRequest({
+          slug,
+          customerId: result.customerId,
+        });
+
+        destination = buildWaitingUrl({
+          base: redirectTo ?? `/${slug}/waiting-approval`,
+          requestId: request.id,
+          expiresAt: request.expiresAt,
+          hostName,
+        });
+      } else {
+        // Gate-de-CPF (caso comum): o cliente já está sentado e só precisa
+        // provar o CPF pra alcançar outra tela (feedback, /eu, histórico,
+        // assistente via `?next=`). NÃO criamos late_arrival_request nem vamos
+        // pra waiting-approval — isso deixava o cliente preso esperando um host
+        // fantasma e gerava um pedido órfão que escalava pro gerente após o
+        // TTL. Roteamos pro destino pretendido (`next`/`redirectTo`), honrando
+        // o `?next=` que antes era ignorado. Fallback: home do slug.
+        destination = resolveGateDestination({ slug, next, redirectTo });
+      }
 
       // Soft alert "bem-vindo de volta" quando retornante e o nome canonico
       // diverge do digitado. Pequena pausa visual antes de navegar pra que o
-      // cliente veja a mensagem (alternativa ao toast: poderia ser passado
-      // via query string pra waiting-approval renderizar la, mas isso aqui
-      // e simples e suficiente).
+      // cliente veja a mensagem.
       if (result.isReturning && result.canonicalName !== name.trim()) {
         setReturningName(result.canonicalName);
         setTimeout(() => {
-          router.push(waitingUrl);
+          router.push(destination);
         }, 1800);
         return;
       }
-      router.push(waitingUrl);
+      router.push(destination);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao validar seus dados. Tente novamente.');
       setSubmitting(false);
     }
-  }, [canSubmit, slug, name, cleanedCpf, sessionId, setCustomer, router, redirectTo, hostName]);
+  }, [
+    canSubmit,
+    slug,
+    name,
+    cleanedCpf,
+    sessionId,
+    setCustomer,
+    router,
+    isLateArrival,
+    redirectTo,
+    next,
+    hostName,
+  ]);
 
   // capitalize on blur: roda a cada keystroke quebra autocorrect do iOS
   // (mesmo motivo do WelcomeModal). Mantemos a UX de Title-Case sem brigar
@@ -247,6 +316,31 @@ function buildWaitingUrl(input: {
   if (input.expiresAt) params.set('expiresAt', input.expiresAt);
   if (input.hostName) params.set('hostName', input.hostName);
   return `${path}?${params.toString()}`;
+}
+
+/**
+ * Resolve pra onde o gate-de-CPF (não-late-arrival) deve navegar depois de
+ * identificar. Preferência: `next` (o destino que o caller que bouncou o
+ * cliente escreveu, ex.: `?next=assistente`) → `redirectTo` → home do slug.
+ *
+ * `next`/`redirectTo` podem ser um path absoluto (`/slug/foo`, usado como
+ * está) ou um segmento slug-relativo (`assistente` → `/${slug}/assistente`),
+ * porque o assistente hoje escreve `?next=assistente` (sem slug nem barra).
+ * Só aceitamos destinos internos (começando com `/` após normalizar) pra não
+ * virar um open-redirect.
+ */
+function resolveGateDestination(input: {
+  slug: string;
+  next?: string;
+  redirectTo?: string;
+}): string {
+  const raw = (input.next ?? input.redirectTo ?? '').trim();
+  if (!raw) return `/${input.slug}`;
+  // Path absoluto interno → usa como está. Bloqueia `//host` e `http(s)://`
+  // (open-redirect) caindo no fallback slug-relativo.
+  if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
+  // Segmento relativo → prefixa o slug, removendo barra inicial redundante.
+  return `/${input.slug}/${raw.replace(/^\/+/, '')}`;
 }
 
 interface FieldShellProps {

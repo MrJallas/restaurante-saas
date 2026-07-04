@@ -14,8 +14,17 @@ import { getSessionToken } from '../../../lib/storage';
  *     here when no `recognition_token` cookie exists
  *  2. Direct link from staff (rare) — same UX, just no implicit context
  *
- * Optional `?host=Caleb&redirect=/foo` query params let the caller pre-fill
- * the host name shown in the sub-text and override the post-submit route.
+ * Query params:
+ *  - `?host=Caleb`        — pre-fills the host name shown in the sub-text.
+ *  - `?redirect=/foo`     — overrides the post-submit route.
+ *  - `?next=assistente`   — destino pretendido quando isto é só um GATE de CPF
+ *    (cliente sentado que perdeu o customerId e foi bouncado por
+ *    `useRequireCustomerId` / assistente). Path absoluto ou segmento relativo.
+ *  - `?intent=late-arrival` — sinaliza EXPLICITAMENTE o fluxo late-arrival
+ *    real (customer B entrando numa mesa ocupada). Sem esse sinal (nem um
+ *    `redirect` apontando pra waiting-approval) a tela trata a chegada como
+ *    gate: identifica e volta pro `next`/`redirect`, SEM criar
+ *    late_arrival_request nem ir pra waiting-approval.
  */
 export default function IdentifyPage() {
   const params = useParams<{ slug: string }>();
@@ -24,6 +33,8 @@ export default function IdentifyPage() {
   const slug = params?.slug ?? '';
   const hostName = search?.get('host');
   const redirectTo = search?.get('redirect') ?? undefined;
+  const next = search?.get('next') ?? undefined;
+  const intent = search?.get('intent') === 'late-arrival' ? 'late-arrival' : 'gate';
 
   useEffect(() => {
     // Sem session token, voltamos pro fluxo de scan: o slug index ja' explica
@@ -36,6 +47,12 @@ export default function IdentifyPage() {
   }, [slug, router]);
 
   return (
-    <ScreenCustomerIdentifyBeforeJoin slug={slug} hostName={hostName} redirectTo={redirectTo} />
+    <ScreenCustomerIdentifyBeforeJoin
+      slug={slug}
+      intent={intent}
+      hostName={hostName}
+      redirectTo={redirectTo}
+      next={next}
+    />
   );
 }
