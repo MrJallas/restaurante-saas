@@ -89,7 +89,6 @@ export default function PagamentoDividirPage() {
   );
 
   const subtotalCents = items.reduce((s, it) => s + it.subtotalCents, 0);
-  const serviceCents = Math.round((subtotalCents * serviceFeePct) / 100);
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 
   // Decisão Caleb 2026-07-04: o rateio é CANÔNICO no backend — o preview
