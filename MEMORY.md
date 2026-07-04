@@ -260,6 +260,34 @@ build`); os testes rodam via `jest` (precisa `ts-jest` instalado —
 `npm install` se `npm test` reclamar de preset). `AI_SERVICE_API_KEY` agora
 documentado nos `.env.example` (ai-service FAIL-CLOSE em prod sem ele).
 
+Fatia 1B (2026-07-04, branch fix/framework-bugfixes) — 2 P0 da auditoria:
+
+- order-ratings: `submit` agora e `ON CONFLICT (order_id) DO UPDATE ... WHERE
+submitted_at IS NULL` — a resposta real do cliente COMPLETA a row do prompt
+  criada no delivered (antes o DO NOTHING descartava nota+comentario e o
+  auto-complaint nota<=2 nunca disparava). Re-avaliacao continua bloqueada
+  (devolve a original, `alreadyRated: true`). Preenche customer_id/visit_id
+  NULL do prompt sem sobrescrever. Teste: `order-ratings.service.test.ts`
+  (fake modela semantica de upsert do PG).
+- assistant: recomendacao com dietary ativo e ZERO candidatos aprovados pelo
+  filtro deterministico responde "nao encontrei opcoes sem gluten" com chips
+  vazios — NUNCA cai no `menuItems.slice(0,3)` sem filtro (antes recomendava
+  prato com gluten declarado sob o texto "sem gluten"). Fallback generico
+  continua valendo so sem restricao. Teste:
+  `recommendation-dietary-barrier.test.ts`.
+- Validado E2E no sim iOS (iPhone 17 Pro, 2026-07-04): 5 estrelas persiste
+  na row do prompt; 1 estrela + comentario auto-cria complaint
+  `pending_review` e a UI redireciona pro protocolo. Evidencia psql
+  before/after na sessao QRTEST92.
+- Geofence do restaurant*dev voltou pro default de dev (lat/lng NULL) — estava
+  com coords de teste (-23.561,-46.655) e o container web-customer NAO tem
+  `NEXT_PUBLIC_DEV_GEOLOCATION*\*`, entao o welcome via LAN bloqueava a
+  "5672183m de distancia".
+- Achado novo (nao corrigido, candidato a backlog): deep-link frio de
+  `/orders/:id/rating` (alvo do push pos-delivered) perde a corrida de 50ms
+  da rehidratacao do SessionProvider no primeiro load (lazy compile em dev)
+  e bounca pra home; no segundo load passa.
+
 Por workspace:
 
 ```bash
