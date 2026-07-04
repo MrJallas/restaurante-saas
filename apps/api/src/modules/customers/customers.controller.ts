@@ -32,6 +32,7 @@ import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { SessionData } from '../../common/guards/session.guard';
 import { RedisService } from '../../infra/redis/redis.service';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { CustomersService } from './customers.service';
 
 const RECOGNITION_COOKIE_MAX_AGE = 365 * 24 * 60 * 60 * 1000;
@@ -120,6 +121,7 @@ export class CustomersController {
   constructor(
     private readonly customersService: CustomersService,
     private readonly redis: RedisService,
+    private readonly callerResolver: CallerResolverService,
   ) {}
 
   /**
@@ -270,18 +272,24 @@ export class CustomersController {
     return this.customersService.setVipFlag(customerId, false);
   }
 
+  /**
+   * P1-C (IDOR fix): resolve o `customerId` do CALLER pelo cookie
+   * `recognition_token` (via CallerResolverService), NUNCA por
+   * `session.customerId`. `session.customerId` guarda o ÚLTIMO cliente que
+   * fez welcome na mesa — compartilhado entre todos os participantes (host
+   * + late-arrivals). Usá-lo aqui vazava itens+notes do último welcomer pra
+   * qualquer outro cliente da mesma sessão que tocasse "repetir última
+   * visita". O WS gateway já resolvia identidade por PARTICIPANTE
+   * (resolveRecognizedCustomer no events.gateway) — o REST agora segue o
+   * mesmo canon.
+   *
+   * Caller sem `recognition_token` (nunca fez welcome/recognize) cai no
+   * comportamento seguro: 401, sem cair no `session.customerId` alheio.
+   */
   @Get('last-visit')
   @UseGuards(SessionGuard)
-  async lastVisit(
-    @Session() session: SessionData,
-    @Req() req: { cookies?: Record<string, string> },
-  ) {
-    let customerId = session.customerId ?? null;
-    const token = req.cookies?.recognition_token ?? null;
-    if (!customerId && token) {
-      customerId =
-        (await this.customersService.resolveByRecognitionToken(token))?.customerId ?? null;
-    }
+  async lastVisit(@Session() session: SessionData, @Req() req: Request) {
+    const customerId = await this.callerResolver.tryGetCustomerId(req);
     if (!customerId) {
       throw new HttpException(
         'Identificação ausente. Faça login pra repetir a visita.',
