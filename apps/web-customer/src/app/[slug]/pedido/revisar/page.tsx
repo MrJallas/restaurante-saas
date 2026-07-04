@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { ApiRequestError, apiGet, apiPatch, apiPost } from '../../../../lib/api';
+import { buildOrderItemPayload } from '../../../../lib/orderPayload';
 import { useDraftOrder } from '../../../../providers/DraftOrderProvider';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
@@ -71,12 +72,10 @@ export default function PedidoRevisarPage() {
           const res = await apiPost<{ id: string; autoConfirmAt?: string }>(`/${slug}/orders`, {
             billingMode,
             visitId: visitId || undefined,
-            items: groupItems.map((it) => ({
-              menuItemId: it.menuItemId,
-              quantity: it.quantity,
-              notes: it.note || undefined,
-              customerId: it.commandMode === 'individual' ? customerId : null,
-            })),
+            // As preferências de bebida ('sem gelo', 'sem açúcar') são dobradas
+            // dentro de `notes` pelo buildOrderItemPayload — antes ficavam só no
+            // rascunho e a cozinha nunca as recebia (P1-N re-scan).
+            items: groupItems.map((it) => buildOrderItemPayload(it, customerId)),
           });
           createdIds.push(res.id);
         }
