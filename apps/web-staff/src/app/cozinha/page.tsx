@@ -815,12 +815,26 @@ function deliveryStateLabel(order: Order): string | null {
   return null;
 }
 
+// AudioContext SINGLETON (auditoria 2026-07-04): antes um contexto NOVO
+// por beep, sem close(), estourava o limite de ~6 contextos do browser —
+// o kiosk /cozinha (long-lived, nunca recarrega no turno) ficava MUDO e o
+// beep é a notificação de pedido novo. Mesmo fix ja aplicado no
+// TvKdsBoard.tsx: um contexto vive pra sempre e é retomado se suspenso.
+let sharedAudioCtx: AudioContext | null = null;
+
 function playBeep(frequency = 880) {
   try {
     const AudioCtor =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const audioCtx = new AudioCtor();
+    if (!AudioCtor) return;
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      sharedAudioCtx = new AudioCtor();
+    }
+    const audioCtx = sharedAudioCtx;
+    if (audioCtx.state === 'suspended') {
+      void audioCtx.resume();
+    }
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
     oscillator.connect(gainNode);
