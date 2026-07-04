@@ -72,3 +72,9 @@ class ToolMeta:
     requires_text: bool = False
     router: bool = False
     audience: str = "customer"  # "customer" | "staff" | "manager"
+    # Irreversible data-destruction tools (mass/individual chat deletion, etc.).
+    # The dispatcher refuses to run these without an explicit `confirm=true`
+    # arg the customer had to approve — an LLM hallucination or a malicious
+    # "apaga tudo" prompt must NOT wipe data on the first emission. See the
+    # confirmation gate in `dispatch_tool`.
+    destructive: bool = False

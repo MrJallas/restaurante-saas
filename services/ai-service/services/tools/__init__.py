@@ -209,10 +209,14 @@ TOOLS: dict[str, ToolMeta] = {
     "delete_chat": ToolMeta(
         name="delete_chat", call=_delete_chat,
         silent=False, requires_text=False, router=False, audience="customer",
+        # Irreversible ("Conversa apagada. Não tem volta.") → confirm gate.
+        destructive=True,
     ),
     "delete_all_chats": ToolMeta(
         name="delete_all_chats", call=_delete_all_chats,
         silent=False, requires_text=False, router=False, audience="customer",
+        # Mass irreversible delete of every thread ("Não tem volta") → confirm gate.
+        destructive=True,
     ),
     "lgpd_data_request": ToolMeta(
         name="lgpd_data_request", call=_lgpd_data_request,
@@ -354,6 +358,72 @@ STAFF_TOOLS_REQUIRING_TEXT: set[str] = {
 }
 
 
+# Tools that irreversibly destroy customer data. The dispatcher gates these
+# behind an explicit `confirm=true` arg — see `dispatch_tool`. Derived from
+# the `destructive` flag on each ToolMeta so the two never drift.
+DESTRUCTIVE_TOOLS: set[str] = {
+    name for name, meta in TOOLS.items() if meta.destructive
+}
+
+
+def _is_confirmed(args: dict[str, Any]) -> bool:
+    """True when the customer explicitly approved a destructive action.
+
+    Accepts `confirm` as a real bool `True`, or the strings the FE / LLM may
+    serialise ("true"/"yes"/"1") — but nothing else. Absent/false → not
+    confirmed, so the gate holds.
+    """
+    val = (args or {}).get("confirm")
+    if val is True:
+        return True
+    if isinstance(val, str):
+        return val.strip().lower() in {"true", "yes", "sim", "1"}
+    return False
+
+
+def _destructive_confirm_prompt(name: str, args: dict[str, Any]) -> ToolResult:
+    """Ask for explicit confirmation instead of running a destructive tool.
+
+    Mirrors the existing two-step consent pattern (show_lgpd_notice →
+    lgpd_data_request): return a bubble + a binary chip pair, where the
+    confirm chip re-emits the SAME tool with `confirm=true` (preserving the
+    original args, e.g. threadId) and the cancel chip dismisses.
+    """
+    # Preserve the caller's args (e.g. delete_chat's threadId) and stamp
+    # confirm=true so the re-emission actually runs.
+    confirm_args = {k: v for k, v in (args or {}).items() if k != "confirm"}
+    confirm_args["confirm"] = True
+
+    if name == "delete_all_chats":
+        message = (
+            "Isso apaga TODAS as suas conversas de uma vez e não tem volta. "
+            "Confirma que quer apagar tudo?"
+        )
+    else:
+        message = "Isso apaga a conversa e não tem volta. Confirma?"
+
+    return ToolResult(
+        message=message,
+        chips=[
+            {
+                "id": f"{name}-confirm",
+                "label": "Sim, apagar",
+                "action": "send",
+                "payload": {"tool": name, "args": confirm_args},
+                "primary": True,
+            },
+            {
+                "id": f"{name}-cancel",
+                "label": "Cancelar",
+                "action": "send",
+                "payload": {"tool": "dismiss", "args": {}},
+                "primary": False,
+            },
+        ],
+        action_payload={"messageType": "destructive_confirm", "tool": name},
+    )
+
+
 # ─────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────
@@ -396,6 +466,27 @@ def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResu
                 chip_label="preciso de mais detalhes",
             )
 
+    # Confirmation gate for irreversible data-destruction tools. An LLM
+    # hallucination or a malicious "apaga tudo" prompt must NOT wipe the
+    # customer's chat history on the first emission. We only run the delete
+    # once the customer has explicitly confirmed (`confirm=true`), which the
+    # FE surfaces via the confirm chip returned below.
+    #
+    # We gate only when a customer is actually identified: an anonymous caller
+    # has nothing to delete, so we let the tool run and return its own login
+    # hint (keeps the existing anonymous UX + avoids a pointless prompt).
+    if meta.destructive and ctx.customer_id and not _is_confirmed(args or {}):
+        # Don't prompt to confirm deleting an unspecified target — let the
+        # tool surface its own missing-arg error first (that path never
+        # deletes, so the security invariant still holds). delete_chat needs
+        # a threadId; without it, fall through to `meta.call` for the
+        # `missing_thread_id` error.
+        if name == "delete_chat" and not (
+            (args or {}).get("threadId") or (args or {}).get("thread_id")
+        ):
+            return meta.call(args or {}, ctx)
+        return _destructive_confirm_prompt(name, args or {})
+
     return meta.call(args or {}, ctx)
 
 
@@ -403,6 +494,7 @@ __all__ = [
     "TOOLS",
     "CANONICAL_TOOL_NAMES",
     "STAFF_TOOLS_REQUIRING_TEXT",
+    "DESTRUCTIVE_TOOLS",
     "dispatch_tool",
     "ToolContext",
     "ToolResult",

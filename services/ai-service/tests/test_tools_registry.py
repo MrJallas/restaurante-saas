@@ -341,6 +341,119 @@ def test_delete_all_chats_anonymous_returns_login_hint():
 
 
 # ─────────────────────────────────────────────────────────────
+# P0 — gate de confirmação para tools DESTRUTIVAS/irreversíveis
+#
+# `delete_all_chats` (e `delete_chat`) apagam dados do cliente de forma
+# irreversível ("não tem volta"). Um LLM alucinando ou um prompt malicioso
+# do cliente ("apaga tudo") NÃO pode disparar a deleção na 1ª emissão sem
+# uma confirmação explícita. O dispatcher exige `confirm=true` — sem isso a
+# tool NÃO deleta; volta pedindo confirmação com chip que reenvia a tool.
+# ─────────────────────────────────────────────────────────────
+
+from services.tools import DESTRUCTIVE_TOOLS  # noqa: E402
+
+
+class _RecordingApiClient:
+    """Registra chamadas HTTP pra provar que o backend NÃO foi tocado."""
+
+    def __init__(self):
+        self.calls: list[tuple] = []
+
+    def __call__(self, method, path, body):
+        self.calls.append((method, path, body))
+        return {"deletedCount": 99}
+
+
+def test_destructive_tools_set_contains_deletes():
+    """delete_all_chats + delete_chat são deleções irreversíveis."""
+    assert "delete_all_chats" in DESTRUCTIVE_TOOLS
+    assert "delete_chat" in DESTRUCTIVE_TOOLS
+
+
+def test_delete_all_chats_without_confirm_does_not_delete():
+    """RED: sem confirm, a tool NÃO chama o backend de deleção."""
+    api = _RecordingApiClient()
+    ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
+    result = dispatch_tool("delete_all_chats", {}, ctx)
+    # Nenhuma chamada DELETE foi feita — nada apagado.
+    assert api.calls == [], f"backend foi tocado sem confirmação: {api.calls}"
+    # Volta pedindo confirmação (não é erro, é um gate), com chip pra reenviar.
+    assert result.error is None
+    assert result.chips, "gate destrutivo deve oferecer chip de confirmação"
+    labels = " ".join(c.get("label", "").lower() for c in result.chips)
+    assert "apagar" in labels or "confirm" in labels or "sim" in labels
+    # Um dos chips reenvia a MESMA tool com confirm=true.
+    confirm_chip = next(
+        (
+            c for c in result.chips
+            if isinstance(c.get("payload"), dict)
+            and c["payload"].get("tool") == "delete_all_chats"
+            and (c["payload"].get("args") or {}).get("confirm") is True
+        ),
+        None,
+    )
+    assert confirm_chip is not None, f"faltou chip de confirmação re-emitindo a tool: {result.chips}"
+
+
+def test_delete_all_chats_with_confirm_deletes():
+    """GREEN path: com confirm=true, a deleção acontece."""
+    api = _RecordingApiClient()
+    ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
+    result = dispatch_tool("delete_all_chats", {"confirm": True}, ctx)
+    assert len(api.calls) == 1, f"esperava 1 DELETE, veio: {api.calls}"
+    method, path, _ = api.calls[0]
+    assert method == "DELETE"
+    assert result.error is None
+
+
+def test_delete_chat_without_confirm_does_not_delete():
+    """RED: delete_chat também é gated mesmo com threadId presente."""
+    api = _RecordingApiClient()
+    ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
+    result = dispatch_tool("delete_chat", {"threadId": "thr-1"}, ctx)
+    assert api.calls == [], f"delete_chat tocou o backend sem confirmação: {api.calls}"
+    assert result.error is None
+    assert result.chips
+    confirm_chip = next(
+        (
+            c for c in result.chips
+            if isinstance(c.get("payload"), dict)
+            and c["payload"].get("tool") == "delete_chat"
+            and (c["payload"].get("args") or {}).get("confirm") is True
+        ),
+        None,
+    )
+    assert confirm_chip is not None
+    # O threadId original deve ser preservado no re-emit pra não perder o alvo.
+    assert (confirm_chip["payload"]["args"] or {}).get("threadId") == "thr-1"
+
+
+def test_delete_chat_with_confirm_deletes():
+    api = _RecordingApiClient()
+    ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
+    result = dispatch_tool("delete_chat", {"threadId": "thr-1", "confirm": True}, ctx)
+    assert len(api.calls) == 1, f"esperava 1 DELETE, veio: {api.calls}"
+    assert result.error is None
+
+
+def test_non_destructive_tool_not_gated():
+    """add_to_order (mutação normal) NÃO ganha o gate — dispara direto."""
+    ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1")
+    result = dispatch_tool(
+        "add_to_order",
+        {"itemId": "12345678-1234-4234-8234-123456789012", "quantity": 1},
+        ctx,
+    )
+    # Não pede confirm — nenhum chip re-emitindo add_to_order com confirm.
+    reconfirm = [
+        c for c in (result.chips or [])
+        if isinstance(c.get("payload"), dict)
+        and (c["payload"].get("args") or {}).get("confirm") is True
+    ]
+    assert reconfirm == [], "add_to_order não deve pedir confirmação destrutiva"
+
+
+# ─────────────────────────────────────────────────────────────
 # Round 4 §C-NEW-3 — chips canônicos pós-mutação
 # Cada tool customer-side de mutação deve retornar `chips` não-vazio
 # pra que o FE renderize follow-ups contextuais (em vez do trio estático).
