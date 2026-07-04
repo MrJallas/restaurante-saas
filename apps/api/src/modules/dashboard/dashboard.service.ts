@@ -93,13 +93,18 @@ export class DashboardService {
       callsAcknowledged: number;
       avgResponseMinutes: number | null;
       deliveries: number;
+      /** Nota média dos pedidos que o staff ENTREGOU (decisão 2026-07-04). */
+      avgRating: number | null;
+      ratingsCount: number;
     }>;
   }> {
     const rows = (await this.tenantConn.query(
       `SELECT s.id AS staff_id, s.name, s.role,
               COUNT(DISTINCT wc.id)::int AS calls_acknowledged,
               AVG(EXTRACT(EPOCH FROM (wc.acknowledged_at - wc.created_at))) AS avg_response_secs,
-              COUNT(DISTINCT od.id)::int AS deliveries
+              COUNT(DISTINCT od.id)::int AS deliveries,
+              rat.avg_rating,
+              COALESCE(rat.ratings_count, 0)::int AS ratings_count
          FROM staff s
          LEFT JOIN waiter_calls wc
                 ON wc.acknowledged_by = s.id
@@ -107,8 +112,16 @@ export class DashboardService {
          LEFT JOIN order_deliveries od
                 ON od.claimed_by = s.id
                AND od.claimed_at >= current_date
+         LEFT JOIN LATERAL (
+           SELECT AVG(r.rating) AS avg_rating, COUNT(*) AS ratings_count
+             FROM order_ratings r
+             JOIN order_deliveries od2
+               ON od2.order_id = r.order_id AND od2.claimed_by = s.id
+            WHERE r.rating IS NOT NULL
+              AND r.submitted_at >= current_date - interval '7 days'
+         ) rat ON true
         WHERE s.is_active = true
-        GROUP BY s.id, s.name, s.role
+        GROUP BY s.id, s.name, s.role, rat.avg_rating, rat.ratings_count
         ORDER BY s.name`,
       [],
     )) as Array<{
@@ -118,6 +131,8 @@ export class DashboardService {
       calls_acknowledged: unknown;
       avg_response_secs: unknown;
       deliveries: unknown;
+      avg_rating: unknown;
+      ratings_count: unknown;
     }>;
     return {
       team: rows.map((r) => {
@@ -132,6 +147,11 @@ export class DashboardService {
               ? null
               : Math.round((avgSecs / 60) * 10) / 10,
           deliveries: Number(r.deliveries) || 0,
+          avgRating:
+            r.avg_rating == null || !Number.isFinite(Number(r.avg_rating))
+              ? null
+              : Math.round(Number(r.avg_rating) * 10) / 10,
+          ratingsCount: Number(r.ratings_count) || 0,
         };
       }),
     };

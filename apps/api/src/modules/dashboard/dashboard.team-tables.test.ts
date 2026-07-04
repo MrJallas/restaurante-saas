@@ -43,6 +43,8 @@ describe('DashboardService.getTeamKpis — só métricas com fonte real', () => 
             calls_acknowledged: '7',
             avg_response_secs: '95.0',
             deliveries: '12',
+            avg_rating: '4.60',
+            ratings_count: '5',
           },
           {
             staff_id: 's2',
@@ -51,6 +53,8 @@ describe('DashboardService.getTeamKpis — só métricas com fonte real', () => 
             calls_acknowledged: '0',
             avg_response_secs: null,
             deliveries: '3',
+            avg_rating: null,
+            ratings_count: '0',
           },
         ],
       }),
@@ -64,8 +68,12 @@ describe('DashboardService.getTeamKpis — só métricas com fonte real', () => 
       callsAcknowledged: 7,
       avgResponseMinutes: 1.6,
       deliveries: 12,
+      // Decisão Caleb 2026-07-04: nota do pedido conta pro garçom que ENTREGOU.
+      avgRating: 4.6,
+      ratingsCount: 5,
     });
     expect(kpis.team[1].avgResponseMinutes).toBeNull(); // sem chamado, sem média inventada
+    expect(kpis.team[1].avgRating).toBeNull(); // sem avaliação, sem nota inventada
   });
 });
 

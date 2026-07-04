@@ -44,6 +44,8 @@ interface StaffMember {
   calls: number;
   /** Tempo médio de resposta em minutos HOJE · null = sem chamados ainda. */
   respMin: number | null;
+  rating: number | null;
+  ratingsCount: number;
   /** Entregas HOJE (order_deliveries claimed — fonte real). */
   deliveries: number;
   color: string;
@@ -147,6 +149,8 @@ export function ScreenManagerStaff({
               status: s.is_active ? 'on' : 'off',
               calls: kpi?.callsAcknowledged ?? 0,
               respMin: kpi?.avgResponseMinutes ?? null,
+              rating: kpi?.avgRating ?? null,
+              ratingsCount: kpi?.ratingsCount ?? 0,
               deliveries: kpi?.deliveries ?? 0,
               color: ROLE_PALETTE[i % ROLE_PALETTE.length],
             };
@@ -930,7 +934,7 @@ function StaffCard({
             paddingTop: 10,
             borderTop: `1px dashed ${C.borderSoft}`,
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
+            gridTemplateColumns: 'repeat(4, 1fr)',
             gap: 0,
           }}
         >
@@ -943,6 +947,15 @@ function StaffCard({
               val: p.respMin != null ? `${p.respMin.toFixed(1).replace('.', ',')}m` : '—',
             },
             { lbl: 'ENTREGAS HOJE', val: String(p.deliveries) },
+            {
+              // Decisão Caleb 2026-07-04: nota do pedido conta pro garçom
+              // que ENTREGOU (últimos 7 dias). Sem avaliação, '—'.
+              lbl: 'NOTA 7D',
+              val:
+                p.rating != null
+                  ? `★ ${p.rating.toFixed(1).replace('.', ',')} (${p.ratingsCount})`
+                  : '—',
+            },
           ].map((m, i) => (
             <div
               key={m.lbl}

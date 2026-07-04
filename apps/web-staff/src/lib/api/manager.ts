@@ -378,6 +378,9 @@ export interface TeamKpiEntry {
   callsAcknowledged: number;
   avgResponseMinutes: number | null;
   deliveries: number;
+  /** Nota média dos pedidos que o staff entregou (últimos 7 dias). */
+  avgRating: number | null;
+  ratingsCount: number;
 }
 
 /**
