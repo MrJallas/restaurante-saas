@@ -4,18 +4,17 @@
 //
 // Canvas spec: docs/design-canvas/handoff/garcom/garcom-screens-e.jsx:200-370
 // (variant `sobrecarga`). Hero "N" sobrecarregados + lista expansível
-// das mesas de cada um + banner sugestão IA + 4 ActionPills incluindo
-// "Pausar mesas do X por 5 min" + Fórmula.
+// das zonas de cada um + 3 ActionPills + Fórmula.
 //
-// Backend wiring (Round 18 Onda 4):
-//   • REAL (parcial): GET /:slug/staff?activeOnly=true → derive overload
-//     candidates. Ações usam redistribuição/manual, mensagem direta e pausa
-//     de zona já existentes.
-//   • DEMO: mesas-por-garçom NÃO tem endpoint (team-kpis só traz chamados/
-//     resposta/entregas) — a lista de sobrecarregados é ilustrativa e a
-//     tela carrega o selo "Dados de demonstração" até existir fonte real.
+// Backend wiring (2026-07-04 — zone-assignments):
+//   • REAL: GET /:slug/staff/zone-assignments → por garçom atribuído
+//     HOJE, carga = soma das mesas ocupadas das zonas dele / total de
+//     mesas dessas zonas. Sobrecarregado = ocupação ≥ 80%.
+//   • Sem garçom atribuído a zonas → empty-state apontando pra tela
+//     Equipe (anti-placebo: nada de lista inventada; o mock "Caleb
+//     Souza + mesas fake" saiu junto com o selo DEMO).
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   useG,
@@ -29,7 +28,7 @@ import {
   MContactStaffSheet,
   type ManagerStaffTarget,
 } from '../../components/manager';
-import { staffRosterApi, type StaffRosterEntry } from '../../lib/api/manager';
+import { zoneAssignmentsApi } from '../../lib/api/manager';
 
 export interface ScreenManagerStaffSobrecargaProps {
   dark?: boolean;
@@ -37,13 +36,22 @@ export interface ScreenManagerStaffSobrecargaProps {
 }
 
 const ROLE_PALETTE = ['#4F6BFF', '#E37D2F', '#7A4FBE', '#1E8C5A', '#C43A3A', '#0B7A8B'];
-const OVERLOAD_THRESHOLD = 7; // 7+ mesas = sobrecarga
+const OVERLOAD_RATIO = 0.8; // 80%+ das mesas das zonas dele ocupadas = sobrecarga
 
-interface OverloadedPerson {
+interface ZoneLoad {
+  zoneName: string;
+  occupied: number;
+  total: number;
+}
+
+interface WaiterLoad {
   id: string;
   name: string;
   color: string;
-  tables: number[];
+  occupied: number;
+  total: number;
+  zones: ZoneLoad[];
+  over: boolean;
 }
 
 export function ScreenManagerStaffSobrecarga({
@@ -55,57 +63,66 @@ export function ScreenManagerStaffSobrecarga({
   const params = useSearchParams();
   const slugQs = params.get('slug');
   const backHref = slugQs ? `/manager/equipe?slug=${slugQs}` : '/manager/equipe';
+  const equipeHref = backHref;
 
-  const [overloaded, setOverloaded] = useState<OverloadedPerson[]>([]);
+  const [assigned, setAssigned] = useState<WaiterLoad[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [contactTarget, setContactTarget] = useState<ManagerStaffTarget | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<string>('--:--');
 
-  useEffect(() => {
-    let cancelled = false;
-    staffRosterApi(tenantSlug)
-      .list({ activeOnly: true })
-      .then((data: StaffRosterEntry[]) => {
-        if (cancelled) return;
-        // TODO(round19): wire GET /:slug/staff/load endpoint pra ter mesas reais
-        // por garçom. Por enquanto deriva mock: 1º waiter ativo recebe overload
-        // sintético (igual ao mock canvas) pra demonstrar layout.
-        const waiters = data.filter((s) => s.role === 'waiter');
-        const result: OverloadedPerson[] = waiters.slice(0, 1).map((s, i) => ({
-          id: s.id,
-          name: s.name,
+  const load = useCallback(async () => {
+    try {
+      const { zones } = await zoneAssignmentsApi(tenantSlug).list();
+      const byStaff = new Map<
+        string,
+        { name: string; occupied: number; total: number; zones: ZoneLoad[] }
+      >();
+      for (const z of zones) {
+        for (const w of z.waiters) {
+          const cur = byStaff.get(w.staffId) ?? {
+            name: w.name,
+            occupied: 0,
+            total: 0,
+            zones: [],
+          };
+          cur.occupied += z.occupiedTables;
+          cur.total += z.totalTables;
+          cur.zones.push({
+            zoneName: z.zoneName,
+            occupied: z.occupiedTables,
+            total: z.totalTables,
+          });
+          byStaff.set(w.staffId, cur);
+        }
+      }
+      setAssigned(
+        Array.from(byStaff.entries()).map(([id, w], i) => ({
+          id,
+          name: w.name,
           color: ROLE_PALETTE[i % ROLE_PALETTE.length],
-          tables: [3, 5, 9, 12, 14, 18, 21],
-        }));
-        setOverloaded(result);
-      })
-      .catch(() => {
-        // fallback canvas mock
-        setOverloaded([
-          {
-            id: 'mock-cs',
-            name: 'Caleb Souza',
-            color: '#4F6BFF',
-            tables: [3, 5, 9, 12, 14, 18, 21],
-          },
-        ]);
-      });
-    return () => {
-      cancelled = true;
-    };
+          occupied: w.occupied,
+          total: w.total,
+          zones: w.zones,
+          over: w.total > 0 && w.occupied / w.total >= OVERLOAD_RATIO,
+        })),
+      );
+      setLoadError(false);
+      // Horário do fetch real — não relógio decorativo.
+      setUpdatedAt(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+    } catch {
+      // Erro visível (anti-placebo) — nunca lista fabricada.
+      setLoadError(true);
+    }
   }, [tenantSlug]);
 
-  const count = overloaded.length;
-  // Render-time `new Date()` causa hydration mismatch (server em UTC,
-  // client em Brasília). Placeholder no SSR, atualiza após mount.
-  const [updatedAt, setUpdatedAt] = useState<string>('--:--');
   useEffect(() => {
-    setUpdatedAt(
-      new Date().toLocaleTimeString('pt-BR', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-    );
-  }, []);
+    void load();
+  }, [load]);
+
+  const overloaded = (assigned ?? []).filter((w) => w.over);
+  const count = overloaded.length;
+  const hasAssignments = (assigned ?? []).length > 0;
   const firstOverloaded = overloaded[0];
 
   return (
@@ -135,7 +152,6 @@ export function ScreenManagerStaffSobrecarga({
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0, paddingBottom: 100 }}>
         {/* Hero */}
         <div style={{ padding: '20px 16px 18px' }}>
-          <DemoBadge C={C} />
           <div
             style={{
               fontSize: 10.5,
@@ -159,29 +175,125 @@ export function ScreenManagerStaffSobrecarga({
               lineHeight: 1.05,
             }}
           >
-            {count}
+            {hasAssignments ? count : '—'}
           </div>
           <div
             style={{
               fontSize: 13,
               fontWeight: 700,
-              color: count > 0 ? '#9A7212' : C.faint,
+              color: loadError ? '#A12626' : count > 0 ? '#9A7212' : C.faint,
               marginTop: 4,
               fontFamily: MONO_FONT,
               letterSpacing: 0.4,
               textTransform: 'uppercase',
             }}
           >
-            {count > 0 ? '↓ REALOCAR MESAS' : 'TUDO CERTO'}
+            {loadError
+              ? 'ERRO AO CARREGAR'
+              : assigned === null
+                ? 'CARREGANDO'
+                : !hasAssignments
+                  ? 'SEM ATRIBUIÇÕES HOJE'
+                  : count > 0
+                    ? '↓ REALOCAR MESAS'
+                    : 'TUDO CERTO'}
           </div>
           <div
             style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}
           >
-            {count > 0
-              ? `${count} ${count === 1 ? 'funcionário' : 'funcionários'} com carga acima do limiar (${OVERLOAD_THRESHOLD}+ mesas).`
-              : 'Nenhum funcionário acima do limiar agora.'}
+            {hasAssignments && count > 0
+              ? `${count} ${count === 1 ? 'garçom' : 'garçons'} com 80% ou mais das mesas das zonas atribuídas ocupadas.`
+              : hasAssignments
+                ? 'Nenhum garçom com 80% ou mais das mesas das zonas atribuídas ocupadas.'
+                : 'Sobrecarga = garçom com 80% ou mais das mesas das zonas atribuídas a ele ocupadas agora.'}
           </div>
         </div>
+
+        {loadError && (
+          <div style={{ padding: '0 16px' }}>
+            <div
+              role="alert"
+              style={{
+                padding: '16px 14px',
+                borderRadius: 12,
+                border: '1px solid #E7BFBF',
+                background: '#FBEFEF',
+                fontSize: 12.5,
+                color: '#7A1818',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <span style={{ flex: 1 }}>Não deu pra carregar as atribuições de zona.</span>
+              <button
+                type="button"
+                onClick={() => void load()}
+                style={{
+                  all: 'unset',
+                  cursor: 'pointer',
+                  padding: '6px 10px',
+                  borderRadius: 8,
+                  background: '#A12626',
+                  color: '#fff',
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                }}
+              >
+                Tentar de novo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!loadError && assigned !== null && !hasAssignments && (
+          <div style={{ padding: '0 16px' }}>
+            <div
+              style={{
+                padding: '24px 18px',
+                textAlign: 'center',
+                background: C.bg,
+                border: `1.5px dashed ${C.borderSoft}`,
+                borderRadius: 14,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  color: C.faint,
+                  fontWeight: 700,
+                  letterSpacing: 0.6,
+                  textTransform: 'uppercase',
+                  fontFamily: MONO_FONT,
+                }}
+              >
+                Nenhum garçom atribuído a zonas hoje
+              </div>
+              <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, marginTop: 6 }}>
+                Atribua na tela Equipe (seção Zonas de hoje) pra monitorar sobrecarga real.
+              </div>
+              <button
+                type="button"
+                onClick={() => router.push(equipeHref)}
+                style={{
+                  all: 'unset',
+                  cursor: 'pointer',
+                  marginTop: 12,
+                  padding: '9px 14px',
+                  borderRadius: 10,
+                  background: C.ink,
+                  color: C.bg,
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  letterSpacing: -0.1,
+                }}
+              >
+                Ir pra tela Equipe
+              </button>
+            </div>
+          </div>
+        )}
 
         {count > 0 && (
           <>
@@ -198,79 +310,15 @@ export function ScreenManagerStaffSobrecarga({
               ))}
             </div>
 
-            {/* Banner sugestão IA */}
-            <div style={{ padding: '14px 16px 0' }}>
-              <div
-                style={{
-                  background: '#FFF7E6',
-                  border: '1px solid #F0DCB6',
-                  borderRadius: 12,
-                  padding: 12,
-                  display: 'flex',
-                  gap: 10,
-                  alignItems: 'flex-start',
-                }}
-              >
-                <div
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 7,
-                    background: '#9A7212',
-                    color: '#fff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  {Icon.sparkle(14)}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 9.5,
-                      color: '#7A4D10',
-                      fontWeight: 800,
-                      letterSpacing: 0.6,
-                      textTransform: 'uppercase',
-                      fontFamily: MONO_FONT,
-                    }}
-                  >
-                    Sugestão
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: '#1d1c19',
-                      lineHeight: 1.4,
-                      fontWeight: 500,
-                      marginTop: 4,
-                    }}
-                  >
-                    Mover{' '}
-                    <b style={{ fontWeight: 700 }}>1 mesa de {firstOverloaded?.name ?? 'Caleb'}</b>{' '}
-                    para outro garçom equilibra a praça em ~2 min.
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <SectionLabel C={C}>O que fazer agora</SectionLabel>
             <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               <ActionPill
                 C={C}
                 filled
                 icon={Icon.table(13)}
-                onClick={() =>
-                  router.push(
-                    slugQs
-                      ? `/manager/operacoes/mesas-ativas?slug=${slugQs}`
-                      : '/manager/operacoes/mesas-ativas',
-                  )
-                }
+                onClick={() => router.push(equipeHref)}
               >
-                Realocar mesas manualmente
+                Atribuir outro garçom às zonas
               </ActionPill>
               <ActionPill
                 C={C}
@@ -281,7 +329,7 @@ export function ScreenManagerStaffSobrecarga({
                     staffId: firstOverloaded.id,
                     name: firstOverloaded.name,
                     color: firstOverloaded.color,
-                    contextHint: `${firstOverloaded.tables.length} mesas`,
+                    contextHint: `${firstOverloaded.occupied}/${firstOverloaded.total} mesas ocupadas nas zonas dele`,
                   });
                 }}
               >
@@ -297,7 +345,7 @@ export function ScreenManagerStaffSobrecarga({
                     )
                   }
                 >
-                  Pausar mesas do {firstOverloaded?.name.split(' ')[0] ?? 'garçom'} por 5 min
+                  Pausar pedidos novos na zona
                 </ActionPill>
                 <div
                   style={{
@@ -308,7 +356,7 @@ export function ScreenManagerStaffSobrecarga({
                     padding: '6px 14px 0',
                   }}
                 >
-                  Só as mesas que ele atende · resto do salão funciona normal.
+                  Só a zona pausada para de receber pedidos · resto do salão funciona normal.
                 </div>
               </div>
             </div>
@@ -317,9 +365,8 @@ export function ScreenManagerStaffSobrecarga({
 
         <div style={{ height: 18 }} />
         <Formula C={C}>
-          Funcionários com <b>{OVERLOAD_THRESHOLD}+ mesas</b> simultaneamente OU{' '}
-          <b>3+ chamados sem resposta</b> há mais de 2 min · ajuste limiares em{' '}
-          <span style={{ color: C.ink, fontWeight: 700 }}>Operação</span>.
+          Garçom atribuído a zonas hoje (tela Equipe · Zonas de hoje) cuja soma de mesas ocupadas
+          agora nas zonas dele atinge <b>80% ou mais</b> do total de mesas dessas zonas.
         </Formula>
       </div>
 
@@ -337,33 +384,6 @@ export function ScreenManagerStaffSobrecarga({
 }
 
 // ─── Local shared bits (intentional duplication while V9 stabilizes) ──
-
-// Selo anti-placebo — mesmo padrão do que existia na aba Funil do
-// ScreenManagerOps antes do backend real (pill border-soft, mono 10px
-// uppercase tracking 1px).
-function DemoBadge({ C }: { C: ReturnType<typeof useG> }) {
-  return (
-    <div
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '4px 10px',
-        borderRadius: 100,
-        border: `1px solid ${C.borderSoft}`,
-        color: C.faint,
-        fontSize: 10,
-        fontWeight: 800,
-        letterSpacing: 1,
-        textTransform: 'uppercase',
-        fontFamily: MONO_FONT,
-        marginBottom: 10,
-      }}
-    >
-      Dados de demonstração
-    </div>
-  );
-}
 
 function SectionLabel({ C, children }: { C: ReturnType<typeof useG>; children: React.ReactNode }) {
   return (
@@ -390,7 +410,7 @@ function PersonRowExpandable({
   onToggle,
 }: {
   C: ReturnType<typeof useG>;
-  person: { id: string; name: string; color: string; tables: number[] };
+  person: WaiterLoad;
   open: boolean;
   onToggle: () => void;
 }) {
@@ -449,7 +469,7 @@ function PersonRowExpandable({
               marginTop: 2,
             }}
           >
-            {person.tables.length} MESAS · LIMITE 6
+            {person.occupied}/{person.total} MESAS OCUPADAS · 80%+ DE OCUPAÇÃO
           </div>
         </div>
         <span
@@ -475,9 +495,9 @@ function PersonRowExpandable({
             gap: 6,
           }}
         >
-          {person.tables.map((t) => (
+          {person.zones.map((z) => (
             <span
-              key={t}
+              key={z.zoneName}
               style={{
                 padding: '5px 9px',
                 borderRadius: 7,
@@ -490,7 +510,7 @@ function PersonRowExpandable({
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
-              Mesa {t}
+              {z.zoneName} · {z.occupied}/{z.total}
             </span>
           ))}
         </div>

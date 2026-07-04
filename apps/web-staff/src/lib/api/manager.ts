@@ -371,6 +371,36 @@ export const funnelApi = (slug: string) => ({
   get: () => staffGet<{ stages: FunnelStage[] }>(`/${slug}/dashboard/funnel`),
 });
 
+export interface ZoneAssignmentWaiter {
+  assignmentId: string;
+  staffId: string;
+  name: string;
+}
+
+export interface ZoneAssignmentRow {
+  zoneId: string;
+  zoneName: string;
+  /** Mesas com sessão ativa na zona AGORA (fonte real: table_sessions). */
+  occupiedTables: number;
+  totalTables: number;
+  waiters: ZoneAssignmentWaiter[];
+}
+
+/**
+ * Atribuição garçom→zona do DIA (decisão Caleb 2026-07-04) — fonte REAL
+ * da carga por garçom: o gerente atribui, as mesas ocupadas da zona
+ * contam pro garçom. Leitura: qualquer staff. Escrita: manager.
+ */
+export const zoneAssignmentsApi = (slug: string) => ({
+  list: () => staffGet<{ zones: ZoneAssignmentRow[] }>(`/${slug}/staff/zone-assignments`),
+  assign: (payload: { staffId: string; zoneId: string }) =>
+    staffPost<{ assignmentId: string }>(`/${slug}/staff/zone-assignments`, payload),
+  remove: (assignmentId: string) =>
+    staffDelete<{ ok: true }>(
+      `/${slug}/staff/zone-assignments/${encodeURIComponent(assignmentId)}`,
+    ),
+});
+
 export interface TeamKpiEntry {
   staffId: string;
   name: string;
@@ -825,6 +855,7 @@ export function manager(slug: string) {
     assistant: assistantApi(slug),
     alerts: alertsApi(slug),
     funnel: funnelApi(slug),
+    zoneAssignments: zoneAssignmentsApi(slug),
     teamKpis: teamKpisApi(slug),
     activeTables: activeTablesApi(slug),
     account: managerAccountApi(slug),

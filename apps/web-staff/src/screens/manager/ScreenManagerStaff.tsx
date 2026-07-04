@@ -13,7 +13,7 @@
 //   7. Próximos eventos do turno
 //   8. CTA fixa "+ Adicionar funcionário" sobre o bottom-nav
 
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -29,7 +29,13 @@ import {
   MContactStaffSheet,
   type ManagerStaffTarget,
 } from '../../components/manager';
-import { staffRosterApi, teamKpisApi, type TeamKpiEntry } from '../../lib/api/manager';
+import {
+  staffRosterApi,
+  teamKpisApi,
+  zoneAssignmentsApi,
+  type TeamKpiEntry,
+  type ZoneAssignmentRow,
+} from '../../lib/api/manager';
 
 type StaffStatus = 'on' | 'off';
 
@@ -165,11 +171,145 @@ export function ScreenManagerStaff({
     };
   }, [tenantSlug]);
 
+  // ─── Zonas de hoje (decisão Caleb 2026-07-04) ───────────────────
+  // Fonte REAL da carga por garçom: atribuição explícita garçom→zona
+  // do dia + mesas ocupadas por zona (table_sessions ativas). Alimenta
+  // a seção "Zonas de hoje" e os tiles Sobrecarga / Carga média.
+  const [zones, setZones] = useState<ZoneAssignmentRow[] | null>(null);
+  const [zonesLoadError, setZonesLoadError] = useState(false);
+  const [zonesActionError, setZonesActionError] = useState<string | null>(null);
+  const [selectedByZone, setSelectedByZone] = useState<Record<string, string>>({});
+
+  const loadZones = useCallback(async () => {
+    try {
+      const res = await zoneAssignmentsApi(tenantSlug).list();
+      setZones(res.zones);
+      setZonesLoadError(false);
+    } catch {
+      // Erro visível na seção (anti-placebo) — nunca lista fabricada.
+      setZonesLoadError(true);
+    }
+  }, [tenantSlug]);
+
+  useEffect(() => {
+    void loadZones();
+  }, [loadZones]);
+
+  const handleAssignZone = async (zoneId: string) => {
+    const staffId = selectedByZone[zoneId];
+    const waiter = team.find((p) => p.id === staffId);
+    if (!staffId || !waiter || !zones) return;
+    // Otimista: chip entra na hora (translúcido enquanto pendente);
+    // rollback + erro visível se o POST falhar.
+    const tempId = `temp-${zoneId}-${Date.now()}`;
+    setZonesActionError(null);
+    setZones((prev) =>
+      prev
+        ? prev.map((z) =>
+            z.zoneId === zoneId
+              ? {
+                  ...z,
+                  waiters: [...z.waiters, { assignmentId: tempId, staffId, name: waiter.name }],
+                }
+              : z,
+          )
+        : prev,
+    );
+    setSelectedByZone((prev) => ({ ...prev, [zoneId]: '' }));
+    try {
+      const { assignmentId } = await zoneAssignmentsApi(tenantSlug).assign({ staffId, zoneId });
+      setZones((prev) =>
+        prev
+          ? prev.map((z) =>
+              z.zoneId === zoneId
+                ? {
+                    ...z,
+                    waiters: z.waiters.map((a) =>
+                      a.assignmentId === tempId ? { ...a, assignmentId } : a,
+                    ),
+                  }
+                : z,
+            )
+          : prev,
+      );
+    } catch (e) {
+      setZones((prev) =>
+        prev
+          ? prev.map((z) =>
+              z.zoneId === zoneId
+                ? { ...z, waiters: z.waiters.filter((a) => a.assignmentId !== tempId) }
+                : z,
+            )
+          : prev,
+      );
+      setZonesActionError(
+        e instanceof Error && e.message
+          ? e.message
+          : `Não deu pra atribuir ${waiter.name}. Tente de novo.`,
+      );
+    }
+  };
+
+  const handleRemoveAssignment = async (zoneId: string, assignmentId: string) => {
+    if (!zones || assignmentId.startsWith('temp-')) return;
+    // Otimista: chip some na hora; rollback + erro visível se o DELETE falhar.
+    const snapshot = zones;
+    setZonesActionError(null);
+    setZones((prev) =>
+      prev
+        ? prev.map((z) =>
+            z.zoneId === zoneId
+              ? { ...z, waiters: z.waiters.filter((a) => a.assignmentId !== assignmentId) }
+              : z,
+          )
+        : prev,
+    );
+    try {
+      await zoneAssignmentsApi(tenantSlug).remove(assignmentId);
+    } catch (e) {
+      setZones(snapshot);
+      setZonesActionError(
+        e instanceof Error && e.message ? e.message : 'Não deu pra remover. Tente de novo.',
+      );
+    }
+  };
+
+  // Carga real por garçom atribuído hoje: soma das mesas ocupadas /
+  // total das zonas dele. Base dos tiles Sobrecarga (≥ 80% de ocupação)
+  // e Carga média (mesas ocupadas por garçom atribuído).
+  const assignedLoads = useMemo(() => {
+    if (!zones) return [];
+    const byStaff = new Map<string, { name: string; occupied: number; total: number }>();
+    for (const z of zones) {
+      for (const w of z.waiters) {
+        const cur = byStaff.get(w.staffId) ?? { name: w.name, occupied: 0, total: 0 };
+        cur.occupied += z.occupiedTables;
+        cur.total += z.totalTables;
+        byStaff.set(w.staffId, cur);
+      }
+    }
+    return Array.from(byStaff.values());
+  }, [zones]);
+  const overloadedCount = assignedLoads.filter(
+    (w) => w.total > 0 && w.occupied / w.total >= 0.8,
+  ).length;
+  const avgLoad =
+    assignedLoads.length > 0
+      ? assignedLoads.reduce((acc, w) => acc + w.occupied, 0) / assignedLoads.length
+      : null;
+  const loadTileSub = zonesLoadError
+    ? 'erro ao carregar'
+    : zones === null
+      ? 'carregando…'
+      : assignedLoads.length === 0
+        ? 'sem atribuições hoje'
+        : null;
+
   // ─── Stats agregados ────────────────────────────────────────────
-  // Só "Em campo" tem fonte real (roster ativo). Sobrecarga e carga
-  // média dependem de mesas-por-garçom, que ainda não tem endpoint —
-  // mostram '—' com "sem dados ainda" (anti-placebo), nunca número
-  // fabricado.
+  // "Em campo" vem do roster ativo. Sobrecarga e Carga média vêm das
+  // atribuições de zona de HOJE (zone-assignments) — sem garçom
+  // atribuído mostram '—' com "sem atribuições hoje" (anti-placebo),
+  // nunca número fabricado.
   const inField = team.filter((p) => p.status === 'on').length;
   const totalCount = team.length;
 
@@ -279,9 +419,10 @@ export function ScreenManagerStaff({
               dark={dark}
               compact
               label="Sobrecarga"
-              value="—"
-              sub="sem dados ainda"
-              help="Funcionários com 7+ mesas atendendo simultaneamente · precisa do endpoint de mesas por garçom (ainda não existe)."
+              value={loadTileSub ? '—' : String(overloadedCount)}
+              accent={!loadTileSub && overloadedCount > 0 ? '#A12626' : undefined}
+              sub={loadTileSub ?? (overloadedCount > 0 ? 'realocar' : 'tudo certo')}
+              help="Garçons atribuídos a zonas hoje com 80%+ das mesas dessas zonas ocupadas · atribua na seção Zonas de hoje."
               onHelp={() => router.push('/manager/equipe/sobrecarga')}
             />
           </StatButton>
@@ -290,9 +431,9 @@ export function ScreenManagerStaff({
               dark={dark}
               compact
               label="Carga média"
-              value="—"
-              sub="sem dados ainda"
-              help="Mesas abertas dividido por funcionários em campo · precisa do endpoint de mesas por garçom (ainda não existe)."
+              value={loadTileSub || avgLoad == null ? '—' : avgLoad.toFixed(1).replace('.', ',')}
+              sub={loadTileSub ?? 'mesas/garçom'}
+              help="Mesas ocupadas das zonas atribuídas divididas pelos garçons atribuídos hoje · atribua na seção Zonas de hoje."
               onHelp={() => router.push('/manager/equipe/carga-media')}
             />
           </StatButton>
@@ -521,6 +662,108 @@ export function ScreenManagerStaff({
             ))
           )}
         </div>
+
+        {/* 5b · Zonas de hoje — atribuição garçom→zona (decisão Caleb
+            2026-07-04). Carga REAL por zona (mesas ocupadas/total via
+            table_sessions), chips com × (DELETE otimista + rollback) e
+            select+Atribuir (POST otimista + rollback). Erros visíveis. */}
+        <MSection
+          dark={dark}
+          title="Zonas de hoje"
+          sub="Garçons por zona · a carga vem das mesas ocupadas agora."
+        >
+          <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {zonesLoadError ? (
+              <div
+                role="alert"
+                style={{
+                  padding: '16px 14px',
+                  borderRadius: 12,
+                  border: '1px solid #E7BFBF',
+                  background: '#FBEFEF',
+                  fontSize: 12.5,
+                  color: '#7A1818',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                }}
+              >
+                <span style={{ flex: 1 }}>Não deu pra carregar as zonas de hoje.</span>
+                <button
+                  type="button"
+                  onClick={() => void loadZones()}
+                  style={{
+                    all: 'unset',
+                    cursor: 'pointer',
+                    padding: '6px 10px',
+                    borderRadius: 8,
+                    background: '#A12626',
+                    color: '#fff',
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                  }}
+                >
+                  Tentar de novo
+                </button>
+              </div>
+            ) : zones === null ? (
+              <div
+                style={{
+                  padding: '16px 14px',
+                  borderRadius: 12,
+                  border: `1px solid ${C.borderSoft}`,
+                  background: C.bg,
+                  fontSize: 12.5,
+                  color: C.faint,
+                  fontWeight: 500,
+                }}
+              >
+                Carregando zonas…
+              </div>
+            ) : zones.length === 0 ? (
+              <div
+                style={{
+                  padding: '20px 16px',
+                  textAlign: 'center',
+                  background: C.bg,
+                  border: `1.5px dashed ${C.borderSoft}`,
+                  borderRadius: 14,
+                  color: C.mute,
+                  fontSize: 12.5,
+                  fontWeight: 500,
+                }}
+              >
+                Nenhuma zona ativa cadastrada.
+              </div>
+            ) : (
+              zones.map((z) => (
+                <ZoneAssignCard
+                  key={z.zoneId}
+                  dark={dark}
+                  zone={z}
+                  waiterOptions={team
+                    .filter((p) => p.role === 'Garçom' && p.status === 'on')
+                    .map((p) => ({ id: p.id, name: p.name }))}
+                  selected={selectedByZone[z.zoneId] ?? ''}
+                  onSelect={(staffId) =>
+                    setSelectedByZone((prev) => ({ ...prev, [z.zoneId]: staffId }))
+                  }
+                  onAssign={() => void handleAssignZone(z.zoneId)}
+                  onRemove={(assignmentId) => void handleRemoveAssignment(z.zoneId, assignmentId)}
+                />
+              ))
+            )}
+            {zonesActionError && (
+              <div
+                role="alert"
+                style={{ fontSize: 12, color: '#A12626', fontWeight: 600, padding: '2px 2px 0' }}
+              >
+                {zonesActionError}
+              </div>
+            )}
+          </div>
+        </MSection>
 
         {/* 6 · Turnos de hoje · expansível inline */}
         <MSection
@@ -787,6 +1030,187 @@ function StatButton({ onClick, children }: { onClick: () => void; children: Reac
       }}
     >
       {children}
+    </div>
+  );
+}
+
+// ─── ZoneAssignCard — 1 zona · carga real + chips de garçons + add ─
+// Chips com × removem via DELETE otimista (rollback no pai). O select
+// só lista garçons ativos ainda não atribuídos à zona; "Atribuir" faz
+// POST otimista (chip pendente fica translúcido até o id real chegar).
+function ZoneAssignCard({
+  zone,
+  waiterOptions,
+  selected,
+  onSelect,
+  onAssign,
+  onRemove,
+  dark,
+}: {
+  zone: ZoneAssignmentRow;
+  waiterOptions: { id: string; name: string }[];
+  selected: string;
+  onSelect: (staffId: string) => void;
+  onAssign: () => void;
+  onRemove: (assignmentId: string) => void;
+  dark?: boolean;
+}) {
+  const C = useG(!!dark);
+  const hot = zone.totalTables > 0 && zone.occupiedTables / zone.totalTables >= 0.8;
+  const assignedIds = new Set(zone.waiters.map((w) => w.staffId));
+  const options = waiterOptions.filter((w) => !assignedIds.has(w.id));
+  return (
+    <div
+      style={{
+        padding: 12,
+        borderRadius: 12,
+        border: `1px solid ${C.borderSoft}`,
+        background: C.bg,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontSize: 14.5,
+            fontWeight: 700,
+            color: C.ink,
+            letterSpacing: -0.15,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {zone.zoneName}
+        </div>
+        <div
+          style={{
+            fontSize: 12.5,
+            fontWeight: 800,
+            color: hot ? '#A12626' : C.ink,
+            fontFamily: MONO_FONT,
+            fontVariantNumeric: 'tabular-nums',
+            letterSpacing: 0.2,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {zone.occupiedTables}/{zone.totalTables}{' '}
+          <span style={{ color: C.faint, fontWeight: 700, fontSize: 9.5, letterSpacing: 0.5 }}>
+            OCUPADAS
+          </span>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {zone.waiters.length === 0 ? (
+          <div style={{ fontSize: 12, color: C.faint, fontWeight: 500 }}>
+            Nenhum garçom atribuído.
+          </div>
+        ) : (
+          zone.waiters.map((w) => {
+            const pending = w.assignmentId.startsWith('temp-');
+            return (
+              <span
+                key={w.assignmentId}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '5px 6px 5px 10px',
+                  borderRadius: 999,
+                  border: `1px solid ${C.borderSoft}`,
+                  background: C.surface,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: C.ink,
+                  opacity: pending ? 0.55 : 1,
+                }}
+              >
+                {w.name}
+                <button
+                  type="button"
+                  onClick={() => onRemove(w.assignmentId)}
+                  disabled={pending}
+                  aria-label={`Remover ${w.name} da zona ${zone.zoneName}`}
+                  style={{
+                    all: 'unset',
+                    cursor: pending ? 'default' : 'pointer',
+                    boxSizing: 'border-box',
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    lineHeight: 1,
+                    color: C.faint,
+                    background: C.bg,
+                    border: `1px solid ${C.borderFaint}`,
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            );
+          })
+        )}
+      </div>
+
+      <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+        <select
+          value={selected}
+          onChange={(e) => onSelect(e.target.value)}
+          aria-label={`Escolher garçom pra zona ${zone.zoneName}`}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            boxSizing: 'border-box',
+            height: 34,
+            padding: '0 10px',
+            border: `1px solid ${C.borderSoft}`,
+            borderRadius: 10,
+            background: C.bg,
+            color: selected ? C.ink : C.faint,
+            fontSize: 12.5,
+            fontWeight: 600,
+            fontFamily: G_FONT,
+          }}
+        >
+          <option value="">
+            {options.length === 0 ? 'Sem garçons disponíveis' : 'Escolher garçom…'}
+          </option>
+          {options.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={onAssign}
+          disabled={!selected}
+          style={{
+            all: 'unset',
+            cursor: selected ? 'pointer' : 'default',
+            boxSizing: 'border-box',
+            height: 34,
+            padding: '0 14px',
+            borderRadius: 10,
+            background: selected ? C.ink : C.surface,
+            color: selected ? C.bg : C.faint,
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: -0.1,
+            display: 'inline-flex',
+            alignItems: 'center',
+          }}
+        >
+          Atribuir
+        </button>
+      </div>
     </div>
   );
 }
