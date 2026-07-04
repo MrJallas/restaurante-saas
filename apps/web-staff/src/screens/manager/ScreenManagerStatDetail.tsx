@@ -8,7 +8,7 @@
 // Picks layout via `kind` prop. Tappable from MStat help buttons + the
 // MInProgressCard items in the Painel + Operações lists.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useG, G_FONT, Icon, MTopBar, GIconBtn, GButton, MPill } from '../../components/manager';
 import { manager } from '../../lib/api/manager';
@@ -45,7 +45,7 @@ export function ScreenManagerStatDetail({
 }: ScreenManagerStatDetailProps) {
   const C = useG(!!dark);
   const router = useRouter();
-  const api = manager(tenantSlug);
+  const api = useMemo(() => manager(tenantSlug), [tenantSlug]);
   const [data, setData] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 

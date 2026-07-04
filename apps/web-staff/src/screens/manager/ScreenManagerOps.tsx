@@ -90,7 +90,10 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
   const C = useG(!!dark);
   const router = useRouter();
   const [active, setActive] = useState<OpsTab>(tab);
-  const api = manager(tenantSlug);
+  // Re-scan 2026-07-04: sem useMemo, o tick de 1s do pause recriava o
+  // objeto api a cada render e o useEffect [api] refazia TODOS os fetches
+  // por segundo.
+  const api = useMemo(() => manager(tenantSlug), [tenantSlug]);
 
   const [alerts, setAlerts] = useState<OpsAlert[]>([]);
   const [tables, setTables] = useState<MapTable[]>([]);
