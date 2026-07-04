@@ -6,6 +6,7 @@ import { KitchenController } from './kitchen.controller';
 import { OrdersService } from './orders.service';
 import { ConsumptionSummaryService } from './consumption-summary.service';
 import { KdsQueryService } from './kds-query.service';
+import { OrderDeliveryService } from './order-delivery.service';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { RedisThrottleGuard } from '../../common/guards/redis-throttle.guard';
@@ -30,6 +31,7 @@ import { BillingModule } from '../billing/billing.module';
     OrdersService,
     ConsumptionSummaryService,
     KdsQueryService,
+    OrderDeliveryService,
     StaffOrSessionGuard,
     ManagerOnlyGuard,
     RedisThrottleGuard,

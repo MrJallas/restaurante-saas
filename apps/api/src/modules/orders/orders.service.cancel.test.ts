@@ -16,6 +16,7 @@ import { OrdersService } from './orders.service';
 import { BillingService } from '../billing/billing.service';
 import { ConsumptionSummaryService } from './consumption-summary.service';
 import { KdsQueryService } from './kds-query.service';
+import { OrderDeliveryService } from './order-delivery.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import type { RedisService } from '../../infra/redis/redis.service';
 
@@ -62,6 +63,7 @@ function makeService(initialStatus: string) {
     new BillingService(db.conn),
     new ConsumptionSummaryService(db.conn),
     new KdsQueryService(db.conn),
+    new OrderDeliveryService(db.conn, new ConsumptionSummaryService(db.conn)),
   );
   return { service, db };
 }
