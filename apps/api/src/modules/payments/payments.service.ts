@@ -66,6 +66,25 @@ export class PaymentsService {
     @Optional() private readonly eventsGateway?: EventsGateway,
   ) {}
 
+  /**
+   * P1-A (re-scan 2026-07-04): soma dos pagamentos JÁ liquidados ou em voo
+   * (confirmed/paid/awaiting_settlement) no escopo — mesa (visit_id NULL) ou
+   * comanda (visit_id = $2). É o que precisa sair do devido pra não re-cobrar:
+   * awaiting_settlement é um Pix em voo, cobrar de novo dobraria a cobrança.
+   * 'pending'/'expired'/'cancelled' NÃO contam (o dedup de pending é separado).
+   */
+  private async sumSettled(tableSessionId: string, visitId: string | null): Promise<number> {
+    const rows = (await this.tenantConn.query(
+      `SELECT COALESCE(SUM(amount_cents), 0) as paid
+         FROM payments
+        WHERE table_session_id = $1
+          AND status IN ('confirmed', 'paid', 'awaiting_settlement')
+          ${visitId ? 'AND visit_id = $2' : 'AND visit_id IS NULL'}`,
+      visitId ? [tableSessionId, visitId] : [tableSessionId],
+    )) as { paid: number | string }[];
+    return Number(rows[0]?.paid ?? 0);
+  }
+
   async requestPayment(
     tableSessionId: string,
     visitId: string | null,
@@ -106,7 +125,11 @@ export class PaymentsService {
       // O devido inclui a taxa de serviço server-side (settings.service_fee_pct
       // via BillingService) — o backend cobra o MESMO total que exibe.
       billTotals = await this.billing.computeTotals(rows[0].total);
-      const outstanding = billTotals.totalCents;
+      // P1-A (re-scan 2026-07-04): subtrai o já-pago da MINHA comanda —
+      // pagamento confirmed/paid/awaiting_settlement reduz o devido. Sem
+      // isso, um 2º request re-cobrava a conta inteira (double-charge).
+      const settledForVisit = await this.sumSettled(tableSessionId, effectiveVisitId);
+      const outstanding = billTotals.totalCents - settledForVisit;
       if (options.splitMode === 'equal' || options.splitMode === 'by_item') {
         // Decisão Caleb 2026-07-04: "pagar minha parte" cobra a parte
         // CANÔNICA do rateio da mesa, recalculada server-side — o valor
@@ -130,7 +153,8 @@ export class PaymentsService {
             `Sua parte na divisão é de ${mine.amountCents} centavos — atualize a tela e tente novamente.`,
           );
         }
-        amountCents = mine.amountCents;
+        // P1-A: se já paguei parte da minha cota, cobra só o restante.
+        amountCents = mine.amountCents - settledForVisit;
         billTotals = {
           subtotalCents: split.subtotalCents,
           serviceFeePct: split.serviceFeePct,
@@ -168,7 +192,9 @@ export class PaymentsService {
         [tableSessionId],
       )) as { total: number }[];
       billTotals = await this.billing.computeTotals(rows[0].total);
-      amountCents = billTotals.totalCents;
+      // P1-A: subtrai o já-pago no escopo da MESA (pagamentos table-scoped,
+      // visit_id NULL). Sem isso a conta da mesa era re-cobrada inteira.
+      amountCents = billTotals.totalCents - (await this.sumSettled(tableSessionId, null));
     }
 
     if (amountCents <= 0) {

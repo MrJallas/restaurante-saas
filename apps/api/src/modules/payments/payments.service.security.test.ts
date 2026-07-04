@@ -45,6 +45,9 @@ function fakeTenantConn(opts: {
       // pg devolve SUM() como STRING (NUMERIC) — imitar o driver real.
       return [{ total: String(opts.outstandingCents) }];
     }
+    if (sql.startsWith('SELECT COALESCE(SUM(amount_cents)')) {
+      return [{ paid: '0' }]; // nada liquidado ainda (P1-A)
+    }
     if (sql.includes('FROM payments WHERE id = $1') && sql.includes('SELECT')) {
       return opts.payment ? [opts.payment] : [];
     }

@@ -35,6 +35,7 @@ function fakePaymentsDb(opts: {
     if (s.includes('SELECT service_fee_pct FROM settings')) {
       return [{ service_fee_pct: opts.serviceFeePct ?? '10.00' }];
     }
+    if (s.startsWith('SELECT COALESCE(SUM(amount_cents)')) return [{ paid: '0' }];
     if (s.startsWith('SELECT COALESCE(SUM(total_cents)')) {
       // pg devolve SUM() como STRING (NUMERIC) — o fake imita o driver real;
       // foi exatamente essa coerção que o E2E pegou ('790' + 79 = '79079').

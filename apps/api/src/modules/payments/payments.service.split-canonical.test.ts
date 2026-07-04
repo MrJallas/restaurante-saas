@@ -45,6 +45,7 @@ function fakeSplitDb(opts: {
     if (s.includes('FROM session_participants')) {
       return (opts.participants ?? []).map((cid) => ({ customer_id: cid }));
     }
+    if (s.startsWith('SELECT COALESCE(SUM(amount_cents)')) return [{ paid: '0' }];
     if (s.startsWith('SELECT COALESCE(SUM(total_cents)')) {
       return [{ total: String(opts.individualSubtotal ?? 0) }];
     }
