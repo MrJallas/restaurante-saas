@@ -876,39 +876,44 @@ function OpsFunnel({ dark, stages }: { dark?: boolean; stages: FunnelStage[] }) 
         );
       })}
 
-      <div
-        style={{
-          marginTop: 18,
-          padding: 14,
-          borderRadius: 14,
-          background: C.ink,
-          color: C.bg,
-        }}
-      >
+      {/* Recomendações só quando alguma etapa REAL estourou a meta —
+          o card antigo afirmava "17% acima da meta" fabricado. */}
+      {stages.some((s) => !s.ok) && (
         <div
           style={{
-            fontSize: 11,
-            fontWeight: 800,
-            opacity: 0.7,
-            textTransform: 'uppercase',
-            letterSpacing: 0.6,
-            marginBottom: 8,
+            marginTop: 18,
+            padding: 14,
+            borderRadius: 14,
+            background: C.ink,
+            color: C.bg,
           }}
         >
-          O que fazer agora
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              opacity: 0.7,
+              textTransform: 'uppercase',
+              letterSpacing: 0.6,
+              marginBottom: 8,
+            }}
+          >
+            O que fazer agora
+          </div>
+          <ol
+            style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, lineHeight: 1.6, fontWeight: 500 }}
+          >
+            {stages
+              .filter((s) => !s.ok)
+              .map((s) => (
+                <li key={s.stage} style={{ marginBottom: 6 }}>
+                  {s.stage}: {s.note || 'acima da meta'} — verifique a cozinha ou pause pedidos
+                  novos até a fila baixar.
+                </li>
+              ))}
+          </ol>
         </div>
-        <ol
-          style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, lineHeight: 1.6, fontWeight: 500 }}
-        >
-          <li style={{ marginBottom: 6 }}>
-            Verifique a cozinha — pratos quentes estão 17% acima da meta.
-          </li>
-          <li style={{ marginBottom: 6 }}>
-            Coloque mais garçons levando pedidos prontos pras mesas.
-          </li>
-          <li>Se piorar, pause pedidos novos por 5 min até a fila baixar.</li>
-        </ol>
-      </div>
+      )}
     </div>
   );
 }
