@@ -5,7 +5,6 @@ import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { hashPin, timingSafeEqualHex } from '../staff/staff-pin.util';
 
 const PREFS_COLLECTION = 'manager_preferences';
-const SHIFT_LOGS_COLLECTION = 'manager_shift_logs';
 const SESSIONS_COLLECTION = 'manager_sessions';
 
 interface ManagerPreferencesDoc {
@@ -15,23 +14,6 @@ interface ManagerPreferencesDoc {
   theme: 'light' | 'dark' | 'auto';
   twoFactorEnabled: boolean;
   updatedAt: Date;
-}
-
-interface ShiftLogDoc {
-  id: string;
-  tenantSlug: string;
-  staffId: string;
-  staffName: string;
-  shiftLabel: string;
-  startedAt: Date;
-  endedAt: Date;
-  salesCents: number;
-  orders: number;
-  tablesServed: number;
-  criticalAlerts: number;
-  avgTicketCents: number;
-  waitersOnShift: string[];
-  createdAt: Date;
 }
 
 const DEFAULT_NOTIFICATIONS: Record<string, boolean> = {
@@ -191,8 +173,6 @@ export class ManagerAccountService {
   }
 
   async endShift(slug: string, staffId: string) {
-    const db = this.dbOrThrow();
-    await this.ensureShiftIndexes();
     const [staffRows, salesRows, tableRows, alertRows, waiterRows] = await Promise.all([
       this.tenantConn.query(`SELECT name FROM staff WHERE id = $1 LIMIT 1`, [staffId]),
       this.tenantConn.query(
@@ -236,66 +216,73 @@ export class ManagerAccountService {
     startedAt.setHours(0, 0, 0, 0);
     const orders = Number(sales.orders ?? 0);
     const salesCents = Number(sales.sales_cents ?? 0);
-    const doc: ShiftLogDoc = {
-      id: randomUUID(),
-      tenantSlug: slug,
-      staffId,
-      staffName,
-      shiftLabel: 'Turno atual',
-      startedAt,
-      endedAt: now,
-      salesCents,
-      orders,
-      tablesServed: Number(tables ?? 0),
-      criticalAlerts,
-      avgTicketCents: orders > 0 ? Math.round(salesCents / orders) : 0,
-      waitersOnShift,
-      createdAt: now,
-    };
-    await db.collection<ShiftLogDoc>(SHIFT_LOGS_COLLECTION).insertOne(doc);
-    return this.mapShiftLog(doc);
+    // FASE 3 (decisão Caleb 2026-07-04): shift log é dado FINANCEIRO —
+    // mora no Postgres (migration 059), não mais no Mongo com $regex.
+    const rows = (await this.tenantConn.query(
+      `INSERT INTO manager_shift_logs
+         (staff_id, staff_name, shift_label, started_at, ended_at,
+          sales_cents, orders, tables_served, critical_alerts,
+          avg_ticket_cents, waiters_on_shift)
+       VALUES ($1, $2, 'Turno atual', $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+       RETURNING *`,
+      [
+        staffId,
+        staffName,
+        startedAt.toISOString(),
+        now.toISOString(),
+        salesCents,
+        orders,
+        Number(tables ?? 0),
+        criticalAlerts,
+        orders > 0 ? Math.round(salesCents / orders) : 0,
+        JSON.stringify(waitersOnShift),
+      ],
+    )) as Array<Record<string, unknown>>;
+    return this.mapShiftRow(rows[0]);
   }
 
-  async listShiftLogs(slug: string, filters: { date?: string; staff?: string; shift?: string }) {
-    const db = this.dbOrThrow();
-    await this.ensureShiftIndexes();
-    const query: Record<string, unknown> = { tenantSlug: slug };
+  async listShiftLogs(_slug: string, filters: { date?: string; staff?: string; shift?: string }) {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
     if (filters.staff) {
-      query.staffName = { $regex: filters.staff, $options: 'i' };
+      params.push(`%${filters.staff}%`);
+      conditions.push(`staff_name ILIKE $${params.length}`);
     }
     if (filters.shift) {
-      query.shiftLabel = { $regex: filters.shift, $options: 'i' };
+      params.push(`%${filters.shift}%`);
+      conditions.push(`shift_label ILIKE $${params.length}`);
     }
     if (filters.date && /^\d{4}-\d{2}-\d{2}$/.test(filters.date)) {
-      const start = new Date(`${filters.date}T00:00:00.000Z`);
-      const end = new Date(start);
-      end.setUTCDate(end.getUTCDate() + 1);
-      query.endedAt = { $gte: start, $lt: end };
+      params.push(filters.date);
+      conditions.push(
+        `ended_at >= $${params.length}::date AND ended_at < $${params.length}::date + interval '1 day'`,
+      );
     }
-    const docs = await db
-      .collection<ShiftLogDoc>(SHIFT_LOGS_COLLECTION)
-      .find(query)
-      .sort({ endedAt: -1 })
-      .limit(80)
-      .toArray();
-    return { shifts: docs.map((doc) => this.mapShiftLog(doc)) };
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const rows = (await this.tenantConn.query(
+      `SELECT * FROM manager_shift_logs ${where} ORDER BY ended_at DESC LIMIT 80`,
+      params,
+    )) as Array<Record<string, unknown>>;
+    return { shifts: rows.map((r) => this.mapShiftRow(r)) };
   }
 
-  private mapShiftLog(doc: ShiftLogDoc) {
+  private mapShiftRow(r: Record<string, unknown>) {
     return {
-      id: doc.id,
-      staffId: doc.staffId,
-      staffName: doc.staffName,
-      shiftLabel: doc.shiftLabel,
-      startedAt: doc.startedAt.toISOString(),
-      endedAt: doc.endedAt.toISOString(),
-      salesCents: doc.salesCents,
-      orders: doc.orders,
-      tablesServed: doc.tablesServed,
-      criticalAlerts: doc.criticalAlerts,
-      avgTicketCents: doc.avgTicketCents,
-      waitersOnShift: doc.waitersOnShift,
-      createdAt: doc.createdAt.toISOString(),
+      id: String(r.id),
+      staffId: r.staff_id == null ? null : String(r.staff_id),
+      staffName: String(r.staff_name),
+      shiftLabel: String(r.shift_label),
+      startedAt: new Date(String(r.started_at)).toISOString(),
+      endedAt: new Date(String(r.ended_at)).toISOString(),
+      salesCents: Number(r.sales_cents) || 0,
+      orders: Number(r.orders) || 0,
+      tablesServed: Number(r.tables_served) || 0,
+      criticalAlerts: Number(r.critical_alerts) || 0,
+      avgTicketCents: Number(r.avg_ticket_cents) || 0,
+      waitersOnShift: Array.isArray(r.waiters_on_shift)
+        ? (r.waiters_on_shift as string[])
+        : JSON.parse(String(r.waiters_on_shift ?? '[]')),
+      createdAt: new Date(String(r.created_at)).toISOString(),
     };
   }
 
@@ -304,18 +291,6 @@ export class ManagerAccountService {
     await db
       .collection<ManagerPreferencesDoc>(PREFS_COLLECTION)
       .createIndex({ tenantSlug: 1, staffId: 1 }, { unique: true });
-  }
-
-  private async ensureShiftIndexes() {
-    const db = this.dbOrThrow();
-    await db
-      .collection<ShiftLogDoc>(SHIFT_LOGS_COLLECTION)
-      .createIndex({ tenantSlug: 1, endedAt: -1 });
-    await db.collection<ShiftLogDoc>(SHIFT_LOGS_COLLECTION).createIndex({
-      tenantSlug: 1,
-      staffName: 1,
-      shiftLabel: 1,
-    });
   }
 
   private async ensureSessionIndexes() {
