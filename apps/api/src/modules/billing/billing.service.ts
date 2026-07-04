@@ -27,12 +27,16 @@ export class BillingService {
   }
 
   applyServiceFee(subtotalCents: number, serviceFeePct: number): BillTotals {
-    const serviceFeeCents = Math.round((subtotalCents * serviceFeePct) / 100);
+    // O driver do pg devolve SUM()/NUMERIC como STRING — sem coerção,
+    // `'790' + 79` vira '79079' (concatenação; conta de R$790,79). O
+    // Number() aqui blinda TODOS os call sites que passam agregados do DB.
+    const subtotal = Number(subtotalCents) || 0;
+    const serviceFeeCents = Math.round((subtotal * serviceFeePct) / 100);
     return {
-      subtotalCents,
+      subtotalCents: subtotal,
       serviceFeePct,
       serviceFeeCents,
-      totalCents: subtotalCents + serviceFeeCents,
+      totalCents: subtotal + serviceFeeCents,
     };
   }
 

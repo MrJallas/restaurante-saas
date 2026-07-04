@@ -57,6 +57,15 @@ describe('BillingService', () => {
     expect(svc.applyServiceFee(105, 10).totalCents).toBe(116);
   });
 
+  it('subtotal em STRING (driver pg devolve SUM/NUMERIC assim) não vira concatenação', () => {
+    const svc = new BillingService(fakeSettings('10.00'));
+    // Bug real pego no E2E 2026-07-04: '790' + 79 = '79079' (R$790,79!)
+    const totals = svc.applyServiceFee('790' as unknown as number, 10);
+    expect(totals.subtotalCents).toBe(790);
+    expect(totals.serviceFeeCents).toBe(79);
+    expect(totals.totalCents).toBe(869);
+  });
+
   it('taxa zero é permitida (restaurante sem serviço)', () => {
     const svc = new BillingService(fakeSettings('0'));
     expect(svc.applyServiceFee(10_000, 0)).toEqual({

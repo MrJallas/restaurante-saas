@@ -42,7 +42,8 @@ function fakeTenantConn(opts: {
       return [{ service_fee_pct: '0' }]; // taxa zero: short-pay testado sem ruído de fee
     }
     if (sql.startsWith('SELECT COALESCE(SUM(total_cents)')) {
-      return [{ total: opts.outstandingCents }];
+      // pg devolve SUM() como STRING (NUMERIC) — imitar o driver real.
+      return [{ total: String(opts.outstandingCents) }];
     }
     if (sql.includes('FROM payments WHERE id = $1') && sql.includes('SELECT')) {
       return opts.payment ? [opts.payment] : [];

@@ -36,10 +36,12 @@ function fakePaymentsDb(opts: {
       return [{ service_fee_pct: opts.serviceFeePct ?? '10.00' }];
     }
     if (s.startsWith('SELECT COALESCE(SUM(total_cents)')) {
+      // pg devolve SUM() como STRING (NUMERIC) — o fake imita o driver real;
+      // foi exatamente essa coerção que o E2E pegou ('790' + 79 = '79079').
       if (s.includes(`billing_mode = 'individual'`)) {
-        return [{ total: opts.individualSubtotal ?? 0 }];
+        return [{ total: String(opts.individualSubtotal ?? 0) }];
       }
-      return [{ total: opts.tableSubtotal ?? 0 }];
+      return [{ total: String(opts.tableSubtotal ?? 0) }];
     }
     if (s.startsWith('SELECT id FROM visits')) {
       const customerId = params[1] as string;
