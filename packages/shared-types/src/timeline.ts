@@ -28,32 +28,36 @@ export interface TimelineActor {
  * mesmo `at` (causalidade: sessão abre antes de tudo, pagamento/fechamento
  * por último).
  */
-export const TIMELINE_KINDS = [
-  'session.opened',
-  'participant.joined',
-  'participant.approved',
-  'late_arrival.requested',
-  'late_arrival.approved',
-  'late_arrival.rejected',
-  'merge.requested',
-  'merge.approved',
-  'merge.rejected',
-  'waiter.called',
-  'waiter.acknowledged',
-  'order.created',
-  'order.status_changed',
-  'delivery.called',
-  'delivery.claimed',
-  'delivery.delivered',
-  'courtesy.created',
-  'complaint.received',
-  'complaint.resolved',
-  'session.flag_changed',
-  'payment.confirmed',
-  'session.closed',
-] as const;
-
-export type TimelineKind = (typeof TIMELINE_KINDS)[number];
+// O ARRAY de kinds (valor de runtime) vive em
+// apps/api/src/modules/session-timeline/timeline-kinds.ts — este package é
+// consumido como SOURCE (.ts) pelo ts-node CJS do container e import de
+// VALOR daqui quebra o boot (loadESMFromCJS; achado 2026-07-04 no deploy do
+// M4 — imports só-de-types são elididos no emit, por isso o resto da api
+// sempre funcionou). Aqui fica só o TYPE; o array do api tem guard de
+// completude por tipo (divergência = erro de compilação).
+export type TimelineKind =
+  | 'session.opened'
+  | 'participant.joined'
+  | 'participant.approved'
+  | 'late_arrival.requested'
+  | 'late_arrival.approved'
+  | 'late_arrival.rejected'
+  | 'merge.requested'
+  | 'merge.approved'
+  | 'merge.rejected'
+  | 'waiter.called'
+  | 'waiter.acknowledged'
+  | 'order.created'
+  | 'order.status_changed'
+  | 'delivery.called'
+  | 'delivery.claimed'
+  | 'delivery.delivered'
+  | 'courtesy.created'
+  | 'complaint.received'
+  | 'complaint.resolved'
+  | 'session.flag_changed'
+  | 'payment.confirmed'
+  | 'session.closed';
 
 /** Ponteiros pros agregados de origem (todos opcionais — depende do kind). */
 export interface TimelineRefs {

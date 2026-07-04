@@ -10,7 +10,7 @@
  * — todo campo temporal aceita `Date | string` (lição do bug do inbox).
  */
 
-import { TIMELINE_KINDS } from '@restaurant/shared-types';
+import { TIMELINE_KINDS } from './timeline-kinds';
 import type {
   TimelineActor,
   TimelineEntry,

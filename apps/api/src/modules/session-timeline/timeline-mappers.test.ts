@@ -11,7 +11,7 @@
  * fixtures/JSON trafegam string — todo mapper aceita `Date | string`.
  */
 
-import { TIMELINE_KINDS } from '@restaurant/shared-types';
+import { TIMELINE_KINDS } from './timeline-kinds';
 import type { TimelineEntry } from '@restaurant/shared-types';
 
 import {
