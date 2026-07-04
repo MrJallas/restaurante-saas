@@ -81,7 +81,13 @@ export class ShiftsService {
     staffId: string;
     workDate: string;
   }): Promise<ShiftMemberRow & { shift_id: string }> {
-    // Conflict check: staff já escalado nesse turno+data
+    // Conflict check: staff já escalado nesse turno+data. O SELECT abaixo é a
+    // primeira linha de defesa (feedback claro no caminho comum), mas NÃO é
+    // atômico contra double-submit — por isso o INSERT usa ON CONFLICT DO
+    // NOTHING sobre o índice único parcial uq_shift_assignments_active
+    // (migration 063). Sob POSTs concorrentes, ambos passam por este SELECT
+    // ("não escalado"), mas só UM INSERT ganha; o outro volta 0 linhas e cai no
+    // ramo de conflito abaixo em vez de criar uma 2ª row ativa.
     const existing = (await this.tenantConn.query(
       `SELECT id FROM staff_shift_assignments
         WHERE shift_id = $1 AND staff_id = $2 AND work_date = $3 AND removed_at IS NULL`,
@@ -93,11 +99,18 @@ export class ShiftsService {
     const rows = unwrapRows<{ id: string }>(
       await this.tenantConn.query(
         `INSERT INTO staff_shift_assignments (shift_id, staff_id, work_date)
-         VALUES ($1, $2, $3) RETURNING id`,
+         VALUES ($1, $2, $3)
+         ON CONFLICT (shift_id, staff_id, work_date) WHERE removed_at IS NULL
+         DO NOTHING
+         RETURNING id`,
         [data.shiftId, data.staffId, data.workDate],
       ),
     );
-    if (!rows.length) throw new BadRequestException('Falha ao adicionar.');
+    if (!rows.length) {
+      // Perdeu a corrida do ON CONFLICT: a escala ativa já existe (criada pelo
+      // request concorrente). Trata como o duplicado que o SELECT detecta.
+      throw new BadRequestException('Funcionário já escalado nesse turno nessa data.');
+    }
     return this.getMember(rows[0].id);
   }
 

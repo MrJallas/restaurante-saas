@@ -711,15 +711,43 @@ export class HostService {
   private async findTableByNumber(number: number): Promise<{ id: string } | null> {
     // O FE conversa em "table number" (int), o DB persiste `code` (text). O
     // padrao convencionado pelo seed eh `code = "<number>"` (ex: "12") ou
-    // "M12" — extraimos so os digitos pra comparar.
+    // "M12" — comparamos primeiro o code EXATO ("<number>"), e so caimos no
+    // match por digitos (regexp_replace) quando o exato nao existe.
+    //
+    // Antes: `... regexp_replace(code, '[^0-9]', '') = $1 LIMIT 1` sem ORDER
+    // BY. Como 'M01' e 'D1' colapsam ambos pro numero 1, o LIMIT 1 pegava uma
+    // mesa ARBITRARIA sob colisao de digitos — liberate/vip/swap/reserva
+    // agiam na mesa errada. Agora a resolucao e deterministica: exato vence, e
+    // colisao de digitos (>1 candidato, sem exato) e REJEITADA como ambigua em
+    // vez de resolvida ao acaso. O caminho feliz nao-ambiguo (code '7' →
+    // numero 7; unico 'M12' → numero 12) permanece identico.
     const rows = (await this.tenantConn.query(
-      `SELECT id
+      `SELECT id, code
          FROM tables
-        WHERE CAST(NULLIF(regexp_replace(code, '[^0-9]', '', 'g'), '') AS INT) = $1
-        LIMIT 1`,
-      [number],
-    )) as Array<{ id: string }>;
-    return rows[0] ?? null;
+        WHERE code = $2
+           OR CAST(NULLIF(regexp_replace(code, '[^0-9]', '', 'g'), '') AS INT) = $1
+        ORDER BY id ASC`,
+      [number, String(number)],
+    )) as Array<{ id: string; code: string }>;
+
+    if (rows.length === 0) return null;
+
+    // Match exato do code ("<number>") vence sempre — deterministico e imune a
+    // colisao de digitos.
+    const exact = rows.find((r) => r.code === String(number));
+    if (exact) return { id: exact.id };
+
+    // Sem exato: todos os candidatos sao match-por-digito. Se houver mais de um,
+    // a resolucao seria arbitraria (o bug antigo) — rejeitamos como ambigua.
+    if (rows.length > 1) {
+      throw new BadRequestException(
+        `Codigo de mesa ambiguo para o numero ${number}: ${rows
+          .map((r) => r.code)
+          .join(', ')}. Use o codigo exato da mesa.`,
+      );
+    }
+
+    return { id: rows[0].id };
   }
 
   private mapTableRow(row: TableRow): HostTableDto {
