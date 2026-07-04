@@ -200,6 +200,11 @@ export class HostInboxService {
       });
     }
 
-    return items.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
+    // O driver pg devolve timestamptz como OBJETO Date (não string) — o
+    // localeCompare antigo explodia com TypeError e o inbox inteiro dava
+    // 500 (bug pré-existente exposto na prova viva pós-extração,
+    // 2026-07-04). Comparação numérica cobre Date e string ISO.
+    const ts = (v: string | Date) => new Date(v).getTime();
+    return items.sort((a, b) => ts(b.at) - ts(a.at)).slice(0, limit);
   }
 }

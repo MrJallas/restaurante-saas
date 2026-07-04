@@ -102,6 +102,37 @@ function makeService(conn: TenantConnectionProvider) {
 }
 
 describe('Host inbox — characterization', () => {
+  it('BUG VIVO 2026-07-04: pg devolve timestamptz como Date — o sort não pode assumir string', async () => {
+    // O driver real entrega created_at/started_at como OBJETO Date (mesma
+    // família do gotcha SUM()→string): `b.at.localeCompare` explodia com
+    // TypeError e o GET /host/inbox devolvia 500 com dados reais. O fake
+    // aqui imita o driver de verdade (Dates, não strings ISO).
+    const { conn } = fakeDb({
+      assistAlerts: [
+        {
+          id: 'al-1',
+          title: 'Mesa 4 pediu ajuda',
+          sub: null,
+          created_at: new Date('2026-07-04T15:00:00Z') as unknown as string,
+        },
+      ],
+      complaints: [
+        {
+          id: 'c-1',
+          status: 'open',
+          submitted_at: new Date('2026-07-04T16:00:00Z') as unknown as string,
+          problem_type: null,
+          customer_name: null,
+        },
+      ],
+    });
+    const inbox = await makeService(conn).listInbox();
+    expect(inbox).toHaveLength(2);
+    // desc por timestamp: a reclamação (16h) vem antes do assist (15h)
+    expect(inbox[0].id).toBe('complaint:c-1');
+    expect(inbox[1].id).toBe('host_assist:al-1');
+  });
+
   it('agrega uma entrada de cada uma das 5 fontes no shape do DTO, ordenado desc por at', async () => {
     const { conn } = fakeDb({
       assistAlerts: [
