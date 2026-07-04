@@ -677,19 +677,28 @@ async def classify(req: ClassifyRequest):
     if ack:
         return ClassifyResponse(allowed=True, reason="ack", confidence=ack.confidence)
 
+    # Layer 2: Regex guardrails (zero cost).
+    #
+    # P1-H (security/safety): check_blocked MUST run BEFORE is_allowed_intent.
+    # The allow-list heuristic matches verb+noun pairs like "mais \w+" /
+    # "quero \w+", which also fire on "quero mais sexo" / "quero mais maconha"
+    # / "quero votar no lula". If the allow-list ran first, off-topic/unsafe
+    # content (sexo/drogas/política) would leak through the cost-zero gate as
+    # `allowed`. Blocked content is never "allowed" just because an intent
+    # heuristic matched — the block takes precedence, period.
+    is_blocked, reason = check_blocked(req.message)
+    if is_blocked:
+        return ClassifyResponse(allowed=False, reason=reason, confidence=1.0)
+
     # Layer 1.5 (P1 #27): allow-list of legitimate restaurant intents that
     # the regex guardrails / LLM classifier was incorrectly bouncing
     # ("tira a cebola", "quero pedir a conta", "junta com a mesa 5", ...).
     # We let these through with confidence=0.95 so they never hit the
-    # `block_reason='classifier'` 0-latency path. Order: BEFORE the regex
-    # blocker because that's where the false rejections were happening.
+    # `block_reason='classifier'` 0-latency path. Runs AFTER check_blocked so
+    # it only rescues messages the blocklist already cleared — it can no
+    # longer override a hard block.
     if is_allowed_intent(req.message):
         return ClassifyResponse(allowed=True, reason="allow_list", confidence=0.95)
-
-    # Layer 2: Regex guardrails (zero cost)
-    is_blocked, reason = check_blocked(req.message)
-    if is_blocked:
-        return ClassifyResponse(allowed=False, reason=reason, confidence=1.0)
 
     # Heuristica de follow-up: mensagens curtas (<=4 palavras) apos contexto
     # do restaurante normalmente sao confirmacoes/referencias.

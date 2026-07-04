@@ -144,3 +144,72 @@ def test_classify_endpoint_does_not_block_secondary_tools(message: str):
     body = res.json()
     assert body["allowed"] is True
     assert body["reason"] == "allow_list"
+
+
+# ─────────────────────────────────────────────────────────────
+# P1-H (security/safety) — blocked content must NEVER be "allowed"
+# just because a verb+noun heuristic in the allow-list matches.
+#
+# `is_allowed_intent` casa "quero mais sexo" / "quero mais maconha" /
+# "quero votar no lula" via `(...|mais)\s+\w+` e `(quero|...)\s+\w+`,
+# ao mesmo tempo em que essas frases batem em BLOCKED_PATTERNS
+# (sexo / maconha / lula+voto). Se o allow-list rodar ANTES do
+# check_blocked no /classify, o gate de custo-zero vaza sexo/drogas/
+# política. `check_blocked` DEVE preceder `is_allowed_intent`.
+# ─────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("message", [
+    "quero mais sexo",       # sexo — casa allow-list ('mais \w+' / 'quero \w+')
+    "quero mais maconha",    # droga — mesma heurística
+    "quero votar no lula",   # política — 'quero \w+' + voto/lula bloqueado
+])
+def test_classify_endpoint_blocks_disallowed_even_if_allow_list_matches(message: str):
+    """P1-H: conteúdo bloqueado nunca deve virar 'allowed' por casar heurística.
+
+    Estas frases casam SIMULTANEAMENTE a allow-list (verbo+substantivo) e os
+    BLOCKED_PATTERNS. O endpoint deve devolver allowed=False, reason='regex'.
+    """
+    from fastapi.testclient import TestClient
+    import main
+
+    client = TestClient(main.app)
+    res = client.post("/classify", json={"message": message})
+    body = res.json()
+    assert body["allowed"] is False, f"vazou blocked como allowed: {message!r} -> {body}"
+    assert body["reason"] == "regex", f"esperava regex block, veio: {body}"
+
+
+@pytest.mark.parametrize("message", [
+    "quero mais batata frita",   # caminho feliz: pedir mais comida
+    "quero fazer um pedido",     # caminho feliz: abrir pedido
+    "tira a cebola",             # modify-order canônico
+])
+def test_classify_endpoint_happy_path_still_allowed(message: str):
+    """Reordenar blocked→antes→allow NÃO pode quebrar intents legítimos."""
+    from fastapi.testclient import TestClient
+    import main
+
+    client = TestClient(main.app)
+    res = client.post("/classify", json={"message": message})
+    body = res.json()
+    assert body["allowed"] is True, f"caminho feliz bloqueado: {message!r} -> {body}"
+    assert body["reason"] != "regex", f"caminho feliz caiu no regex block: {body}"
+
+
+@pytest.mark.parametrize("message,expected_reason", [
+    ("oi", "greeting"),
+    ("bom dia", "greeting"),
+    ("obrigado", "ack"),
+    ("valeu", "ack"),
+])
+def test_classify_endpoint_greeting_ack_not_swept_by_block(message: str, expected_reason: str):
+    """Saudações/acks legítimos continuam sendo greeting/ack, não blocked."""
+    from fastapi.testclient import TestClient
+    import main
+
+    client = TestClient(main.app)
+    res = client.post("/classify", json={"message": message})
+    body = res.json()
+    assert body["allowed"] is True
+    assert body["reason"] == expected_reason, f"{message!r} -> {body}"
