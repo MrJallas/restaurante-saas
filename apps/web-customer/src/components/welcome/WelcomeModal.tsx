@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import { CpfInput } from './CpfInput';
 import { validateCpf, cleanCpf } from '../../lib/cpf';
-import { ApiRequestError, apiPost } from '../../lib/api';
+import { apiPost } from '../../lib/api';
 import { captureCustomerLocationSignal } from '../../lib/location';
 import { setRecognitionToken } from '../../lib/storage';
 import { useSession } from '../../hooks/useSession';
@@ -44,7 +44,7 @@ export function WelcomeModal({ slug, restaurantName, tableLabel, onComplete }: W
   const [cpfFocused, setCpfFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { setCustomer, clearSession } = useSession();
+  const { setCustomer } = useSession();
 
   const isNameValid = name.trim().length >= 2;
   const isCpfValid = cleanCpf(cpf).length === 11 && validateCpf(cleanCpf(cpf));
@@ -62,7 +62,13 @@ export function WelcomeModal({ slug, restaurantName, tableLabel, onComplete }: W
         timeoutMs: 4000,
       });
       if (location.status !== 'granted') {
-        clearSession();
+        // Geoloc negada/timeout/indisponível é best-effort: bloqueia a entrada
+        // (política de segurança — welcome exige location granted, senão 403) mas
+        // NÃO invalida a sessão da mesa. Apagar o session_token aqui (clearSession)
+        // fazia o retry cross-origin no iOS virar 401 e forçar re-scan do QR físico
+        // (P1-L). O cliente nega uma vez, lê o aviso e concede no retry — a sessão
+        // precisa sobreviver pra isso funcionar. Só um scan de QR de OUTRA mesa
+        // justifica clearSession, o que não é o caso aqui.
         setError('Permita a localização para entrar no app do restaurante.');
         setIsLoading(false);
         return;
@@ -83,14 +89,17 @@ export function WelcomeModal({ slug, restaurantName, tableLabel, onComplete }: W
       });
       onComplete(result);
     } catch (err) {
-      if (err instanceof ApiRequestError && err.statusCode === 403) {
-        clearSession();
-      }
+      // 403 do /customer/welcome = geofence (location não-granted OU comprovadamente
+      // fora do raio — o backend funde os dois no mesmo 403). Nenhum desses é scan
+      // de OUTRA mesa, então NÃO apagamos o session_token: fazê-lo (clearSession)
+      // matava o retry cross-origin no iOS (401 → re-scan do QR físico, P1-L). O
+      // bloqueio de entrada continua via setError; a sessão da mesa sobrevive pro
+      // retry (aproximar-se / conceder a localização e tentar de novo).
       setError(err instanceof Error ? err.message : 'Erro ao processar. Tente novamente.');
     } finally {
       setIsLoading(false);
     }
-  }, [canSubmit, slug, name, cpf, setCustomer, clearSession, onComplete]);
+  }, [canSubmit, slug, name, cpf, setCustomer, onComplete]);
 
   /**
    * Title-case so no blur. Rodar a cada keystroke (regex /\b\w/g sobre o
