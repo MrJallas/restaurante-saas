@@ -5,14 +5,28 @@ const nextConfig = {
   // A05: não vazar o framework/versão no header (reduz info-disclosure).
   poweredByHeader: false,
 
-  // A05: conjunto seguro de headers de segurança em toda resposta (só os que
-  // NÃO alteram render: anti-MIME-sniff, anti-clickjacking, referrer, HSTS).
-  // CSP/Permissions-Policy ficam de follow-up (precisam de teste por-página).
+  // A05: nosniff/anti-clickjacking/referrer/HSTS + Permissions-Policy enforce
+  // (só desliga o não-usado; PRESERVA camera=self que o scan-qr do garçom usa)
+  // + CSP em REPORT-ONLY (documenta, não bloqueia; enforce exige nonces do Next).
   async headers() {
     const base = [
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      // web-staff USA camera (ScreenWaiterScanQr) → preserva self; geoloc/mic/
+      // pagamento/usb não são usados → desligados.
+      {
+        key: 'Permissions-Policy',
+        value: 'camera=(self), geolocation=(), microphone=(), payment=(), usb=()',
+      },
+      {
+        key: 'Content-Security-Policy-Report-Only',
+        value:
+          "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; " +
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+          "img-src 'self' data: blob:; font-src 'self' data:; " +
+          "connect-src 'self' ws: wss: http: https:; form-action 'self'",
+      },
     ];
     // HSTS só em produção: o browser ignora sobre HTTP, e não queremos pinar
     // HTTPS num domínio de dev LAN (espelha o gate do middleware da API).

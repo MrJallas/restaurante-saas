@@ -1,115 +1,69 @@
-# Security follow-ups (hardening deliberadamente adiado)
+# Security follow-ups
 
-> Estes NÃO são bugs abertos nem placebos — são itens de hardening/dívida que
-> foram avaliados e adiados com razão explícita durante o fechamento do
-> re-scan OWASP (2026-07-05, branch `fix/framework-bugfixes`). O próximo agente
-> deve saber que já foram considerados, por que ficaram, e qual o caminho certo.
+> Estado do hardening avaliado durante o fechamento do re-scan OWASP
+> (2026-07-05, branch `fix/framework-bugfixes`). A maioria foi FECHADA; resta 1
+> refactor de escopo (decisão do dono) + 2 edges de baixa prioridade.
 
-## 1. `ws` — advisories novos (dep transitiva do socket.io)
+## ✅ FECHADO
 
-- **O quê:** `ws@8.18.3` (via `socket.io → engine.io@6.6.6`) cai em 2 advisories:
-  - `GHSA-58qx-3vcg-4xpx` — uninitialized memory disclosure
-  - `GHSA-96hv-2xvq-fx4p` — memory-exhaustion DoS (fragmentos)
-  - Range afetado: `8.0.0 - 8.20.1`. **Fix: `ws@8.21.0`.**
-- **Por que NÃO foi feito agora:** `engine.io@6.6.6` pina `ws@~8.18.3` (só 8.18.x).
-  `npm audit fix` sem `--force` NÃO resolve (só `--force`, que faz bump breaking).
-  Um `overrides: { ws: "8.21.0" }` força a versão SOBRE a expectativa do engine.io
-  e arrisca os WebSockets **load-bearing** (KDS/staff/customer) sem validação de
-  runtime — foi tentado e revertido (anti-placebo: não fingir fix não-validado).
-- **Caminho certo:** bumpar `socket.io`/`engine.io` para uma versão que já declare
-  `ws >= 8.21`, OU aplicar o override + **smoke test de WS real** (conectar KDS +
-  staff socket + customer socket e confirmar entrega de evento) antes de commitar.
+- **ws@8.18.3 → 8.21.0** (advisories GHSA-58qx uninitialized-mem + GHSA-96hv DoS):
+  bump de PATCH `engine.io` 6.6.6→6.6.9 (pina ws~8.21) + `socket.io-adapter`
+  2.5.6→2.5.8 (idem), ambos dentro do range `~6.6.0`/`~2.5.2` do socket.io@4.8.3 →
+  zero breaking, sem override. Validar WS no boot (smoke KDS/staff/customer).
+- **X-Powered-By**: `poweredByHeader: false` nos 2 FE.
+- **middleware→proxy** (deprecação Next 16): `middleware.ts`→`proxy.ts`,
+  `middleware()`→`proxy()` (o TV-gate; `config.matcher` idêntico). Build sem
+  deprecation.
+- **highlight sticky do salon-map**: casava por `sessionId` (removido no A07) →
+  por `num` (`highlightTableNum`).
+- **Permissions-Policy** (enforce, per-app): web-customer `geolocation=(self)`
+  (fluxo de mesa) + câmera/mic/pagamento/usb OFF; web-staff `camera=(self)`
+  (scan-qr) + geoloc/mic/pagamento/usb OFF.
+- **CSP em `Content-Security-Policy-Report-Only`** nos 2 FE: baseline seguro
+  (`object-src none`, `base-uri self`, `frame-ancestors none`, form-action self;
+  script/style com `unsafe-inline` que o Next precisa hoje). NÃO bloqueia nada —
+  é a etapa 1 do rollout. **Promover pra enforce** exige nonces (o Next injeta
+  script inline) + observar reports; ver §A abaixo.
+- **salon/tables/adjacent** + **table-merge (create/approve/reject)**: vazavam
+  `table_sessions.id` de OUTRA mesa pro CLIENTE (hijack customer→customer) →
+  cortados (testes `salon.service.test.ts`, `table-merge.controller.test.ts`).
+- **tv-unlock XFF-bypass** (regressão do Next 16): backstop global + teste.
 
-## 2. `X-Powered-By: Next.js` vaza o framework (info disclosure)
+## ⏳ RESTA
 
-- Ambos os frontends ainda respondem `X-Powered-By: Next.js`.
-- **Fix trivial:** `poweredByHeader: false` no `next.config.js` dos dois apps.
-- Baixo valor (informacional, não explorável) — não valeu um ciclo de commit+boot
-  no fechamento, mas é um one-liner limpo.
+### §A. CSP enforce (nonce-based) — etapa 2 do rollout
+O CSP está em report-only. Pra enforçar sem `unsafe-inline` (o que dá a proteção
+XSS real), o Next precisa de **nonces** por request (middleware/proxy que injeta o
+nonce no header + no `<script>`), OU aceitar `unsafe-inline` no enforce (proteção
+menor). Precisa observar os reports (adicionar um `report-uri`/endpoint de coleta)
+antes de promover, validando cada surface V20-locked.
 
-## 2b. `OverlaySalonMap.highlightTableSessionId` virou dead-code
+### §B. `table_sessions.id` (credencial) como chave de recurso/navegação no STAFF
+**DECISÃO DE ESCOPO DO DONO — não executado por ser refactor de arquitetura
+load-bearing.** `GET /host/tables` (`host.service.ts` `mapTableRow`) devolve
+`active_session_id` pro staff, e TODA a superfície `/staff/sessions/:id/...`
+(flags, revoke, timeline) + o deep-link V5 do manager (`mesa/[n]` →
+`table-menu/:id` → `session-timeline/:id` → compensate) usam esse id como chave.
+Como o id **É** o `x-session-token` do cliente (`SessionGuard` = `redis.get('session:'+id)`),
+um staff (semi-trusted) pode forjar a sessão do cliente. Os 2 caminhos corretos,
+ambos grandes:
+1. **navegar-por-número**: `host/tables` para de expor o id; manager navega por
+   número/table_id; TODOS os endpoints staff de sessão resolvem a sessão ativa
+   server-side. ~10 arquivos (API+FE), risco de regressão no deep-link do manager.
+2. **separar token do id**: o `x-session-token` vira um segredo distinto do
+   `table_sessions.id` (que fica sendo só o id de recurso, seguro de expor). Toca
+   a criação de sessão + SessionGuard + o session-handling do cliente — auth
+   load-bearing de TODO fluxo de cliente.
+Severidade menor (staff autenticado/semi-trusted, pré-existente); por isso é
+decisão de apetite de risco, não emergência.
 
-- Como o salon/adjacent parou de expor `sessionId` (§"Já FECHADO"), a
-  pré-seleção sticky da IA (`OverlaySalonMap.tsx:127-129`, casa por
-  `x.sessionId === highlightTableSessionId`) nunca mais casa. Nenhum caller
-  passa a prop hoje (já era efetivamente morta), então é cosmético, não bug.
-- **Caminho:** se a pré-seleção da IA for revivida, casar por `num`/`tableCode`
-  (como a seleção manual já faz) em vez de `sessionId`; senão, remover a prop.
-
-## 3. `middleware` → `proxy` (deprecação do Next 16)
-
-- Next 16 deprecou a convenção de arquivo `middleware`. O build emite
-  `⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.`
-- `apps/web-staff/src/*/middleware.ts` (contém o **TV-gate**, sensível) ainda
-  funciona — a deprecação é não-bloqueante.
-- **Fix:** renomear `middleware.ts` → `proxy.ts` conforme o guia do Next 16. Fazer
-  ISOLADO (é o gate de segurança da TV/KDS) com validação do fluxo TV.
-
-## 4. CSP + Permissions-Policy nos frontends (A05, parcial)
-
-- Os headers de segurança A05 foram adicionados aos 2 FE, mas SÓ o conjunto que
-  não altera render (`X-Content-Type-Options`, `X-Frame-Options`,
-  `Referrer-Policy`, `Strict-Transport-Security`).
-- **Ficaram de fora (de propósito):** `Content-Security-Policy` e
-  `Permissions-Policy` — exigem teste **por-página** antes de ligar:
-  - CSP pode quebrar inline styles/scripts do Next.
-  - Permissions-Policy pode quebrar a **geolocalização** do cliente (fluxo de mesa).
-- **Caminho certo:** montar uma CSP (começar em `report-only`), validar cada
-  surface do cliente (V20-locked) e do staff, e um `Permissions-Policy` que
-  preserve `geolocation=(self)`.
-
-## 5. `table_sessions.id` (credencial) usado como chave de NAVEGAÇÃO no staff
-
-- **O quê (A07 residual, staff-facing):** `GET /:slug/host/tables` (`host.service.ts`
-  `mapTableRow` → `active_session_id`) devolve o `table_sessions.id` de cada mesa
-  ativa pro staff. Esse id **É** o `x-session-token` do cliente (o `SessionGuard`
-  autentica com `redis.get('session:'+token)`), então um staff pode forjar a
-  sessão do cliente. Mesmo valor reaparece no `session-timeline/*` mappers.
-- **Por que NÃO foi cortado agora:** ao contrário do swap/liberate/vip (fechados
-  no commit A07 f8748d0) e do salon (fechado nesta sessão — cliente-facing,
-  pior), aqui o token é a **chave de navegação** do manager: `manager/mesa/[n]`
-  navega pra `table-menu/${active_session_id}`, e `ScreenManagerCompensateClient`
-  seleciona por ele. Cortar cru quebra 3 fluxos. Audiência é staff (semi-trusted,
-  já opera as mesas), severidade menor que o salon.
-- **Caminho certo (refactor escopado):** introduzir um **identificador de
-  navegação distinto da credencial** (ex.: um id opaco/handle por sessão, ou usar
-  `table_id`+número) e thre'-lo por `host/tables → manager/mesa/[n] →
-  table-menu → session-timeline → compensate`, mantendo `table_sessions.id`
-  secreto. NÃO é um one-liner — é a raiz da família A07 staff-side.
-
-## 6. LGPD erasure: 200-sem-protocolo ainda minta sucesso (edge de baixa confiança)
-
-- Se o backend LGPD responder **200 mas sem `protocolNumber`** (violação de
-  contrato), `lgpd_data_request.py` cai no `if not protocol_number:` → minta um
-  protocolo cliente-side + devolve a copy canônica "apagados" + `fulfilled`. O
-  fix desta sessão cobriu o branch da **exceção**, não o 200-malformado.
-- **Caminho:** distinguir "sem api_client" (handoff in-process, protocolo mintado
-  OK) de "api_client chamado e voltou 200 sem protocolo" (tratar como pending
-  honesto, igual à falha). Baixa probabilidade (backend do mesmo time).
-
-## Já FECHADO nesta sessão (não são mais follow-up)
-
-- **salon/tables/adjacent** vazava `active_session_id` pro CLIENTE (hijack
-  customer→customer, pior audiência) → cortado + teste `salon.service.test.ts`.
-  Supersede a task de spawn `task_ff071c0c`.
-- **table-merge-requests** (create/approve/reject, SessionGuard=cliente)
-  devolvia `sourceTableSessionId`/`targetTableSessionId` no body = tokens das 2
-  mesas (mesmo hijack customer→customer). O verificador adversarial achou este
-  flanco depois do salon. → controller tira os tokens na fronteira HTTP do
-  cliente (`stripSessionTokens`; o mapRow interno os mantém pros WS emits) +
-  teste `table-merge.controller.test.ts`. O merge continua funcionando: o
-  cliente identifica o alvo por NÚMERO (não pelo token), e o backend
-  `resolveTargetSession` já resolvia por número.
-- **tv-unlock** reintroduziu o XFF-bypass no upgrade Next 16 (rate-limit por
-  x-forwarded-for) → backstop GLOBAL + teste `rate-limit.test.ts`.
-
-> Família A07 customer-facing agora exaustivamente varrida: os únicos endpoints
-> guardados por SessionGuard que expunham `table_sessions.id` de OUTRA mesa eram
-> salon/adjacent e table-merge — ambos fechados. Resta só o staff-facing (§5,
-> `host/tables` como chave de navegação — refactor de nav-id, semi-trusted).
+### §C. LGPD erasure: 200-sem-protocolo (edge de baixa confiança)
+Se o backend LGPD responder 200 SEM `protocolNumber` (violação de contrato),
+`lgpd_data_request.py` minta protocolo + diz "apagados". O fix cobriu a exceção,
+não o 200-malformado. Distinguir "sem api_client" (handoff, OK mintar) de
+"api_client 200 sem protocolo" (pending honesto). Baixa probabilidade.
 
 ---
 
-_Contexto: fechamento do re-scan OWASP + backlog P2 + upgrade Next 16
-(2026-07-05). Ver `MEMORY.md` → `project_rescan_megaloop_2026-07-04.md` e
+_Contexto: `MEMORY.md` → `project_rescan_megaloop_2026-07-04.md`;
 `docs/PIX-STATUS.md` (Pix é STUB por decisão de produto, não bug)._
