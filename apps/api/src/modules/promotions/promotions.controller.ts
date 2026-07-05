@@ -21,6 +21,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { PromotionsService } from './promotions.service';
 
 class CreatePromotionDto {
@@ -57,6 +58,15 @@ class UpdatePromotionDto {
  * x-staff-key" mas era falso. Customer fazia PATCH/DELETE de promotion
  * via session token e ganhava 100% off. Agora exclusivamente staff
  * (`x-staff-key`).
+ *
+ * Round 8 (B-NEW-*): privilege escalation staff→manager. StaffOnlyGuard
+ * NÃO checa role — retorna true pra QUALQUER x-staff-token válido (todo
+ * role loga com CPF+PIN) ou o x-staff-key compartilhado. Um garçom
+ * criava 100%-off ou apagava as promoções legítimas do gerente. Promoção
+ * é precificação de GESTÃO (único consumidor FE de mutação é o dashboard
+ * do gerente). Fix: as 3 mutações ganham ManagerOnlyGuard — mesmo par das
+ * irmãs de mutação de gestão (staff/courtesies/vip/…). GET list/getById
+ * seguem públicos: o CLIENTE precisa ver os descontos disponíveis.
  */
 @Controller(':slug/promotions')
 export class PromotionsController {
@@ -74,19 +84,19 @@ export class PromotionsController {
   }
 
   @Post()
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async create(@Body() dto: CreatePromotionDto) {
     return this.promotionsService.create(dto);
   }
 
   @Patch(':id')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async update(@Param('id') id: string, @Body() dto: UpdatePromotionDto) {
     return this.promotionsService.update(id, dto);
   }
 
   @Delete(':id')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async delete(@Param('id') id: string) {
     return this.promotionsService.delete(id);
   }
