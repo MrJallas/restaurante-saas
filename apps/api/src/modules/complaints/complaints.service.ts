@@ -91,23 +91,67 @@ export class ComplaintsService {
       }
     }
 
-    const rows = (await this.tenantConn.query(
-      `INSERT INTO complaints
-         (customer_id, visit_id, order_id, order_rating_id, rating,
-          problem_type, text, attached_image_url, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending_review')
-       RETURNING *`,
-      [
-        input.customerId ?? null,
+    // P1 retry-safety — idempotência do INSERT. O client (composer) dá timeout
+    // em 15s e libera o botão no catch: se o servidor gravou mas a resposta
+    // demorou, o cliente re-envia o MESMO payload. Sem dedup, cada retry criava
+    // uma 2ª complaint idêntica 'pending_review' e disparava outro
+    // emitComplaintReceived → fila do gerente poluída, contadores/SLA inflados.
+    //
+    // ON CONFLICT DO NOTHING casa com os índices parciais da migration 068
+    // (idx_complaints_pending_unique_order / _visit): enquanto existir uma
+    // complaint ABERTA (status='pending_review') pra mesma chave — (order_id,
+    // customer_id) ou, sem order, (visit_id, customer_id) — o retry NÃO insere
+    // uma nova row. Nesse caso o INSERT devolve 0 rows e nós recuperamos a
+    // complaint existente, devolvendo-a como se fosse a original (idempotente).
+    // Depois de respondida/fechada, o par sai do índice parcial e o cliente
+    // pode legitimamente abrir outra sobre o mesmo pedido.
+    //
+    // unwrapRows: INSERT já chega flat, mas ON CONFLICT DO NOTHING pode não
+    // retornar linha; normalizamos por segurança.
+    const insertedRows = unwrapRows<Record<string, unknown>>(
+      await this.tenantConn.query(
+        `INSERT INTO complaints
+           (customer_id, visit_id, order_id, order_rating_id, rating,
+            problem_type, text, attached_image_url, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending_review')
+         ON CONFLICT DO NOTHING
+         RETURNING *`,
+        [
+          input.customerId ?? null,
+          visitId,
+          input.orderId ?? null,
+          input.orderRatingId ?? null,
+          input.rating ?? null,
+          input.problemType ?? null,
+          input.text,
+          input.attachedImageUrl ?? null,
+        ],
+      ),
+    );
+
+    let rows = insertedRows;
+    // deduped=true ⇒ o retry colidiu com uma complaint aberta pré-existente;
+    // NÃO devemos re-emitir o evento pro gerente nem contar de novo.
+    let deduped = false;
+    if (!rows.length) {
+      const existing = await this.findOpenDuplicate({
+        customerId: input.customerId ?? null,
+        orderId: input.orderId ?? null,
         visitId,
-        input.orderId ?? null,
-        input.orderRatingId ?? null,
-        input.rating ?? null,
-        input.problemType ?? null,
-        input.text,
-        input.attachedImageUrl ?? null,
-      ],
-    )) as Array<Record<string, unknown>>;
+      });
+      if (existing) {
+        rows = [existing];
+        deduped = true;
+      }
+    }
+    if (!rows.length) {
+      // Sem conflito reconhecível e sem linha inserida: não deveria acontecer,
+      // mas falhar aqui é melhor que devolver mapRow(undefined).
+      throw new HttpException(
+        'Nao foi possivel registrar a reclamacao.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
 
     let enriched = await this.getEnrichedRow(rows[0].id as string);
     if ((!enriched?.table_session_id || !enriched?.table_number) && input.tableSessionId) {
@@ -115,7 +159,7 @@ export class ComplaintsService {
     }
     const result = this.mapRow(enriched ?? rows[0]);
 
-    if (slug && this.events && result.customerId) {
+    if (!deduped && slug && this.events && result.customerId) {
       this.events.emitComplaintReceived(slug, result.assignedManagerId, {
         complaintId: result.id,
         tableSessionId: result.tableSessionId,
@@ -130,6 +174,57 @@ export class ComplaintsService {
     }
 
     return result;
+  }
+
+  /**
+   * Recupera a complaint ABERTA (status='pending_review') que colide com a
+   * chave de idempotência da migration 068, pra devolvê-la quando um retry
+   * bate no ON CONFLICT DO NOTHING. As condições espelham EXATAMENTE os índices
+   * parciais (idx_complaints_pending_unique_order / _visit):
+   *   • com order_id → dedup por (order_id, customer_id);
+   *   • sem order_id, com visit_id → dedup por (visit_id, customer_id).
+   * Sem order_id e sem visit_id não há chave — retorna null (sub-caso sem dedup,
+   * documentado na 068), e o caller trata a ausência como inserção normal.
+   */
+  private async findOpenDuplicate(key: {
+    customerId: string | null;
+    orderId: string | null;
+    visitId: string | null;
+  }): Promise<Record<string, unknown> | null> {
+    if (!key.customerId) return null;
+
+    if (key.orderId) {
+      const rows = unwrapRows<Record<string, unknown>>(
+        await this.tenantConn.query(
+          `SELECT * FROM complaints
+            WHERE status = 'pending_review'
+              AND order_id = $1
+              AND customer_id = $2
+            ORDER BY submitted_at DESC
+            LIMIT 1`,
+          [key.orderId, key.customerId],
+        ),
+      );
+      return rows[0] ?? null;
+    }
+
+    if (key.visitId) {
+      const rows = unwrapRows<Record<string, unknown>>(
+        await this.tenantConn.query(
+          `SELECT * FROM complaints
+            WHERE status = 'pending_review'
+              AND order_id IS NULL
+              AND visit_id = $1
+              AND customer_id = $2
+            ORDER BY submitted_at DESC
+            LIMIT 1`,
+          [key.visitId, key.customerId],
+        ),
+      );
+      return rows[0] ?? null;
+    }
+
+    return null;
   }
 
   /**
