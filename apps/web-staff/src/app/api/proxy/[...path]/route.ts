@@ -41,9 +41,44 @@ const LOGOUT_RE = /^[\w-]+\/staff-auth\/logout$/;
 // do login, continua exigindo o cookie de sessão pra passar do portão.
 const TOKEN_ISSUING_RE = /^[\w-]+\/staff-auth\/(login|change-pin)$/;
 
+/**
+ * Detecta ambiente "sério" (prod/staging) onde ausência de segredo deve
+ * FAIL-CLOSE, espelhando o padrão do ai-service (Round 9 B-NEW-45). Em dev
+ * local sem env tudo destrava; em prod/staging a falta de PIN bloqueia.
+ */
+function isProdLikeEnv(): boolean {
+  const env = (process.env.VERCEL_ENV || process.env.NODE_ENV || 'development').toLowerCase();
+  return env === 'production' || env === 'prod' || env === 'staging';
+}
+
+/**
+ * Gate das rotas de TV pública (KDS/status/call-waiter) via cookie `tv_pin`.
+ *
+ * Segurança (P1 OWASP A05, re-scan): FAIL-CLOSE quando TV_ACCESS_PIN está
+ * ausente em prod/staging. Antes esse ramo devolvia `true` (fail-OPEN), então
+ * um deploy sem o PIN configurado — o DEFAULT, já que a var não está no compose
+ * nem no .env.example — liberava KDS/status/call-waiter ANONIMAMENTE e o proxy
+ * ainda injetava o `x-staff-key` real: qualquer visitante lia/mutava a cozinha
+ * do tenant. Agora, sem PIN em prod, a TV é bloqueada (mesma doutrina do
+ * AI_SERVICE_API_KEY / STAFF_API_KEY: segredo ausente = negar, não liberar).
+ *
+ * Em dev local (NODE_ENV !== production/staging) mantém-se o no-op com WARNING
+ * loud no log, pra que o dev veja na consola e o fluxo de teste não trave.
+ */
 function tvPinValid(req: NextRequest): boolean {
   const expected = process.env.TV_ACCESS_PIN;
-  if (!expected) return true; // dev mode, no-op
+  if (!expected) {
+    if (isProdLikeEnv()) {
+      console.error(
+        '[proxy] TV_ACCESS_PIN ausente em prod/staging — fail-CLOSE bloqueando rota de TV.',
+      );
+      return false; // fail-CLOSE: sem PIN configurado em prod, nega acesso
+    }
+    console.warn(
+      '[proxy] TV_ACCESS_PIN ausente — gate de TV desligado (dev only). NAO usar assim em prod.',
+    );
+    return true; // dev mode, no-op
+  }
   return req.cookies.get('tv_pin')?.value === expected;
 }
 

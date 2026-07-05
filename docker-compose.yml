@@ -243,6 +243,12 @@ services:
       # O proxy injeta x-staff-key server-side (P1-F: key fora do bundle).
       # Sem default committado — mesmo segredo que a API valida.
       STAFF_API_KEY: ${STAFF_API_KEY:?STAFF_API_KEY must be set (no committed default)}
+      # PIN das TVs anônimas (KDS/status/call-waiter). Opcional em dev: sem ele
+      # o gate vira no-op (NODE_ENV=development aqui). Em prod/staging a AUSÊNCIA
+      # deste PIN faz o proxy FAIL-CLOSE e bloquear as rotas de TV — do contrário
+      # a x-staff-key real seria injetada e a cozinha ficaria acessível anonima-
+      # mente (P1 OWASP A05). Defina um valor forte no deploy de produção.
+      TV_ACCESS_PIN: ${TV_ACCESS_PIN:-}
     volumes:
       - ./:/repo
       - /repo/node_modules
