@@ -337,17 +337,27 @@ export class OrderDeliveryService {
       await tx.query(`UPDATE orders SET status = 'delivered', updated_at = now() WHERE id = $1`, [
         orderId,
       ]);
-      await tx.query(
-        `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
-         VALUES ($1, $2, 'delivered', $3)`,
-        [orderId, order.status, staffId],
+      // FIX convergência de id: captura o pk da row osh 'delivered' pra
+      // correlacionar o evento live (tap) com o backfill (M5). Sem o
+      // RETURNING id, este path (só ele — os irmãos threadam) deixava o tap
+      // cair no fallback ws:* e o backfill criava um SEGUNDO doc pra mesma
+      // transição → timeline duplicada. Espelha markOrderInTransit.
+      const historyRows = unwrapRows<{ id: string }>(
+        await tx.query(
+          `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
+         VALUES ($1, $2, 'delivered', $3)
+         RETURNING id`,
+          [orderId, order.status, staffId],
+        ),
       );
+      const historyId = historyRows[0]?.id;
 
       return {
         orderId,
         deliveryId: delivery.id as string | null,
         tableSessionId: order.table_session_id,
         tableLabel: order.table_label,
+        historyId,
         status: 'delivered' as const,
         alreadyDelivered: false,
       };
@@ -385,6 +395,10 @@ export class OrderDeliveryService {
     this.eventsGateway?.emitOrderStatusUpdate(slug, orderId, 'delivered', result.tableLabel, {
       tableSessionId: result.tableSessionId,
       changedBy: { type: 'staff', id: staffId },
+      // FIX convergência de id: pk da row osh 'delivered' → tap usa o mesmo
+      // doc do backfill (evita timeline duplicada). undefined só se o INSERT
+      // não devolveu id — aí cai no fallback ws:* como antes.
+      ...(result.historyId ? { historyId: result.historyId } : {}),
     });
     this.eventsGateway?.emitToSession(result.tableSessionId, 'order:status', {
       orderId,

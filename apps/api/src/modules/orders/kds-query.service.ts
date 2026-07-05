@@ -200,6 +200,14 @@ export class KdsQueryService {
         -- prender pedidos zumbis de dias atrás.
         AND o.created_at > now() - interval '8 hours'
         AND o.created_at <= now()
+        -- Estação: o /cozinha (KDS legado) só mostra itens de COZINHA. Sem
+        -- este filtro a fila juntava as bebidas (kind='drink') no painel do
+        -- cozinheiro — e como o /cozinha marca status por PEDIDO, o cozinheiro
+        -- avançar o card flipava também a bebida (3º ponto que compartilha
+        -- status cozinha↔bar num pedido misto). Roteia pelo FLAG autoritativo
+        -- menu_items.kind (migration 016), espelhando getActiveOrdersForKds:
+        -- cozinha = tudo que NÃO é bebida (nunca pelo nome da categoria).
+        AND mi.kind <> 'drink'
       GROUP BY o.id, t.label, t.code, delivery.id, delivery.status,
                delivery.called_at, delivery.claimed_at,
                delivery.target_waiter_id, delivery.target_waiter_name

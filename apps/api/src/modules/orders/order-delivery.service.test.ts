@@ -231,6 +231,48 @@ describe('OrderDeliveryService — characterization (extraído do orders.service
     expect(emitted).toEqual([]); // nenhum evento re-emitido
     expect(calls.filter((c) => c.sql.startsWith('UPDATE'))).toEqual([]); // nenhuma escrita
   });
+
+  it('BUG P2 (timeline): waiter-delivered captura o id do osh e threada o historyId (evita doc duplicado no backfill)', async () => {
+    // O INSERT do evento 'delivered' regrediu: sem `RETURNING id`, o path não
+    // captura o pk do order_status_history nem threada o historyId no
+    // emitOrderStatusUpdate. O tap live cai no fallback ws:* e o backfill (M5)
+    // cria um SEGUNDO doc pra mesma transição → timeline duplicada. Os irmãos
+    // (markOrderInTransit) já capturam via RETURNING id e threadam o historyId;
+    // este path deve espelhar o mesmo padrão de convergência de id.
+    const OSH_ID = 'ccccccc5-0000-4000-8000-00000000000f';
+    const { conn } = fakeConn([
+      {
+        match: (s) => s.includes('t.label AS table_label FROM') && !s.includes('table_code'),
+        rows: [{ id: ORDER, status: 'in_transit', table_session_id: 'sess-1', table_label: 'Mesa 7' }],
+      },
+      {
+        match: (s) => s.startsWith('SELECT id, status, claimed_by FROM order_deliveries'),
+        rows: [{ id: 'del-9', status: 'claimed', claimed_by: STAFF_ANA }],
+      },
+      { match: (s) => s.startsWith('UPDATE order_deliveries SET status = '), rows: [] },
+      { match: (s) => s.startsWith('UPDATE orders SET status = '), rows: [] },
+      // O INSERT do evento deve pedir RETURNING id — o fake devolve o pk.
+      {
+        match: (s) => s.startsWith('INSERT INTO order_status_history'),
+        rows: [{ id: OSH_ID }],
+      },
+      // side-effects pós-delivered: lookup do customer/visit pro rating prompt
+      {
+        match: (s) => s.includes('v.customer_id') && s.includes('o.visit_id'),
+        rows: [{ customer_id: null, visit_id: null }],
+      },
+    ]);
+    const { emitted, gw } = fakeGateway();
+
+    const svc = new OrderDeliveryService(conn, fakeConsumption().svc, gw);
+    const out = await svc.markOrderDeliveredByWaiter(ORDER, 'restaurant_dev', STAFF_ANA);
+
+    // 1. O método retorna o historyId capturado do osh.
+    expect((out as { historyId?: string }).historyId).toBe(OSH_ID);
+    // 2. O evento live carrega o mesmo historyId (mesmo doc do backfill).
+    const statusUpdate = emitted.find((e) => e.method === 'emitOrderStatusUpdate')!;
+    expect(statusUpdate.args[4]).toMatchObject({ historyId: OSH_ID });
+  });
 });
 
 describe('OrderDeliveryService — roteamento por ZONA prioritária (decisão 2026-07-04)', () => {

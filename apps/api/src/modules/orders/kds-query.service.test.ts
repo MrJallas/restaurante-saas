@@ -107,6 +107,21 @@ describe('KdsQueryService — characterization (extraído do orders.service)', (
     expect(calls[0].sql).toContain("'size', oi.size");
   });
 
+  it("BUG P2 (KDS legado): getKitchenQueue exclui bebidas pelo kind (bebida não aparece no painel do cozinheiro)", async () => {
+    // O /cozinha (KDS legado) NÃO separava por estação: a query juntava
+    // `menu_items mi` mas nunca filtrava `mi.kind`, então uma bebida
+    // (kind='drink') caía na fila da cozinha. Isso é o 3º ponto que flipa o
+    // status de um pedido MISTO (food+drink), agravando o status compartilhado
+    // cozinha↔bar. Espelha o predicado do getActiveOrdersForKds('kitchen'):
+    // cozinha = tudo que NÃO é bebida pelo flag autoritativo (migration 016).
+    const { calls, conn } = fakeConn([]);
+    await new KdsQueryService(conn).getKitchenQueue();
+    const sql = calls[0].sql;
+    expect(sql).toContain("mi.kind <> 'drink'");
+    // Roteamento pelo FLAG, nunca pelo nome da categoria.
+    expect(sql.toLowerCase()).not.toContain("'bebidas'");
+  });
+
   it('getKitchenQueue devolve o resultado da query direto (passthrough)', async () => {
     const rows = [{ id: 'k1', status: 'received' }];
     const { conn } = fakeConn(rows);
