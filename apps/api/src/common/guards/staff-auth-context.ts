@@ -1,6 +1,7 @@
 import { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
 import { RedisService } from '../../infra/redis/redis.service';
 import { verifyStaffSessionToken } from '../auth/staff-session-token';
+import { readStaffMustChangePin } from './staff-role-cache';
 import type { StaffAuthRequest } from '../auth/staff-auth-request';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -88,6 +89,13 @@ export async function resolveAuthenticatedStaff(
   }
   if (!UUID_RE.test(staffId)) {
     return { error: 'invalid' };
+  }
+  // Enforcement de must_change_pin no path LEGADO (P2 hardening): o token já
+  // barra a flag acima; sem esta checagem, um PIN temporário burlava o gate
+  // mandando x-staff-id em vez do token. Leitura fresh do DB — os guards que
+  // compõem sobre isto já tratam 'pin_change_required'.
+  if (await readStaffMustChangePin(tenantConn, staffId)) {
+    return { error: 'pin_change_required' };
   }
   return { staffId, source: 'header' };
 }

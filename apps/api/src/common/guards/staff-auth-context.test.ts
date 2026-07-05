@@ -13,6 +13,9 @@ import type { RedisService } from '../../infra/redis/redis.service';
 import type { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
 
 const STAFF_ID = 'aaaaaaaa-0000-4000-8000-00000000000a';
+// id distinto por teste que toca o role-cache (module-level Map com TTL 60s):
+// evita bleed do must_change_pin entre casos no mesmo run.
+const STAFF_ID_MUSTCHANGE = 'bbbbbbbb-0000-4000-8000-00000000000b';
 const SLUG = 'restaurant_dev';
 
 function fakeRedis(): RedisService {
@@ -27,8 +30,19 @@ function fakeRedis(): RedisService {
   } as unknown as RedisService;
 }
 
-function fakeTenantConn(): TenantConnectionProvider {
-  return { getTenantSlug: () => SLUG } as unknown as TenantConnectionProvider;
+function fakeTenantConn(opts?: {
+  mustChangePin?: boolean;
+  role?: string;
+  active?: boolean;
+}): TenantConnectionProvider {
+  return {
+    getTenantSlug: () => SLUG,
+    // staff-role-cache: SELECT role, must_change_pin FROM staff WHERE id=$1 AND is_active=true
+    query: async (_sql: string, _params: unknown[]) => {
+      if (opts?.active === false) return [];
+      return [{ role: opts?.role ?? 'manager', must_change_pin: opts?.mustChangePin ?? false }];
+    },
+  } as unknown as TenantConnectionProvider;
 }
 
 describe('resolveAuthenticatedStaff — carimbo req.staffAuth (gate #34)', () => {
@@ -71,6 +85,25 @@ describe('resolveAuthenticatedStaff — carimbo req.staffAuth (gate #34)', () =>
     const resolved = await resolveAuthenticatedStaff(req, fakeTenantConn(), fakeRedis());
 
     expect(resolved).toMatchObject({ error: 'invalid' });
+    expect(req.staffAuth).toBeUndefined();
+  });
+
+  it('fallback legado x-staff-id com must_change_pin no DB → pin_change_required (P2: path legado honra a flag)', async () => {
+    const req: {
+      headers: Record<string, string | string[] | undefined>;
+      staffAuth?: StaffSessionPayload;
+    } = { headers: { 'x-staff-id': STAFF_ID_MUSTCHANGE } };
+
+    const resolved = await resolveAuthenticatedStaff(
+      req,
+      fakeTenantConn({ mustChangePin: true }),
+      fakeRedis(),
+    );
+
+    // Antes: o path header retornava {staffId, source:'header'} sem NUNCA olhar
+    // a flag — um PIN temporário burlava o gate via x-staff-id (o token path
+    // já barrava). Agora o path legado também recusa até a troca.
+    expect(resolved).toMatchObject({ error: 'pin_change_required' });
     expect(req.staffAuth).toBeUndefined();
   });
 

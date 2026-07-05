@@ -39,3 +39,21 @@ export async function getCachedActiveStaffRole(
 
   return role;
 }
+
+/**
+ * Lê `must_change_pin` do staff ativo — leitura FRESH (sem cache) usada só
+ * pelo path legado `x-staff-id` do resolveAuthenticatedStaff. Query própria
+ * (não toca a de role, que muitos fakes de teste casam por string exata), e
+ * fresh de propósito: o gate de PIN temporário não pode ter janela de
+ * staleness. O path legado é baixo-tráfego (retirando com STAFF_SESSION_REQUIRED).
+ */
+export async function readStaffMustChangePin(
+  tenantConn: TenantConnectionProvider,
+  staffId: string,
+): Promise<boolean> {
+  const rows = (await tenantConn.query(
+    `SELECT must_change_pin FROM staff WHERE id = $1 AND is_active = true`,
+    [staffId],
+  )) as { must_change_pin: boolean | null }[];
+  return rows[0]?.must_change_pin === true;
+}
