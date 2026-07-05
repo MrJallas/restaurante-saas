@@ -13,6 +13,7 @@ import { Transform } from 'class-transformer';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
+import type { ActorType } from '../../common/guards/staff-or-session.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { ZonePauseService } from './zone-pause.service';
 import { Req } from '@nestjs/common';
@@ -168,9 +169,28 @@ export class ZonePauseController {
     return this.end(slug, id, dto, req);
   }
 
+  /**
+   * P1 IDOR-READ (re-scan de convergência #6): branch por `actorType`
+   * carimbado pelo StaffOrSessionGuard. Um customer com x-session-token/cookie
+   * válido de QUALQUER mesa passa o guard como `actorType==='session'`; antes
+   * o handler chamava `service.list()` direto e devolvia o mapRow completo —
+   * `waiterName` / `startedByName` (nomes de staff), `startedBy` / `endedBy`
+   * (UUIDs de staff, vetor de escalação id→role→x-staff-id) e `reason` (nota
+   * interna do manager). O FE customer (useZonePause.ts) só consome
+   * `{ id, waiterId, endsAt }`.
+   *
+   * Session → `listPublic()` (projeção enxuta, sem JOIN em staff, zero PII).
+   * Staff (x-staff-key/x-staff-token) → `list()` completo: o dashboard PRECISA
+   * dos nomes/reason. Mesmo padrão de continuation (ec01ea1) e staff my-tables
+   * (B-NEW-44).
+   */
   @Get()
   @UseGuards(StaffOrSessionGuard)
-  async list(@Query() q: ListQueryDto) {
-    return this.service.list({ active: q.active, waiterId: q.waiterId });
+  async list(@Query() q: ListQueryDto, @Req() req: Request & { actorType?: ActorType }) {
+    const filters = { active: q.active, waiterId: q.waiterId };
+    if (req.actorType === 'session') {
+      return this.service.listPublic(filters);
+    }
+    return this.service.list(filters);
   }
 }

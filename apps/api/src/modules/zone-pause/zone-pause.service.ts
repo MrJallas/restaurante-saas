@@ -192,6 +192,54 @@ export class ZonePauseService {
     return rows.map((r) => this.mapRow(r));
   }
 
+  /**
+   * P1 IDOR-READ (re-scan de convergência #6): projeção enxuta pro caller
+   * de SESSÃO (customer). O `list()` acima faz JOIN em `staff` e o `mapRow`
+   * expõe `waiterName` / `startedByName` (nomes completos), `startedBy` /
+   * `endedBy` (UUIDs de staff → vetor de escalação id→role→x-staff-id, mesmo
+   * leak que staff.controller já bloqueia) e `reason` (nota interna do
+   * manager). O FE customer (useZonePause.ts, interface ActiveZonePause) só
+   * consome `{ id, waiterId, endsAt }` — então aqui NÃO fazemos o JOIN e
+   * projetamos SÓ o que ele precisa (+ `active`, derivado). Nenhum campo de
+   * staff pode existir nesta linha, nem por acidente.
+   *
+   * Mesma classe que a Wave 13 fechou em staff/performance (b51a8ef) e
+   * continuation (ec01ea1): branch por actorType no controller. Staff continua
+   * batendo no `list()` completo — o dashboard PRECISA dos nomes/reason.
+   */
+  async listPublic(filters: { active?: boolean; waiterId?: string }) {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    let i = 1;
+    if (filters.waiterId) {
+      where.push(`waiter_id = $${i++}`);
+      params.push(filters.waiterId);
+    }
+    if (filters.active !== undefined) {
+      if (filters.active) {
+        where.push(`ended_at IS NULL AND ends_at > now()`);
+      } else {
+        where.push(`(ended_at IS NOT NULL OR ends_at <= now())`);
+      }
+    }
+    const sql = `SELECT id, waiter_id, ends_at, ended_at
+                   FROM zone_pauses
+                 ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                 ORDER BY started_at DESC LIMIT 100`;
+    const rows = (await this.tenantConn.query(sql, params)) as Array<Record<string, unknown>>;
+    return rows.map((row) => {
+      const endedAt = (row.ended_at as string | null) ?? null;
+      const endsAt = row.ends_at as string;
+      const active = endedAt === null && (!endsAt || new Date(endsAt).getTime() > Date.now());
+      return {
+        id: row.id as string,
+        waiterId: row.waiter_id as string,
+        endsAt,
+        active,
+      };
+    });
+  }
+
   private mapRow(row: Record<string, unknown>) {
     const endedAt = (row.ended_at as string | null) ?? null;
     const endsAt = row.ends_at as string;
