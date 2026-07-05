@@ -53,6 +53,8 @@ interface ShiftMember {
   init: string;
   role: string;
   color: string;
+  /** Hora extra autorizada (minutos). 0 = sem hora extra. */
+  overtimeMinutes: number;
 }
 
 interface Shift {
@@ -121,7 +123,20 @@ function memberFromEntry(e: ShiftMemberEntry): ShiftMember {
     init: staffInitials(e.staff_name),
     role: e.staff_role,
     color: staffColor(e.staff_id),
+    // Bug: a hora extra autorizada persistia no banco (overtime_minutes) mas
+    // este mapper a descartava — o gerente autorizava e a UI não dava feedback
+    // nenhum. Agora ela é preservada e exibida no MemberRow.
+    overtimeMinutes: e.overtime_minutes ?? 0,
   };
+}
+
+/** "90 min" → "+1H30" · "60" → "+1H" · "30" → "+30MIN" (label compacto). */
+function formatOvertime(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h > 0 && m > 0) return `+${h}H${String(m).padStart(2, '0')}`;
+  if (h > 0) return `+${h}H`;
+  return `+${m}MIN`;
 }
 
 function todayISO(): string {
@@ -144,7 +159,7 @@ interface StaffRosterEntry {
 // Screen
 // ─────────────────────────────────────────────────────────────
 
-type ModalKind = 'more' | 'add' | null;
+type ModalKind = 'more' | 'add' | 'new' | null;
 
 export interface ScreenManagerShiftEditorProps {
   dark?: boolean;
@@ -282,12 +297,34 @@ export function ScreenManagerShiftEditor({
     }
   };
   const onAdd = async (staffId: string) => {
-    const shiftId = targetShiftId ?? shifts.find((s) => s.isCurrent)?.id;
-    if (!shiftId) return;
+    // O AddSheet só abre a partir de um ShiftCard específico (que seta
+    // targetShiftId). Sem o fallback silencioso pro turno "Atual" — era ele
+    // que fazia a escala cair no turno errado quando targetShiftId estava
+    // obsoleto de uma interação anterior.
+    const shiftId = targetShiftId;
+    if (!shiftId) {
+      setErrorMsg('Escolha o turno antes de adicionar o funcionário.');
+      return;
+    }
     setBusy(true);
     try {
       await api.shifts.addMember({ shiftId, staffId, workDate });
       await refresh();
+      setActiveModal(null);
+      setTargetShiftId(null);
+    } catch (e) {
+      setErrorMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const onCreateShift = async (payload: { label: string; timeStart: string; timeEnd: string }) => {
+    setBusy(true);
+    try {
+      const created = await api.shifts.createShift(payload);
+      await refresh();
+      // Abre o card do turno recém-criado pro gerente já escalar alguém.
+      setOpen((prev) => ({ ...prev, [created.id]: true }));
       setActiveModal(null);
     } catch (e) {
       setErrorMsg((e as Error).message);
@@ -295,6 +332,7 @@ export function ScreenManagerShiftEditor({
       setBusy(false);
     }
   };
+
   const onDuplicateWeek = async () => {
     setBusy(true);
     try {
@@ -338,7 +376,7 @@ export function ScreenManagerShiftEditor({
         right={
           <button
             type="button"
-            onClick={() => setActiveModal('add')}
+            onClick={() => setActiveModal('new')}
             style={{
               all: 'unset',
               cursor: 'pointer',
@@ -495,8 +533,21 @@ export function ScreenManagerShiftEditor({
             )
           }
           busy={busy}
-          onClose={() => setActiveModal(null)}
+          onClose={() => {
+            setActiveModal(null);
+            setTargetShiftId(null);
+          }}
           onAdd={onAdd}
+        />
+      )}
+
+      {activeModal === 'new' && (
+        <NewShiftSheet
+          C={C}
+          dark={dark}
+          busy={busy}
+          onClose={() => setActiveModal(null)}
+          onCreate={onCreateShift}
         />
       )}
     </div>
@@ -715,16 +766,45 @@ function MemberRow({
         </div>
         <div
           style={{
-            fontSize: 9.5,
-            color: C.faint,
-            fontWeight: 700,
-            letterSpacing: 0.6,
-            textTransform: 'uppercase',
-            fontFamily: MONO_FONT,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
             marginTop: 1,
+            flexWrap: 'wrap',
           }}
         >
-          {m.role}
+          <span
+            style={{
+              fontSize: 9.5,
+              color: C.faint,
+              fontWeight: 700,
+              letterSpacing: 0.6,
+              textTransform: 'uppercase',
+              fontFamily: MONO_FONT,
+            }}
+          >
+            {m.role}
+          </span>
+          {m.overtimeMinutes > 0 && (
+            <span
+              aria-label={`Hora extra autorizada: ${m.overtimeMinutes} minutos`}
+              style={{
+                fontSize: 9,
+                fontWeight: 800,
+                letterSpacing: 0.4,
+                fontFamily: MONO_FONT,
+                color: '#7A4D10',
+                background: '#FFF7E6',
+                border: '1px solid #F0DCB6',
+                borderRadius: 999,
+                padding: '1px 6px',
+                lineHeight: 1.4,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              HORA EXTRA {formatOvertime(m.overtimeMinutes)}
+            </span>
+          )}
         </div>
       </div>
       <button
@@ -984,6 +1064,118 @@ function AddSheet({
           </button>
         </div>
       ))}
+    </SheetBase>
+  );
+}
+
+function NewShiftSheet({
+  C,
+  dark,
+  busy,
+  onClose,
+  onCreate,
+}: {
+  C: ReturnType<typeof useG>;
+  dark: boolean;
+  busy: boolean;
+  onClose: () => void;
+  onCreate: (payload: { label: string; timeStart: string; timeEnd: string }) => void;
+}) {
+  const [label, setLabel] = useState('');
+  const [timeStart, setTimeStart] = useState('23:00');
+  const [timeEnd, setTimeEnd] = useState('02:00');
+  const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const valid = label.trim().length > 0 && HHMM.test(timeStart) && HHMM.test(timeEnd);
+
+  const inputStyle: React.CSSProperties = {
+    boxSizing: 'border-box',
+    width: '100%',
+    padding: '11px 12px',
+    borderRadius: 12,
+    border: `1.5px solid ${C.borderSoft}`,
+    background: C.bg,
+    color: C.ink,
+    fontSize: 14,
+    fontWeight: 600,
+    fontFamily: G_FONT,
+  };
+  const fieldLabel: React.CSSProperties = {
+    fontSize: 10,
+    color: C.faint,
+    fontWeight: 700,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    fontFamily: MONO_FONT,
+    marginBottom: 5,
+  };
+
+  return (
+    <SheetBase
+      C={C}
+      dark={dark}
+      onClose={onClose}
+      title="Novo turno"
+      subtitle="Cria uma faixa de horário nova (ex: encerramento 23h–02h). Depois você escala a equipe nele."
+    >
+      <div style={{ marginBottom: 12 }}>
+        <div style={fieldLabel}>Nome do turno</div>
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          maxLength={40}
+          placeholder="Ex: Encerramento"
+          aria-label="Nome do turno"
+          style={inputStyle}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 4 }}>
+        <div style={{ flex: 1 }}>
+          <div style={fieldLabel}>Início</div>
+          <input
+            type="time"
+            value={timeStart}
+            onChange={(e) => setTimeStart(e.target.value)}
+            aria-label="Horário de início"
+            style={inputStyle}
+          />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={fieldLabel}>Fim</div>
+          <input
+            type="time"
+            value={timeEnd}
+            onChange={(e) => setTimeEnd(e.target.value)}
+            aria-label="Horário de fim"
+            style={inputStyle}
+          />
+        </div>
+      </div>
+      <button
+        type="button"
+        disabled={busy || !valid}
+        onClick={() => onCreate({ label: label.trim(), timeStart, timeEnd })}
+        style={{
+          all: 'unset',
+          cursor: busy || !valid ? 'not-allowed' : 'pointer',
+          boxSizing: 'border-box',
+          width: '100%',
+          height: 46,
+          marginTop: 14,
+          borderRadius: 12,
+          background: C.ink,
+          color: C.bg,
+          fontSize: 14,
+          fontWeight: 800,
+          letterSpacing: -0.1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: busy || !valid ? 0.45 : 1,
+        }}
+      >
+        {busy ? 'Criando…' : 'Criar turno'}
+      </button>
     </SheetBase>
   );
 }

@@ -76,6 +76,60 @@ export class ShiftsService {
     }));
   }
 
+  /**
+   * "+ Novo turno" (ScreenManagerShiftEditor): cria uma DEFINIÇÃO de turno
+   * nova em `staff_shifts` — o que a migration 043 já previa ("permite +
+   * Novo turno criar definicoes adicionais, ex: encerramento 23-02") mas nunca
+   * teve rota. Devolve no MESMO shape de `listForDate` (com members: []) pra o
+   * screen renderizar o card sem refetch. O `sort_order` = MAX(sort_order)+1
+   * coloca o turno novo no fim da lista.
+   */
+  async createShift(data: {
+    label: string;
+    timeStart: string;
+    timeEnd: string;
+  }): Promise<ShiftWithMembersRow> {
+    const label = data.label.trim();
+    if (!label) {
+      throw new BadRequestException('Informe um nome para o turno.');
+    }
+    if (label.length > 40) {
+      throw new BadRequestException('Nome do turno muito longo (máx. 40 caracteres).');
+    }
+    const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    if (!HHMM.test(data.timeStart) || !HHMM.test(data.timeEnd)) {
+      throw new BadRequestException('Horário inválido — use HH:MM (00:00–23:59).');
+    }
+
+    const rangeLabel = this.rangeLabelFor(data.timeStart, data.timeEnd);
+
+    const maxRows = (await this.tenantConn.query(
+      `SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM staff_shifts`,
+      [],
+    )) as Array<{ max_sort: number | string }>;
+    const nextSort = Number(maxRows[0]?.max_sort ?? 0) + 1;
+
+    const rows = unwrapRows<ShiftDefinitionRow>(
+      await this.tenantConn.query(
+        `INSERT INTO staff_shifts (label, range_label, time_start, time_end, sort_order)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, label, range_label,
+                   time_start::text AS time_start, time_end::text AS time_end, sort_order`,
+        [label.toUpperCase(), rangeLabel, data.timeStart, data.timeEnd, nextSort],
+      ),
+    );
+    if (!rows.length) {
+      throw new BadRequestException('Não foi possível criar o turno.');
+    }
+    return { ...rows[0], members: [] };
+  }
+
+  /** "06:00"/"12:00" → "06H – 12H" (canon dos seeds da migration 043). */
+  private rangeLabelFor(timeStart: string, timeEnd: string): string {
+    const hh = (t: string) => t.slice(0, 2);
+    return `${hh(timeStart)}H – ${hh(timeEnd)}H`;
+  }
+
   async addMember(data: {
     shiftId: string;
     staffId: string;

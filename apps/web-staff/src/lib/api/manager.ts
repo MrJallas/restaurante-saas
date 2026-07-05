@@ -845,6 +845,10 @@ export const shiftsApi = (slug: string) => ({
     const q = date ? `?date=${date}` : '';
     return staffGet<ShiftWithMembers[]>(`/${slug}/shifts${q}`);
   },
+  // "+ Novo turno": cria uma DEFINIÇÃO de turno nova (staff_shifts). Devolve o
+  // turno já no shape de `list` (com `members: []`).
+  createShift: (payload: { label: string; timeStart: string; timeEnd: string }) =>
+    staffPost<ShiftWithMembers>(`/${slug}/shifts`, payload),
   addMember: (payload: { shiftId: string; staffId: string; workDate: string }) =>
     staffPost<ShiftMemberEntry & { shift_id: string }>(`/${slug}/shifts/assignments`, payload),
   moveMember: (assignmentId: string, toShiftId: string) =>

@@ -37,11 +37,36 @@ interface TopItem {
   category_name: string;
 }
 
+interface ActiveTableRow {
+  sessionId: string;
+  tableLabel: string;
+  tableNumber: number;
+  openedMinutes: number;
+  people: number;
+  subtotalCents: number;
+}
+
+interface LateOrderRow {
+  orderId: string;
+  tableLabel: string;
+  minutesInPrep: number;
+  itemCount: number;
+}
+
+interface ActiveTablesData {
+  tables: ActiveTableRow[];
+  lateOrders: LateOrderRow[];
+  kitchenEtaMaxMinutes: number | null;
+}
+
 const PERIOD_DAYS: Record<string, number> = {
   today: 1,
   '7d': 7,
   '30d': 30,
 };
+
+const KNOWN_KINDS = ['faturamento', 'pedidos', 'ticket-medio', 'pendentes'] as const;
+type Kind = (typeof KNOWN_KINDS)[number];
 
 function money(cents: number): string {
   return new Intl.NumberFormat('pt-BR', {
@@ -63,24 +88,38 @@ function FinanceDetailInner() {
     'restaurant_dev';
   const period = params.get('period') || '7d';
   const days = PERIOD_DAYS[period] ?? 7;
-  const kind = route?.kind ?? 'faturamento';
+  const rawKind = route?.kind ?? 'faturamento';
+  const kind: Kind = (KNOWN_KINDS as readonly string[]).includes(rawKind)
+    ? (rawKind as Kind)
+    : 'faturamento';
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [revenue, setRevenue] = useState<RevenuePoint[]>([]);
   const [topItems, setTopItems] = useState<TopItem[]>([]);
+  const [activeTables, setActiveTables] = useState<ActiveTablesData | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    // "Pendentes" é um recorte AO VIVO (pedidos abertos / mesas ativas / cozinha
+    // atrasada), não uma série histórica. Puxa a fonte real (active-tables) só
+    // nesse kind; os demais usam revenue/top-items.
+    const isPending = kind === 'pendentes';
     Promise.all([
       staffGet<OverviewData>(`/${slug}/dashboard/overview`),
       staffGet<RevenuePoint[]>(`/${slug}/dashboard/revenue?days=${days}`),
-      staffGet<{ items: TopItem[] }>(`/${slug}/dashboard/top-items?limit=8`),
+      isPending
+        ? Promise.resolve<{ items: TopItem[] }>({ items: [] })
+        : staffGet<{ items: TopItem[] }>(`/${slug}/dashboard/top-items?limit=8`),
+      isPending
+        ? staffGet<ActiveTablesData>(`/${slug}/dashboard/active-tables`)
+        : Promise.resolve<ActiveTablesData | null>(null),
     ])
-      .then(([overviewRes, revenueRes, topRes]) => {
+      .then(([overviewRes, revenueRes, topRes, activeRes]) => {
         if (cancelled) return;
         setOverview(overviewRes);
         setRevenue(revenueRes);
         setTopItems(topRes.items ?? []);
+        setActiveTables(activeRes);
         setErrorMsg(null);
       })
       .catch((err: Error) => {
@@ -89,7 +128,7 @@ function FinanceDetailInner() {
     return () => {
       cancelled = true;
     };
-  }, [days, slug]);
+  }, [days, slug, kind]);
 
   const totals = useMemo(() => {
     const revenueCents = revenue.reduce((sum, row) => sum + row.revenueCents, 0);
@@ -161,7 +200,7 @@ function FinanceDetailInner() {
               textTransform: 'uppercase',
             }}
           >
-            Período
+            {kind === 'pendentes' ? 'Agora' : 'Período'}
           </div>
           <div style={{ marginTop: 5, fontSize: 28, fontWeight: 900, letterSpacing: -0.7 }}>
             {kind === 'pedidos'
@@ -174,37 +213,185 @@ function FinanceDetailInner() {
           </div>
         </div>
 
-        <SectionTitle C={C}>Receita por dia</SectionTitle>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {revenue.map((row) => (
-            <DetailRow
-              key={row.date}
-              C={C}
-              left={new Date(row.date).toLocaleDateString('pt-BR', {
-                weekday: 'short',
-                day: '2-digit',
-                month: '2-digit',
-              })}
-              right={money(row.revenueCents)}
-              sub={`${row.orders} pedidos`}
-            />
-          ))}
-        </div>
-
-        <SectionTitle C={C}>Mais vendidos</SectionTitle>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {topItems.map((item) => (
-            <DetailRow
-              key={item.id}
-              C={C}
-              left={item.name}
-              right={`${item.total_orders}`}
-              sub={item.category_name}
-            />
-          ))}
-        </div>
+        {kind === 'pendentes' ? (
+          <PendingBody C={C} overview={overview} activeTables={activeTables} />
+        ) : (
+          <SeriesBody C={C} kind={kind} revenue={revenue} topItems={topItems} />
+        )}
       </div>
       <MBottomNav active="finance" onTo={(r) => router.push(r)} />
+    </div>
+  );
+}
+
+/**
+ * Corpo dos kinds de SÉRIE (faturamento · pedidos · ticket-medio): a linha
+ * "por dia" mostra a MÉTRICA do kind (não sempre a receita), e o "Mais
+ * vendidos" ranqueia por receita ou por pedidos conforme o kind.
+ */
+function SeriesBody({
+  C,
+  kind,
+  revenue,
+  topItems,
+}: {
+  C: ReturnType<typeof useG>;
+  kind: Kind;
+  revenue: RevenuePoint[];
+  topItems: TopItem[];
+}) {
+  const dayTitle =
+    kind === 'pedidos'
+      ? 'Pedidos por dia'
+      : kind === 'ticket-medio'
+        ? 'Ticket médio por dia'
+        : 'Receita por dia';
+
+  const dayValue = (row: RevenuePoint): string => {
+    if (kind === 'pedidos') return `${row.orders}`;
+    if (kind === 'ticket-medio') {
+      return money(row.orders > 0 ? Math.round(row.revenueCents / row.orders) : 0);
+    }
+    return money(row.revenueCents);
+  };
+
+  const daySub = (row: RevenuePoint): string => {
+    // Mostra a segunda dimensão pra não repetir o valor do hero.
+    if (kind === 'pedidos') return money(row.revenueCents);
+    if (kind === 'ticket-medio') return `${row.orders} pedidos`;
+    return `${row.orders} pedidos`;
+  };
+
+  return (
+    <>
+      <SectionTitle C={C}>{dayTitle}</SectionTitle>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {revenue.map((row) => (
+          <DetailRow
+            key={row.date}
+            C={C}
+            left={new Date(row.date).toLocaleDateString('pt-BR', {
+              weekday: 'short',
+              day: '2-digit',
+              month: '2-digit',
+            })}
+            right={dayValue(row)}
+            sub={daySub(row)}
+          />
+        ))}
+      </div>
+
+      <SectionTitle C={C}>Mais vendidos</SectionTitle>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {topItems.map((item) => (
+          <DetailRow
+            key={item.id}
+            C={C}
+            left={item.name}
+            right={
+              kind === 'faturamento'
+                ? money(item.price_cents * item.total_orders)
+                : `${item.total_orders}`
+            }
+            sub={
+              kind === 'faturamento'
+                ? `${item.total_orders} pedidos · ${item.category_name}`
+                : item.category_name
+            }
+          />
+        ))}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Corpo do kind "pendentes": recorte AO VIVO. O hero (pedidos abertos) casa com
+ * a lista de mesas ativas e a fila da cozinha atrasada — antes o corpo mostrava
+ * "Receita por dia", desconectado do herói de pendentes.
+ */
+function PendingBody({
+  C,
+  overview,
+  activeTables,
+}: {
+  C: ReturnType<typeof useG>;
+  overview: OverviewData | null;
+  activeTables: ActiveTablesData | null;
+}) {
+  const tables = activeTables?.tables ?? [];
+  const lateOrders = activeTables?.lateOrders ?? [];
+  const pending = overview?.today.pendingOrders ?? 0;
+
+  return (
+    <>
+      <SectionTitle C={C}>Cozinha atrasada</SectionTitle>
+      {lateOrders.length === 0 ? (
+        <EmptyRow
+          C={C}
+          text={
+            activeTables?.kitchenEtaMaxMinutes == null
+              ? 'Meta de tempo da cozinha não configurada.'
+              : 'Nenhum pedido acima da meta da cozinha agora.'
+          }
+        />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {lateOrders.map((o) => (
+            <DetailRow
+              key={o.orderId}
+              C={C}
+              left={o.tableLabel}
+              right={`${o.minutesInPrep} min`}
+              sub={`${o.itemCount} ${o.itemCount === 1 ? 'item' : 'itens'} em preparo`}
+            />
+          ))}
+        </div>
+      )}
+
+      <SectionTitle C={C}>Mesas abertas agora</SectionTitle>
+      {tables.length === 0 ? (
+        <EmptyRow C={C} text="Nenhuma mesa com sessão aberta." />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {tables.map((t) => (
+            <DetailRow
+              key={t.sessionId}
+              C={C}
+              left={t.tableLabel}
+              right={money(t.subtotalCents)}
+              sub={`${t.openedMinutes} min · ${t.people} ${t.people === 1 ? 'pessoa' : 'pessoas'}`}
+            />
+          ))}
+        </div>
+      )}
+
+      <div
+        style={{ marginTop: 14, fontSize: 11.5, color: C.faint, fontWeight: 500, lineHeight: 1.5 }}
+      >
+        {pending} {pending === 1 ? 'pedido pendente' : 'pedidos pendentes'} no total (não entregues
+        / não cancelados). A cozinha atrasada e as mesas abertas acima são a fonte ao vivo desse
+        número.
+      </div>
+    </>
+  );
+}
+
+function EmptyRow({ C, text }: { C: ReturnType<typeof useG>; text: string }) {
+  return (
+    <div
+      style={{
+        borderRadius: 10,
+        border: `1px dashed ${C.borderSoft}`,
+        background: C.surface,
+        padding: '14px 12px',
+        fontSize: 12.5,
+        color: C.mute,
+        fontWeight: 500,
+        textAlign: 'center',
+      }}
+    >
+      {text}
     </div>
   );
 }

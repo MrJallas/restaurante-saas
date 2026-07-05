@@ -41,6 +41,12 @@ class DateQuery {
 // validates apenas o formato 8-4-4-4-12 hex.
 const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+class CreateShiftDto {
+  @IsString() @MaxLength(40) label!: string;
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/) timeStart!: string;
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/) timeEnd!: string;
+}
+
 class AddMemberDto {
   @Matches(UUID_LIKE) shiftId!: string;
   @IsUUID() staffId!: string;
@@ -97,6 +103,16 @@ export class ShiftsController {
   async list(@Query() q: DateQuery) {
     const date = q.date ?? new Date().toISOString().slice(0, 10);
     return this.service.listForDate(date);
+  }
+
+  @Post()
+  @HttpCode(201)
+  async createShift(@Body() dto: CreateShiftDto) {
+    return this.service.createShift({
+      label: dto.label,
+      timeStart: dto.timeStart,
+      timeEnd: dto.timeEnd,
+    });
   }
 
   @Post('assignments')

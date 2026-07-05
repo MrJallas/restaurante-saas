@@ -49,8 +49,12 @@ export function ScreenManagerProfile({
   managerName = 'Gerente',
   managerInitials,
   managerColor = '#7A4FBE',
-  shift = 'Turno da noite (17h–02h)',
-  shiftStartedAt = '17:02',
+  // Anti-placebo: sem default cravado. A tela só mostra "em turno desde HH:MM"
+  // (e o nome do turno) quando o horário REAL de início chega por prop — não
+  // existe fonte de shift-clock-in na sessão hoje, então cravar "17:02" era
+  // uma afirmação falsa. Ausente = não mostra a linha (não mente).
+  shift,
+  shiftStartedAt,
   role = 'manager',
   unreadMessages = 0,
   bellBadge = 0,
@@ -175,32 +179,35 @@ export function ScreenManagerProfile({
               {managerName}
             </div>
             <div style={{ fontSize: 12, color: C.faint, marginTop: 3, fontWeight: 600 }}>
-              {isOwner ? 'Dona' : 'Gerente'} · {shift}
+              {isOwner ? 'Dona' : 'Gerente'}
+              {shift ? ` · ${shift}` : ''}
             </div>
-            <div
-              style={{
-                fontSize: 11,
-                color: '#1E8C5A',
-                marginTop: 6,
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                letterSpacing: 0.3,
-                textTransform: 'uppercase',
-              }}
-            >
-              <span
+            {shiftStartedAt && (
+              <div
                 style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: '50%',
-                  background: '#1E8C5A',
-                  animation: 'gPulse 2s infinite',
+                  fontSize: 11,
+                  color: '#1E8C5A',
+                  marginTop: 6,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  letterSpacing: 0.3,
+                  textTransform: 'uppercase',
                 }}
-              />
-              em turno desde {shiftStartedAt}
-            </div>
+              >
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    background: '#1E8C5A',
+                    animation: 'gPulse 2s infinite',
+                  }}
+                />
+                em turno desde {shiftStartedAt}
+              </div>
+            )}
           </div>
         </div>
 
@@ -271,8 +278,8 @@ export function ScreenManagerProfile({
                   lineHeight: 1.4,
                 }}
               >
-                Só o que entrou desde que você abriu o turno ({shiftStartedAt}). Veja o dia inteiro
-                no Financeiro.
+                Só o que entrou desde que você abriu o turno
+                {shiftStartedAt ? ` (${shiftStartedAt})` : ''}. Veja o dia inteiro no Financeiro.
               </div>
             </div>
           </div>
