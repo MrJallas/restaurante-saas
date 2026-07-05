@@ -8,7 +8,7 @@ import {
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
-import { hashPin, timingSafeEqualHex } from './staff-pin.util';
+import { hashPin, verifyPin as verifyPinHash, isLegacyPinHash } from './staff-pin.util';
 
 // Round 18 (Onda 1 wiring): inclui host/bartender/cashier — canvas
 // StaffForm permite todos os 6 roles. host ja existia em registros
@@ -722,11 +722,30 @@ export class StaffService {
 
     if (!rows.length) return false;
 
-    const ok = timingSafeEqualHex(rows[0].pin_hash, hashPin(pin));
+    // OWASP A02: detecta o formato do hash armazenado (bcrypt novo ou SHA-256
+    // legado). O sal por-usuário do bcrypt embute no hash — não dá mais pra
+    // comparar hashPin(pin) por igualdade.
+    const ok = verifyPinHash(pin, rows[0].pin_hash);
 
     if (ok) {
       // Sucesso reseta o contador.
       await this.redis.del(attemptsKey);
+      // Backfill lazy: PIN certo + hash legado = migra pra bcrypt agora
+      // (plaintext só existe aqui). Best-effort — não derruba a verificação.
+      if (isLegacyPinHash(rows[0].pin_hash)) {
+        try {
+          await this.tenantConn.query(
+            `UPDATE staff
+                SET pin_hash = $1, updated_at = now()
+              WHERE id = $2
+                AND is_active = true
+                AND pin_hash NOT LIKE '$2%'`,
+            [hashPin(pin), id],
+          );
+        } catch {
+          // Oportunístico — próxima verificação tenta de novo.
+        }
+      }
       return true;
     }
 

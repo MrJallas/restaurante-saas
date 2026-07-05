@@ -2,7 +2,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import { StaffAuthService } from './staff-auth.service';
 import type { RedisService } from '../../infra/redis/redis.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
-import { hashPin } from '../staff/staff-pin.util';
+import { hashPin, verifyPin } from '../staff/staff-pin.util';
 import {
   issueStaffSessionToken,
   verifyStaffSessionToken,
@@ -214,10 +214,13 @@ describe('StaffAuthService.changePin', () => {
       newPin: '987654',
     });
 
-    // UPDATE com o hash do PIN novo + must_change_pin = false.
+    // UPDATE com o hash do PIN novo + must_change_pin = false. bcrypt é
+    // não-determinístico (sal por-usuário), então verifica-se que o hash
+    // gravado VALIDA o PIN novo — não igualdade byte-a-byte.
     expect(updates).toHaveLength(1);
     expect(updates[0].sql).toMatch(/must_change_pin\s*=\s*false/i);
-    expect(updates[0].params[0]).toBe(hashPin('987654'));
+    expect(updates[0].params[0]).toMatch(/^\$2[aby]\$/);
+    expect(verifyPin('987654', updates[0].params[0] as string)).toBe(true);
     expect(updates[0].params[1]).toBe(STAFF_ID);
 
     // Token NOVO no body (o proxy vira cookie) — e ele verifica.

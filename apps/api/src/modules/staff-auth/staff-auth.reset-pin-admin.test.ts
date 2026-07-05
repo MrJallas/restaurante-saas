@@ -5,7 +5,7 @@ import { StaffAuthService } from './staff-auth.service';
 import { StaffPinAdminController } from './staff-pin-admin.controller';
 import { RedisService } from '../../infra/redis/redis.service';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
-import { hashPin } from '../staff/staff-pin.util';
+import { verifyPin } from '../staff/staff-pin.util';
 import {
   issueStaffSessionToken,
   verifyStaffSessionToken,
@@ -124,10 +124,12 @@ describe('StaffAuthService.managerResetPin', () => {
     expect(result.tempPin).toMatch(/^\d{6}$/);
     expect(result.staff).toMatchObject({ id: TARGET_ID, name: 'Marina' });
 
-    // UPDATE: hash do tempPin devolvido + flag must_change_pin=true.
+    // UPDATE: hash do tempPin devolvido + flag must_change_pin=true. bcrypt é
+    // não-determinístico — verifica-se que o hash gravado VALIDA o tempPin.
     expect(updates).toHaveLength(1);
     expect(updates[0].sql).toMatch(/must_change_pin\s*=\s*true/i);
-    expect(updates[0].params[0]).toBe(hashPin(result.tempPin));
+    expect(updates[0].params[0]).toMatch(/^\$2[aby]\$/);
+    expect(verifyPin(result.tempPin, updates[0].params[0] as string)).toBe(true);
     expect(updates[0].params[1]).toBe(TARGET_ID);
 
     // Sessões do alvo revogadas.

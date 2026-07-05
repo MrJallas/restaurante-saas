@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, ServiceUnavailableException } from '@n
 import { randomUUID } from 'crypto';
 import { MongoService } from '../../infra/mongo/mongo.service';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
-import { hashPin, timingSafeEqualHex } from '../staff/staff-pin.util';
+import { hashPin, verifyPin } from '../staff/staff-pin.util';
 
 const PREFS_COLLECTION = 'manager_preferences';
 const SESSIONS_COLLECTION = 'manager_sessions';
@@ -103,7 +103,9 @@ export class ManagerAccountService {
       [staffId],
     )) as Array<{ pin_hash: string }>;
     const currentHash = rows[0]?.pin_hash;
-    if (!currentHash || !timingSafeEqualHex(currentHash, hashPin(input.currentPin))) {
+    // OWASP A02: verifyPin detecta bcrypt novo vs SHA-256 legado; o sucesso já
+    // regrava o nextPin como bcrypt logo abaixo, então a troca também migra.
+    if (!currentHash || !verifyPin(input.currentPin, currentHash)) {
       throw new BadRequestException({
         message_user: 'PIN atual não confere.',
         code: 'PIN_MISMATCH',

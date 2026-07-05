@@ -3,7 +3,7 @@ import { randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { RedisService } from '../../infra/redis/redis.service';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
-import { hashPin, timingSafeEqualHex } from '../staff/staff-pin.util';
+import { hashPin, verifyPin, isLegacyPinHash } from '../staff/staff-pin.util';
 import {
   issueStaffSessionToken,
   revokeStaffSessions,
@@ -88,7 +88,7 @@ export class StaffAuthService {
 
     const staff = await this.findActiveByCpf(cpf);
     const expectedHash = staff?.pin_hash ?? DUMMY_PIN_HASH;
-    const pinMatches = timingSafeEqualHex(expectedHash, hashPin(input.pin));
+    const pinMatches = verifyPin(input.pin, expectedHash);
     const authenticated = Boolean(staff && pinMatches);
 
     if (!authenticated) {
@@ -100,6 +100,15 @@ export class StaffAuthService {
         LOGIN_CPF_WINDOW_SECONDS,
       );
       throw this.authFailure();
+    }
+
+    // Backfill lazy do hash (OWASP A02): o login é o ÚNICO ponto onde o
+    // plaintext do PIN existe junto com um hash que acabou de bater. Se o hash
+    // armazenado ainda é o SHA-256 legado, re-hasheia com bcrypt AGORA — sem
+    // forçar reset, transparente pro staff. Best-effort: uma falha aqui não
+    // pode derrubar o login (o hash legado segue verificando).
+    if (isLegacyPinHash(staff!.pin_hash)) {
+      await this.backfillPinHash(staff!.id, input.pin);
     }
 
     await this.redis.del(`${throttleKey}:attempts`);
@@ -188,7 +197,10 @@ export class StaffAuthService {
     // staff inexistente/desativado — comparação sempre roda (timing-safe).
     const staff = await this.findActiveById(payload.staffId);
     const expectedHash = staff?.pin_hash ?? DUMMY_PIN_HASH;
-    const pinMatches = timingSafeEqualHex(expectedHash, hashPin(input.currentPin));
+    // Verifica o currentPin detectando o formato (bcrypt novo ou SHA-256
+    // legado). O sucesso já grava o newPin como bcrypt logo abaixo, então a
+    // troca também migra o hash — sem backfill separado aqui.
+    const pinMatches = verifyPin(input.currentPin, expectedHash);
 
     if (!staff || !pinMatches) {
       // currentPin errado é TENTATIVA — 5 falhas em 15min travam por 15min.
@@ -476,6 +488,28 @@ export class StaffAuthService {
       [cpf],
     )) as StaffAuthRow[];
     return rows[0] ?? null;
+  }
+
+  /**
+   * Backfill lazy do hash de PIN (OWASP A02). Re-hasheia o PIN (já verificado
+   * no login) com bcrypt e grava — mas SÓ enquanto o hash ainda for legado
+   * (`AND pin_hash NOT LIKE '$2%'`), pra não competir com uma troca/reset
+   * concorrente que já modernizou o hash. Best-effort: engole erro pra jamais
+   * derrubar um login que já autenticou.
+   */
+  private async backfillPinHash(staffId: string, plainPin: string): Promise<void> {
+    try {
+      await this.tenantConn.query(
+        `UPDATE staff
+            SET pin_hash = $1, updated_at = now()
+          WHERE id = $2
+            AND is_active = true
+            AND pin_hash NOT LIKE '$2%'`,
+        [hashPin(plainPin), staffId],
+      );
+    } catch {
+      // Migração é oportunística — próximo login tenta de novo.
+    }
   }
 
   private async findActiveById(staffId: string): Promise<StaffAuthRow | null> {
