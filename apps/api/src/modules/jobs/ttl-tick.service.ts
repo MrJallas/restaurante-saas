@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { EventsGateway } from '../websocket/events.gateway';
 import { unwrapRows, unwrapAffected } from '../tenant/query-utils';
 import { SecurityAuditService } from '../security-audit/security-audit.service';
+import { RedisService } from '../../infra/redis/redis.service';
 
 /**
  * Recurring sweeper for time-based domain transitions. Runs every 10s and,
@@ -36,6 +37,7 @@ export class TtlTickService {
     private readonly dataSource: DataSource,
     private readonly gateway: EventsGateway,
     private readonly audit: SecurityAuditService,
+    private readonly redis: RedisService,
   ) {}
 
   @Cron(CronExpression.EVERY_10_SECONDS)
@@ -299,6 +301,18 @@ export class TtlTickService {
     );
     if (closed.length) {
       this.logger.log(`[${slug}] ${closed.length} sessão(ões) zumbi fechadas (4h sem atividade)`);
+      // A04: invalida as chaves Redis das sessões recém-fechadas — o
+      // SessionGuard revalida `status` no banco, mas apagar aqui mata o
+      // cookie/x-session-token na hora (não espera a próxima request).
+      await Promise.all(
+        closed.map((s) =>
+          this.redis.del(`session:${s.id}`).catch((err) => {
+            this.logger.warn(
+              `[${slug}] falha ao invalidar chave Redis da sessão zumbi ${s.id}: ${(err as Error).message}`,
+            );
+          }),
+        ),
+      );
     }
   }
 

@@ -19,6 +19,7 @@ import { RedisService } from '../../infra/redis/redis.service';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { issueStaffSessionToken } from '../../common/auth/staff-session-token';
+import { DataSource } from 'typeorm';
 
 const STAFF_KEY = 'test-staff-key-regression';
 
@@ -38,6 +39,10 @@ describe('GET /:slug/staff roster — StaffOnlyGuard enforcement (regression)', 
         { provide: StaffService, useValue: { list, getById } },
         // RedisService só é usado no verifyPin — stub mínimo pro DI.
         { provide: RedisService, useValue: {} },
+        // DataSource: dep nova do StaffOrSessionGuard (revalidação de sessão
+        // A04). O roster autentica via x-staff-key, que não passa pela
+        // revalidação — stub mínimo pro DI.
+        { provide: DataSource, useValue: { query: async () => [] } },
         // Deps das rotas de zone-assignments (2026-07-04) — stubs pro DI;
         // este teste cobre só o guard do roster.
         { provide: ZoneAssignmentsService, useValue: {} },
@@ -126,6 +131,7 @@ describe('GET /:slug/staff/:id/performance — StaffOnlyGuard enforcement (IDOR-
       providers: [
         { provide: StaffService, useValue: { getPerformance } },
         { provide: RedisService, useValue: { get: redisGet } },
+        { provide: DataSource, useValue: { query: async () => [] } },
         { provide: ZoneAssignmentsService, useValue: {} },
         { provide: TenantConnectionProvider, useValue: { query: async () => [] } },
         { provide: CallerResolverService, useValue: {} },
@@ -289,6 +295,7 @@ describe('POST/PATCH/DELETE /:slug/staff — ManagerOnlyGuard enforcement (privi
       providers: [
         { provide: StaffService, useValue: { create, update, delete: deleteFn } },
         { provide: RedisService, useValue: redis },
+        { provide: DataSource, useValue: { query: async () => [] } },
         { provide: ZoneAssignmentsService, useValue: {} },
         { provide: TenantConnectionProvider, useValue: tenantConn },
         { provide: CallerResolverService, useValue: {} },
@@ -496,6 +503,7 @@ describe('GET /:slug/staff/:id — ManagerOnlyGuard enforcement (PII/role leak)'
       providers: [
         { provide: StaffService, useValue: { getById } },
         { provide: RedisService, useValue: redis },
+        { provide: DataSource, useValue: { query: async () => [] } },
         { provide: ZoneAssignmentsService, useValue: {} },
         { provide: TenantConnectionProvider, useValue: tenantConn },
         { provide: CallerResolverService, useValue: {} },

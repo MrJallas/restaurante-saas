@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
+import { RedisService } from '../../infra/redis/redis.service';
 import { EventsGateway } from '../websocket/events.gateway';
 import { AlertsService } from '../alerts/alerts.service';
 import { HostInboxService } from './host-inbox.service';
@@ -82,6 +83,7 @@ export class HostService {
     private readonly waitlist: HostWaitlistService,
     private readonly inbox: HostInboxService,
     private readonly reservations: HostReservationsService,
+    private readonly redis: RedisService,
     @Optional() private readonly events?: EventsGateway,
     @Optional() private readonly alerts?: AlertsService,
   ) {}
@@ -254,6 +256,17 @@ export class HostService {
       if (!updated.length) {
         throw new HttpException('Sessao ja foi fechada.', HttpStatus.CONFLICT);
       }
+
+      // A04: invalida a chave Redis IMEDIATAMENTE — sem isso o cookie/
+      // x-session-token do cliente seguia válido no TTL de 4h e criava
+      // orders/payments numa conta já liquidada. O SessionGuard também
+      // revalida `status` no banco (defense-in-depth), mas apagar aqui mata
+      // o token na hora sem esperar a próxima checagem.
+      await this.redis.del(`session:${activeSession.id}`).catch((err) => {
+        this.logger.warn(
+          `Falha ao invalidar chave Redis da sessão ${activeSession.id}: ${(err as Error).message}`,
+        );
+      });
     }
 
     const release = unwrapRows<{ id: string; expires_at: string }>(

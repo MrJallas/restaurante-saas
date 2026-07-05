@@ -68,12 +68,17 @@ function fakeDb(opts: { waiting?: FakeWaitlistRow[]; updateAffects?: number } = 
   return { calls, conn: { query } as unknown as TenantConnectionProvider };
 }
 
+const noopRedis = { del: async () => undefined } as unknown as import(
+  '../../infra/redis/redis.service'
+).RedisService;
+
 function makeService(conn: TenantConnectionProvider) {
   return new HostService(
     conn,
     new HostWaitlistService(conn),
     new HostInboxService(conn),
     new HostReservationsService(conn),
+    noopRedis,
   );
 }
 

@@ -6,9 +6,11 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { timingSafeEqual } from 'crypto';
+import { DataSource } from 'typeorm';
 import { RedisService } from '../../infra/redis/redis.service';
 import { safeJsonParse } from '../utils/safe-json';
 import type { SessionData, SessionRequest } from './session.guard';
+import { revalidateSessionOrThrow } from './session-revalidation';
 
 /**
  * Guarda os endpoints que aceitam ate dois tipos de chamador:
@@ -38,7 +40,10 @@ export type ActorType = 'staff' | 'session';
 
 @Injectable()
 export class StaffOrSessionGuard implements CanActivate {
-  constructor(private readonly redis: RedisService) {}
+  constructor(
+    private readonly redis: RedisService,
+    private readonly dataSource: DataSource,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<SessionRequest & { actorType?: ActorType }>();
@@ -80,6 +85,13 @@ export class StaffOrSessionGuard implements CanActivate {
         HttpStatus.UNAUTHORIZED,
       );
     }
+
+    // A04 + multi-tenant (mesma revalidação do SessionGuard): sessão do
+    // caller-session precisa estar ativa e pertencer ao tenant da URL antes
+    // de deixar mover/criar orders. O ramo `x-staff-key` acima não passa por
+    // aqui — staff continua com o acesso atual.
+    await revalidateSessionOrThrow(this.dataSource, parsed, request);
+
     request.sessionData = parsed;
     request.actorType = 'session';
     return true;

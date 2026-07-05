@@ -76,12 +76,17 @@ function fakeDb(candidates: FakeTableCandidate[]) {
   };
 }
 
-function makeService(conn: TenantConnectionProvider) {
+import type { RedisService } from '../../infra/redis/redis.service';
+
+const noopRedis = { del: async () => undefined } as unknown as RedisService;
+
+function makeService(conn: TenantConnectionProvider, redis: RedisService = noopRedis) {
   return new HostService(
     conn,
     new HostWaitlistService(conn),
     new HostInboxService(conn),
     new HostReservationsService(conn),
+    redis,
   );
 }
 
@@ -441,6 +446,7 @@ describe('HostService.requestAssist — idempotente por sessão (P1 retry-safety
       new HostWaitlistService(conn),
       new HostInboxService(conn),
       new HostReservationsService(conn),
+      noopRedis,
       events,
       alerts,
     );
@@ -469,5 +475,48 @@ describe('HostService.requestAssist — idempotente por sessão (P1 retry-safety
     // 2 tentativas de create, mas o dedup do índice mantém 1 ativo pra a sessão.
     expect(t.getCreateCalls()).toHaveLength(2);
     expect(t.getActiveCount()).toBe(1);
+  });
+});
+
+/**
+ * A04: fechar/liberar a mesa tem que INVALIDAR a chave Redis da sessão na
+ * hora — sem isso o cookie/x-session-token do cliente seguia válido no TTL
+ * de 4h e criava orders/payments numa conta já liquidada.
+ */
+describe('HostService.liberateTable — invalida a sessão no Redis (A04)', () => {
+  const CLOSED_SESSION_ID = 'sess-closed-9';
+
+  function fakeLiberateDb() {
+    const query = async (sql: string, params: unknown[] = []): Promise<unknown> => {
+      const s = sql.replace(/\s+/g, ' ').trim();
+      if (s.startsWith('SELECT id, code FROM tables WHERE')) {
+        return [{ id: 'table-9', code: '9' }];
+      }
+      if (s.startsWith("SELECT id FROM table_sessions WHERE table_id = $1 AND status = 'active'")) {
+        return [{ id: CLOSED_SESSION_ID }];
+      }
+      if (s.startsWith('UPDATE table_sessions SET status = \'closed\'') || s.includes("SET status = 'closed'")) {
+        return [{ id: CLOSED_SESSION_ID }];
+      }
+      if (s.startsWith('INSERT INTO table_qr_releases')) {
+        return [{ id: 'release-1', expires_at: '2026-07-05T12:15:00Z' }];
+      }
+      throw new Error(`fake liberate: SQL não roteado: ${s}`);
+    };
+    return { query } as unknown as TenantConnectionProvider;
+  }
+
+  it('RED: liberateTable(manual) deleta `session:<id>` do Redis', async () => {
+    const deleted: string[] = [];
+    const redis = {
+      del: async (key: string) => {
+        deleted.push(key);
+      },
+    } as unknown as RedisService;
+
+    const service = makeService(fakeLiberateDb(), redis);
+    await service.liberateTable(9, { mode: 'manual_paid' }, 'slug');
+
+    expect(deleted).toContain(`session:${CLOSED_SESSION_ID}`);
   });
 });

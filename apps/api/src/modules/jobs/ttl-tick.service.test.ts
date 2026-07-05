@@ -189,6 +189,12 @@ function makeAudit() {
   } as unknown as SecurityAuditService;
 }
 
+function makeRedis() {
+  return {
+    del: jest.fn().mockResolvedValue(undefined),
+  } as unknown as import('../../infra/redis/redis.service').RedisService;
+}
+
 describe('TtlTickService.sweepEscalations — P1-S: sem double-emit sob concorrência', () => {
   it('dois sweeps concorrentes sobre a MESMA chain vencida escalam UMA vez só', async () => {
     const { dataSource } = makeSharedDb();
@@ -197,6 +203,7 @@ describe('TtlTickService.sweepEscalations — P1-S: sem double-emit sob concorr�
       dataSource,
       events as unknown as EventsGateway,
       makeAudit(),
+      makeRedis(),
     );
 
     // Acesso ao método privado via cast — testamos a unidade do bug direto.
@@ -436,7 +443,12 @@ describe('TtlTickService — Resíduo 1: cross-sweep não avança a mesma chain 
   it('sweepEscalations + sweepLateArrivals sobre a MESMA chain vencida emitem advance 1×', async () => {
     const { dataSource } = makeCrossSweepDb();
     const events = makeEvents();
-    const service = new TtlTickService(dataSource, events as unknown as EventsGateway, makeAudit());
+    const service = new TtlTickService(
+      dataSource,
+      events as unknown as EventsGateway,
+      makeAudit(),
+      makeRedis(),
+    );
 
     const svc = service as unknown as {
       sweepEscalations: (slug: string, schema: string) => Promise<void>;
@@ -567,5 +579,55 @@ describe('LateArrivalService.respond — Resíduo 2: chain não vira zumbi', () 
     );
     expect(chainClose).toBeDefined();
     expect(chainClose!.params).toContain(CHAIN_ID);
+  });
+});
+
+/**
+ * A04: o sweep de sessões zumbi (4h sem atividade) fecha a sessão no Postgres
+ * E TEM que invalidar a chave Redis correspondente — senão o cliente com o
+ * cookie ainda no TTL seguia criando orders/payments numa mesa encerrada.
+ */
+describe('TtlTickService.sweepStaleSessions — invalida chaves Redis (A04)', () => {
+  const ZOMBIE_ID = 'zzzz9999-0000-4000-8000-000000000009';
+
+  function makeSweepDb() {
+    const runner = {
+      connect: async () => undefined,
+      release: async () => undefined,
+      query: async (sql: string) => {
+        const s = sql.replace(/\s+/g, ' ').trim();
+        if (s.startsWith('SET search_path')) return [];
+        if (s.startsWith('UPDATE table_sessions ts') && s.includes("SET status = 'closed'")) {
+          // pg devolve UPDATE...RETURNING como tupla [rows, rowCount].
+          return [[{ id: ZOMBIE_ID }], 1];
+        }
+        throw new Error(`fake sweep: SQL não roteado: ${s}`);
+      },
+    } as unknown as QueryRunner;
+    const dataSource = {
+      createQueryRunner: () => runner,
+    } as unknown as DataSource;
+    return { dataSource };
+  }
+
+  it('RED: sessão zumbi fechada deleta `session:<id>` do Redis', async () => {
+    const { dataSource } = makeSweepDb();
+    const redis = makeRedis();
+    const service = new TtlTickService(
+      dataSource,
+      makeEvents() as unknown as EventsGateway,
+      makeAudit(),
+      redis,
+    );
+
+    const sweep = (
+      service as unknown as {
+        sweepStaleSessions: (slug: string, schema: string) => Promise<void>;
+      }
+    ).sweepStaleSessions.bind(service);
+
+    await sweep('demo', 'demo_schema');
+
+    expect(redis.del).toHaveBeenCalledWith(`session:${ZOMBIE_ID}`);
   });
 });
