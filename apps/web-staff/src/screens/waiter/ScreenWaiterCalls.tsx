@@ -85,11 +85,17 @@ function urgencyFromCreatedAt(value: string): Urgency {
 }
 
 function mapCall(row: WaiterCallSummary): CallRow {
+  const base = row.note || REASON_LABEL[row.reason || 'other'] || 'Sem motivo informado';
+  // P1 (re-scan 2026-07-05): a lista agora inclui chamados 'acknowledged'
+  // (o garçom tocou "A caminho" mas ainda não concluiu). Distingue-os
+  // visualmente de 'pending' (aguardando) — o card continua roteando pro
+  // detalhe, onde o CTA já vira "Atendido" pra concluir.
+  const sub = row.status === 'acknowledged' ? `A caminho · ${base}` : base;
   return {
     id: row.id,
     type: typeFromReason(row.reason),
     tableNumber: tableNumberFromCode(row),
-    sub: row.note || REASON_LABEL[row.reason || 'other'] || 'Sem motivo informado',
+    sub,
     ts: relativeTime(row.created_at),
     urgency: urgencyFromCreatedAt(row.created_at),
   };

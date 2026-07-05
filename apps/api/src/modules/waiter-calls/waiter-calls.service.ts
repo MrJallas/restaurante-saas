@@ -429,6 +429,19 @@ export class WaiterCallsService {
     // apps/api/src/modules/vip/priority.util.ts and
     // docs/features/vip-customer.md). Migration 031 added
     // `table_sessions.flags text[]`.
+    //
+    // P1 (re-scan 2026-07-05): a lista traz status IN ('pending',
+    // 'acknowledged') — NÃO só 'pending'. Um chamado que o garçom já aceitou
+    // ("A caminho" → acknowledge) mas ainda NÃO concluiu ('resolved') precisa
+    // continuar VISÍVEL nas 3 listas do web-staff (ScreenWaiterCalls,
+    // ScreenHomeGrid, WaiterDeliveryAlerts — todas consomem este endpoint).
+    // Com o filtro antigo `= 'pending'` o chamado sumia no instante do
+    // acknowledge: órfão pra sempre, o garçom nunca alcançava o
+    // ScreenWaiterCallDetail (que só abre VIA lista) pra tocar "Atendido"
+    // (resolve), e o cliente ficava preso em "garçom a caminho" com "Cancelar"
+    // estourando 'já atendido'. O status vai no SELECT pra o FE distinguir
+    // aguardando (pending) de a-caminho (acknowledged). ACTIVE_STATUSES é o
+    // mesmo conjunto do índice único parcial e do getActiveCall.
     return this.tenantConn.query(
       `SELECT wc.id, wc.status, wc.reason, wc.created_at,
               wc.assigned_waiter_name, wc.eta_minutes,
@@ -437,8 +450,9 @@ export class WaiterCallsService {
        FROM waiter_calls wc
        JOIN table_sessions ts ON ts.id = wc.table_session_id
        JOIN tables t ON t.id = ts.table_id
-       WHERE wc.status = 'pending'
+       WHERE wc.status = ANY($1)
        ORDER BY wc.created_at ASC`,
+      [ACTIVE_STATUSES],
     );
   }
 }

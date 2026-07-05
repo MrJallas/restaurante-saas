@@ -330,7 +330,8 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
           >
             {Icon.hand(20)}
             <div style={{ flex: 1, fontSize: 13.5, fontWeight: 600 }}>
-              {firstUrgentCall.table_label} chamou · agora
+              {firstUrgentCall.table_label}{' '}
+              {firstUrgentCall.status === 'acknowledged' ? 'aguarda · a caminho' : 'chamou · agora'}
             </div>
             <span
               style={{
@@ -340,7 +341,9 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
                 textTransform: 'uppercase',
               }}
             >
-              Atender →
+              {/* Um chamado já acknowledged precisa levar o garçom ao detalhe
+                  pra CONCLUIR ("Atendido"), não pra "Atender" de novo. */}
+              {firstUrgentCall.status === 'acknowledged' ? 'Concluir →' : 'Atender →'}
             </span>
           </button>
         )}
