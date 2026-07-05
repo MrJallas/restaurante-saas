@@ -94,6 +94,10 @@ services:
       # segredo publico se o operador subisse o compose sem exportar a var.
       # Sem STAFF_API_KEY setado o boot da API falha fast (main.ts).
       STAFF_API_KEY: ${STAFF_API_KEY:?STAFF_API_KEY must be set (no committed default)}
+      # A07: secret do HMAC do x-session-token. Fallback de dev-staging via env
+      # (NÃO commita segredo); em prod (NODE_ENV=production) o main.ts falha fast
+      # se ausente ou == default de dev.
+      SESSION_TOKEN_SECRET: ${SESSION_TOKEN_SECRET:-dev-staging-session-secret-set-in-prod}
       CORS_ORIGINS: http://localhost:3003,http://localhost:3002,http://${PUBLIC_HOST:-localhost}:3003,http://${PUBLIC_HOST:-localhost}:3002
       CUSTOMER_APP_URL: http://${PUBLIC_HOST:-localhost}:3003
       AI_SERVICE_URL: http://ai-service:8000

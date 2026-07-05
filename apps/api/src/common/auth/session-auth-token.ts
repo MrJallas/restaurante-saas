@@ -23,8 +23,38 @@ import type { RedisService } from '../../infra/redis/redis.service';
  * sob `session:<id>`) seguem válidas até o TTL de 4h — os helpers de leitura/
  * invalidação POR ID caem no fallback `session:<id>` durante a transição.
  */
-const SESSION_TOKEN_SECRET =
-  process.env.SESSION_TOKEN_SECRET || 'dev-session-token-secret-CHANGE-IN-PROD';
+/** Default de DEV — público (está no source). Em prod é fail-fast (ver
+ * `assertSessionSecretConfigured`). */
+export const DEV_SESSION_TOKEN_SECRET = 'dev-session-token-secret-CHANGE-IN-PROD';
+
+const SESSION_TOKEN_SECRET = process.env.SESSION_TOKEN_SECRET || DEV_SESSION_TOKEN_SECRET;
+
+/**
+ * Fail-fast do `SESSION_TOKEN_SECRET` (espelha `assertStaffKeyConfigured`). Sem
+ * ele, o token de sessão é HMAC do default público de dev → qualquer um com o
+ * source forja a sessão de um cliente cujo id vazou. Em prod: THROW no boot se
+ * ausente ou == default. Em dev: só warn (local destravado).
+ */
+export function assertSessionSecretConfigured(
+  logger: { warn(message: string): void },
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const secret = env.SESSION_TOKEN_SECRET;
+  const isProd = env.NODE_ENV === 'production';
+
+  if (!secret) {
+    if (isProd) {
+      throw new Error('SESSION_TOKEN_SECRET nao configurada — obrigatoria em producao (A07).');
+    }
+    logger.warn('SESSION_TOKEN_SECRET vazia — usando default de dev. NUNCA em producao.');
+    return;
+  }
+  if (isProd && secret === DEV_SESSION_TOKEN_SECRET) {
+    throw new Error(
+      'SESSION_TOKEN_SECRET usa o default committado de dev (publico). Rotacione para um segredo unico.',
+    );
+  }
+}
 
 /** `HMAC(secret, sessionId)` em hex — o token de auth do cliente. */
 export function sessionAuthToken(sessionId: string): string {

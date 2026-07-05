@@ -8,6 +8,8 @@ import {
   storeSessionAuth,
   readSessionAuthById,
   invalidateSessionAuthById,
+  assertSessionSecretConfigured,
+  DEV_SESSION_TOKEN_SECRET,
 } from './session-auth-token';
 import type { RedisService } from '../../infra/redis/redis.service';
 
@@ -73,5 +75,41 @@ describe('storeSessionAuth + readSessionAuthById + invalidate (A07)', () => {
     await invalidateSessionAuthById(redis, SID);
     expect(store.has(`session:${token}`)).toBe(false);
     expect(store.has(`session:${SID}`)).toBe(false);
+  });
+});
+
+describe('assertSessionSecretConfigured (fail-fast do secret em prod)', () => {
+  const noopLogger = { warn: () => undefined };
+
+  it('prod SEM secret → THROW', () => {
+    expect(() => assertSessionSecretConfigured(noopLogger, { NODE_ENV: 'production' })).toThrow(
+      /obrigatoria em producao/,
+    );
+  });
+
+  it('prod com o DEFAULT de dev → THROW (segredo público)', () => {
+    expect(() =>
+      assertSessionSecretConfigured(noopLogger, {
+        NODE_ENV: 'production',
+        SESSION_TOKEN_SECRET: DEV_SESSION_TOKEN_SECRET,
+      }),
+    ).toThrow(/default committado/);
+  });
+
+  it('prod com secret único → OK', () => {
+    expect(() =>
+      assertSessionSecretConfigured(noopLogger, {
+        NODE_ENV: 'production',
+        SESSION_TOKEN_SECRET: 'um-segredo-real-e-unico-de-prod',
+      }),
+    ).not.toThrow();
+  });
+
+  it('dev SEM secret → só warn, não throw', () => {
+    let warned = '';
+    expect(() =>
+      assertSessionSecretConfigured({ warn: (m) => (warned = m) }, { NODE_ENV: 'development' }),
+    ).not.toThrow();
+    expect(warned).toContain('SESSION_TOKEN_SECRET');
   });
 });

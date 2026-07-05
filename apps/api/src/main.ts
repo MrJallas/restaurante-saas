@@ -7,10 +7,12 @@ import { createRequestTimingMiddleware } from './common/performance/request-timi
 import { createSecurityHeadersMiddleware } from './common/security/security-headers';
 import { UserMessageExceptionFilter } from './common/filters/user-message-exception.filter';
 import { assertStaffKeyConfigured } from './common/config/assert-staff-key';
+import { assertSessionSecretConfigured } from './common/auth/session-auth-token';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   assertStaffKeyConfigured(logger);
+  assertSessionSecretConfigured(logger);
   const app = await NestFactory.create(AppModule);
 
   app.use(createRequestTimingMiddleware());
