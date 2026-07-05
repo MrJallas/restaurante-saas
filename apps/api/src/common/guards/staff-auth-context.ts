@@ -33,7 +33,9 @@ export interface ResolvedStaff {
 }
 
 export interface ResolvedStaffError {
-  error: 'missing' | 'invalid';
+  // 'pin_change_required' — token válido mas com must_change_pin pendente
+  // (P2 hardening); os guards que compõem sobre isto bloqueiam até a troca.
+  error: 'missing' | 'invalid' | 'pin_change_required';
 }
 
 /**
@@ -60,6 +62,12 @@ export async function resolveAuthenticatedStaff(
       // Token presente mas inválido/expirado/cross-tenant → nunca faz
       // fallback pro header (evita downgrade attack).
       return { error: 'invalid' };
+    }
+    // Enforcement server-side de must_change_pin (P2 hardening): token com a
+    // flag pendente não autoriza rota privilegiada nenhuma — os guards que
+    // compõem sobre isto (ManagerOnly/HostOrManager) bloqueiam até a troca.
+    if (payload.mustChangePin) {
+      return { error: 'pin_change_required' };
     }
     // Gate #34: carimba a identidade VERIFICADA pro CallerResolver ler do
     // token, não do header client-controlled. O fallback legado (header,

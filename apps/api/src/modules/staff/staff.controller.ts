@@ -212,8 +212,18 @@ export class StaffController {
     return this.staffService.getPerformance(id, p);
   }
 
+  /**
+   * PII/role leak read (P2 hardening) — getById era read-only mas só
+   * StaffOnlyGuard: qualquer token de staff (waiter/cook/host) lia o dossiê
+   * completo (name/role/cpf/phone/email) de qualquer funcionário via
+   * `/staff/<uuid>`. O único consumidor FE é `ScreenManagerStaffDetail`
+   * (`/manager/equipe/[id]` → `staffRoster.get`, credencial de manager) —
+   * nenhum staff não-manager consome. Fix: ManagerOnlyGuard, casando com a
+   * irmã list (roster) e com create/update/delete. Leitura do dossiê de
+   * staff é gestão.
+   */
   @Get(':id')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async getById(@Param('id') id: string) {
     return this.staffService.getById(id);
   }

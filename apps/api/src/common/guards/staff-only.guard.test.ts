@@ -153,3 +153,70 @@ describe('StaffOnlyGuard — carimbo req.staffAuth (gate #34)', () => {
     expect(request.staffAuth).toBeUndefined();
   });
 });
+
+/**
+ * Enforcement server-side de must_change_pin (P2 hardening). O token emitido
+ * no login com PIN temporário (reset do gerente) carrega mustChangePin=true.
+ * O StaffOnlyGuard — porta dos 64 endpoints privilegiados — o RECUSA em bloco
+ * (403 AUTH_PIN_CHANGE_REQUIRED) e NÃO carimba req.staffAuth, até a troca. Não
+ * confia no redirect do FE: token temporário resetado não abre rota nenhuma.
+ */
+describe('StaffOnlyGuard — bloqueio por must_change_pin', () => {
+  const OLD = process.env.STAFF_API_KEY;
+  beforeEach(() => {
+    process.env.STAFF_API_KEY = STAFF_KEY;
+  });
+  afterEach(() => {
+    if (OLD === undefined) delete process.env.STAFF_API_KEY;
+    else process.env.STAFF_API_KEY = OLD;
+  });
+
+  function stableCtx(headers: Record<string, string>, slug = 'restaurant_dev') {
+    const request: {
+      headers: Record<string, string>;
+      params: { slug: string };
+      staffAuth?: StaffSessionPayload;
+    } = { headers, params: { slug } };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as never;
+    return { request, context };
+  }
+
+  it('token com mustChangePin=true → 403 AUTH_PIN_CHANGE_REQUIRED e NÃO carimba', async () => {
+    const redis = fakeRedis();
+    const { token } = await issueStaffSessionToken(redis, {
+      staffId: 'bbbbbbbb-0000-4000-8000-00000000000b',
+      role: 'waiter',
+      slug: 'restaurant_dev',
+      mustChangePin: true,
+    });
+    const guard = new StaffOnlyGuard(redis);
+    const { request, context } = stableCtx({ 'x-staff-token': token });
+
+    await expect(guard.canActivate(context)).rejects.toThrow(HttpException);
+    try {
+      await guard.canActivate(context);
+    } catch (err) {
+      expect((err as HttpException).getResponse()).toMatchObject({
+        code: 'AUTH_PIN_CHANGE_REQUIRED',
+      });
+    }
+    expect(request.staffAuth).toBeUndefined();
+  });
+
+  it('token normal (sem a flag) → autoriza e carimba (regressão do caminho feliz)', async () => {
+    const redis = fakeRedis();
+    const { token } = await issueStaffSessionToken(redis, {
+      staffId: 'bbbbbbbb-0000-4000-8000-00000000000c',
+      role: 'waiter',
+      slug: 'restaurant_dev',
+    });
+    const guard = new StaffOnlyGuard(redis);
+    const { request, context } = stableCtx({ 'x-staff-token': token });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(request.staffAuth).toBeDefined();
+    expect(request.staffAuth!.mustChangePin).toBeUndefined();
+  });
+});

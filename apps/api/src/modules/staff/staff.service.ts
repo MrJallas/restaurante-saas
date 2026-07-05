@@ -225,9 +225,13 @@ export class StaffService {
         LEFT JOIN (
           SELECT table_session_id,
                  SUM(CASE WHEN status IN ('confirmed', 'paid') THEN amount_cents ELSE 0 END)::int AS paid_cents,
-                 SUM(CASE WHEN status = 'pending' THEN amount_cents ELSE 0 END)::int AS processing_cents,
+                 -- 'awaiting_settlement' é Pix em voo (pós-A04-PAY-01): dinheiro
+                 -- ainda não liquidado, mas em processamento. Sem entrar aqui ele
+                 -- sumia de TODO bucket → a mesa parecia dever tudo, sem nada em
+                 -- voo. É processing, nunca paid (só compensa em confirmPayment).
+                 SUM(CASE WHEN status IN ('pending', 'awaiting_settlement') THEN amount_cents ELSE 0 END)::int AS processing_cents,
                  COUNT(*) FILTER (WHERE status IN ('confirmed', 'paid'))::int AS paid_count,
-                 COUNT(*) FILTER (WHERE status = 'pending')::int AS processing_count
+                 COUNT(*) FILTER (WHERE status IN ('pending', 'awaiting_settlement'))::int AS processing_count
             FROM payments
            GROUP BY table_session_id
         ) payments_total ON payments_total.table_session_id = ts.id

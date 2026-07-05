@@ -90,17 +90,9 @@ describe('GET /:slug/staff roster — StaffOnlyGuard enforcement (regression)', 
     expect(list).toHaveBeenCalledTimes(1);
   });
 
-  it('getById: sem x-staff-key → 403', async () => {
+  it('getById: sem credencial → 403', async () => {
     await request(app.getHttpServer()).get('/acme-bistro/staff/uuid-1').expect(403);
     expect(getById).not.toHaveBeenCalled();
-  });
-
-  it('getById: x-staff-key correto → 200', async () => {
-    await request(app.getHttpServer())
-      .get('/acme-bistro/staff/uuid-1')
-      .set('x-staff-key', STAFF_KEY)
-      .expect(200);
-    expect(getById).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -421,5 +413,158 @@ describe('POST/PATCH/DELETE /:slug/staff — ManagerOnlyGuard enforcement (privi
       .send({ name: 'Novo', role: 'waiter', pin: '1234' });
     expect([401, 403]).toContain(res.status);
     expect(create).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * PII/role leak read (P2 hardening) — GET /:slug/staff/:id (getById) era
+ * read-only mas só StaffOnlyGuard: QUALQUER token de staff válido (waiter/
+ * cook/host) lia name/role/cpf/phone/email de qualquer funcionário via
+ * `/staff/<uuid>`. O único consumidor FE é `ScreenManagerStaffDetail`
+ * (`/manager/equipe/[id]` via `staffRoster.get`) — manager-side. Casa com a
+ * irmã list (roster) e com create/update/delete: leitura do dossiê de staff
+ * é gestão. Fix: (StaffOnlyGuard, ManagerOnlyGuard).
+ *
+ * Guards REAIS rodam: token de WAITER → 403 e o service NÃO roda; token de
+ * MANAGER → 200 e o service roda.
+ */
+describe('GET /:slug/staff/:id — ManagerOnlyGuard enforcement (PII/role leak)', () => {
+  let app: INestApplication;
+  let prevKey: string | undefined;
+
+  const getById = jest.fn();
+
+  class FakeRedis {
+    store = new Map<string, string>();
+    sets = new Map<string, Set<string>>();
+    async get(key: string): Promise<string | null> {
+      return this.store.get(key) ?? null;
+    }
+    async set(key: string, value: string): Promise<void> {
+      this.store.set(key, value);
+    }
+    async del(key: string): Promise<void> {
+      this.store.delete(key);
+      this.sets.delete(key);
+    }
+    async sadd(key: string, ...members: string[]): Promise<number> {
+      let set = this.sets.get(key);
+      if (!set) {
+        set = new Set<string>();
+        this.sets.set(key, set);
+      }
+      for (const m of members) set.add(m);
+      return members.length;
+    }
+    async smembers(key: string): Promise<string[]> {
+      return [...(this.sets.get(key) ?? [])];
+    }
+    async expire(): Promise<void> {
+      /* TTL irrelevante em memória */
+    }
+  }
+
+  // UUIDs próprios deste bloco — o staff-role-cache é um Map GLOBAL com TTL
+  // de 60s; ids repetidos entre blocos vazariam roles.
+  const MANAGER_ID = 'd1e2f3a4-3333-4333-8333-000000000301';
+  const WAITER_ID = 'd1e2f3a4-3333-4333-8333-000000000302';
+  const TARGET_ID = 'd1e2f3a4-3333-4333-8333-000000000303';
+  const SLUG = 'acme-staff-getbyid';
+
+  const redis = new FakeRedis();
+  const tenantConn = {
+    getTenantSlug: () => SLUG,
+    query: async (sql: string, params: unknown[] = []) => {
+      if (/SELECT role FROM staff/i.test(sql)) {
+        if (params[0] === MANAGER_ID) return [{ role: 'manager' }];
+        if (params[0] === WAITER_ID) return [{ role: 'waiter' }];
+        return [];
+      }
+      return [];
+    },
+  };
+
+  let managerToken: string;
+  let waiterToken: string;
+
+  beforeAll(async () => {
+    prevKey = process.env.STAFF_API_KEY;
+    process.env.STAFF_API_KEY = STAFF_KEY;
+
+    const moduleRef = await Test.createTestingModule({
+      controllers: [StaffController],
+      providers: [
+        { provide: StaffService, useValue: { getById } },
+        { provide: RedisService, useValue: redis },
+        { provide: ZoneAssignmentsService, useValue: {} },
+        { provide: TenantConnectionProvider, useValue: tenantConn },
+        { provide: CallerResolverService, useValue: {} },
+      ],
+    }).compile();
+
+    app = moduleRef.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    );
+    await app.init();
+
+    managerToken = (
+      await issueStaffSessionToken(redis as unknown as RedisService, {
+        staffId: MANAGER_ID,
+        role: 'manager',
+        slug: SLUG,
+      })
+    ).token;
+    waiterToken = (
+      await issueStaffSessionToken(redis as unknown as RedisService, {
+        staffId: WAITER_ID,
+        role: 'waiter',
+        slug: SLUG,
+      })
+    ).token;
+  });
+
+  afterAll(async () => {
+    if (prevKey === undefined) delete process.env.STAFF_API_KEY;
+    else process.env.STAFF_API_KEY = prevKey;
+    await app.close();
+  });
+
+  beforeEach(() => {
+    getById.mockReset();
+    getById.mockResolvedValue({
+      id: TARGET_ID,
+      name: 'Alvo',
+      role: 'manager',
+      cpf: '12345678901',
+      phone: '11999998888',
+      email: 'alvo@acme.com',
+    });
+  });
+
+  it('token de WAITER → 403 e o service NÃO roda (sem vazar PII/role)', async () => {
+    await request(app.getHttpServer())
+      .get(`/${SLUG}/staff/${TARGET_ID}`)
+      .set('x-staff-token', waiterToken)
+      .expect(403);
+    expect(getById).not.toHaveBeenCalled();
+  });
+
+  it('x-staff-key compartilhada (sem identidade) → BLOQUEADO e o service NÃO roda', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/${SLUG}/staff/${TARGET_ID}`)
+      .set('x-staff-key', STAFF_KEY);
+    expect([401, 403]).toContain(res.status);
+    expect(getById).not.toHaveBeenCalled();
+  });
+
+  it('token de MANAGER → 200 e o service roda (consumidor ScreenManagerStaffDetail preservado)', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/${SLUG}/staff/${TARGET_ID}`)
+      .set('x-staff-token', managerToken)
+      .expect(200);
+    expect(res.body.email).toBe('alvo@acme.com');
+    expect(getById).toHaveBeenCalledTimes(1);
+    expect(getById).toHaveBeenCalledWith(TARGET_ID);
   });
 });

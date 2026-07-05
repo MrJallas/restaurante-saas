@@ -46,6 +46,13 @@ export class HostOrManagerGuard implements CanActivate {
     if (resolved.error === 'missing') {
       throw new UnauthorizedException(authErrorResponse('AUTH_MISSING', 'Sessão expirada'));
     }
+    if (resolved.error === 'pin_change_required') {
+      // Defense-in-depth: o StaffOnlyGuard que compõe antes já bloqueia, mas
+      // este guard também recusa por conta própria (P2 hardening).
+      throw new ForbiddenException(
+        authErrorResponse('AUTH_PIN_CHANGE_REQUIRED', 'Troca de PIN obrigatória antes de continuar.'),
+      );
+    }
     if (resolved.error) {
       throw new UnauthorizedException(authErrorResponse('AUTH_INVALID', 'Sessão expirada'));
     }

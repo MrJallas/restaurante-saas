@@ -266,6 +266,67 @@ describe('StaffAuthService.login — must_change_pin', () => {
     expect(result.nextPath).toBe('/trocar-pin');
   });
 
+  it('login com must_change_pin=true emite token RESTRITO (payload carrega mustChangePin) — enforcement server-side', async () => {
+    const redis = new FakeRedis();
+    const { service } = makeService(redis, staffRow({ must_change_pin: true }));
+
+    const result = await service.login({ cpf: '39053344705', pin: CURRENT_PIN }, '10.0.0.1');
+
+    // O token verifica (é uma sessão real) MAS carrega a flag pros guards
+    // recusarem toda rota privilegiada até a troca — não é bypass do FE.
+    const payload = await verifyStaffSessionToken(
+      redis as unknown as RedisService,
+      result.staffToken,
+      'acme',
+    );
+    expect(payload).not.toBeNull();
+    expect(payload!.mustChangePin).toBe(true);
+  });
+
+  it('login normal NÃO embarca a flag no token (token limpo)', async () => {
+    const redis = new FakeRedis();
+    const { service } = makeService(redis, staffRow({ must_change_pin: false }));
+
+    const result = await service.login({ cpf: '39053344705', pin: CURRENT_PIN }, '10.0.0.1');
+
+    const payload = await verifyStaffSessionToken(
+      redis as unknown as RedisService,
+      result.staffToken,
+      'acme',
+    );
+    expect(payload).not.toBeNull();
+    expect(payload!.mustChangePin).toBeUndefined();
+  });
+
+  it('changePin ACEITA o token restrito e emite um token NOVO SEM a flag (a restrição some sozinha)', async () => {
+    const redis = new FakeRedis();
+    const { service } = makeService(redis, staffRow({ must_change_pin: true }));
+
+    // Login forçado: token com a flag.
+    const login = await service.login({ cpf: '39053344705', pin: CURRENT_PIN }, '10.0.0.1');
+    const restricted = await verifyStaffSessionToken(
+      redis as unknown as RedisService,
+      login.staffToken,
+      'acme',
+    );
+    expect(restricted!.mustChangePin).toBe(true);
+
+    // A troca de PIN aceita o token restrito (é a única rota que deve) e
+    // devolve um token novo — verificado e SEM a flag.
+    const changed = await service.changePin({
+      token: login.staffToken,
+      currentPin: CURRENT_PIN,
+      newPin: '998877',
+    });
+    const fresh = await verifyStaffSessionToken(
+      redis as unknown as RedisService,
+      changed.staffToken,
+      'acme',
+    );
+    expect(fresh).not.toBeNull();
+    expect(fresh!.mustChangePin).toBeUndefined();
+  });
+
   it('login normal segue com mustChangePin=false e nextPath do role', async () => {
     const redis = new FakeRedis();
     const { service } = makeService(redis, staffRow({ must_change_pin: false }));

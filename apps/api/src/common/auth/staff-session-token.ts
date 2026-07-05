@@ -25,6 +25,17 @@ export interface StaffSessionPayload {
   role: string;
   slug: string;
   exp: number;
+  /**
+   * Enforcement server-side de troca de PIN forçada (P2 hardening). Setado
+   * `true` no login quando o staff tem `must_change_pin` (PIN temporário
+   * resetado pelo gerente). Enquanto `true`, os guards de staff RECUSAM o
+   * token em toda rota privilegiada — só a rota de trocar o PIN (que verifica
+   * o token no service, fora dos guards) o aceita. O change-pin de sucesso
+   * emite um token NOVO sem a flag, então a restrição some sozinha. Não
+   * confia no redirect do FE: o token temporário resetado não abre nada além
+   * da própria troca.
+   */
+  mustChangePin?: boolean;
 }
 
 const STAFF_SESSION_TTL_SECONDS = Number(
@@ -67,7 +78,7 @@ function supportsSets(redis: RedisService): redis is RedisService & SessionSetRe
  */
 export async function issueStaffSessionToken(
   redis: RedisService,
-  input: { staffId: string; role: string; slug: string },
+  input: { staffId: string; role: string; slug: string; mustChangePin?: boolean },
 ): Promise<{ token: string; expiresIn: number }> {
   const token = randomBytes(32).toString('base64url');
   const exp = Date.now() + STAFF_SESSION_TTL_SECONDS * 1000;
@@ -76,6 +87,8 @@ export async function issueStaffSessionToken(
     role: input.role,
     slug: input.slug,
     exp,
+    // Só embarca a flag quando true — token normal fica idêntico ao anterior.
+    ...(input.mustChangePin ? { mustChangePin: true } : {}),
   };
   await redis.set(redisKey(token), JSON.stringify(payload), STAFF_SESSION_TTL_SECONDS);
   if (supportsSets(redis)) {

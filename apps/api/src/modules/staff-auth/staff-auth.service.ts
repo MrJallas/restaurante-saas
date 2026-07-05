@@ -107,20 +107,29 @@ export class StaffAuthService {
     await this.redis.del(`${cpfThrottleKey}:attempts`);
     await this.redis.del(`${cpfThrottleKey}:lock`);
 
-    // Emite o token de sessão de staff vinculado ao staffId/role recém
-    // autenticado via PIN. É o segredo verificado server-side que os
-    // guards de manager/host passam a exigir (x-staff-token) — o par
-    // x-staff-key shared + x-staff-id enumerável não escala mais sozinho.
-    const session = await issueStaffSessionToken(this.redis, {
-      staffId: staff!.id,
-      role: staff!.role,
-      slug: this.tenantSlug(),
-    });
-
     // Reset pelo gerente (TROCAR-PIN 2026-07-04): staff entra com o PIN
     // temporário mas é FORÇADO pra troca — o FE lê a flag/nextPath e leva
     // pro /trocar-pin; o change-pin limpa a flag.
     const mustChangePin = staff!.must_change_pin === true;
+
+    // Emite o token de sessão de staff vinculado ao staffId/role recém
+    // autenticado via PIN. É o segredo verificado server-side que os
+    // guards de manager/host passam a exigir (x-staff-token) — o par
+    // x-staff-key shared + x-staff-id enumerável não escala mais sozinho.
+    //
+    // ENFORCEMENT server-side de must_change_pin (P2 hardening): quando a
+    // flag está setada, o token carrega mustChangePin=true e os guards de
+    // staff o RECUSAM em toda rota privilegiada — só a troca de PIN o aceita
+    // (ela verifica o token no service, fora dos guards). Não confia no
+    // redirect do FE: PIN temporário resetado não abre nenhuma rota
+    // privilegiada até a troca. O change-pin de sucesso emite token NOVO sem
+    // a flag, então a restrição some sozinha.
+    const session = await issueStaffSessionToken(this.redis, {
+      staffId: staff!.id,
+      role: staff!.role,
+      slug: this.tenantSlug(),
+      mustChangePin,
+    });
 
     return {
       staff: {

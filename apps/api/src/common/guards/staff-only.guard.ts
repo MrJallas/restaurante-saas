@@ -41,6 +41,22 @@ export class StaffOnlyGuard implements CanActivate {
       const slug = request.params?.slug ?? 'unknown';
       const payload = await verifyStaffSessionToken(this.redis, token, slug);
       if (payload) {
+        // Enforcement server-side de must_change_pin (P2 hardening): o token
+        // emitido no login com PIN temporário carrega mustChangePin=true. Aqui
+        // — a porta dos 64 endpoints StaffOnly — ele é RECUSADO em bloco até a
+        // troca. A rota de trocar o PIN (staff-auth/change-pin) NÃO passa por
+        // este guard; ela verifica o token direto no service, então segue
+        // acessível. Não confiamos no redirect do FE: o token temporário não
+        // abre nenhuma rota privilegiada.
+        if (payload.mustChangePin) {
+          throw new HttpException(
+            authErrorResponse(
+              'AUTH_PIN_CHANGE_REQUIRED',
+              'Troca de PIN obrigatória antes de continuar.',
+            ),
+            HttpStatus.FORBIDDEN,
+          );
+        }
         // Gate #34: carimba a identidade VERIFICADA pro CallerResolver ler
         // do token, não do header client-controlled `x-staff-id`. O caminho
         // da key (abaixo) NÃO carimba — TV/estação segue no fallback.

@@ -73,4 +73,23 @@ describe('resolveAuthenticatedStaff — carimbo req.staffAuth (gate #34)', () =>
     expect(resolved).toMatchObject({ error: 'invalid' });
     expect(req.staffAuth).toBeUndefined();
   });
+
+  it('token com mustChangePin → erro pin_change_required e NÃO carimba (enforcement P2)', async () => {
+    const redis = fakeRedis();
+    const { token } = await issueStaffSessionToken(redis, {
+      staffId: STAFF_ID,
+      role: 'manager',
+      slug: SLUG,
+      mustChangePin: true,
+    });
+    const req: {
+      headers: Record<string, string | string[] | undefined>;
+      staffAuth?: StaffSessionPayload;
+    } = { headers: { 'x-staff-token': token } };
+
+    const resolved = await resolveAuthenticatedStaff(req, fakeTenantConn(), redis);
+
+    expect(resolved).toMatchObject({ error: 'pin_change_required' });
+    expect(req.staffAuth).toBeUndefined();
+  });
 });
