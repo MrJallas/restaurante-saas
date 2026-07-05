@@ -365,7 +365,6 @@ export function ScreenManagerStaffDetail({
                   label="Receita atendida"
                   value={performanceLoading ? '...' : formatCurrency(kpis?.totalRevenue ?? 0)}
                   sub={`${kpis?.ordersServed ?? 0} pedidos servidos`}
-                  trend={{ dir: 'up' }}
                   help="Receita dos pedidos entregues atribuídos a este funcionário no período."
                 />
                 <MStat
@@ -375,7 +374,6 @@ export function ScreenManagerStaffDetail({
                   sub={
                     activeWindow === 'today' ? 'hoje' : activeWindow === '7d' ? '7 dias' : '30 dias'
                   }
-                  trend={{ dir: 'up' }}
                   help="Sessões de mesa encerradas por este funcionário."
                 />
               </div>
@@ -385,7 +383,6 @@ export function ScreenManagerStaffDetail({
                   label="Tempo de resposta"
                   value={performanceLoading ? '...' : formatDuration(kpis?.avgResponseSec ?? 0)}
                   sub={`${kpis?.callsAnswered ?? 0} chamados atendidos`}
-                  trend={{ dir: 'up' }}
                   help="Tempo médio entre o chamado do cliente e o atendimento registrado."
                 />
                 <MStat
@@ -393,7 +390,6 @@ export function ScreenManagerStaffDetail({
                   label="Chamados atendidos"
                   value={performanceLoading ? '...' : String(kpis?.callsAnswered ?? 0)}
                   sub="garçom"
-                  trend={{ dir: 'up' }}
                   help="Chamados de garçom reconhecidos por este funcionário."
                 />
               </div>
