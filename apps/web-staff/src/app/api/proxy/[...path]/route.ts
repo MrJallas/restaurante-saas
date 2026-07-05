@@ -92,8 +92,11 @@ function cookieOptions() {
   };
 }
 
-async function handle(req: NextRequest, ctx: { params: { path: string[] } }) {
-  const path = ctx.params.path.join('/');
+async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  // Next 16: `params` de route handler é assíncrono (era objeto puro no 14).
+  // `await` num objeto puro também resolve, então é seguro nos dois runtimes.
+  const { path: pathParts } = await ctx.params;
+  const path = pathParts.join('/');
   const method = req.method.toUpperCase();
   const pathWithSearch = path + (req.nextUrl.search || '');
   const url = `${API_BASE}/${path}${req.nextUrl.search}`;

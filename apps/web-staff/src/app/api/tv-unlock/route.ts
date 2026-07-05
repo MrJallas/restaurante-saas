@@ -29,10 +29,18 @@ const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 let cleanupCounter = 0;
 
 function getClientIp(req: NextRequest): string {
-  // NAO confiar em x-real-ip / x-forwarded-for de cliente arbitrario —
-  // mesma classe do P1-4 (XFF bypass na API). req.ip vem do TCP real ou
-  // do proxy confiavel configurado pela infra (Vercel, Next infra).
-  return req.ip || '127.0.0.1';
+  // Next 16 removeu `NextRequest.ip`/`.geo`. Num Route Handler (Web Request)
+  // não há acesso ao socket TCP — só headers. Atrás da infra confiável
+  // (Vercel/edge), o x-forwarded-for LEFTMOST é o IP real do cliente (o proxy
+  // reescreve o header). Sem proxy confiável ele é forjável, mas este
+  // rate-limit é defense-in-depth: o gate real da rota é o compare timing-safe
+  // do PIN + janela curta. Fallback estável pra bucketizar quando ausente.
+  const xff = req.headers.get('x-forwarded-for');
+  if (xff) {
+    const first = xff.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  return req.headers.get('x-real-ip')?.trim() || '127.0.0.1';
 }
 
 function checkRateLimit(ip: string): boolean {

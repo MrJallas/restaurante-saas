@@ -105,7 +105,7 @@ describe('proxy TV gate — tvPinValid fail-CLOSE (P1 A05)', () => {
 
     const { GET } = await loadRoute();
     const res = await GET(fakeReq({ method: 'GET', path: KDS_PATH }), {
-      params: { path: KDS_PATH },
+      params: Promise.resolve({ path: KDS_PATH }),
     });
 
     expect(res.status).toBe(401);
@@ -118,7 +118,7 @@ describe('proxy TV gate — tvPinValid fail-CLOSE (P1 A05)', () => {
 
     const { GET } = await loadRoute();
     const res = await GET(fakeReq({ method: 'GET', path: KDS_PATH }), {
-      params: { path: KDS_PATH },
+      params: Promise.resolve({ path: KDS_PATH }),
     });
 
     expect(res.status).toBe(401);
@@ -131,7 +131,7 @@ describe('proxy TV gate — tvPinValid fail-CLOSE (P1 A05)', () => {
 
     const { GET } = await loadRoute();
     const res = await GET(fakeReq({ method: 'GET', path: KDS_PATH }), {
-      params: { path: KDS_PATH },
+      params: Promise.resolve({ path: KDS_PATH }),
     });
 
     expect(res.status).toBe(200);
@@ -145,7 +145,7 @@ describe('proxy TV gate — tvPinValid fail-CLOSE (P1 A05)', () => {
     const { GET } = await loadRoute();
     const res = await GET(
       fakeReq({ method: 'GET', path: KDS_PATH, cookies: { tv_pin: 'secret-pin-123' } }),
-      { params: { path: KDS_PATH } },
+      { params: Promise.resolve({ path: KDS_PATH }) },
     );
 
     expect(res.status).toBe(200);
@@ -159,7 +159,7 @@ describe('proxy TV gate — tvPinValid fail-CLOSE (P1 A05)', () => {
     const { GET } = await loadRoute();
     const res = await GET(
       fakeReq({ method: 'GET', path: KDS_PATH, cookies: { tv_pin: 'wrong' } }),
-      { params: { path: KDS_PATH } },
+      { params: Promise.resolve({ path: KDS_PATH }) },
     );
 
     expect(res.status).toBe(401);
