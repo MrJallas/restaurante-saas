@@ -84,7 +84,41 @@ function urgencyFromCreatedAt(value: string): Urgency {
   return 'low';
 }
 
-function mapCall(row: WaiterCallSummary): CallRow {
+/**
+ * O payload de /waiter-calls/pending traz `assigned_waiter_name` (nome de quem
+ * aceitou o chamado) — o backend faz SELECT dessa coluna, mas ela não está no
+ * type `WaiterCallSummary`. Leitura widened aqui, sem mexer no contrato.
+ */
+type WaiterCallRowWithAssignee = WaiterCallSummary & {
+  assigned_waiter_name?: string | null;
+};
+
+function normalizeName(value?: string | null): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
+/**
+ * Ownership do chamado por IDENTIDADE — espelha os predicados canônicos das
+ * entregas (isDeliveryForWaiter/isDeliveryClaimedBy em lib/api/waiter).
+ *
+ * Bug P2 (re-scan 2026-07-05): `mapCall` nunca setava `mine`, então a aba
+ * "Minhas mesas" ignorava chamados — só entregas apareciam. Como o payload
+ * expõe `assigned_waiter_name` (quem aceitou) e NÃO o UUID `acknowledged_by`,
+ * a única chave de identidade no FE é o NOME do garçom logado. Um chamado é
+ * meu quando EU o aceitei: assigned_waiter_name == meu nome. Chamado 'pending'
+ * (assignee null) é de ninguém; sem identidade (staffName vazio) nunca
+ * reivindica — igual a `staffId null` só contar broadcast nas entregas.
+ */
+export function isCallMine(
+  row: WaiterCallRowWithAssignee,
+  staffName: string | null | undefined,
+): boolean {
+  const me = normalizeName(staffName);
+  if (!me) return false;
+  return normalizeName(row.assigned_waiter_name) === me;
+}
+
+export function mapCall(row: WaiterCallRowWithAssignee, staffName: string | null): CallRow {
   const base = row.note || REASON_LABEL[row.reason || 'other'] || 'Sem motivo informado';
   // P1 (re-scan 2026-07-05): a lista agora inclui chamados 'acknowledged'
   // (o garçom tocou "A caminho" mas ainda não concluiu). Distingue-os
@@ -98,6 +132,8 @@ function mapCall(row: WaiterCallSummary): CallRow {
     sub,
     ts: relativeTime(row.created_at),
     urgency: urgencyFromCreatedAt(row.created_at),
+    // Alimenta o filtro "Minhas mesas" — antes só entregas setavam mine.
+    mine: isCallMine(row, staffName),
   };
 }
 
@@ -149,7 +185,12 @@ export function ScreenWaiterCalls({
 
   useEffect(() => {
     let cancelled = false;
-    const staffId = readStaffSession()?.staffId ?? null;
+    const session = readStaffSession();
+    const staffId = session?.staffId ?? null;
+    // Chamados não expõem acknowledged_by (UUID) no payload — só
+    // assigned_waiter_name. O ownership de "Minhas mesas" pros chamados casa
+    // por nome do garçom logado (ver isCallMine).
+    const staffName = session?.staffName ?? null;
     const load = async (showLoading = false) => {
       if (showLoading) setLoading(true);
       try {
@@ -160,7 +201,10 @@ export function ScreenWaiterCalls({
           listPendingDeliveries(tenantSlug).catch(() => [] as PendingDelivery[]),
         ]);
         if (cancelled) return;
-        setCalls([...deliveries.map((d) => mapDelivery(d, staffId)), ...rows.map(mapCall)]);
+        setCalls([
+          ...deliveries.map((d) => mapDelivery(d, staffId)),
+          ...rows.map((r) => mapCall(r, staffName)),
+        ]);
         setErrorMsg(null);
       } catch (error) {
         console.error('[waiter-calls] list failed', error);

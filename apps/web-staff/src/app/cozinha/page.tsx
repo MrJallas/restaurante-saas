@@ -20,6 +20,7 @@ import {
 import { io, type Socket } from 'socket.io-client';
 import { staffGet, staffPatch, staffPost } from '../../lib/api';
 import { type StaffThemeMode, useStaffTheme } from '../../lib/theme';
+import { hasNewOrderIds } from './new-order-beep';
 
 interface OrderItem {
   id: string;
@@ -143,7 +144,11 @@ export default function CozinhaKDS() {
   const [busyRequestId, setBusyRequestId] = useState<string | null>(null);
   const [protectedSelection, setProtectedSelection] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState<string | null>(null);
-  const prevCountRef = useRef(0);
+  // Ids do último poll — o beep dispara por diff de CONJUNTO (id novo), não
+  // por delta de contagem: um pedido saindo + outro entrando no mesmo poll
+  // mantém a contagem constante mas ainda é pedido novo (bug P2). Mesmo
+  // padrão de Set que o prevRequestIdsRef abaixo e o TvKdsBoard.
+  const prevOrderIdsRef = useRef<Set<string>>(new Set());
   const prevRequestIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -175,10 +180,17 @@ export default function CozinhaKDS() {
       const res = await staffGet<{ orders: Order[] }>(`/${TENANT_SLUG}/kitchen/queue`);
       const activeOrders = res.orders.filter((o) => !['delivered', 'cancelled'].includes(o.status));
 
-      if (soundEnabled && activeOrders.length > prevCountRef.current && prevCountRef.current > 0) {
+      const nextIds = new Set(activeOrders.map((o) => o.id));
+      // `prevOrderIdsRef.size > 0` guarda a primeira carga (não bipa no boot),
+      // igual ao antigo `prevCount > 0` e ao isInitialLoad do TvKdsBoard.
+      if (
+        soundEnabled &&
+        prevOrderIdsRef.current.size > 0 &&
+        hasNewOrderIds(prevOrderIdsRef.current, nextIds)
+      ) {
         playBeep();
       }
-      prevCountRef.current = activeOrders.length;
+      prevOrderIdsRef.current = nextIds;
       setOrders(activeOrders);
     } catch {
       /* silently fail; kiosk polling retries */
