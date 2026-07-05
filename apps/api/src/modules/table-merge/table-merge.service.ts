@@ -221,24 +221,65 @@ export class TableMergeService {
 
     const ttl = new Date(Date.now() + REQUEST_TTL_SECONDS * 1000).toISOString();
 
-    const rows = (await this.tenantConn.query(
-      `INSERT INTO table_merge_requests
-         (source_table_session_id, target_table_session_id,
-          requesting_customer_id, target_customer_id,
-          status, message, ttl_expires_at, approved_by_a_at)
-       VALUES ($1, $2, $3, $4, 'pending', $5, $6,
-               CASE WHEN $7::uuid IS NOT NULL THEN now() ELSE NULL END)
-       RETURNING *`,
-      [
-        input.sourceTableSessionId,
-        input.targetTableSessionId,
-        input.requestingCustomerId,
-        input.targetCustomerId ?? null,
-        input.message ?? null,
-        ttl,
-        input.sourceApprovedByCustomerId ?? null,
-      ],
-    )) as Array<Record<string, unknown>>;
+    // P1 retry-safety (re-scan #8): INSERT idempotente. O partial UNIQUE
+    // `table_merge_requests_one_pending_per_pair` (migration 067) garante no
+    // máximo 1 'pending' por par DIRECIONAL (source, target). O ON CONFLICT
+    // ... DO NOTHING absorve o re-submit do cliente (timeout de 15s do api()
+    // ou reconexão → salonSubmitting liberado no finally → 2º POST) SEM criar
+    // um 2º card de aprovação pro host de destino. A cláusula WHERE do conflito
+    // casa o índice parcial. Em conflito o RETURNING vem VAZIO → buscamos e
+    // retornamos a request 'pending' já existente (mesmo shape, sem re-emitir
+    // o evento). B→A continua sendo uma request distinta (par direcional).
+    const rows = unwrapRows<Record<string, unknown>>(
+      await this.tenantConn.query(
+        `INSERT INTO table_merge_requests
+           (source_table_session_id, target_table_session_id,
+            requesting_customer_id, target_customer_id,
+            status, message, ttl_expires_at, approved_by_a_at)
+         VALUES ($1, $2, $3, $4, 'pending', $5, $6,
+                 CASE WHEN $7::uuid IS NOT NULL THEN now() ELSE NULL END)
+         ON CONFLICT (source_table_session_id, target_table_session_id)
+           WHERE status = 'pending'
+           DO NOTHING
+         RETURNING *`,
+        [
+          input.sourceTableSessionId,
+          input.targetTableSessionId,
+          input.requestingCustomerId,
+          input.targetCustomerId ?? null,
+          input.message ?? null,
+          ttl,
+          input.sourceApprovedByCustomerId ?? null,
+        ],
+      ),
+    );
+
+    if (!rows.length) {
+      // Conflito: já existe um 'pending' pra este par direcional. Retorna o
+      // existente (idempotência) sem emitir novo emitTableMergeCreated — o
+      // host de destino já recebeu o card no INSERT original.
+      const existing = unwrapRows<{ id: string }>(
+        await this.tenantConn.query(
+          `SELECT id FROM table_merge_requests
+            WHERE source_table_session_id = $1
+              AND target_table_session_id = $2
+              AND status = 'pending'
+            ORDER BY created_at DESC
+            LIMIT 1`,
+          [input.sourceTableSessionId, input.targetTableSessionId],
+        ),
+      );
+      if (existing.length) {
+        return this.getById(existing[0].id);
+      }
+      // Corrida rara: o 'pending' que causou o conflito saiu de 'pending'
+      // (aprovado/rejeitado/expirado) entre o INSERT e o SELECT. Sem row pra
+      // retornar — deixa o INSERT normal seguir no próximo retry do cliente.
+      throw new HttpException(
+        'Nao foi possivel registrar o pedido de juncao. Tente novamente.',
+        HttpStatus.CONFLICT,
+      );
+    }
 
     const result = await this.getById(rows[0].id as string);
 
