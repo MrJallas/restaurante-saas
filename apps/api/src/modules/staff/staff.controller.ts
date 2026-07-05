@@ -189,9 +189,21 @@ export class StaffController {
    *
    * Declarado ANTES do wildcard `@Get(':id')` pra Nest matcher não cair
    * em getById('performance'). Vide `path collision` em SUPER-PROMPT-V3 §9.
+   *
+   * IDOR-read (re-scan #5): era `StaffOrSessionGuard` — um customer com
+   * `x-session-token`/cookie `session_token` de QUALQUER mesa ativa do
+   * tenant passava o guard como `actorType==='session'` e lia KPIs
+   * confidenciais (totalRevenue/faturamento, salesByDay, teamComparison)
+   * de qualquer staff via `/staff/<uuid>/performance`. O handler nunca
+   * amarrava o `:id` ao caller nem ramificava por actorType. Troca pra
+   * `StaffOnlyGuard`, casando com as irmãs de dashboard de gestão neste
+   * controller (tables-overview, :id, tables/:tableRef/detail,
+   * zone-assignments GET) e com o precedente B-NEW-20 (dashboard revenue,
+   * mesmo swap). Único consumidor FE é `ScreenManagerStaffDetail` via
+   * `staffGet` (credencial de staff), então o caso legítimo não quebra.
    */
   @Get(':id/performance')
-  @UseGuards(StaffOrSessionGuard)
+  @UseGuards(StaffOnlyGuard)
   async getPerformance(@Param('id') id: string, @Query('period') period?: string) {
     const p =
       period === '7d' || period === '30d' || period === 'today'

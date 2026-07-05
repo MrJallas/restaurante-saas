@@ -102,3 +102,99 @@ describe('GET /:slug/staff roster — StaffOnlyGuard enforcement (regression)', 
     expect(getById).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * IDOR-read (re-scan de convergência #5) — GET /:slug/staff/:id/performance
+ * expõe KPIs confidenciais por staff (totalRevenue/faturamento, salesByDay,
+ * teamComparison). Antes rodava sob StaffOrSessionGuard: um customer com
+ * `x-session-token`/cookie `session_token` de qualquer mesa ativa passava o
+ * guard como `actorType==='session'` e lia o faturamento de qualquer garçom
+ * via `/staff/<uuid>/performance`. Fix: StaffOnlyGuard (mesmo swap de
+ * B-NEW-20 e mesmas irmãs de dashboard neste controller).
+ *
+ * O guard REAL roda (não overrideGuard): prova que só credencial de STAFF
+ * abre a rota e que um caller de SESSÃO (customer) é barrado.
+ */
+describe('GET /:slug/staff/:id/performance — StaffOnlyGuard enforcement (IDOR-read)', () => {
+  let app: INestApplication;
+  let prevKey: string | undefined;
+  const getPerformance = jest.fn();
+  // StaffOnlyGuard só toca o Redis quando há `x-staff-token`. Os testes
+  // abaixo usam x-staff-key (sucesso) e x-session-token (rejeição sem tocar
+  // Redis), então o stub `get` retornando null é suficiente e defensivo.
+  const redisGet = jest.fn().mockResolvedValue(null);
+
+  beforeAll(async () => {
+    prevKey = process.env.STAFF_API_KEY;
+    process.env.STAFF_API_KEY = STAFF_KEY;
+
+    const moduleRef = await Test.createTestingModule({
+      controllers: [StaffController],
+      providers: [
+        { provide: StaffService, useValue: { getPerformance } },
+        { provide: RedisService, useValue: { get: redisGet } },
+        { provide: ZoneAssignmentsService, useValue: {} },
+        { provide: TenantConnectionProvider, useValue: { query: async () => [] } },
+        { provide: CallerResolverService, useValue: {} },
+      ],
+    }).compile();
+
+    app = moduleRef.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    );
+    await app.init();
+  });
+
+  afterAll(async () => {
+    if (prevKey === undefined) delete process.env.STAFF_API_KEY;
+    else process.env.STAFF_API_KEY = prevKey;
+    await app.close();
+  });
+
+  beforeEach(() => {
+    getPerformance.mockReset();
+    getPerformance.mockResolvedValue({
+      staffId: 'staff-uuid',
+      ordersServed: 42,
+      totalRevenue: 999999,
+      salesByDay: [],
+      teamComparison: [],
+    });
+  });
+
+  it('caller de SESSÃO (customer) → barrado, service NÃO é chamado (sem vazar faturamento)', async () => {
+    // Token de sessão de customer: StaffOrSessionGuard aceitaria (actorType
+    // session); StaffOnlyGuard rejeita porque não é x-staff-key/-token.
+    await request(app.getHttpServer())
+      .get('/acme-bistro/staff/staff-uuid/performance?period=30d')
+      .set('x-session-token', 'customer-session-token-valido')
+      .expect(403);
+    expect(getPerformance).not.toHaveBeenCalled();
+  });
+
+  it('sem credencial → 403 e o service não é chamado', async () => {
+    await request(app.getHttpServer())
+      .get('/acme-bistro/staff/staff-uuid/performance')
+      .expect(403);
+    expect(getPerformance).not.toHaveBeenCalled();
+  });
+
+  it('x-staff-key inválido → 403', async () => {
+    await request(app.getHttpServer())
+      .get('/acme-bistro/staff/staff-uuid/performance')
+      .set('x-staff-key', 'wrong-key')
+      .expect(403);
+    expect(getPerformance).not.toHaveBeenCalled();
+  });
+
+  it('caller STAFF (x-staff-key correto) → 200 (consumidor manager preservado)', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/acme-bistro/staff/staff-uuid/performance?period=30d')
+      .set('x-staff-key', STAFF_KEY)
+      .expect(200);
+    expect(res.body.totalRevenue).toBe(999999);
+    expect(getPerformance).toHaveBeenCalledTimes(1);
+    expect(getPerformance).toHaveBeenCalledWith('staff-uuid', '30d');
+  });
+});
