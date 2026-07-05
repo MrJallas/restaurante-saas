@@ -390,6 +390,42 @@ def _sanitize_joiner_name(raw: str) -> str:
     return name
 
 
+# ── Defense-in-depth (re-scan 2026-07-05): dado interpolado no system prompt que
+# NÃO é o joinerName — nome do próprio cliente, nomes de item do cardápio,
+# categorias e resumo do cardápio — passava CRU. Severidade real BAIXA (o nome é
+# do próprio cliente autenticado, não cross-customer; o cardápio é admin-controlado;
+# e mutações via LLM já são gated — join dropado por _llm_may_decide_join, mutação
+# destrutiva exige confirmação humana). Mesmo assim fechamos a INCONSISTÊNCIA de
+# só o joinerName ser tratado como dado.
+#
+# A neutralização é NARROW de propósito: só identificadores de tool-call e
+# meta-instruções ("ignore as instruções", "system prompt", "assistant:") — que
+# NUNCA aparecem num nome ou item de cardápio legítimo. NÃO usa a denylist
+# afirmativa ampla (sim/pode/deixa) do _sanitize_joiner_name, porque cardápio real
+# contém essas palavras ("Pode escolher…", "Sim, temos…") e seria corrompido.
+_PROMPT_META_TOKENS = re.compile(
+    r"\b(?:accept_join_request|reject_join_request|request_table_merge|delete_chat|"
+    r"send_message_to_manager|send_complaint|show_lgpd_notice|ask_about_restaurant)\b"
+    r"|ignore\s+(?:as\s+|the\s+)?(?:instru\w+|above|previous)"
+    r"|desconsider\w+\s+(?:as\s+)?instru\w+"
+    r"|system\s+prompt"
+    r"|assistant\s*:",
+    re.IGNORECASE,
+)
+
+
+def _neutralize_prompt_meta(text, *, collapse_newlines: bool) -> str:
+    """Neutraliza tokens de tool-call e meta-instruções em dado interpolado no
+    prompt, SEM corromper conteúdo legítimo (não toca a classe afirmativa).
+    `collapse_newlines=True` para campos curtos (nome, item) onde uma quebra de
+    linha é sempre forja de nova linha de instrução; False pra blocos de cardápio
+    (que legitimamente têm estrutura de linhas)."""
+    s = str(text or "")
+    if collapse_newlines:
+        s = re.sub(r"\s+", " ", s)
+    return _PROMPT_META_TOKENS.sub("▮", s)
+
+
 def _pending_join_request(customer_context: dict | None) -> dict | None:
     if not customer_context:
         return None
@@ -1327,13 +1363,13 @@ Use function calls para intenções concretas: cardápio/menu, buscar prato, adi
 Nunca invente itens fora do cardápio; se faltar informação, consulte a equipe ou peça uma confirmação curta."""
 
         if categories:
-            prompt += f"\n\nCATEGORIAS DO CARDÁPIO:\n{str(categories)[:600]}"
+            prompt += f"\n\nCATEGORIAS DO CARDÁPIO:\n{_neutralize_prompt_meta(str(categories)[:600], collapse_newlines=False)}"
         if menu_summary:
-            prompt += f"\n\nITENS DO CARDÁPIO:\n{str(menu_summary)[:1800]}"
+            prompt += f"\n\nITENS DO CARDÁPIO:\n{_neutralize_prompt_meta(str(menu_summary)[:1800], collapse_newlines=False)}"
         if customer_context:
             name = customer_context.get("name", "")
             if name:
-                prompt += f"\n\nCLIENTE: {name}"
+                prompt += f"\n\nCLIENTE: {_neutralize_prompt_meta(name, collapse_newlines=True)}"
             pending_join = _pending_join_request(customer_context)
             if pending_join:
                 # Nome já sanitizado em `_pending_join_request`; ainda assim
@@ -1450,18 +1486,24 @@ USO DE FERRAMENTAS (function calling · OBRIGATÓRIO em mutações):
 - Se em dúvida entre texto vs tool em pedido de mutação, SEMPRE escolha a tool."""
 
     if categories:
-        prompt += f"\n\nCATEGORIAS DO CARDÁPIO:\n{categories}"
+        prompt += f"\n\nCATEGORIAS DO CARDÁPIO:\n{_neutralize_prompt_meta(categories, collapse_newlines=False)}"
 
     if menu_summary:
-        prompt += f"\n\nITENS DO CARDÁPIO:\n{menu_summary}"
+        prompt += f"\n\nITENS DO CARDÁPIO:\n{_neutralize_prompt_meta(menu_summary, collapse_newlines=False)}"
 
     if customer_context:
         name = customer_context.get("name", "")
         if name:
-            prompt += f"\n\nCLIENTE: {name}"
+            prompt += f"\n\nCLIENTE: {_neutralize_prompt_meta(name, collapse_newlines=True)}"
         last_items = customer_context.get("last_items", [])
         if last_items:
-            items_str = ", ".join([i.get("name", "") for i in last_items if i.get("name")])
+            items_str = ", ".join(
+                [
+                    _neutralize_prompt_meta(i.get("name", ""), collapse_newlines=True)
+                    for i in last_items
+                    if i.get("name")
+                ]
+            )
             prompt += f"\nÚltimos pedidos do cliente: {items_str}"
         # VIP tone hint per vip-customer.md — affects copy via the system prompt.
         if customer_context.get("is_vip"):
