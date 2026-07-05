@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from './useSession';
 
 /**
@@ -19,6 +19,14 @@ import { useSession } from './useSession';
  * welcome/recognize do customer-host model. Devolve `false` (loading)
  * enquanto resolve, `true` quando ha customerId valido.
  *
+ * O bounce anexa `?next=<rota-atual>` (path absoluto slug-prefixado via
+ * `usePathname`, com a query string preservada). O gate de CPF
+ * (`ScreenCustomerIdentifyBeforeJoin` → `resolveGateDestination`) LE esse
+ * `next` e, apos identificar, devolve o cliente exatamente pra tela que ele
+ * queria — em vez de cair no fallback `/{slug}`. `resolveGateDestination`
+ * aceita path absoluto interno como este as-is (bloqueia `//` e `http(s)://`
+ * pra nao virar open-redirect), entao passar o `pathname` cru e' seguro.
+ *
  * Uso:
  *   const ready = useRequireCustomerId(slug);
  *   if (!ready) return null;
@@ -31,6 +39,8 @@ import { useSession } from './useSession';
 export function useRequireCustomerId(slug: string): boolean {
   const session = useSession();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [ready, setReady] = useState<boolean>(!!session.customerId);
 
   useEffect(() => {
@@ -43,13 +53,22 @@ export function useRequireCustomerId(slug: string): boolean {
     // sempre redirecionava antes do bundle popular customerId.
     const timer = setTimeout(() => {
       if (!session.customerId) {
-        router.replace(`/${slug}/identify`);
+        // Anexa `?next=<rota-atual>` pra que o gate de CPF devolva o cliente
+        // pra tela de onde ele veio (rating/complaints/historico/etc) em vez
+        // do fallback `/${slug}`. `pathname` ja' e' absoluto e slug-prefixado
+        // (as telas vivem sob `/[slug]/...`), formato que
+        // `resolveGateDestination` consome as-is. Preserva a query string
+        // original quando houver (ex.: `?tab=x`).
+        const query = searchParams?.toString();
+        const returnPath = query ? `${pathname}?${query}` : pathname;
+        const next = returnPath ? `?next=${encodeURIComponent(returnPath)}` : '';
+        router.replace(`/${slug}/identify${next}`);
       } else {
         setReady(true);
       }
     }, 50);
     return () => clearTimeout(timer);
-  }, [session.customerId, router, slug]);
+  }, [session.customerId, router, slug, pathname, searchParams]);
 
   return ready;
 }

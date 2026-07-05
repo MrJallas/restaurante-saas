@@ -29,6 +29,7 @@ export default function HostApproveMergePage() {
   const { sessionId, customerId } = useSession();
 
   const [request, setRequest] = useState<TableMergeRequestDto | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!getSessionToken()) {
@@ -47,6 +48,30 @@ export default function HostApproveMergePage() {
       }
     }
   }, [requestId]);
+
+  // Escape hatch · espelha a página de join (que erra via `loadError` quando o
+  // DTO não pôde ser hidratado). Aqui não há GET customer-scoped: o DTO só vem
+  // do sessionStorage (fast path) ou do evento WS `table_merge.created`. Se
+  // nenhum dos dois materializar o request — deep-link frio sem cache, WS que
+  // nunca chega — o spinner ficava eterno. Damos uma janela de tolerância pro
+  // WS/rehidratação e, esgotada, viramos pra um estado de erro com CTA de volta
+  // em vez de girar pra sempre. Sem requestId não dá pra hidratar nada: erra já.
+  useEffect(() => {
+    if (request) return;
+    if (!requestId) {
+      setLoadError('Pedido de junção não encontrado.');
+      return;
+    }
+    const timer = setTimeout(() => {
+      // `request` pode ter chegado via WS entre o agendamento e o disparo; o
+      // updater funcional lê o valor mais recente sem re-armar o timer.
+      setRequest((current) => {
+        if (!current) setLoadError('Pedido não encontrado ou já decidido.');
+        return current;
+      });
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [request, requestId]);
 
   // Stash incoming merge.created events so deep-link refreshes work.
   useCustomerHostEvents({
@@ -79,6 +104,21 @@ export default function HostApproveMergePage() {
       }
     },
   });
+
+  if (loadError) {
+    return (
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-bg px-6 text-center">
+        <p className="text-[15px] text-mute">{loadError}</p>
+        <button
+          type="button"
+          onClick={() => router.replace(`/${slug}`)}
+          className="rounded-full border-[1.3px] border-ink bg-bg px-6 py-2.5 text-[14px] font-semibold text-ink"
+        >
+          Voltar pra mesa
+        </button>
+      </main>
+    );
+  }
 
   if (!request) {
     return (
