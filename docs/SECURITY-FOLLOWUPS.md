@@ -27,6 +27,15 @@
 - Baixo valor (informacional, não explorável) — não valeu um ciclo de commit+boot
   no fechamento, mas é um one-liner limpo.
 
+## 2b. `OverlaySalonMap.highlightTableSessionId` virou dead-code
+
+- Como o salon/adjacent parou de expor `sessionId` (§"Já FECHADO"), a
+  pré-seleção sticky da IA (`OverlaySalonMap.tsx:127-129`, casa por
+  `x.sessionId === highlightTableSessionId`) nunca mais casa. Nenhum caller
+  passa a prop hoje (já era efetivamente morta), então é cosmético, não bug.
+- **Caminho:** se a pré-seleção da IA for revivida, casar por `num`/`tableCode`
+  (como a seleção manual já faz) em vez de `sessionId`; senão, remover a prop.
+
 ## 3. `middleware` → `proxy` (deprecação do Next 16)
 
 - Next 16 deprecou a convenção de arquivo `middleware`. O build emite
