@@ -24,6 +24,15 @@ BLOCKED_PATTERNS = [
     re.compile(r"\bmatar\b(?!\s+a?\s*(fome|sede))", re.IGNORECASE),
     re.compile(r"\bmorrer\b(?!\s+de\s+(fome|sede))", re.IGNORECASE),
     re.compile(r"\b(suicidio|arma\s+de\s+fogo|bomba|cocaina|maconha|sexo|pornografia)\b", re.IGNORECASE),
+    # Drogas / sexo explicito (P1 do re-scan de convergencia): 'droga(s)',
+    # 'transar', 'crack', 'heroina' escapavam pela allow-list heuristica
+    # ('quero \w+' / 'mais \w+') porque a linha acima cobria so cocaina/maconha.
+    # CUIDADO: 'droga' sozinho e interjeicao comum ('que droga!') — so bloqueia
+    # termos inequivocos OU droga(s) num contexto de comprar/querer/usar/vender,
+    # nunca a interjeicao (senao bloquearia cliente frustrado).
+    re.compile(r"\b(crack|heroina|entorpecente|drogas)\b", re.IGNORECASE),
+    re.compile(r"\b(comprar|quero|querendo|vender|usar|arrumar|cheirar|conseguir)\s+drogas?\b", re.IGNORECASE),
+    re.compile(r"\btransar\b", re.IGNORECASE),
     # Homework / academic
     re.compile(r"\b(tarefa|trabalho\s+escolar|prova|vestibular|enem|faculdade|tcc)\b", re.IGNORECASE),
     # General off-topic signals

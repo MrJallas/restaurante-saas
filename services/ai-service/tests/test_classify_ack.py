@@ -163,6 +163,14 @@ def test_classify_endpoint_does_not_block_secondary_tools(message: str):
     "quero mais sexo",       # sexo — casa allow-list ('mais \w+' / 'quero \w+')
     "quero mais maconha",    # droga — mesma heurística
     "quero votar no lula",   # política — 'quero \w+' + voto/lula bloqueado
+    # P1 do re-scan de convergência: 'droga(s)' genérico, 'transar', 'crack',
+    # 'heroina' escapavam pela allow-list ('quero \w+') porque check_blocked
+    # cobria só cocaina/maconha/sexo. Agora casam BLOCKED_PATTERNS.
+    "quero drogas",
+    "quero comprar droga",
+    "quero transar",
+    "preciso de crack",
+    "quero heroina",
 ])
 def test_classify_endpoint_blocks_disallowed_even_if_allow_list_matches(message: str):
     """P1-H: conteúdo bloqueado nunca deve virar 'allowed' por casar heurística.
@@ -178,6 +186,22 @@ def test_classify_endpoint_blocks_disallowed_even_if_allow_list_matches(message:
     body = res.json()
     assert body["allowed"] is False, f"vazou blocked como allowed: {message!r} -> {body}"
     assert body["reason"] == "regex", f"esperava regex block, veio: {body}"
+
+
+@pytest.mark.parametrize("message", [
+    "que droga esse atraso",       # interjeição de frustração (NÃO é droga literal)
+    "que droga, esqueceram meu pedido",
+    "droga, cadê minha comida",
+])
+def test_blocklist_does_not_flag_droga_interjection(message: str):
+    """A palavra 'droga' sozinha é interjeição comum de frustração no PT-BR
+    ('que droga!'). O gate de drogas só pode casar termos inequívocos ou
+    'droga(s)' num contexto de comprar/querer/usar — nunca a interjeição, ou
+    bloquearíamos um cliente legitimamente frustrado."""
+    from services.blocked_patterns import check_blocked
+
+    is_blocked, _ = check_blocked(message)
+    assert is_blocked is False, f"falso-positivo: interjeição bloqueada: {message!r}"
 
 
 @pytest.mark.parametrize("message", [
