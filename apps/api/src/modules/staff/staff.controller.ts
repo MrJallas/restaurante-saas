@@ -218,20 +218,37 @@ export class StaffController {
     return this.staffService.getById(id);
   }
 
+  /**
+   * Privilege escalation staff→manager (re-scan de convergência #7) —
+   * create/update/delete eram guardadas SÓ por StaffOnlyGuard, que NÃO checa
+   * role (retorna true pra QUALQUER x-staff-token válido, emitido no login de
+   * todo role, ou a x-staff-key compartilhada). Um garçom logava normal e:
+   * criava manager (POST {role:'manager'}), auto-promovia (PATCH próprio-id
+   * {role:'manager'}), resetava o PIN de qualquer um (PATCH {pin}) logando
+   * como ele, ou deletava o gerente (DELETE). `staffService.update()` seta
+   * role/pin_hash direto do DTO sem gate in-service; `delete()` é hard-delete.
+   *
+   * Fix: ManagerOnlyGuard casando com as irmãs de mutação de gestão —
+   * StaffPinAdminController reset-pin, zone-assignments POST/DELETE, e todo o
+   * conjunto vip/complaints/courtesies/lgpd/shifts/manager-account. O canvas
+   * mapeia staff create/edit pra ScreenManagerStaffForm (tela de manager), e
+   * o consumidor FE (staffCreate/staffUpdate/staffDelete via staffApi) manda
+   * credencial de staff — o manager legítimo passa; garçom/host/cook não.
+   */
   @Post()
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async create(@Body() dto: CreateStaffDto) {
     return this.staffService.create(dto);
   }
 
   @Patch(':id')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async update(@Param('id') id: string, @Body() dto: UpdateStaffDto) {
     return this.staffService.update(id, dto);
   }
 
   @Delete(':id')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async delete(@Param('id') id: string) {
     return this.staffService.delete(id);
   }
