@@ -15,6 +15,7 @@ import { AlertsService } from '../alerts/alerts.service';
 import { HostInboxService } from './host-inbox.service';
 import { HostWaitlistService } from './host-waitlist.service';
 import { HostReservationsService } from './host-reservations.service';
+import { invalidateSessionAuthById } from '../../common/auth/session-auth-token';
 import type {
   HostInboxItemDto,
   HostLiberateMode,
@@ -281,7 +282,7 @@ export class HostService {
       // orders/payments numa conta já liquidada. O SessionGuard também
       // revalida `status` no banco (defense-in-depth), mas apagar aqui mata
       // o token na hora sem esperar a próxima checagem.
-      await this.redis.del(`session:${activeSession.id}`).catch((err) => {
+      await invalidateSessionAuthById(this.redis, activeSession.id).catch((err) => {
         this.logger.warn(
           `Falha ao invalidar chave Redis da sessão ${activeSession.id}: ${(err as Error).message}`,
         );

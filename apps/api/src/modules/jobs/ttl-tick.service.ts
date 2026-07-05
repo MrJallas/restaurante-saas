@@ -5,6 +5,7 @@ import { EventsGateway } from '../websocket/events.gateway';
 import { unwrapRows, unwrapAffected } from '../tenant/query-utils';
 import { SecurityAuditService } from '../security-audit/security-audit.service';
 import { RedisService } from '../../infra/redis/redis.service';
+import { invalidateSessionAuthById } from '../../common/auth/session-auth-token';
 
 /**
  * Recurring sweeper for time-based domain transitions. Runs every 10s and,
@@ -306,7 +307,7 @@ export class TtlTickService {
       // cookie/x-session-token na hora (não espera a próxima request).
       await Promise.all(
         closed.map((s) =>
-          this.redis.del(`session:${s.id}`).catch((err) => {
+          invalidateSessionAuthById(this.redis, s.id).catch((err) => {
             this.logger.warn(
               `[${slug}] falha ao invalidar chave Redis da sessão zumbi ${s.id}: ${(err as Error).message}`,
             );

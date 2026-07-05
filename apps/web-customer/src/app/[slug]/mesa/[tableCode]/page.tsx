@@ -494,7 +494,10 @@ export default function MesaPage() {
             // Só libera navegacao interna depois da localizacao. Antes, negar
             // geolocalizacao deixava sessionStorage com token e o usuario ainda
             // conseguia abrir /cardapio direto pela URL.
-            setSessionToken(session.sessionId);
+            // A07: o valor de AUTH (x-session-token/cookie) é o `token` (HMAC do
+            // id), NÃO o sessionId. O sessionId segue como identificador de
+            // recurso no bundle (WS room, tableSessionId de merge).
+            setSessionToken(session.token);
             setSession({
               sessionId: session.sessionId,
               tableCode: session.tableCode,

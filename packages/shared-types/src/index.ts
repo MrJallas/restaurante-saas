@@ -55,7 +55,13 @@ export interface InitSessionDto {
 }
 
 export interface SessionResponseDto {
+  /** ID do recurso da sessão (identificador — WS room, tableSessionId de merge). */
   sessionId: string;
+  /**
+   * Token de AUTH (A07): HMAC do sessionId, separado do id. Vai no header
+   * `x-session-token`/cookie. O `sessionId` NÃO autentica — só o token.
+   */
+  token: string;
   tableCode: string;
   tableLabel: string;
 }

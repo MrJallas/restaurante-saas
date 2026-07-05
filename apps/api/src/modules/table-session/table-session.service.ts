@@ -12,6 +12,7 @@ import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
 import { EventsGateway } from '../websocket/events.gateway';
 import { safeJsonParse } from '../../common/utils/safe-json';
+import { sessionAuthToken, storeSessionAuth } from '../../common/auth/session-auth-token';
 import { QrCodeService } from './qr-code.service';
 import { ScanVerificationService } from '../scan-verification/scan-verification.service';
 import { SecurityAuditService } from '../security-audit/security-audit.service';
@@ -80,7 +81,7 @@ export class TableSessionService {
     timestamp: string,
     schemaName: string,
     accessToken?: string | null,
-  ): Promise<SessionData> {
+  ): Promise<SessionData & { token: string }> {
     // 1. Busca mesa pelo code
     const tables = await this.tenantConn.query(
       'SELECT id, code, label, qr_hmac_secret, is_active FROM tables WHERE code = $1',
@@ -194,7 +195,14 @@ export class TableSessionService {
       schemaName,
     };
 
-    await this.redis.set(`session:${sessionId}`, JSON.stringify(sessionData), SESSION_TTL_SECONDS);
+    // A07: grava sob `session:<token>` (token = HMAC do sessionId), NÃO sob o id
+    // cru. O id passa a ser um identificador inócuo; a credencial é o token.
+    const token = await storeSessionAuth(
+      this.redis,
+      sessionId,
+      JSON.stringify(sessionData),
+      SESSION_TTL_SECONDS,
+    );
 
     // 5. Welcome pool e por sessao — so gera no primeiro scan. Em scans
     // subsequentes mantemos o pool original pra que indices ja consumidos
@@ -211,7 +219,7 @@ export class TableSessionService {
     // baixo se o ultimo scan foi 3h59 atras.
     await this.redis.expire(`welcome_pool:${sessionId}`, SESSION_TTL_SECONDS);
 
-    return { ...sessionData, sessionId };
+    return { ...sessionData, sessionId, token };
   }
 
   async getSessionFromToken(sessionToken: string): Promise<SessionData | null> {
@@ -229,15 +237,21 @@ export class TableSessionService {
    * `client.data.customerId === data.customerId` no WS gateway.
    */
   async attachCustomerToSession(sessionId: string, customerId: string): Promise<void> {
-    const data = await this.redis.get(`session:${sessionId}`);
+    // A07: a sessão vive sob `session:<token>` (token = HMAC do id). Lê pelo
+    // token e escreve de volta na MESMA chave. Fallback pra `session:<id>`
+    // legada (sessões pré-split) — escreve onde leu pra não perder o attach.
+    const tokenKey = `session:${sessionAuthToken(sessionId)}`;
+    const legacyKey = `session:${sessionId}`;
+    let key = tokenKey;
+    let data = await this.redis.get(tokenKey);
+    if (data == null) {
+      key = legacyKey;
+      data = await this.redis.get(legacyKey);
+    }
     if (!data) return; // sessão expirou — silenciosamente no-op
     const parsed = safeJsonParse<SessionData>(data);
     if (!parsed) return;
-    await this.redis.set(
-      `session:${sessionId}`,
-      JSON.stringify({ ...parsed, customerId }),
-      SESSION_TTL_SECONDS,
-    );
+    await this.redis.set(key, JSON.stringify({ ...parsed, customerId }), SESSION_TTL_SECONDS);
   }
 
   /**

@@ -15,6 +15,7 @@ import { timingSafeEqual } from 'crypto';
 import { RedisService } from '../../infra/redis/redis.service';
 import { safeJsonParse } from '../../common/utils/safe-json';
 import { verifyStaffSessionToken } from '../../common/auth/staff-session-token';
+import { readSessionAuthById } from '../../common/auth/session-auth-token';
 import { EventsEmitterService } from './events-emitter.service';
 import type {
   WsEscalationCreated,
@@ -510,7 +511,11 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     // tenant — usamos cache na chave `session:<sessionId>` que persiste
     // tableSession data com schema/slug.
     if (client.data.authType === 'staff') {
-      const sessionData = await this.redis.get(`session:${data.sessionId}`);
+      // A07: a sessão vive sob `session:<token>` (token = HMAC do id). O staff
+      // tem o id (do room que quer entrar) → resolve pelo helper (computa o
+      // token; fallback pra chave legada durante a transição). NÃO é auth de
+      // cliente — é só o tenant-check da sessão que o staff vai observar.
+      const sessionData = await readSessionAuthById(this.redis, data.sessionId);
       if (!sessionData) {
         client.emit('error', { message: 'Session inválida ou expirada.' });
         return;

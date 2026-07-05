@@ -40,7 +40,10 @@ export class TableSessionController {
       dto.accessToken,
     );
 
-    res.cookie('session_token', session.sessionId, {
+    // A07: cookie/header de auth = o TOKEN (HMAC do id), não o id. O
+    // `sessionId` volta separado como identificador de recurso (WS room,
+    // tableSessionId de merge) — inócuo de expor.
+    res.cookie('session_token', session.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -50,6 +53,7 @@ export class TableSessionController {
 
     return {
       sessionId: session.sessionId,
+      token: session.token,
       tableCode: session.tableCode,
       tableLabel: session.tableLabel,
     };
