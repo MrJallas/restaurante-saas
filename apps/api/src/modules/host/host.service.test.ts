@@ -23,6 +23,8 @@ import { HostInboxService } from './host-inbox.service';
 import { HostWaitlistService } from './host-waitlist.service';
 import { HostReservationsService } from './host-reservations.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import type { AlertsService } from '../alerts/alerts.service';
+import type { EventsGateway } from '../websocket/events.gateway';
 
 interface FakeTableCandidate {
   id: string;
@@ -371,5 +373,101 @@ describe('HostService.updateSwapRequest — complete não duplica sessão ativa 
     await expect(
       makeService(db.conn).updateSwapRequest('swap-1', { status: 'completed' }, 'slug'),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+/**
+ * P1 retry-safety (re-scan #8): `requestAssist` NÃO pode gerar N alertas
+ * 'host_assist_table' idênticos no inbox da recepção sob double-tap / retry.
+ *
+ * Fix congelado aqui: requestAssist repassa `tableSessionId` pra o
+ * `alerts.create`, que faz `ON CONFLICT DO NOTHING` contra o índice único
+ * parcial da migration 069 (1 ativo por sessão) e, em conflito, REUSA o alerta
+ * ativo. Prova de que a sessão é propagada + de que 2 chamadas convergem num
+ * único alerta ativo, e de que o WS `host.assist_requested` continua emitindo.
+ */
+describe('HostService.requestAssist — idempotente por sessão (P1 retry-safety)', () => {
+  interface FakeAlert {
+    id: string;
+    kind: string;
+    tableSessionId: string | null;
+  }
+
+  /**
+   * fakeAssistDeps: um TenantConnectionProvider que resolve label/code da
+   * sessão + um AlertsService fake que emula o dedup do índice parcial (1
+   * alerta host_assist ativo por sessão; retry devolve o mesmo) e um
+   * EventsGateway fake que conta as emissões.
+   */
+  function makeAssistService() {
+    const conn = {
+      query: async (sql: string) => {
+        const s = sql.replace(/\s+/g, ' ').trim();
+        if (s.startsWith('SELECT t.label, t.code')) {
+          return [{ label: 'Mesa 7', code: '7' }];
+        }
+        throw new Error(`fake assist: SQL não roteado: ${s}`);
+      },
+      getTenantSlug: () => 'acme',
+    } as unknown as TenantConnectionProvider;
+
+    const activeBySession = new Map<string, FakeAlert>();
+    const createCalls: Array<{ kind: string; tableSessionId: string | undefined }> = [];
+    let seq = 0;
+    const alerts = {
+      create: async (data: { kind: string; tableSessionId?: string }) => {
+        createCalls.push({ kind: data.kind, tableSessionId: data.tableSessionId });
+        const sid = data.tableSessionId ?? null;
+        // Emula o ON CONFLICT DO NOTHING + re-fetch: se já há ativo pra a
+        // sessão, devolve o MESMO alerta (retry reusa).
+        if (sid && activeBySession.has(sid)) {
+          return activeBySession.get(sid) as unknown as Record<string, unknown>;
+        }
+        const alert: FakeAlert = { id: `alert-${++seq}`, kind: data.kind, tableSessionId: sid };
+        if (sid) activeBySession.set(sid, alert);
+        return alert as unknown as Record<string, unknown>;
+      },
+    } as unknown as AlertsService;
+
+    let assistEmits = 0;
+    const events = {
+      emitHostAssistRequested: () => {
+        assistEmits += 1;
+      },
+    } as unknown as EventsGateway;
+
+    const service = new HostService(
+      conn,
+      new HostWaitlistService(conn),
+      new HostInboxService(conn),
+      new HostReservationsService(conn),
+      events,
+      alerts,
+    );
+
+    return {
+      service,
+      getCreateCalls: () => createCalls,
+      getActiveCount: () => activeBySession.size,
+      getAssistEmits: () => assistEmits,
+    };
+  }
+
+  it('repassa tableSessionId pro alerts.create (habilita o dedup do índice 069)', async () => {
+    const t = makeAssistService();
+    await t.service.requestAssist('sess-7', 'Ajuda com junção de mesas');
+    const [call] = t.getCreateCalls();
+    expect(call.kind).toBe('host_assist_table');
+    expect(call.tableSessionId).toBe('sess-7');
+  });
+
+  it('2x requestAssist pra a MESMA sessão → 1 alerta ativo (retry reusa, não spamma)', async () => {
+    const t = makeAssistService();
+    await t.service.requestAssist('sess-7', 'Ajuda');
+    await t.service.requestAssist('sess-7', 'Ajuda'); // double-tap / retry
+
+    // 2 tentativas de create, mas o dedup do índice mantém 1 ativo pra a sessão.
+    expect(t.getCreateCalls()).toHaveLength(2);
+    expect(t.getActiveCount()).toBe(1);
   });
 });

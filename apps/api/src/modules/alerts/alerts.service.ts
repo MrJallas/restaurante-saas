@@ -178,6 +178,15 @@ export class AlertsService {
     sub?: string;
     ttlAt?: Date | string;
     actions?: AlertActionDescriptor[];
+    /**
+     * Vincula o alerta a uma sessão de mesa. Hoje só o kind
+     * `host_assist_table` passa este valor — ele habilita a dedup por sessão
+     * (índice único parcial da migration 069 + ON CONFLICT abaixo) pra que um
+     * double-tap / retry do `POST /:slug/host/assist` reuse o alerta ativo em
+     * vez de spammar o inbox da recepção. Demais kinds omitem → coluna NULL →
+     * fora do índice parcial → comportamento inalterado (N inserts livres).
+     */
+    tableSessionId?: string;
   }): Promise<AlertRow> {
     if (!VALID_SEV.includes(data.sev)) {
       throw new BadRequestException(`Severidade invalida. Use: ${VALID_SEV.join(', ')}.`);
@@ -186,10 +195,27 @@ export class AlertsService {
       throw new BadRequestException('Title obrigatorio (max 500 chars).');
     }
 
+    // Dedup por sessão SÓ quando há tableSessionId. O `ON CONFLICT` usa como
+    // árbitro o índice parcial `alerts_host_assist_one_active_per_session`
+    // (mig 069), cujo predicado exige kind='host_assist_table' +
+    // table_session_id NOT NULL + não-resolvido/dispensado. Como só o
+    // host_assist passa a sessão, nenhum outro kind casa o árbitro — eles nunca
+    // conflitam e seguem inserindo N linhas. Em conflito, DO NOTHING não
+    // devolve linha; caímos no re-fetch abaixo pra reusar o alerta ativo.
+    const conflictClause = data.tableSessionId
+      ? `ON CONFLICT (table_session_id)
+           WHERE kind = 'host_assist_table'
+             AND table_session_id IS NOT NULL
+             AND dismissed_at IS NULL
+             AND resolved_at IS NULL
+         DO NOTHING`
+      : '';
+
     const rows = unwrapRows<AlertRow>(
       await this.tenantConn.query(
-        `INSERT INTO alerts (sev, kind, title, sub, ttl_at, actions)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+        `INSERT INTO alerts (sev, kind, title, sub, ttl_at, actions, table_session_id)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+         ${conflictClause}
          RETURNING id, sev, kind, title, sub, ttl_at, actions,
                    dismissed_at, resolved_at, created_at`,
         [
@@ -199,9 +225,31 @@ export class AlertsService {
           data.sub ?? null,
           data.ttlAt ?? null,
           JSON.stringify(data.actions ?? []),
+          data.tableSessionId ?? null,
         ],
       ),
     );
+
+    // Conflito de dedup (host_assist já ativo pra esta sessão): o INSERT não
+    // devolveu linha. Reusa o alerta ativo existente sem criar duplicata nem
+    // reemitir o WS `alert.created` (idempotência do retry).
+    if (!rows.length && data.tableSessionId) {
+      const existing = (await this.tenantConn.query(
+        `SELECT id, sev, kind, title, sub, ttl_at, actions,
+                dismissed_at, resolved_at, created_at
+           FROM alerts
+          WHERE kind = 'host_assist_table'
+            AND table_session_id = $1
+            AND dismissed_at IS NULL
+            AND resolved_at IS NULL
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [data.tableSessionId],
+      )) as AlertRow[];
+      if (existing.length) {
+        return existing[0];
+      }
+    }
 
     if (!rows.length) {
       throw new BadRequestException('Falha ao criar alerta.');

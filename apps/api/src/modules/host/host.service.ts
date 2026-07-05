@@ -122,6 +122,11 @@ export class HostService {
         sub: reason ?? 'Cliente pediu ajuda da recepção pelo assistente.',
         // Pedido presencial perde validade rápido — expira sozinho em 30min.
         ttlAt: new Date(Date.now() + 30 * 60 * 1000),
+        // Dedup por sessão (mig 069): double-tap com guard liberado no finally
+        // ou timeout+retry do api() (15s) não deve gerar N alertas idênticos no
+        // inbox da recepção. Passar a sessão liga o ON CONFLICT DO NOTHING no
+        // alerts.create — 1 alerta ativo por sessão; retry reusa o existente.
+        tableSessionId,
       });
     }
     this.events?.emitHostAssistRequested(this.tenantConn.getTenantSlug() ?? '', {
