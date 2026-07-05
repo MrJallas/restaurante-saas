@@ -141,6 +141,38 @@ export class PaymentsService {
     return Number(rows[0]?.paid ?? 0);
   }
 
+  /**
+   * DOUBLE-CHARGE CONCORRENTE (re-scan de convergência #3, fix parte b):
+   * soma dos pagamentos 'pending' NÃO-expirados table-bill-scoped
+   * (visit_id NULL OU split_mode≠null — a MESMA cerca do escopo 'table_bill').
+   *
+   * Por que reservar contra pending: mesmo com os writes table-bill
+   * serializados pelo lock ':tablebill', `sumSettled` só conta o que já
+   * liquidou (confirmed/paid/awaiting_settlement). Um pagamento recém-criado
+   * entra como 'pending' — se o 2º request (serializado depois) não contasse o
+   * pending do 1º, leria o mesmo tableRemaining e re-inseriria em cima. Contar
+   * o pending reserva o saldo já em voo → a soma dos INSERTs nunca passa do
+   * total da mesa.
+   *
+   * Por que só NÃO-expirado: pending tem TTL de 10min (PIX_EXPIRY_SECONDS). Um
+   * pending expirado NÃO deve reservar saldo pra sempre — o dedup logo abaixo
+   * o transiciona pra 'expired', liberando o valor pro retry. O filtro
+   * `expires_at IS NULL OR expires_at > now()` alinha esta reserva com aquela
+   * expiração: só o que ainda está de pé conta.
+   */
+  private async sumPendingTableBill(tableSessionId: string): Promise<number> {
+    const rows = (await this.tenantConn.query(
+      `SELECT COALESCE(SUM(amount_cents), 0) as pending
+         FROM payments
+        WHERE table_session_id = $1
+          AND status = 'pending'
+          AND (visit_id IS NULL OR split_mode IS NOT NULL)
+          AND (expires_at IS NULL OR expires_at > now())`,
+      [tableSessionId],
+    )) as { pending: number | string }[];
+    return Number(rows[0]?.pending ?? 0);
+  }
+
   async requestPayment(
     tableSessionId: string,
     visitId: string | null,
@@ -148,8 +180,6 @@ export class PaymentsService {
     method: string,
     options: RequestPaymentOptions = {},
   ) {
-    let amountCents: number;
-    let billTotals: BillTotals;
     // Pagamento de MESA é por definição visit-less: o sumSettled('table') filtra
     // `visit_id IS NULL` (contra double-charge, P1-A). Se o write-path aceitasse um
     // visitId do body em mode='table', o pagamento cairia num bucket de visit que o
@@ -159,18 +189,90 @@ export class PaymentsService {
     let effectiveVisitId = mode === 'table' ? null : visitId;
     const callerCustomerId = options.callerCustomerId ?? null;
 
+    // Resolve o visitId da comanda ANTES do lock: o lock per-visit da comanda
+    // INDIVIDUAL (sem splitMode) precisa da chave certa `:<visitId>` pra isolar
+    // uma dívida separada. O FE não manda visitId — derivamos do cliente
+    // RECONHECIDO (cookie). Feito aqui pra que o lockScope tenha o visitId real.
+    // (Writes table-bill usam ':tablebill' e nem dependem disto.)
+    if (mode === 'individual' && !effectiveVisitId && callerCustomerId) {
+      const vrows = (await this.tenantConn.query(
+        `SELECT id FROM visits
+         WHERE table_session_id = $1 AND customer_id = $2
+         ORDER BY created_at DESC LIMIT 1`,
+        [tableSessionId, callerCustomerId],
+      )) as { id: string }[];
+      effectiveVisitId = vrows[0]?.id ?? null;
+    }
+
+    // Round 11 (B-NEW-42): SETNX lock por scope ENVOLVENDO o read-then-INSERT
+    // pra fechar a janela TOCTOU. Antes 2 POSTs concorrentes ambos viam
+    // `existing=[]` e ambos INSERTavam → 2 Pix com QRs diferentes, PSP webhook
+    // batia em ambos = double charge.
+    //
+    // DOUBLE-CHARGE CONCORRENTE cross-scope (re-scan de convergência #3):
+    // o lock per-visit NÃO serializava os caminhos que liquidam a MESMA conta
+    // da mesa. mode=table pegava ':table'; cada split payer pegava ':<seu
+    // visitId>' (distinto por cliente) — chaves DIFERENTES, então mode=table
+    // vs split e dois splits de visitas distintas rodavam o
+    // sumSettled(table_bill)+clamp+INSERT em PARALELO, cada um lendo o mesmo
+    // tableRemaining ANTES de qualquer INSERT → coletavam > total da mesa.
+    //
+    // Fix (a): os writes table-bill-scoped (mode=table OU mode=individual COM
+    // splitMode) compartilham UMA chave ':tablebill' — serializa mode=table e
+    // TODOS os splits entre si. A comanda INDIVIDUAL (sem splitMode) é dívida
+    // separada e mantém o lock per-visit. O lock é adquirido AQUI (antes das
+    // leituras de saldo), não depois, pra que o sumSettled/clamp de cada
+    // caminho leia o estado JÁ com o INSERT do caminho anterior visível.
+    const splitModeRequested =
+      typeof options.splitMode === 'string' && VALID_SPLIT_MODES.has(options.splitMode);
+    const isTableBillWrite = mode === 'table' || (mode === 'individual' && splitModeRequested);
+    const lockScope = isTableBillWrite ? 'tablebill' : (effectiveVisitId ?? 'table');
+    const lockKey = `payment_lock:${tableSessionId}:${lockScope}`;
+    const gotLock = await this.redis.setNX(lockKey, JSON.stringify({ ts: Date.now() }), 30);
+    if (!gotLock) {
+      throw new BadRequestException('Pagamento sendo processado. Aguarde alguns segundos.');
+    }
+
+    try {
+      return await this.computeAndInsertPayment({
+        tableSessionId,
+        visitId,
+        mode,
+        method,
+        options,
+        effectiveVisitId,
+        callerCustomerId,
+      });
+    } finally {
+      // Libera o lock independente do desfecho — request bem-sucedida gravou o
+      // INSERT (auto-commit) que o próximo lock holder já enxerga via DB.
+      await this.redis.del(lockKey);
+    }
+  }
+
+  /**
+   * Núcleo do requestPayment: roda SEMPRE dentro do lock adquirido acima.
+   * Faz o read-then-INSERT (sumSettled + clamp + dedup + INSERT) de forma
+   * serializada pelo lock, então o clamp de cada caminho enxerga os
+   * pagamentos (settled E pending) dos caminhos anteriores.
+   */
+  private async computeAndInsertPayment(input: {
+    tableSessionId: string;
+    visitId: string | null;
+    mode: 'table' | 'individual';
+    method: string;
+    options: RequestPaymentOptions;
+    effectiveVisitId: string | null;
+    callerCustomerId: string | null;
+  }) {
+    const { tableSessionId, mode, method, options, callerCustomerId } = input;
+    // effectiveVisitId já vem resolvido de requestPayment (a busca de visita
+    // roda antes do lock, pra o lock per-visit da comanda ter a chave certa).
+    const effectiveVisitId = input.effectiveVisitId;
+    let amountCents: number;
+    let billTotals: BillTotals;
+
     if (mode === 'individual') {
-      // "Pagar minha parte": o FE não manda visitId — a comanda é derivada
-      // do cliente RECONHECIDO (cookie recognition_token), nunca do body.
-      if (!effectiveVisitId && callerCustomerId) {
-        const vrows = (await this.tenantConn.query(
-          `SELECT id FROM visits
-           WHERE table_session_id = $1 AND customer_id = $2
-           ORDER BY created_at DESC LIMIT 1`,
-          [tableSessionId, callerCustomerId],
-        )) as { id: string }[];
-        effectiveVisitId = vrows[0]?.id ?? null;
-      }
       if (!effectiveVisitId) {
         throw new BadRequestException(
           'Não foi possível identificar sua comanda. Escaneie o QR da mesa novamente.',
@@ -252,8 +354,15 @@ export class PaymentsService {
         // AINDA deve = total da mesa - (já-pago table-scope + TODOS os splits).
         // Assim: mesa já quitada → 0 (recusa); table parcial → cobra só o que
         // falta; e a soma coletada NUNCA passa do total da mesa.
+        // Reserva contra pending (fix parte b): além do já-liquidado
+        // (settled), subtrai os pagamentos 'pending' NÃO-expirados
+        // table-bill-scoped em voo. Serializado pelo lock ':tablebill', o 2º
+        // request vê o pending que o 1º acabou de INSERTar e não re-cobra por
+        // cima. Sem isto, mesmo serializados, a soma dos INSERTs passaria do
+        // total da mesa.
         const settledTableBill = await this.sumSettled(tableSessionId, null, 'table_bill');
-        const tableRemaining = split.totalCents - settledTableBill;
+        const pendingTableBill = await this.sumPendingTableBill(tableSessionId);
+        const tableRemaining = split.totalCents - settledTableBill - pendingTableBill;
         amountCents = Math.min(mine.amountCents - settledForSplit, tableRemaining);
         billTotals = {
           subtotalCents: split.subtotalCents,
@@ -287,8 +396,16 @@ export class PaymentsService {
       // só descontava table-scope, então uma mesa já liquidada via 'dividir'
       // (todos pagaram suas partes) era re-cobrada INTEIRA por um mode=table.
       // A comanda individual fica de fora (dívida separada).
+      //
+      // Reserva contra pending (fix parte b): subtrai também os pagamentos
+      // 'pending' NÃO-expirados table-bill-scoped em voo. Serializado pelo lock
+      // ':tablebill' com os splits, um mode=table concorrente com um split (ou
+      // com outro mode=table) enxerga o pending do caminho anterior e não
+      // re-cobra a mesa por cima.
       amountCents =
-        billTotals.totalCents - (await this.sumSettled(tableSessionId, null, 'table_bill'));
+        billTotals.totalCents -
+        (await this.sumSettled(tableSessionId, null, 'table_bill')) -
+        (await this.sumPendingTableBill(tableSessionId));
     }
 
     if (amountCents <= 0) {
@@ -306,53 +423,37 @@ export class PaymentsService {
       splitAllocations = options.allocations ?? null;
     }
 
-    // Round 11 (B-NEW-42): SETNX lock por scope antes do SELECT-then-INSERT
-    // pra fechar TOCTOU window. Antes 2 POSTs concorrentes ambos viam
-    // `existing=[]` e ambos INSERTavam → 2 Pix com QRs diferentes,
-    // PSP webhook batia em ambos = double charge.
-    const lockKey = `payment_lock:${tableSessionId}:${effectiveVisitId ?? 'table'}`;
-    const gotLock = await this.redis.setNX(lockKey, JSON.stringify({ ts: Date.now() }), 30);
-    if (!gotLock) {
-      throw new BadRequestException('Pagamento sendo processado. Aguarde alguns segundos.');
-    }
+    // Reject duplicate pending payments for the same scope. If one exists
+    // and has already expired, mark it expired so the user can retry.
+    const existing = (await this.tenantConn.query(
+      `SELECT id, expires_at FROM payments
+       WHERE table_session_id = $1 AND status = 'pending'
+         ${effectiveVisitId ? 'AND visit_id = $2' : 'AND visit_id IS NULL'}`,
+      effectiveVisitId ? [tableSessionId, effectiveVisitId] : [tableSessionId],
+    )) as { id: string; expires_at: string | null }[];
 
-    try {
-      // Reject duplicate pending payments for the same scope. If one exists
-      // and has already expired, mark it expired so the user can retry.
-      const existing = (await this.tenantConn.query(
-        `SELECT id, expires_at FROM payments
-         WHERE table_session_id = $1 AND status = 'pending'
-           ${effectiveVisitId ? 'AND visit_id = $2' : 'AND visit_id IS NULL'}`,
-        effectiveVisitId ? [tableSessionId, effectiveVisitId] : [tableSessionId],
-      )) as { id: string; expires_at: string | null }[];
-
-      for (const row of existing) {
-        if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) {
-          await this.tenantConn.query(
-            `UPDATE payments SET status = 'expired', updated_at = now() WHERE id = $1`,
-            [row.id],
-          );
-        } else {
-          throw new BadRequestException('Ja existe um pagamento pendente.');
-        }
+    for (const row of existing) {
+      if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) {
+        await this.tenantConn.query(
+          `UPDATE payments SET status = 'expired', updated_at = now() WHERE id = $1`,
+          [row.id],
+        );
+      } else {
+        throw new BadRequestException('Ja existe um pagamento pendente.');
       }
-      // Continue após dedup limpo.
-      return await this.continueRequestPayment({
-        tableSessionId,
-        visitId: effectiveVisitId,
-        mode,
-        method,
-        amountCents,
-        splitMode,
-        splitAllocations,
-        totals: billTotals,
-        options,
-      });
-    } finally {
-      // Libera o lock independente do desfecho — request bem-sucedida
-      // grava o INSERT em payments table; subsequente vê via DB.
-      await this.redis.del(lockKey);
     }
+    // Continue após dedup limpo (dentro do lock adquirido em requestPayment).
+    return await this.continueRequestPayment({
+      tableSessionId,
+      visitId: effectiveVisitId,
+      mode,
+      method,
+      amountCents,
+      splitMode,
+      splitAllocations,
+      totals: billTotals,
+      options,
+    });
   }
 
   /**
