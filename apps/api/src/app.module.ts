@@ -43,6 +43,7 @@ import { CourtesiesModule } from './modules/courtesies/courtesies.module';
 import { ShiftsModule } from './modules/shifts/shifts.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { ContinuationModule } from './modules/continuation/continuation.module';
+import { SmartSuggestionsModule } from './modules/smart-suggestions/smart-suggestions.module';
 import { StaffAuthModule } from './modules/staff-auth/staff-auth.module';
 import { ManagerAccountModule } from './modules/manager-account/manager-account.module';
 import { SalonModule } from './modules/salon/salon.module';
@@ -95,6 +96,7 @@ import { SessionTimelineModule } from './modules/session-timeline/session-timeli
     ShiftsModule,
     AlertsModule,
     ContinuationModule,
+    SmartSuggestionsModule,
     ManagerAccountModule,
     SalonModule,
     // M6 (timeline): já entra no graph via WebsocketModule (tap), mas o

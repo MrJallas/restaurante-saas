@@ -9,7 +9,8 @@
 //   • vip / session flags
 //   • lgpd-requests
 //   • chat-history
-//   • smart-suggestions (AI service · proxied through API or hit directly)
+//   • smart-suggestions (AI service · proxied through apps/api via the staff
+//     proxy — never hit the AI service directly from the browser)
 //
 // All ISO datetime strings stay strings (parse at the call site if you need a
 // Date). Errors bubble up as the original `Error` from `staffApi`.
@@ -219,7 +220,9 @@ export const chatHistoryApi = (slug: string) => ({
 });
 
 // ─────────────────────────────────────────────────────────────
-// Smart suggestions (AI service — proxied via /ai-service/smart-suggestions)
+// Smart suggestions (AI service — proxied via the staff proxy →
+// `POST /:slug/smart-suggestions` on apps/api, which injects the
+// `x-ai-service-key` server-side. The browser never sees the AI key.)
 // ─────────────────────────────────────────────────────────────
 
 export interface SmartSuggestionChip {
@@ -236,54 +239,68 @@ export interface SmartSuggestionsResponse {
   poolExpiresAt: string;
 }
 
-const AI_BASE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'http://localhost:8000';
-
 /**
  * Fetch contextual chip suggestions for the manager `MContactClientSheet`.
- * Surface defaults to `manager_contact_client`; B3 returns 3-4 chips with
- * pre-formatted prose. Falls back to a small static set if the call fails so
- * the sheet is never empty.
+ *
+ * ROUTING (P1 fix 2026-07-05): this used to `fetch()` the Python AI service
+ * DIRECTLY from the browser, without the `x-ai-service-key` header — which
+ * can't live in the JS bundle. The AI service rejected every request with
+ * 401, the `catch` fired, and the sheet fell back to the static set BELOW
+ * every single time. Real suggestions never reached the manager.
+ *
+ * Now it goes through `staffPost` → the same-origin staff proxy
+ * (`/api/proxy`) → `POST /:slug/smart-suggestions` on apps/api → AI service,
+ * with the AI key injected server-side. The tenant is pinned by the slug in
+ * the URL (the AI pool is keyed by slug, same as continuation/seed).
+ *
+ * The static set is kept ONLY as an honest offline fallback (AI service down
+ * or empty pool). A 401 caused by mis-wired auth no longer masquerades as it.
  */
 export async function fetchSmartSuggestions(params: {
-  tenantId: string;
+  slug: string;
   surface?: string;
   customerId?: string;
   sessionId?: string;
   limit?: number;
 }): Promise<SmartSuggestionsResponse> {
   const body = {
-    tenantId: params.tenantId,
     customerId: params.customerId,
     sessionId: params.sessionId,
     surface: params.surface ?? 'manager_contact_client',
     limit: params.limit ?? 4,
   };
   try {
-    const res = await fetch(`${AI_BASE_URL}/smart-suggestions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`smart-suggestions ${res.status}`);
-    const data = (await res.json()) as SmartSuggestionsResponse;
-    return data;
+    const data = await staffPost<SmartSuggestionsResponse>(
+      `/${params.slug}/smart-suggestions`,
+      body,
+    );
+    if (data && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+      return data;
+    }
+    // Empty pool (AI unreachable server-side, or no chips seeded) — surface
+    // the honest static fallback so the sheet is never blank.
+    return staticSmartSuggestionsFallback();
   } catch {
-    // Hard fallback — keep the sheet usable even when AI is offline.
-    return {
-      suggestions: [
-        { id: 's1', text: 'Já fui verificar seu pedido na cozinha', icon: 'history' },
-        { id: 's2', text: 'Saindo da cozinha em uns 5 min', icon: 'clock' },
-        { id: 's3', text: 'Estou indo aí em 2 min', icon: 'user' },
-        {
-          id: 's4',
-          text: 'Quer uma cortesia pela espera?',
-          icon: 'gift',
-          linksTo: 'mgr-compensate',
-        },
-      ],
-      poolExpiresAt: new Date(Date.now() + 60_000).toISOString(),
-    };
+    return staticSmartSuggestionsFallback();
   }
+}
+
+/** Offline/empty-pool fallback — keep the sheet usable when AI is down. */
+function staticSmartSuggestionsFallback(): SmartSuggestionsResponse {
+  return {
+    suggestions: [
+      { id: 's1', text: 'Já fui verificar seu pedido na cozinha', icon: 'history' },
+      { id: 's2', text: 'Saindo da cozinha em uns 5 min', icon: 'clock' },
+      { id: 's3', text: 'Estou indo aí em 2 min', icon: 'user' },
+      {
+        id: 's4',
+        text: 'Quer uma cortesia pela espera?',
+        icon: 'gift',
+        linksTo: 'mgr-compensate',
+      },
+    ],
+    poolExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────

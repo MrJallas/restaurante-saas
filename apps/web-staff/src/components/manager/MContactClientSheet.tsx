@@ -3,11 +3,14 @@
 // Bottom sheet · "Contatar cliente da Mesa X" with smart-suggestion chips.
 //
 // Smart-suggestions integration:
-//   On open (`state === 'idle'` first render) we POST /smart-suggestions to the
-//   AI service with `{ tenantId, surface: 'manager_contact_client', customerId }`.
-//   The returned chips are rendered as the suggestion list. Falls back to
-//   static chips if the AI service is unreachable (handled in
-//   `lib/api/manager.ts → fetchSmartSuggestions`).
+//   On open (`state === 'idle'` first render) we POST through the staff proxy
+//   to `/:slug/smart-suggestions` (apps/api), which injects the AI-service key
+//   server-side and forwards to the Python AI pool with
+//   `{ surface: 'manager_contact_client', customerId }`. The returned chips are
+//   rendered as the suggestion list. Falls back to static chips if the AI
+//   service is unreachable (handled in `lib/api/manager.ts →
+//   fetchSmartSuggestions`). Before 2026-07-05 this hit the AI service
+//   DIRECTLY from the browser and 401'd (no key in the bundle) → static forever.
 //
 // On send: POSTs to `/assistant/staff-to-customer` (round 18 Onda 4 batch 2).
 // Persiste em `assistant_messages` (from_role='staff', customer_id =
@@ -30,7 +33,12 @@ export interface MContactClientSheetProps {
   open: boolean;
   dark?: boolean;
   tenantSlug: string;
-  tenantId: string;
+  /**
+   * @deprecated Kept for call-site compat. Smart-suggestions now route by
+   * `tenantSlug` through the staff proxy (`POST /:slug/smart-suggestions`);
+   * the AI pool is keyed by slug, so `tenantId` is no longer read here.
+   */
+  tenantId?: string;
   tableSessionId: string;
   customerId: string;
   customerName?: string;
@@ -64,7 +72,8 @@ export function MContactClientSheet({
   open,
   dark,
   tenantSlug,
-  tenantId,
+  // tenantId intentionally not destructured — smart-suggestions route by
+  // slug now (see props doc). Left in the interface for call-site compat.
   tableSessionId,
   customerId,
   customerName,
@@ -100,7 +109,7 @@ export function MContactClientSheet({
     }
     try {
       const r = await fetchSmartSuggestions({
-        tenantId,
+        slug: tenantSlug,
         customerId,
         surface: 'manager_contact_client',
       });
@@ -108,7 +117,7 @@ export function MContactClientSheet({
     } catch {
       setSuggestions([]);
     }
-  }, [tenantId, customerId, suggestionOverrides]);
+  }, [tenantSlug, customerId, suggestionOverrides]);
 
   useEffect(() => {
     if (open) {

@@ -66,9 +66,14 @@ export default function PagamentoErroPage() {
     ? `R$ ${(Number(amountParam) / 100).toFixed(2).replace('.', ',')}`
     : '—';
 
+  // Anti-placebo (2026-07-05): os cartões de crédito/débito foram REMOVIDOS.
+  // Cartão saiu do pagamento por decisão de produto (gate 1D — Pix é o método;
+  // ver MEMORY.md "cartao some do pagamento, Pix com selo 'Pagamento simulado'").
+  // Antes, os dois itens de cartão tinham chevron › (afordância de navegação)
+  // mas nenhum onTap/href — toque = nada. A única alternativa REAL na tela de
+  // erro é o pagamento presencial via garçom; tentar Pix de novo e voltar já
+  // são os dois CTAs do rodapé.
   const alternatives: AltOption[] = [
-    { label: 'Cartão de crédito', sub: 'Visa, Master, Elo' },
-    { label: 'Cartão de débito', sub: 'Débito em conta' },
     { label: 'Pedir ajuda ao garçom', sub: 'Pagamento presencial', onTap: openCallWaiterSheet },
   ];
 
