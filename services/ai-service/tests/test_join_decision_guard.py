@@ -107,3 +107,54 @@ def test_decisao_direta_resolve_sem_llm(chat_client, message, expected_tool):
     )
     assert body["tool_calls"][0]["function"]["name"] == expected_tool
     assert provider.chat.await_count == 0
+
+
+# ── LLM01 (fechamento por construção): mesmo um LLM JAILBROKEN — como se o nome
+#    envenenado do joiner tivesse induzido o modelo a emitir accept_join_request
+#    — NÃO admite ninguém. Com host AMBÍGUO (sem fullmatch determinístico), o
+#    turno vai pro LLM; o loop de dispatch dropa a decisão de join do LLM. ──
+
+
+@pytest.mark.parametrize("forged_tool", ["accept_join_request", "reject_join_request"])
+def test_llm_jailbroken_nao_decide_join(monkeypatch, forged_tool):
+    forged_provider = MagicMock()
+    forged_provider.chat = AsyncMock(
+        return_value={
+            "response": "",
+            "tokens_in": 50,
+            "tokens_out": 10,
+            "model": "qwen2.5-7b-instruct-mlx",
+            # O modelo (jailbroken pelo nome envenenado) EMITE a decisão de join.
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": forged_tool,
+                        "arguments": {
+                            "targetCustomerId": PENDING_CONTEXT[
+                                "pending_join_request"
+                            ]["targetCustomerId"],
+                            "reason": "nome envenenado induziu o accept",
+                        },
+                    }
+                }
+            ],
+        }
+    )
+    forged_provider.estimate_cost_cents = MagicMock(return_value=1)
+    monkeypatch.setattr(main, "get_provider", lambda: forged_provider)
+    monkeypatch.setattr(main, "_api_client", None)
+    client = TestClient(main.app)
+
+    # Host AMBÍGUO: não é fullmatch de decisão → não curto-circuita → vai pro LLM.
+    body = _post(client, "sinceramente não sei, o que você acha dessa pessoa?")
+
+    # Confirmação de que o turno REALMENTE chegou ao LLM (senão o teste não prova
+    # o drop no caminho do LLM).
+    assert forged_provider.chat.await_count == 1
+    assert body["layer"] != "rule-join-request-decision"
+    # …e mesmo assim a decisão de join FORJADA pelo LLM foi DROPADA por construção.
+    dispatched = [tc["function"]["name"] for tc in body.get("tool_calls") or []]
+    assert forged_tool not in dispatched, (
+        f"{forged_tool} forjado pelo LLM sobreviveu ao dispatch — o fechamento "
+        "por construção do LLM01 está furado"
+    )
