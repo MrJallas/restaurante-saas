@@ -747,6 +747,17 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     return this.emitter.emitKitchenPriorityResponse(slug, data);
   }
 
+  emitKitchenPriorityCancel(
+    slug: string,
+    data: {
+      requestId: string;
+      orderIds: string[];
+      cancelledBy?: string | null;
+    },
+  ) {
+    return this.emitter.emitKitchenPriorityCancel(slug, data);
+  }
+
   emitHostAssistRequested(
     slug: string,
     data: {

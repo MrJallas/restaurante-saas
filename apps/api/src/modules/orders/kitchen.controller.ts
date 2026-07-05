@@ -81,6 +81,16 @@ export class KitchenController {
     return this.ordersService.getKitchenReorderRequest(id);
   }
 
+  @Post('reorder-requests/:id/cancel')
+  async cancelReorderRequest(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Req() req: Request,
+  ) {
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
+    return this.ordersService.cancelKitchenReorderRequest(id, staffId, slug);
+  }
+
   @Post('reorder-requests/:id/respond')
   async respondReorderRequest(
     @Param('slug') slug: string,

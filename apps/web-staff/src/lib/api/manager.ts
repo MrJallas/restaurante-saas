@@ -602,6 +602,8 @@ export const kitchenApi = (slug: string) => ({
     staffGet<KitchenReorderRequest[]>(`/${slug}/kitchen/reorder-requests/pending`),
   getReorderRequest: (requestId: string) =>
     staffGet<KitchenReorderRequest>(`/${slug}/kitchen/reorder-requests/${requestId}`),
+  cancelReorderRequest: (requestId: string) =>
+    staffPost<KitchenReorderRequest>(`/${slug}/kitchen/reorder-requests/${requestId}/cancel`, {}),
   respondReorderRequest: (
     requestId: string,
     body: { response: 'accept' | 'next'; protectedOrderIds?: string[] },

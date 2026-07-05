@@ -224,10 +224,23 @@ export function ScreenManagerKitchenReorder({
       setErrorMsg(err instanceof Error ? err.message : 'Erro ao avisar cozinha.');
     }
   };
-  const onCancel = () => {
+  const onCancel = async () => {
+    // Retração REAL (P1 re-scan): antes só resetava state React — o card
+    // pending sobrevivia e a cozinha seguia mostrando/beepando o push. Agora
+    // batemos no backend (status='cancelled' + WS de retração) e só então
+    // limpamos a tela. Se não houver requestId (nunca chegou a enviar), o
+    // cancel é só local.
+    const idToCancel = requestId;
     setState('select');
     setRequestId(null);
     setResponse(null);
+    if (!idToCancel) return;
+    setErrorMsg(null);
+    try {
+      await api.kitchen.cancelReorderRequest(idToCancel);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Erro ao cancelar o pedido de reordem.');
+    }
   };
 
   return (

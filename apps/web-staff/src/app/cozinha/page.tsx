@@ -212,6 +212,9 @@ export default function CozinhaKDS() {
     socket.on('kitchen:reorder', refresh);
     socket.on('kitchen:priority_request', priorityRefresh);
     socket.on('kitchen:priority_response', refresh);
+    // Retração: gerente cancelou um pedido de reordenação pending. Refetch
+    // (sem beep) para o card sumir do painel de prioridade imediatamente.
+    socket.on('kitchen:priority_cancel', refresh);
     return () => {
       socket?.off('order:new', refresh);
       socket?.off('order:status', refresh);
@@ -219,6 +222,7 @@ export default function CozinhaKDS() {
       socket?.off('kitchen:reorder', refresh);
       socket?.off('kitchen:priority_request', priorityRefresh);
       socket?.off('kitchen:priority_response', refresh);
+      socket?.off('kitchen:priority_cancel', refresh);
       socket?.disconnect();
     };
   }, [refreshAll, soundEnabled, staffId]);

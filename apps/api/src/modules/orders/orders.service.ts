@@ -1335,6 +1335,53 @@ export class OrdersService {
     return hydrated[0];
   }
 
+  // Cancelamento REAL do pedido de reordenação pelo gerente (P1 re-scan): a
+  // tela ScreenManagerKitchenReorder só resetava state React — o card pending
+  // sobrevivia e a cozinha continuava mostrando/beepando o priority push. Aqui
+  // escrevemos status='cancelled' (migration 053) SÓ enquanto pending e
+  // emitimos WS de retração pra cozinha tirar o card. Se a cozinha já respondeu
+  // (accepted/next), é no-op idempotente — não clobber de request fechado.
+  async cancelKitchenReorderRequest(requestId: string, staffId: string, slug?: string) {
+    const outcome = await this.tenantConn.transaction(async (tx) => {
+      const rows = (await tx.query(
+        `SELECT id, order_ids, status
+           FROM kitchen_reorder_requests
+          WHERE id = $1
+          FOR UPDATE`,
+        [requestId],
+      )) as Array<{ id: string; order_ids: string[]; status: string }>;
+      if (!rows.length) {
+        throw new NotFoundException('Pedido de reordenacao nao encontrado.');
+      }
+      const request = rows[0];
+      if (request.status !== 'pending') {
+        // Já respondido/cancelado — nada a retrair.
+        return { cancelled: false, orderIds: request.order_ids ?? [] };
+      }
+      await tx.query(
+        `UPDATE kitchen_reorder_requests
+            SET status = 'cancelled',
+                responded_by_staff_id = $2,
+                responded_at = now(),
+                updated_at = now(),
+                response_note = 'Gerente cancelou o pedido de reordenacao.'
+          WHERE id = $1`,
+        [requestId, staffId],
+      );
+      return { cancelled: true, orderIds: request.order_ids ?? [] };
+    });
+
+    if (outcome.cancelled && slug && this.eventsGateway) {
+      this.eventsGateway.emitKitchenPriorityCancel(slug, {
+        requestId,
+        orderIds: outcome.orderIds,
+        cancelledBy: staffId,
+      });
+    }
+
+    return this.getKitchenReorderRequest(requestId);
+  }
+
   async respondKitchenReorderRequest(
     requestId: string,
     response: 'accept' | 'next',

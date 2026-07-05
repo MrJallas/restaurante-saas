@@ -231,6 +231,26 @@ export class EventsEmitterService {
     this.server.to(`tenant:${slug}:manager`).emit('kitchen:priority_response', payload);
   }
 
+  // Retração do priority push: o gerente cancelou um pedido de reordenação
+  // que ainda estava pending. A cozinha precisa tirar o card do painel de
+  // prioridade e parar de beepar (sem re-beep no próximo poll). Sem beep aqui
+  // — cancelamento não é um alerta novo.
+  emitKitchenPriorityCancel(
+    slug: string,
+    data: {
+      requestId: string;
+      orderIds: string[];
+      cancelledBy?: string | null;
+    },
+  ) {
+    const payload = {
+      ...data,
+      timestamp: new Date().toISOString(),
+    };
+    this.server.to(`tenant:${slug}:kitchen`).emit('kitchen:priority_cancel', payload);
+    this.server.to(`tenant:${slug}:manager`).emit('kitchen:priority_cancel', payload);
+  }
+
   /**
    * Cliente pediu a RECEPÇÃO na mesa (ex.: ajuda com junção de mesas pelo
    * assistente). Room do papel host — garçom não é o destinatário aqui
