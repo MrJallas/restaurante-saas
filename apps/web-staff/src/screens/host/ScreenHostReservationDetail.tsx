@@ -364,6 +364,17 @@ export const ScreenHostReservationDetail: React.FC<ScreenHostReservationDetailPr
               >
                 Cancelar
               </GButton>
+              {/* Bug 2: "não veio" (no_show) precisava de gatilho na UI. Sem
+                  ele todo cancelamento legítimo virava 'cancelled' e poluía a
+                  métrica. Backend + enum + badge já suportavam no_show. */}
+              <GButton
+                kind="ghost"
+                dark={dark}
+                onClick={() => setStatus('no_show')}
+                disabled={submitting}
+              >
+                Não veio
+              </GButton>
               <div style={{ flex: 1 }}>
                 <GButton
                   kind="success"

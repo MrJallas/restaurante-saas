@@ -520,3 +520,150 @@ describe('HostService.liberateTable — invalida a sessão no Redis (A04)', () =
     expect(deleted).toContain(`session:${CLOSED_SESSION_ID}`);
   });
 });
+
+/**
+ * [SEGURANÇA A07] O `sessionId` que os DTOs de swap/liberate devolviam pro
+ * STAFF é o `table_sessions.id` — que É o `x-session-token` do cliente. Com
+ * ele o staff pode forjar o token e agir como o cliente (session hijack).
+ * O staff NÃO precisa do token do cliente pra operar a mesa (usa table
+ * number + status). Estes testes falham se a credencial voltar ao payload
+ * de resposta HTTP de qualquer endpoint host.
+ */
+describe('HostService — não vaza credencial de sessão do cliente nos DTOs de staff (A07)', () => {
+  const SESSION_TOKEN = 'sess-secret-token-uuid';
+
+  function fakeSwapDbForLeak() {
+    const query = async (sql: string, params: unknown[] = []): Promise<unknown> => {
+      const s = sql.replace(/\s+/g, ' ').trim();
+      // findTableByNumber (from + to)
+      if (s.startsWith('SELECT id, code FROM tables WHERE')) {
+        const n = params[0] as number;
+        return [{ id: `table-${n}`, code: String(n) }];
+      }
+      // sessão ativa da origem → resolve o token
+      if (s.startsWith("SELECT id FROM table_sessions WHERE table_id = $1 AND status = 'active'")) {
+        // origem (table-5) tem sessão; destino (table-9) não
+        return (params[0] as string) === 'table-5' ? [{ id: SESSION_TOKEN }] : [];
+      }
+      // destino livre check
+      if (s.startsWith("SELECT id FROM table_sessions WHERE table_id = $1 AND status = 'active' LIMIT 1")) {
+        return [];
+      }
+      if (s.startsWith('INSERT INTO table_swap_requests')) {
+        return [
+          {
+            id: 'swap-77',
+            table_session_id: SESSION_TOKEN,
+            from_table_id: 'table-5',
+            to_table_id: 'table-9',
+            status: 'requested',
+            reason: null,
+            created_at: '2026-07-05T10:00:00Z',
+            completed_at: null,
+            cancelled_at: null,
+            from_table_number: 5,
+            to_table_number: 9,
+          },
+        ];
+      }
+      throw new Error(`fake leak-swap: SQL não roteado: ${s}`);
+    };
+    return { query } as unknown as TenantConnectionProvider;
+  }
+
+  it('RED: createSwapRequest NÃO devolve o token de sessão do cliente no DTO', async () => {
+    const svc = makeService(fakeSwapDbForLeak());
+    const res = (await svc.createSwapRequest({ fromTable: 5, toTable: 9 }, 'slug')) as unknown as Record<
+      string,
+      unknown
+    >;
+    // O token do cliente não pode aparecer em NENHUM valor do payload de staff.
+    expect(JSON.stringify(res)).not.toContain(SESSION_TOKEN);
+    expect(res.sessionId).toBeUndefined();
+  });
+
+  it('RED: toggleVip NÃO devolve o token de sessão do cliente no retorno HTTP', async () => {
+    // Mesma família A07: o controller `POST tables/:n/vip` devolve o retorno de
+    // toggleVip direto pro staff. Ele carregava `sessionId: activeSession.id`
+    // (= x-session-token do cliente). O FE do TableMenu só usa `flags`.
+    const query = async (sql: string, params: unknown[] = []): Promise<unknown> => {
+      const s = sql.replace(/\s+/g, ' ').trim();
+      if (s.startsWith('SELECT id, code FROM tables WHERE')) {
+        return [{ id: 'table-5', code: '5' }];
+      }
+      if (s.startsWith('SELECT id FROM table_sessions WHERE table_id = $1')) {
+        return [{ id: SESSION_TOKEN }];
+      }
+      if (s.startsWith('INSERT INTO session_flags')) return [];
+      if (s.startsWith('UPDATE table_sessions')) return [];
+      if (s.startsWith('SELECT flag FROM session_flags')) return [{ flag: 'vip' }];
+      throw new Error(`fake leak-vip: SQL não roteado: ${s}`);
+    };
+    const svc = makeService({ query } as unknown as TenantConnectionProvider);
+    const res = (await svc.toggleVip(5, { flag: true }, 'slug')) as unknown as Record<string, unknown>;
+    expect(JSON.stringify(res)).not.toContain(SESSION_TOKEN);
+    expect(res.sessionId).toBeUndefined();
+    expect(res.flags).toEqual(['vip']);
+  });
+
+  it('RED: liberateTable NÃO devolve o token de sessão do cliente no DTO', async () => {
+    const query = async (sql: string, params: unknown[] = []): Promise<unknown> => {
+      const s = sql.replace(/\s+/g, ' ').trim();
+      if (s.startsWith('SELECT id, code FROM tables WHERE')) {
+        return [{ id: 'table-9', code: '9' }];
+      }
+      if (s.startsWith("SELECT id FROM table_sessions WHERE table_id = $1 AND status = 'active'")) {
+        return [{ id: SESSION_TOKEN }];
+      }
+      if (s.includes("SET status = 'closed'")) {
+        return [{ id: SESSION_TOKEN }];
+      }
+      if (s.startsWith('INSERT INTO table_qr_releases')) {
+        return [{ id: 'release-1', expires_at: '2026-07-05T12:15:00Z' }];
+      }
+      throw new Error(`fake leak-liberate: SQL não roteado: ${s}`);
+    };
+    const conn = { query } as unknown as TenantConnectionProvider;
+    const svc = makeService(conn);
+    const res = (await svc.liberateTable(9, { mode: 'manual_paid' }, 'slug')) as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(JSON.stringify(res)).not.toContain(SESSION_TOKEN);
+    expect(res.sessionId).toBeUndefined();
+  });
+});
+
+/**
+ * Bug 1: o stepper "QUANTAS PESSOAS?" do ScreenHostTableLiberate escolhe um
+ * partySize que precisa CHEGAR ao backend e ser USADO — não descartado no
+ * client. O service tem que aceitar `partySize` e refleti-lo no payload de
+ * resposta (round-trip observável), em vez de ignorá-lo.
+ */
+describe('HostService.liberateTable — propaga partySize do stepper (Bug 1)', () => {
+  function fakeLiberateDb() {
+    const query = async (sql: string, params: unknown[] = []): Promise<unknown> => {
+      const s = sql.replace(/\s+/g, ' ').trim();
+      if (s.startsWith('SELECT id, code FROM tables WHERE')) {
+        return [{ id: 'table-9', code: '9' }];
+      }
+      if (s.startsWith("SELECT id FROM table_sessions WHERE table_id = $1 AND status = 'active'")) {
+        return [];
+      }
+      if (s.startsWith('INSERT INTO table_qr_releases')) {
+        return [{ id: 'release-1', expires_at: '2026-07-05T12:15:00Z' }];
+      }
+      throw new Error(`fake liberate-party: SQL não roteado: ${s}`);
+    };
+    return { query } as unknown as TenantConnectionProvider;
+  }
+
+  it('RED: partySize informado volta no payload (chega e é usado, não descartado)', async () => {
+    const svc = makeService(fakeLiberateDb());
+    const res = (await svc.liberateTable(9, { mode: 'auto', partySize: 6 }, 'slug')) as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(res.partySize).toBe(6);
+  });
+});

@@ -157,7 +157,9 @@ export class HostController {
       { status: 'completed', staffId },
       slug,
     );
-    return { ok: true as const, sessionId: finalized.sessionId };
+    // A07: não devolvemos o token de sessão do cliente pro staff. O client só
+    // precisa saber que o swap terminou (`ok`) e pra qual mesa foi.
+    return { ok: true as const, toTableNumber: finalized.toTableNumber };
   }
 
   // ─── Waitlist ───

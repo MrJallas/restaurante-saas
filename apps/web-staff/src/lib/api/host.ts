@@ -55,10 +55,18 @@ export function listHostTables(tenantSlug: string): Promise<HostTableEntry[]> {
   return staffGet<HostTableEntry[]>(`/${tenantSlug}/host/tables`);
 }
 
-export function liberateTable(tenantSlug: string, tableNumber: number): Promise<{ ok: true }> {
-  return staffPost<{ ok: true }>(`/${tenantSlug}/host/tables/${tableNumber}/liberate`, {
-    mode: 'auto',
-  });
+export function liberateTable(
+  tenantSlug: string,
+  tableNumber: number,
+  // Bug 1: partySize vem do stepper "QUANTAS PESSOAS?" do
+  // ScreenHostTableLiberate. Opcional — outros callers (ex. manager) liberam
+  // sem escolher grupo e omitem.
+  opts?: { partySize?: number },
+): Promise<{ ok: true; partySize?: number | null }> {
+  return staffPost<{ ok: true; partySize?: number | null }>(
+    `/${tenantSlug}/host/tables/${tableNumber}/liberate`,
+    { mode: 'auto', ...(opts?.partySize != null ? { partySize: opts.partySize } : {}) },
+  );
 }
 
 export function swapTable(

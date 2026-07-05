@@ -61,6 +61,15 @@ interface SwapRow {
 const LIBERATE_MODES: HostLiberateMode[] = ['auto', 'manual_paid', 'manual_force'];
 
 /**
+ * [SEGURANÇA A07] Shape do swap devolvido ao STAFF — igual ao
+ * `HostSwapRequestDto` MENOS `sessionId`. O `sessionId` era o
+ * `table_sessions.id`, que É o `x-session-token` do cliente: expô-lo pro
+ * staff permitia forjar a sessão do cliente. O staff opera a mesa por número
+ * + status, então o token nunca precisa sair no payload.
+ */
+type HostSwapDto = Omit<HostSwapRequestDto, 'sessionId'>;
+
+/**
  * Staff-host service · backbone do modulo da recepcionista. Cobre:
  *  - Mapa: GET /host/tables (status agregado por mesa)
  *  - Inbox: GET /host/inbox (notificacoes passivas dos outros modulos)
@@ -210,12 +219,22 @@ export class HostService {
 
   async liberateTable(
     tableNumber: number,
-    body: { mode: HostLiberateMode; reason?: string; staffId?: string },
+    body: { mode: HostLiberateMode; reason?: string; staffId?: string; partySize?: number },
     slug: string,
   ) {
     if (!LIBERATE_MODES.includes(body.mode)) {
       throw new HttpException(`Modo desconhecido: ${body.mode}.`, HttpStatus.BAD_REQUEST);
     }
+
+    // Bug 1: o stepper "QUANTAS PESSOAS?" do ScreenHostTableLiberate escolhe
+    // o tamanho do PRÓXIMO grupo que vai ocupar a mesa liberada. Esse valor
+    // precisa chegar e ser usado (não ser descartado no client). Validamos e
+    // devolvemos no payload pra confirmar o round-trip; persistência durável
+    // por release exigiria coluna nova em `table_qr_releases` (migration).
+    const partySize =
+      body.partySize != null && Number.isInteger(body.partySize) && body.partySize >= 1
+        ? body.partySize
+        : null;
 
     const tableRow = await this.findTableByNumber(tableNumber);
     if (!tableRow) {
@@ -291,12 +310,16 @@ export class HostService {
       });
     }
 
+    // A07: NÃO devolvemos `sessionId` (= token do cliente) pro staff. O staff
+    // opera a mesa por número + status; o token só serviria pra forjar a
+    // sessão do cliente. `partySize` volta pra confirmar o round-trip do
+    // stepper (Bug 1).
     return {
       ok: true as const,
-      sessionId: activeSession?.id ?? null,
       releaseId: release?.id ?? null,
       releaseExpiresAt: release?.expires_at ?? null,
       mode: body.mode,
+      partySize,
     };
   }
 
@@ -311,7 +334,7 @@ export class HostService {
       staffId?: string;
     },
     slug: string,
-  ): Promise<HostSwapRequestDto & { ok: true; sessionId: string }> {
+  ): Promise<HostSwapDto & { ok: true }> {
     const fromRow = await this.findTableByNumber(body.fromTable);
     const toRow = await this.findTableByNumber(body.toTable);
     if (!fromRow) {
@@ -371,9 +394,12 @@ export class HostService {
     const dto = this.mapSwapRow(inserted);
 
     if (this.events) {
+      // A07: o WS emit interno usa o token cru direto da row — nunca via DTO
+      // (que já não o carrega). O room WS é server-side/staff-infra, não o
+      // payload HTTP do staff.
       this.events.emitHostSwapRequested(slug, {
         swapId: dto.id,
-        sessionId: dto.sessionId,
+        sessionId: inserted.table_session_id,
         fromTableId: fromRow.id,
         fromTableNumber: dto.fromTableNumber,
         toTableId: toRow.id,
@@ -394,7 +420,7 @@ export class HostService {
       staffId?: string;
     },
     slug: string,
-  ): Promise<HostSwapRequestDto> {
+  ): Promise<HostSwapDto> {
     const existing = unwrapRows<SwapRow>(
       await this.tenantConn.query(
         `SELECT sr.id, sr.table_session_id, sr.from_table_id, sr.to_table_id,
@@ -521,9 +547,10 @@ export class HostService {
     const dto = this.mapSwapRow(refreshed);
 
     if (this.events) {
+      // A07: token cru da row pro WS interno; o DTO HTTP já não o expõe.
       this.events.emitHostSwapStateChanged(slug, {
         swapId: dto.id,
-        sessionId: dto.sessionId,
+        sessionId: refreshed.table_session_id,
         fromTableNumber: dto.fromTableNumber,
         toTableNumber: dto.toTableNumber,
         status: body.status,
@@ -535,7 +562,7 @@ export class HostService {
     return dto;
   }
 
-  async listSwapRequests(filter?: { status?: HostSwapStatus }): Promise<HostSwapRequestDto[]> {
+  async listSwapRequests(filter?: { status?: HostSwapStatus }): Promise<HostSwapDto[]> {
     const where: string[] = [];
     const params: unknown[] = [];
     if (filter?.status) {
@@ -649,9 +676,11 @@ export class HostService {
       });
     }
 
+    // A07: NÃO devolvemos `sessionId` (= token do cliente) pro staff — mesmo
+    // corte de swap/liberate. O FE do TableMenu só usa `flags`; os WS emits
+    // acima seguem com o token cru (infra interna), nunca no payload HTTP.
     return {
       ok: true as const,
-      sessionId: activeSession.id,
       flags,
     };
   }
@@ -848,10 +877,17 @@ export class HostService {
     };
   }
 
-  private mapSwapRow(row: SwapRow): HostSwapRequestDto {
+  /**
+   * [SEGURANÇA A07] O DTO devolvido ao STAFF NÃO carrega `sessionId`
+   * (= `table_sessions.id` = `x-session-token` do cliente). Expor o token
+   * pro staff permitiria forjar a sessão do cliente (session hijack). O
+   * staff opera a mesa por número + status, nunca pelo token. O
+   * `table_session_id` cru fica disponível separado (`row.table_session_id`)
+   * só pros WS emits internos — nunca no payload HTTP.
+   */
+  private mapSwapRow(row: SwapRow): HostSwapDto {
     return {
       id: row.id,
-      sessionId: row.table_session_id,
       fromTableNumber: row.from_table_number,
       toTableNumber: row.to_table_number,
       status: row.status,

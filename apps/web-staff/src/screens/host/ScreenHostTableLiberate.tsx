@@ -41,7 +41,7 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
     setSubmitting(true);
     setError(null);
     try {
-      await liberateTable(tenantSlug, tableNumber);
+      await liberateTable(tenantSlug, tableNumber, { partySize });
       onDone?.();
     } catch (e: unknown) {
       setError((e as Error)?.message ?? 'Erro ao liberar mesa');

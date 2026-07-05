@@ -47,7 +47,11 @@ export const ScreenHostTableSwap: React.FC<ScreenHostTableSwapProps> = ({
     };
   }, [tenantSlug]);
 
-  const occupied = tables.filter((t) => t.status === 'ocupada' || t.status === 'liberada');
+  // Bug 3: só mesas COM sessão ativa podem ser origem do swap. 'liberada' é
+  // uma mesa já esvaziada (sem sessão, só QR release aberto) — o backend
+  // rejeita com 409 "Mesa origem nao tem sessao ativa". 'alerta' é uma mesa
+  // ocupada + VIP (também tem sessão ativa), então continua elegível.
+  const occupied = tables.filter((t) => t.status === 'ocupada' || t.status === 'alerta');
   const fromTableEntry = tables.find((t) => t.number === from);
   const targetCandidates = tables.filter(
     (t) => t.status === 'livre' && (!fromTableEntry || t.capacity >= (fromTableEntry.seats ?? 0)),

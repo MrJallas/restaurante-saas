@@ -27,6 +27,17 @@ export class LiberateTableDto {
   @IsOptional()
   @IsUUID()
   staffId?: string;
+
+  /**
+   * Bug 1: tamanho do próximo grupo escolhido no stepper "QUANTAS PESSOAS?"
+   * do ScreenHostTableLiberate. Chega do FE e é usado pelo service (não é
+   * mais descartado no client).
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  partySize?: number;
 }
 
 // ─── Swap ───
