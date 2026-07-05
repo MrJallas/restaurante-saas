@@ -7,24 +7,12 @@ import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
 import { AppShell } from '../../../../components/layout/AppShell';
 import { PillButton } from '../../../../components/ui/PillButton';
-
-interface OrderItem {
-  id: string;
-  name: string;
-  quantity: number;
-  priceCents: number;
-}
-
-interface OrderResponse {
-  id: string;
-  status: string;
-  totalCents: number;
-  items: OrderItem[];
-  etaMinutesMin?: number | null;
-  etaMinutesMax?: number | null;
-  queueAhead?: number;
-  createdAt?: string;
-}
+import {
+  aggregateOrders,
+  parseEnviadoOrderIds,
+  ENVIADO_STATUS_INDEX as STATUS_INDEX,
+  type EnviadoOrder,
+} from './aggregate';
 
 const DEFAULT_STEPS: { key: string; label: string }[] = [
   { key: 'received', label: 'Recebido pela cozinha' },
@@ -34,31 +22,28 @@ const DEFAULT_STEPS: { key: string; label: string }[] = [
   { key: 'delivered', label: 'Na sua mesa' },
 ];
 
-const STATUS_INDEX: Record<string, number> = {
-  received: 0,
-  in_progress: 1,
-  ready: 2,
-  in_transit: 3,
-  delivered: 4,
-};
-
 export default function PedidoEnviadoPage() {
   const params = useParams();
   const { push } = useNav();
   const searchParams = useSearchParams();
   const { tableLabel } = useSession();
   const slug = params.slug as string;
-  const orderId = searchParams.get('orderId') ?? '';
+  // Carrinho misto = um order por billingMode; a tela reflete TODOS.
+  const orderIds = parseEnviadoOrderIds(searchParams);
+  const orderIdsKey = orderIds.join(',');
 
-  const [order, setOrder] = useState<OrderResponse | null>(null);
+  const [order, setOrder] = useState<EnviadoOrder | null>(null);
 
   useEffect(() => {
-    if (!orderId) return;
+    const ids = orderIdsKey ? orderIdsKey.split(',') : [];
+    if (ids.length === 0) return;
     let stop = false;
     const load = async () => {
       try {
-        const data = await apiGet<OrderResponse>(`/${slug}/orders/${orderId}`);
-        if (!stop) setOrder(data);
+        const results = await Promise.all(
+          ids.map((id) => apiGet<EnviadoOrder>(`/${slug}/orders/${id}`)),
+        );
+        if (!stop) setOrder(aggregateOrders(results));
       } catch {
         /* ignore */
       }
@@ -69,7 +54,7 @@ export default function PedidoEnviadoPage() {
       stop = true;
       clearInterval(timer);
     };
-  }, [orderId, slug]);
+  }, [orderIdsKey, slug]);
 
   const currentIndex = order ? (STATUS_INDEX[order.status] ?? 0) : 0;
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;

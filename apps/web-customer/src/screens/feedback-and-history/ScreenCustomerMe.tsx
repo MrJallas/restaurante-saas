@@ -34,6 +34,28 @@ function getInitials(name: string | null | undefined): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+/**
+ * Mensagem honesta pós-exclusão LGPD ("Apagar minhas conversas").
+ *
+ * BUGFIX (P2 re-scan): a tela SEMPRE mostrava "Nenhuma mensagem por aqui ainda"
+ * no sucesso, ignorando o `deletedCount` que o backend retorna — feedback
+ * enganoso numa ação de privacidade (o cliente apagava N conversas e lia que
+ * não havia nada). Agora o empty-state só aparece quando de fato não havia nada
+ * (count 0); tendo apagado, confirmamos QUANTAS e de qual escopo.
+ */
+export function describeDeletionResult(scope: 'staff' | 'ai' | 'all', deletedCount: number): string {
+  if (deletedCount <= 0) {
+    return scope === 'staff'
+      ? 'Nenhuma mensagem com a equipe por aqui ainda.'
+      : scope === 'ai'
+        ? 'Nenhuma conversa com IA por aqui ainda.'
+        : 'Nenhuma mensagem por aqui ainda.';
+  }
+  const noun = deletedCount === 1 ? 'conversa' : 'conversas';
+  const where = scope === 'staff' ? ' com a equipe' : scope === 'ai' ? ' com a IA' : '';
+  return `Pronto · apaguei ${deletedCount} ${noun}${where}.`;
+}
+
 export function ScreenCustomerMe({ slug, restaurantName = '' }: ScreenCustomerMeProps) {
   const session = useSession();
   const router = useRouter();
@@ -62,19 +84,19 @@ export function ScreenCustomerMe({ slug, restaurantName = '' }: ScreenCustomerMe
     setDeleteError(null);
     setDeleteMessage(null);
     try {
+      // Soma o que cada endpoint realmente apagou (backend retorna deletedCount)
+      // pra dar um feedback honesto — não "nenhuma por aqui" fixo. Ver
+      // describeDeletionResult.
+      let deletedCount = 0;
       if (deleteScope === 'staff' || deleteScope === 'all') {
-        await deleteAllStaffThreads(slug);
+        const res = await deleteAllStaffThreads(slug);
+        deletedCount += res.deletedCount;
       }
       if (deleteScope === 'ai' || deleteScope === 'all') {
-        await deleteAllAiThreads(slug, session.customerId);
+        const res = await deleteAllAiThreads(slug, session.customerId);
+        deletedCount += res.deletedCount;
       }
-      setDeleteMessage(
-        deleteScope === 'staff'
-          ? 'Nenhuma mensagem com a equipe por aqui ainda.'
-          : deleteScope === 'ai'
-            ? 'Nenhuma conversa com IA por aqui ainda.'
-            : 'Nenhuma mensagem por aqui ainda.',
-      );
+      setDeleteMessage(describeDeletionResult(deleteScope, deletedCount));
     } catch (err) {
       const message =
         err instanceof ApiRequestError

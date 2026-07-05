@@ -7,6 +7,7 @@ import { recordContinuationHint } from '../../../../lib/continuationHints';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
 import { PillButton } from '../../../../components/ui/PillButton';
+import { resolveFeedbackSubmission } from './resolveFeedback';
 
 const TAGS = ['Comida', 'Atendimento', 'Ambiente', 'Rapidez', 'Assistente IA'] as const;
 
@@ -33,16 +34,24 @@ export default function PagamentoFeedbackPage() {
 
   const handleSubmit = async () => {
     if (submitting || rating === 0) return;
+    // Guard: sessão sem visitId faria o backend responder 400 em loop (o campo
+    // é obrigatório). Barra com mensagem clara em vez de tentar/retentar. Ver
+    // resolveFeedbackSubmission.
+    const resolved = resolveFeedbackSubmission({
+      visitId,
+      customerId,
+      rating,
+      tags: selectedTags,
+      comment,
+    });
+    if (!resolved.ok) {
+      setError(resolved.error);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      await apiPost(`/${slug}/feedbacks`, {
-        visitId: visitId || undefined,
-        customerId: customerId || undefined,
-        overallRating: rating,
-        tags: selectedTags,
-        comment: comment || undefined,
-      });
+      await apiPost(`/${slug}/feedbacks`, resolved.payload);
     } catch {
       setError('Não consegui enviar sua avaliação. Tente novamente.');
       setSubmitting(false);

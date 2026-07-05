@@ -15,6 +15,21 @@ interface ScreenCustomerOrderRatingProps {
 }
 
 /**
+ * Monta o redirect pro composer de reclamação preservando o comentário digitado.
+ *
+ * BUGFIX (P2 re-scan): num rating <=3 com comentário, o composer recebia só
+ * `?orderId=...` e o texto que o cliente já tinha escrito era descartado sem
+ * aviso — ele redigitava tudo de novo. Agora o comentário viaja na query
+ * (`&comment=...`, URL-encoded) pro composer pré-preencher. Comentário vazio /
+ * só espaços não adiciona `comment=` (composer abre limpo, comportamento antigo).
+ */
+export function buildComplaintRedirect(slug: string, orderId: string, comment: string): string {
+  const base = `/${slug}/complaints/new?orderId=${encodeURIComponent(orderId)}`;
+  const trimmed = comment.trim();
+  return trimmed ? `${base}&comment=${encodeURIComponent(trimmed)}` : base;
+}
+
+/**
  * Post-delivery order rating screen. Triggered by the BE-scheduled push
  * notification (~13min after `delivered`). The push lands on the customer's
  * lock screen and deep-links to `/{slug}/orders/{orderId}/rating`.
@@ -83,8 +98,9 @@ export function ScreenCustomerOrderRating({ slug, orderId }: ScreenCustomerOrder
           router.push(`/${slug}/complaints/${res.complaintId}`);
           return;
         }
-        // Compose path → carry orderId so the composer pre-fills
-        router.push(`/${slug}/complaints/new?orderId=${encodeURIComponent(orderId)}`);
+        // Compose path → carry orderId AND the comment already typed so the
+        // composer pre-fills instead of silently dropping the text.
+        router.push(buildComplaintRedirect(slug, orderId, comment));
         return;
       }
       setDone(true);
@@ -231,9 +247,7 @@ export function ScreenCustomerOrderRating({ slug, orderId }: ScreenCustomerOrder
           <PillButton
             variant="outline"
             fullWidth
-            onClick={() =>
-              router.push(`/${slug}/complaints/new?orderId=${encodeURIComponent(orderId)}`)
-            }
+            onClick={() => router.push(buildComplaintRedirect(slug, orderId, comment))}
           >
             Reportar um problema
           </PillButton>

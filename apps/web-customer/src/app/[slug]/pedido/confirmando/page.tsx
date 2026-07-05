@@ -7,6 +7,7 @@ import { useDraftOrder } from '../../../../providers/DraftOrderProvider';
 import { useSession } from '../../../../hooks/useSession';
 import { AppShell } from '../../../../components/layout/AppShell';
 import { PillButton } from '../../../../components/ui/PillButton';
+import { buildEnviadoQuery } from './enviadoQuery';
 
 const TOTAL_SECONDS = 15;
 const REVEAL_INTERVAL_MS = 2200;
@@ -23,7 +24,6 @@ export default function PedidoConfirmandoPage() {
   const orderIds = (orderIdsParam ? orderIdsParam.split(',') : [searchParams.get('orderId') ?? ''])
     .map((id) => id.trim())
     .filter(Boolean);
-  const orderId = orderIds[0] ?? '';
 
   const { items, totalCents, clear } = useDraftOrder();
   const [seconds, setSeconds] = useState(TOTAL_SECONDS);
@@ -65,8 +65,10 @@ export default function PedidoConfirmandoPage() {
       /* backend may auto-confirm */
     }
     clear();
-    router.replace(`/${slug}/pedido/enviado?orderId=${orderId}`);
-  }, [busy, clear, orderIds, orderId, router, slug]);
+    // Carrega TODOS os ids pra tela de sucesso (carrinho misto = 2+ orders);
+    // orderId=first regredia o resumo pro 1º pedido só. Ver buildEnviadoQuery.
+    router.replace(`/${slug}/pedido/enviado?${buildEnviadoQuery(orderIds)}`);
+  }, [busy, clear, orderIds, router, slug]);
 
   const cancelEdit = useCallback(async () => {
     if (busy || orderIds.length === 0) return;
