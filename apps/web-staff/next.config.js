@@ -19,14 +19,7 @@ const nextConfig = {
         key: 'Permissions-Policy',
         value: 'camera=(self), geolocation=(), microphone=(), payment=(), usb=()',
       },
-      {
-        key: 'Content-Security-Policy-Report-Only',
-        value:
-          "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; " +
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
-          "img-src 'self' data: blob:; font-src 'self' data:; " +
-          "connect-src 'self' ws: wss: http: https:; form-action 'self'",
-      },
+      // CSP ENFORCE com nonce agora vive no `src/proxy.ts` (per-request).
     ];
     // HSTS só em produção: o browser ignora sobre HTTP, e não queremos pinar
     // HTTPS num domínio de dev LAN (espelha o gate do middleware da API).

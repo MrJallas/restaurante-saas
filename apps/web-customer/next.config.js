@@ -41,17 +41,8 @@ const nextConfig = {
         key: 'Permissions-Policy',
         value: 'geolocation=(self), camera=(), microphone=(), payment=(), usb=()',
       },
-      // Report-only: baseline seguro (não bloqueia). object-src/base-uri/
-      // frame-ancestors fechados; script/style com unsafe-inline que o Next
-      // precisa hoje (nonce vem depois).
-      {
-        key: 'Content-Security-Policy-Report-Only',
-        value:
-          "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; " +
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
-          "img-src 'self' data: blob:; font-src 'self' data:; " +
-          "connect-src 'self' ws: wss: http: https:; form-action 'self'",
-      },
+      // CSP ENFORCE com nonce agora vive no `src/proxy.ts` (precisa ser
+      // per-request). Aqui ficam só os headers estáticos.
     ];
     // HSTS só em produção: o browser ignora sobre HTTP, e não queremos pinar
     // HTTPS num domínio de dev LAN (espelha o gate do middleware da API).
