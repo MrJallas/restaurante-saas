@@ -1,8 +1,10 @@
 # Security follow-ups
 
 > Estado do hardening avaliado durante o fechamento do re-scan OWASP
-> (2026-07-05, branch `fix/framework-bugfixes`). A maioria foi FECHADA; resta 1
-> refactor de escopo (decisão do dono) + 2 edges de baixa prioridade.
+> (2026-07-05, branch `fix/framework-bugfixes`). §A/§B/§C TODOS fechados no
+> código; resta APENAS a observação operacional de prod do §A (`unsafe-eval` no
+> report-uri após o launch) — nada de código pendente. LLM01 re-fechado por
+> construção (o LLM nunca decide join), não por gate heurístico.
 
 ## ✅ FECHADO
 
@@ -61,11 +63,14 @@ como chave de navegação/recurso, porque ele deixou de ser credencial. §B fech
 - Config de PROD: setar `SESSION_TOKEN_SECRET` no ambiente (hoje cai no default de
   dev). Rotacioná-lo desloga todo mundo (re-scan) — trocar em janela de baixa.
 
-### §C. LGPD erasure: 200-sem-protocolo (edge de baixa confiança)
-Se o backend LGPD responder 200 SEM `protocolNumber` (violação de contrato),
-`lgpd_data_request.py` minta protocolo + diz "apagados". O fix cobriu a exceção,
-não o 200-malformado. Distinguir "sem api_client" (handoff, OK mintar) de
-"api_client 200 sem protocolo" (pending honesto). Baixa probabilidade.
+### §C. ~~LGPD erasure: 200-sem-protocolo~~ — FECHADO
+`lgpd_data_request.py` agora distingue os dois casos por `backend_called =
+bool(ctx.api_client)`: se o backend FOI chamado e não devolveu `protocolNumber`
+(200-malformado OU exceção), retorna `status='pending'` honesto — nunca minta
+apagamento. A fabricação de protocolo (`_make_protocol` + `status='fulfilled'`)
+só ocorre com `backend_called == False` (handoff puro sem api_client, legítimo).
+Coberto por `test_backend_200_without_protocol_does_not_claim_erasure` +
+`test_handoff_without_api_client_still_mints` (distinção explícita). §C fechado.
 
 ---
 
