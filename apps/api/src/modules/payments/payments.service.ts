@@ -131,7 +131,13 @@ export class PaymentsService {
   ) {
     let amountCents: number;
     let billTotals: BillTotals;
-    let effectiveVisitId = visitId;
+    // Pagamento de MESA é por definição visit-less: o sumSettled('table') filtra
+    // `visit_id IS NULL` (contra double-charge, P1-A). Se o write-path aceitasse um
+    // visitId do body em mode='table', o pagamento cairia num bucket de visit que o
+    // sumSettled('table') nunca enxerga → a 2ª cobrança re-cobraria a mesa cheia
+    // (P1 do re-scan de convergência). Pinamos null pra alinhar write ↔ sumSettled ↔
+    // getBill; o visitId do body só vale no ramo individual (derivado do cookie).
+    let effectiveVisitId = mode === 'table' ? null : visitId;
     const callerCustomerId = options.callerCustomerId ?? null;
 
     if (mode === 'individual') {

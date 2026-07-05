@@ -117,4 +117,27 @@ describe('PaymentsService.requestPayment — não re-cobra o já-pago (P1-A)', (
       service.requestPayment(SESSION, null, 'individual', 'pix', { callerCustomerId: CUSTOMER }),
     ).rejects.toThrow(BadRequestException);
   });
+
+  // P1 do re-scan de convergência: escopo divergente escondido DENTRO do fix P1-A.
+  // sumSettled('table') filtra `visit_id IS NULL` (assume que pagamento de mesa é
+  // sempre visit-less), mas nada forçava isso no write-path. Um cliente
+  // adversarial/stale mandando {mode:'table', visitId:'V1'} gravava o pagamento no
+  // bucket visit_id='V1' — que o sumSettled('table') NUNCA enxerga — então a 2ª
+  // cobrança de mesa recomputava 11000 - 0 e RE-COBRAVA a conta cheia (double-charge).
+  it('mesa: visitId do body é IGNORADO (pinado null no INSERT) — escopo do write bate com sumSettled(table)', async () => {
+    const { service, db } = make({ tableSubtotal: 10_000, settledForTable: 0 });
+    // mode='table' com um visitId no body (o que um cliente stale/adversarial mandaria)
+    await service.requestPayment(SESSION, VISIT, 'table', 'pix');
+    // O INSERT (params[1] = visit_id) tem que ser NULL, não VISIT — senão o
+    // pagamento vaza pro escopo de visit e some do sumSettled('table').
+    expect(db.inserts[0].params[1]).toBeNull();
+    expect(db.inserts[0].params[2]).toBe(11_000);
+  });
+
+  it('mesa quitada: visitId no body não abre brecha de re-cobrança (escopo alinhado)', async () => {
+    const { service } = make({ tableSubtotal: 10_000, settledForTable: 11_000 });
+    await expect(service.requestPayment(SESSION, VISIT, 'table', 'pix')).rejects.toThrow(
+      BadRequestException,
+    );
+  });
 });
