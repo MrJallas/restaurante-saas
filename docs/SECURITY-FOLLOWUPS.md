@@ -28,6 +28,14 @@
   `table_sessions.id` de OUTRA mesa pro CLIENTE (hijack customer→customer) →
   cortados (testes `salon.service.test.ts`, `table-merge.controller.test.ts`).
 - **tv-unlock XFF-bypass** (regressão do Next 16): backstop global + teste.
+- **[A07 RAIZ] x-session-token SEPARADO do table_sessions.id** (decisão do dono,
+  opção B): `token = HMAC(SESSION_TOKEN_SECRET, sessionId)`. O id vira
+  identificador de recurso INÓCUO (seguro de expor em QUALQUER DTO — host/tables,
+  session-timeline, etc.); a credencial é o token, que nunca sai. Determinístico
+  (multi-device reusa uma chave; invalidação por id computa o token). SessionGuard
+  intocado. Sessões pré-split seguem no TTL 4h (zero disrupção). **Isso fecha a
+  família A07 na raiz — o §B "navegar-por-número" abaixo virou DESNECESSÁRIO.**
+  Prova E2E: token→200, id→401. `session-auth-token.ts` + testes; API 710/710.
 
 ## ⏳ RESTA
 
@@ -38,24 +46,17 @@ nonce no header + no `<script>`), OU aceitar `unsafe-inline` no enforce (proteç
 menor). Precisa observar os reports (adicionar um `report-uri`/endpoint de coleta)
 antes de promover, validando cada surface V20-locked.
 
-### §B. `table_sessions.id` (credencial) como chave de recurso/navegação no STAFF
-**DECISÃO DE ESCOPO DO DONO — não executado por ser refactor de arquitetura
-load-bearing.** `GET /host/tables` (`host.service.ts` `mapTableRow`) devolve
-`active_session_id` pro staff, e TODA a superfície `/staff/sessions/:id/...`
-(flags, revoke, timeline) + o deep-link V5 do manager (`mesa/[n]` →
-`table-menu/:id` → `session-timeline/:id` → compensate) usam esse id como chave.
-Como o id **É** o `x-session-token` do cliente (`SessionGuard` = `redis.get('session:'+id)`),
-um staff (semi-trusted) pode forjar a sessão do cliente. Os 2 caminhos corretos,
-ambos grandes:
-1. **navegar-por-número**: `host/tables` para de expor o id; manager navega por
-   número/table_id; TODOS os endpoints staff de sessão resolvem a sessão ativa
-   server-side. ~10 arquivos (API+FE), risco de regressão no deep-link do manager.
-2. **separar token do id**: o `x-session-token` vira um segredo distinto do
-   `table_sessions.id` (que fica sendo só o id de recurso, seguro de expor). Toca
-   a criação de sessão + SessionGuard + o session-handling do cliente — auth
-   load-bearing de TODO fluxo de cliente.
-Severidade menor (staff autenticado/semi-trusted, pré-existente); por isso é
-decisão de apetite de risco, não emergência.
+### §B. ~~nav-id staff~~ — RESOLVIDO pela separação token↔id (ver "✅ FECHADO")
+Antes o `table_sessions.id` era o `x-session-token`, então expô-lo pro staff
+(host/tables, session-timeline) permitia forjar a sessão do cliente. A opção B
+(HMAC, escolhida pelo dono) separou os dois: o id agora é inócuo. **Não é mais
+necessário** o refactor "navegar-por-número" — o staff pode continuar usando o id
+como chave de navegação/recurso, porque ele deixou de ser credencial. §B fechado.
+- Nota opcional (limpeza, NÃO segurança): as remoções defensivas do id no
+  salon/adjacent e table-merge (feitas antes) poderiam ser revertidas já que o id
+  é seguro — mas o cliente não precisa dele mesmo, então ficam (menos superfície).
+- Config de PROD: setar `SESSION_TOKEN_SECRET` no ambiente (hoje cai no default de
+  dev). Rotacioná-lo desloga todo mundo (re-scan) — trocar em janela de baixa.
 
 ### §C. LGPD erasure: 200-sem-protocolo (edge de baixa confiança)
 Se o backend LGPD responder 200 SEM `protocolNumber` (violação de contrato),
