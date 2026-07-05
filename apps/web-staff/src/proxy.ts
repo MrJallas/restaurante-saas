@@ -21,7 +21,9 @@ function buildCsp(): { csp: string; nonce: string } {
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
-    "frame-ancestors 'none'",
+    // 'self' (não 'none') pra permitir embed same-origin sem abrir clickjacking
+    // cross-origin — espelha o web-customer (MenuOverlay iframe).
+    "frame-ancestors 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${scriptEval}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",

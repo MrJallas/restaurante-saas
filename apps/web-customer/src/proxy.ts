@@ -24,7 +24,10 @@ export function proxy(request: NextRequest): NextResponse {
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
-    "frame-ancestors 'none'",
+    // 'self' (não 'none'): o V20 embute o cardápio num <iframe src=/cardapio?embed=1>
+    // same-origin (MenuOverlay). 'none' recusaria framar em QUALQUER lugar e
+    // deixaria o overlay em branco. 'self' preserva o anti-clickjacking cross-origin.
+    "frame-ancestors 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${scriptEval}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
