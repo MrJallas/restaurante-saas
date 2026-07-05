@@ -20,6 +20,25 @@ const nextConfig = {
       },
     ];
   },
+
+  // A05: conjunto seguro de headers de segurança em toda resposta. Só os que
+  // NÃO alteram render (headers HTTP não tocam o V20): anti-MIME-sniff,
+  // anti-clickjacking, referrer, HSTS. CSP/Permissions-Policy ficam de fora
+  // aqui — exigem teste por-página (inline styles/scripts do Next, geoloc do
+  // cliente) e são follow-up deliberado, não regressão.
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
+        ],
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;

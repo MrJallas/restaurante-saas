@@ -4,6 +4,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { createRequestTimingMiddleware } from './common/performance/request-timing';
+import { createSecurityHeadersMiddleware } from './common/security/security-headers';
 import { UserMessageExceptionFilter } from './common/filters/user-message-exception.filter';
 import { assertStaffKeyConfigured } from './common/config/assert-staff-key';
 
@@ -13,6 +14,9 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.use(createRequestTimingMiddleware());
+
+  // A05: headers de segurança em toda resposta (JSON-only → default-src 'none').
+  app.use(createSecurityHeadersMiddleware());
 
   app.enableCors({
     origin: process.env.CORS_ORIGINS?.split(',') || [
