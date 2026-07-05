@@ -2,6 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { PushService } from './push.service';
+import { RedisService } from '../../infra/redis/redis.service';
+
+/** Dedup key TTL: 30 dias (a janela em que um rating segue relevante). */
+const RATING_PUSH_DEDUP_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 /**
  * Scheduled order-rating push. Runs every minute and, for each tenant,
@@ -12,10 +16,13 @@ import { PushService } from './push.service';
  *     plus a Redis-backed dedup key, since the migration doesn't carry a
  *     `push_sent_at` column).
  *
- * Dedup strategy: we set a Redis key `rating-push:<orderRatingId>` with TTL
- * 30 days right after enqueueing the push. The next tick checks the key
- * before re-sending. This avoids a schema migration just to track push
- * status.
+ * Dedup strategy: an atomic Redis `SET rating-push:<orderRatingId> 1 EX 30d NX`
+ * reserves the push before sending — `setNX` returns false when the key already
+ * exists, so a subsequent tick (incl. after an API restart) skips it. This is
+ * the DURABLE source of truth and avoids a schema migration just to track push
+ * status. The in-memory Set is only a fast-path/fallback for when Redis is down
+ * (in that degraded case dedup is per-process and may re-push after a restart).
+ * If the push send fails, the reserved key is released so the next tick retries.
  *
  * The push delivery itself is the only message — we don't emit a WS event
  * here. Auto-complaint creation (rating < 3) is B1's responsibility.
@@ -32,6 +39,7 @@ export class RatingPushService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly push: PushService,
+    private readonly redis: RedisService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
@@ -103,6 +111,25 @@ export class RatingPushService {
 
     for (const row of pending) {
       if (this.memDedup.has(row.id)) continue;
+
+      // Reserva DURÁVEL no Redis (SET EX NX): fresh=false → já enfileirado por
+      // um tick anterior (mesmo antes de um restart) → pula. Se o Redis estiver
+      // fora, cai no fast-path in-memory (dedup só-processo, pode re-push num
+      // restart — degradado, mas não bloqueia).
+      const dedupKey = `rating-push:${row.id}`;
+      let reserved = true;
+      try {
+        reserved = await this.redis.setNX(dedupKey, '1', RATING_PUSH_DEDUP_TTL_SECONDS);
+      } catch (e) {
+        this.logger.warn(
+          `[${slug}] rating-push dedup Redis indisponível, fallback in-memory: ${(e as Error).message}`,
+        );
+      }
+      if (!reserved) {
+        this.memDedup.add(row.id);
+        continue;
+      }
+
       try {
         await this.push.sendOrderRatingPush({
           tenantSlug: slug,
@@ -121,6 +148,13 @@ export class RatingPushService {
           }
         }
       } catch (e) {
+        // Push falhou: LIBERA a reserva pra o próximo tick re-tentar (senão a
+        // chave dedupada bloquearia o envio pra sempre).
+        try {
+          await this.redis.del(dedupKey);
+        } catch {
+          /* Redis fora — a chave expira sozinha pelo TTL. */
+        }
         this.logger.error(`[${slug}] rating push send failed order=${row.order_id}`, e as Error);
       }
     }
