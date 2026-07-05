@@ -723,6 +723,18 @@ function positiveInt(value: unknown, fallback = 1): number {
   return Math.max(1, Math.min(20, Math.floor(n)));
 }
 
+/**
+ * Framework bugfix (add_to_order · 2 bubbles contraditórios): mensagem
+ * coerente ÚNICA quando o item mandado pelo LLM não resolve no cardápio.
+ * Pura pra ser testável isoladamente.
+ */
+const ADD_TO_ORDER_FAILURE_MESSAGE =
+  'Não consegui localizar esse item no cardápio para atualizar seu pedido.';
+
+function addToOrderCallsIn(toolCalls: AssistantToolCall[]): AssistantToolCall[] {
+  return toolCalls.filter((tc) => tc.name === 'add_to_order');
+}
+
 function actionPayload(call: AssistantToolCall): Record<string, unknown> {
   if (isRecord(call.actionPayload)) return call.actionPayload;
   if (isRecord(call.result) && isRecord(call.result.actionPayload)) {
@@ -1201,6 +1213,12 @@ export default function AssistentePage() {
   const [lastToolName, setLastToolName] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoSentRef = useRef(false);
+  // Framework bugfix: `add_to_order` com id que dá 404 no FE gerava DOIS
+  // bubbles contraditórios ("Adicionei X" do texto otimista + "Não localizei"
+  // do dispatch). Quando pré-resolvemos e o item não resolve, marcamos a call
+  // aqui pra que `dispatchToolCall` NÃO reemita a mensagem de falha — o bubble
+  // principal já foi substituído pela mensagem coerente única.
+  const suppressedAddFailuresRef = useRef<Set<AssistantToolCall>>(new Set());
   const conversationIdRef = useRef<string | null>(null);
   if (!conversationIdRef.current) {
     conversationIdRef.current = newAssistantConversationId();
@@ -2319,11 +2337,16 @@ export default function AssistentePage() {
     }
 
     if (name === 'add_to_order') {
+      // Framework bugfix: se o pré-resolvedor de `sendMessage` já detectou que
+      // esse item não resolve, o bubble principal JÁ virou a mensagem de falha
+      // coerente. Não reemita — senão voltamos ao 2-bubbles contraditórios.
+      if (suppressedAddFailuresRef.current.has(call)) {
+        suppressedAddFailuresRef.current.delete(call);
+        return;
+      }
       const item = await resolveToolMenuItem(call);
       if (!item) {
-        appendToolFeedback(
-          'Não consegui localizar esse item no cardápio para atualizar seu pedido.',
-        );
+        appendToolFeedback(ADD_TO_ORDER_FAILURE_MESSAGE);
         return;
       }
       const payload = actionPayload(call);
@@ -2712,10 +2735,38 @@ export default function AssistentePage() {
       // qual ferramenta foi acionada.
       const firstTool = displayToolCalls.length > 0 ? displayToolCalls[0] : null;
       const eyebrowTool = firstTool;
+
+      // Framework bugfix (add_to_order · 2 bubbles contraditórios):
+      // o texto do LLM ("Adicionei X") era renderizado ANTES da validação do
+      // id no FE. Quando o id não resolvia, o dispatch depois cuspia um 2º
+      // bubble "Não localizei" — resultado: dois bubbles conflitantes e nada
+      // adicionado. Pré-resolvemos os ids AGORA: se NENHUM item de add_to_order
+      // resolve, substituímos o texto otimista pela mensagem de falha coerente
+      // (bubble ÚNICO) e suprimimos a reemissão no dispatch.
+      let aiContent = res.response;
+      const addCalls = addToOrderCallsIn(displayToolCalls);
+      if (addCalls.length > 0) {
+        const resolutions = await Promise.all(
+          addCalls.map(async (call) => ({ call, item: await resolveToolMenuItem(call) })),
+        );
+        const unresolved = resolutions.filter((r) => r.item === null);
+        // Suprime o feedback de falha do dispatch pras calls que já sabemos que
+        // vão falhar — o dispatch fará early-return sem append.
+        for (const { call } of unresolved) {
+          suppressedAddFailuresRef.current.add(call);
+        }
+        const noneResolved = unresolved.length === addCalls.length;
+        if (noneResolved) {
+          // Todos os itens falharam → o texto otimista é mentira. Troca pela
+          // mensagem de falha única e coerente.
+          aiContent = ADD_TO_ORDER_FAILURE_MESSAGE;
+        }
+      }
+
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         role: res.wasBlocked ? 'blocked' : 'ai',
-        content: res.response,
+        content: aiContent,
         linkedItems: res.linkedItems && res.linkedItems.length > 0 ? res.linkedItems : undefined,
         selectedIds: [],
         toolCall: eyebrowTool

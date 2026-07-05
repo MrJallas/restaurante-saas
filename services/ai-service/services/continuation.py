@@ -120,7 +120,7 @@ DEFAULTS: dict[str, list[dict]] = {
             "slots": ["managerName", "avgResponseMin"],
             "requires_slots": ["managerName", "avgResponseMin"],
             "chips": [
-                {"id": "ver-chat", "label": "Ver chat", "action": "navigate", "payload": "complaint-thread"},
+                {"id": "ver-chat", "label": "Ver chat", "action": "navigate", "payload": "complaints"},
                 {"id": "pedir-mais-tarde", "label": "Pedir mais tarde", "action": "send", "payload": "voltar mais tarde"},
                 {"id": "falar-de-novo", "label": "Falar de novo", "action": "send", "payload": "quero falar sobre outro problema"},
             ],
@@ -134,7 +134,7 @@ DEFAULTS: dict[str, list[dict]] = {
             "slots": ["managerName", "avgResponseMin"],
             "requires_slots": ["managerName", "avgResponseMin"],
             "chips": [
-                {"id": "ver-chat", "label": "Ver chat", "action": "navigate", "payload": "complaint-thread"},
+                {"id": "ver-chat", "label": "Ver chat", "action": "navigate", "payload": "complaints"},
                 {"id": "pedir-mais-tarde", "label": "Pedir mais tarde", "action": "send", "payload": "voltar mais tarde"},
                 {"id": "falar-de-novo", "label": "Falar de novo", "action": "send", "payload": "quero falar sobre outro problema"},
             ],
@@ -148,7 +148,7 @@ DEFAULTS: dict[str, list[dict]] = {
             "slots": ["managerName", "avgResponseMin"],
             "requires_slots": ["managerName", "avgResponseMin"],
             "chips": [
-                {"id": "ver-chat", "label": "Ver chat", "action": "navigate", "payload": "complaint-thread"},
+                {"id": "ver-chat", "label": "Ver chat", "action": "navigate", "payload": "complaints"},
                 {"id": "pedir-mais-tarde", "label": "Pedir mais tarde", "action": "send", "payload": "voltar mais tarde"},
                 {"id": "falar-de-novo", "label": "Falar de novo", "action": "send", "payload": "quero falar sobre outro problema"},
             ],

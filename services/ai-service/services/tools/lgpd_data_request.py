@@ -23,6 +23,17 @@ from ..lgpd_messages import (
 from .types import ToolContext, ToolResult
 
 
+# Honest copy for the failure path. NOT canonical LGPD text (that lives in
+# `lgpd_messages.py` and only applies when the erasure actually happened) —
+# this must never affirm that the data was deleted, because it wasn't.
+LGPD_ERASURE_PENDING: str = (
+    "Registrei sua solicitação de exclusão, mas ainda não consegui confirmar "
+    "com o sistema que seus dados foram apagados. Nossa equipe vai concluir a "
+    "exclusão e você recebe a confirmação aqui. Se preferir, tente de novo em "
+    "instantes."
+)
+
+
 def _make_protocol() -> str:
     """Format AAAA-MM-DD-XXXX per spec line 136."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -44,6 +55,7 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     protocol_number = None
     backend_dispatched = False
+    backend_failed = False
     if ctx.api_client:
         try:
             res = ctx.api_client("POST", f"/{ctx.tenant_id}/lgpd-requests", {
@@ -56,11 +68,38 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             protocol_number = (res or {}).get("protocolNumber")
             backend_dispatched = bool(protocol_number)
         except Exception:
-            # apps/api also performs an in-process handoff after tool dispatch.
-            # Keep the customer-facing LGPD confirmation canonical even if the
-            # HTTP callback is unavailable or misconfigured.
-            backend_dispatched = False
+            # A09 fix: when the backend call FAILS we must NOT fabricate
+            # success. The old code swallowed the exception and still returned
+            # the canonical "seus dados foram apagados" + status='fulfilled' —
+            # lying to the customer while nothing was deleted. Flag the failure
+            # and fall through to an honest pending/error result below.
+            backend_failed = True
+
+    if backend_failed:
+        # Backend was reachable-in-principle but errored: be honest. No
+        # affirmation of deletion, no client-minted "proof" protocol.
+        return ToolResult(
+            message=LGPD_ERASURE_PENDING,
+            silent=True,
+            chips=[
+                {"id": "back_to_chat", "label": "Voltar ao chat", "action": "navigate", "payload": "assistente"},
+                {"id": "view_menu", "label": "Ver cardápio", "action": "navigate", "payload": "cardapio"},
+            ],
+            action_payload={
+                "lgpdErasure": {
+                    "protocolNumber": None,
+                    "status": "pending",
+                    "requestedAt": datetime.now(timezone.utc).isoformat(),
+                    "type": request_type,
+                    "backendDispatched": False,
+                }
+            },
+        )
+
     if not protocol_number:
+        # No api_client wired (pure in-process dispatch): apps/api completes
+        # the erasure out-of-band after dispatch, so a client-minted protocol
+        # is expected here. This path is NOT a backend failure.
         protocol_number = _make_protocol()
 
     # Canonical text — DO NOT paraphrase. Tests assert byte-equality.
