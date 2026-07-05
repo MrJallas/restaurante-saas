@@ -2,6 +2,8 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@restaurant/shared-types'],
+  // A05: não vazar o framework/versão no header (reduz info-disclosure).
+  poweredByHeader: false,
 
   // A05: conjunto seguro de headers de segurança em toda resposta (só os que
   // NÃO alteram render: anti-MIME-sniff, anti-clickjacking, referrer, HSTS).

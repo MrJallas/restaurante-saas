@@ -2,6 +2,8 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@restaurant/shared-types'],
+  // A05: não vazar o framework/versão no header (reduz info-disclosure).
+  poweredByHeader: false,
 
   // Em mobile real (iPhone + hotspot + firewall do Mac), a porta 3001 da API
   // nao e alcancavel de fora — so a 3003 (web-customer) passa. Em vez de

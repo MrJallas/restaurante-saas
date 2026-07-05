@@ -53,10 +53,12 @@ interface OverlaySalonMapProps {
    */
   zones?: SalonZone[];
   /**
-   * sessionId da mesa que vem pré-selecionada — útil quando a IA já
-   * sugeriu junção e abrimos o overlay já com uma seleção sticky.
+   * NÚMERO da mesa que vem pré-selecionada — útil quando a IA já sugeriu
+   * junção e abrimos o overlay com uma seleção sticky. Por `num` (não pelo
+   * sessionId): o salon/adjacent parou de expor o token da mesa (A07), então
+   * a identidade estável do cliente é o número.
    */
-  highlightTableSessionId?: string;
+  highlightTableNum?: number;
   /** Confirma mesa selecionável no CTA → callback com a mesa escolhida. */
   onSelectTable?: (table: SalonTable) => void | Promise<void>;
   /** Tap no X / overlay backdrop / Esc → fecha. */
@@ -104,7 +106,7 @@ export function OverlaySalonMap({
   open,
   tables,
   zones,
-  highlightTableSessionId,
+  highlightTableNum,
   onSelectTable,
   onClose,
   title = 'Selecione uma mesa',
@@ -124,11 +126,11 @@ export function OverlaySalonMap({
       setSelected(null);
       return;
     }
-    if (highlightTableSessionId) {
-      const t = tables.find((x) => x.sessionId === highlightTableSessionId);
+    if (highlightTableNum != null) {
+      const t = tables.find((x) => x.num === highlightTableNum);
       if (t) setSelected(t);
     }
-  }, [open, highlightTableSessionId, tables]);
+  }, [open, highlightTableNum, tables]);
 
   // Lock body scroll + Esc handler enquanto aberto (mesmo do BottomSheet).
   useEffect(() => {

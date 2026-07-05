@@ -7,21 +7,19 @@ import { NextRequest, NextResponse } from 'next/server';
  * P1-F (STAFF_API_KEY embarcada), virava bypass completo de staff
  * auth.
  *
+ * Next 16: a convenção de arquivo `middleware` foi deprecada em favor de
+ * `proxy` (mesma semântica edge). Renomeado middleware.ts → proxy.ts e
+ * `middleware()` → `proxy()`; o `config.matcher` é idêntico.
+ *
  * Modelo:
  *   - Cookie `tv_pin` deve casar com process.env.TV_ACCESS_PIN.
- *   - Sem PIN configurado (env vazia), middleware vira no-op.
+ *   - Sem PIN configurado (env vazia), o gate vira no-op.
  *     Mantem dev local destravado sem precisar setar pin.
  *   - Sem cookie ou cookie errado: redirect pra /cozinha/unlock.
- *
- * NOTA: o /cozinha/unlock e o seu form ainda nao existem — esse
- * commit gateia as rotas mas deixa unlock como TODO. Em dev (sem env)
- * tudo funciona; em prod sem unlock ainda nao da pra entrar — proximo
- * pass deve criar a pagina + endpoint /api/tv-unlock que valida PIN
- * e seta o cookie. Tracked via P1-F (refactor PIN/JWT).
  */
 const PROTECTED_PATHS = ['/cozinha/tv', '/bar/tv'];
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const expectedPin = process.env.TV_ACCESS_PIN;
   if (!expectedPin) return NextResponse.next();
 
