@@ -366,6 +366,8 @@ export class PaymentsService {
         amountCents = Math.min(mine.amountCents - settledForSplit, tableRemaining);
         billTotals = {
           subtotalCents: split.subtotalCents,
+          discountCents: split.discountCents,
+          discountLabel: split.discountLabel,
           serviceFeePct: split.serviceFeePct,
           serviceFeeCents: split.serviceFeeCents,
           totalCents: split.totalCents,
@@ -521,6 +523,8 @@ export class PaymentsService {
       status: normalizeStatus(p.status),
       amountCents: p.amount_cents,
       subtotalCents: input.totals.subtotalCents,
+      discountCents: input.totals.discountCents,
+      discountLabel: input.totals.discountLabel,
       serviceFeeCents: input.totals.serviceFeeCents,
       serviceFeePct: input.totals.serviceFeePct,
       method: p.method,
@@ -783,6 +787,8 @@ export class PaymentsService {
   ): Promise<{
     mode: string;
     subtotalCents: number;
+    discountCents: number;
+    discountLabel: string | null;
     serviceFeePct: number;
     serviceFeeCents: number;
     totalCents: number;
@@ -869,11 +875,22 @@ export class PaymentsService {
         const bonus = idx === 0 ? sharedRemainder : 0;
         totalsByPerson.set(cid, (totalsByPerson.get(cid) ?? 0) + sharedShare + bonus);
       });
+      // Desconto de promoção (round 2026-07-05): a promoção incide sobre a
+      // conta da MESA (totals.discountCents). No by_item cada um paga a
+      // PRÓPRIA parte, então o desconto é rateado PROPORCIONALMENTE ao
+      // subtotal de cada pessoa e a taxa incide sobre a parte JÁ DESCONTADA —
+      // mesma ordem canônica do BillingService (desconto → taxa). Sem isto o
+      // by_item cobraria o cheio e o guard de soma (contra totals.totalCents,
+      // que JÁ é descontado) estouraria.
+      const discountCents = totals.discountCents;
       allocations = participantIds.map((cid) => {
         const sub = totalsByPerson.get(cid) ?? 0;
+        const personDiscount =
+          subtotalCents > 0 ? Math.round((sub * discountCents) / subtotalCents) : 0;
+        const discountedSub = Math.max(0, sub - personDiscount);
         return {
           customerId: cid,
-          amountCents: sub + Math.round((sub * totals.serviceFeePct) / 100),
+          amountCents: discountedSub + Math.round((discountedSub * totals.serviceFeePct) / 100),
         };
       });
       // GUARD DE SOMA (re-scan 2026-07-04): espelha o check do custom — a soma
@@ -882,8 +899,12 @@ export class PaymentsService {
       // sujo) virar buraco silencioso no pay-path. Tolerância de
       // arredondamento: a taxa é aplicada per-capita e arredondada por pessoa,
       // então o desvio possível é até ~1 centavo por participante.
+      // Tolerância: taxa arredondada por pessoa (~1 centavo/participante) +
+      // desconto rateado e arredondado por pessoa (mais ~1 centavo/participante
+      // quando há promoção). 2 centavos/participante cobre os dois sem deixar
+      // passar buraco real.
       const byItemSum = allocations.reduce((s, a) => s + a.amountCents, 0);
-      if (Math.abs(byItemSum - totals.totalCents) > participantIds.length) {
+      if (Math.abs(byItemSum - totals.totalCents) > 2 * participantIds.length) {
         throw new BadRequestException(
           `Soma das partes (${byItemSum}) diferente do total da mesa com taxa (${totals.totalCents}).`,
         );
@@ -906,6 +927,8 @@ export class PaymentsService {
     return {
       mode,
       subtotalCents: totals.subtotalCents,
+      discountCents: totals.discountCents,
+      discountLabel: totals.discountLabel,
       serviceFeePct: totals.serviceFeePct,
       serviceFeeCents: totals.serviceFeeCents,
       totalCents: totals.totalCents,

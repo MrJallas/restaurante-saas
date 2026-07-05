@@ -27,6 +27,12 @@ interface BillData {
   /** Total COM taxa — o mesmo valor que o backend cobra no POST /payments. */
   totalCents: number;
   subtotalCents: number;
+  /**
+   * Desconto de promoção ATIVA aplicado server-side (BillingService). O
+   * cliente só EXIBE — o backend é autoritativo. 0/null quando não há promoção.
+   */
+  discountCents?: number;
+  discountLabel?: string | null;
   serviceFeePct: number;
   serviceFeeCents: number;
   orderCount: number;
@@ -133,6 +139,8 @@ export default function PagamentoPage() {
   // A conta vem TODA do backend (BillingService lê settings.service_fee_pct)
   // — a tela não inventa taxa; exibe exatamente o que o POST /payments cobra.
   const subtotalCents = bill?.subtotalCents ?? 0;
+  const discountCents = bill?.discountCents ?? 0;
+  const discountLabel = bill?.discountLabel ?? null;
   const serviceCents = bill?.serviceFeeCents ?? 0;
   const totalCents = bill?.totalCents ?? 0;
   const serviceFeeLabel = `Taxa ${String(bill?.serviceFeePct ?? 10).replace('.', ',')}%`;
@@ -253,6 +261,14 @@ export default function PagamentoPage() {
             ))}
             <div className="my-2.5 h-px bg-border-soft" />
             <Row label="Subtotal" value={fmt(subtotalCents)} />
+            {discountCents > 0 && (
+              <Row
+                label={
+                  <span className="text-ink">{discountLabel ? discountLabel : 'Desconto'}</span>
+                }
+                value={<span className="text-ink">−{fmt(discountCents)}</span>}
+              />
+            )}
             <Row label={serviceFeeLabel} value={fmt(serviceCents)} />
             <div className="h-1.5" />
             <Row

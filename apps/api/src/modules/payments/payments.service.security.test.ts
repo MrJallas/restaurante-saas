@@ -41,6 +41,8 @@ function fakeTenantConn(opts: {
     if (sql.includes('SELECT service_fee_pct FROM settings')) {
       return [{ service_fee_pct: '0' }]; // taxa zero: short-pay testado sem ruído de fee
     }
+    // Feature promoções (2026-07-05): sem promoção ativa → sem desconto.
+    if (sql.includes('FROM promotions')) return [];
     // 'custom' agora é table-canônico: computeSplit rateia a conta da MESA
     // sobre os participantes aprovados e valida a soma das allocations. O
     // fake devolve UMA participante (CUSTOMER) dona da conta inteira da mesa,

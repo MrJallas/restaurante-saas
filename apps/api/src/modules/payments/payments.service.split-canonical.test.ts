@@ -34,6 +34,8 @@ function fakeSplitDb(opts: {
     if (s.includes('SELECT service_fee_pct FROM settings')) {
       return [{ service_fee_pct: opts.serviceFeePct ?? '10.00' }];
     }
+    // Feature promoções (2026-07-05): sem promoção ativa → sem desconto.
+    if (s.includes('FROM promotions')) return [];
     if (s.includes('FROM order_items oi')) {
       // O SQL canônico DEVE filtrar a conta da mesa — o fake devolve os
       // itens de mesa apenas quando o filtro existe (como o PG faria).

@@ -31,12 +31,18 @@ function fakePaymentsDb(opts: {
   /** Itens da conta da MESA p/ o rateio canônico do split custom. */
   tableItems?: Array<{ subtotal_cents: number; customer_id: string | null }>;
   participants?: string[];
+  /** Promoções ATIVAS retornadas pela query do BillingService (default []). */
+  promotions?: Array<Record<string, unknown>>;
 }) {
   const inserts: Array<{ params: unknown[] }> = [];
   const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
     const s = sql.replace(/\s+/g, ' ').trim();
     if (s.includes('SELECT service_fee_pct FROM settings')) {
       return [{ service_fee_pct: opts.serviceFeePct ?? '10.00' }];
+    }
+    // Feature promoções (2026-07-05): default sem promoção ativa → sem desconto.
+    if (s.includes('FROM promotions')) {
+      return opts.promotions ?? [];
     }
     if (s.includes('FROM session_participants')) {
       return (opts.participants ?? []).map((cid) => ({ customer_id: cid }));
@@ -180,5 +186,102 @@ describe('requestPayment — "pagar minha parte" via reconhecimento', () => {
     await expect(service.requestPayment(SESSION, null, 'individual', 'pix', {})).rejects.toThrow(
       /identificar sua comanda/i,
     );
+  });
+});
+
+describe('requestPayment — desconto de promoção (feature 2026-07-05)', () => {
+  const PROMO_20 = [
+    {
+      title: 'Terça 20% off',
+      discount_type: 'percentage',
+      discount_value: 20,
+      min_order_cents: null,
+    },
+  ];
+
+  it('mesa com promoção ativa de 20% cobra 80% do subtotal + taxa sobre o descontado', async () => {
+    const { service } = makeService({
+      tableSubtotal: 10_000,
+      serviceFeePct: '10.00',
+      promotions: PROMO_20,
+    });
+    const res = await service.requestPayment(SESSION, null, 'table', 'pix', {});
+    // subtotal 10.000 − 20% (2.000) = 8.000; taxa 10% sobre 8.000 = 800;
+    // cobra 8.800 (vs 11.000 sem promoção).
+    expect(res.subtotalCents).toBe(10_000);
+    expect(res.discountCents).toBe(2_000);
+    expect(res.discountLabel).toBe('Terça 20% off');
+    expect(res.serviceFeeCents).toBe(800);
+    expect(res.amountCents).toBe(8_800);
+  });
+
+  it('mesa SEM promoção ativa cobra cheio (desconto 0)', async () => {
+    const { service } = makeService({ tableSubtotal: 10_000, serviceFeePct: '10.00' });
+    const res = await service.requestPayment(SESSION, null, 'table', 'pix', {});
+    expect(res.discountCents).toBe(0);
+    expect(res.discountLabel).toBeNull();
+    expect(res.amountCents).toBe(11_000);
+  });
+
+  it('individual com promoção ativa também cobra descontado', async () => {
+    const { service } = makeService({
+      individualSubtotal: 5_000,
+      serviceFeePct: '10.00',
+      promotions: PROMO_20,
+    });
+    const res = await service.requestPayment(SESSION, VISIT, 'individual', 'pix', {});
+    // 5.000 − 20% (1.000) = 4.000; taxa 10% = 400; cobra 4.400.
+    expect(res.discountCents).toBe(1_000);
+    expect(res.amountCents).toBe(4_400);
+  });
+
+  // Os splits são CANÔNICOS server-side (computeSplit): o rateio já inclui o
+  // desconto da mesa. Testamos computeSplit direto — o requestMyPart valida a
+  // parte enviada contra esse canônico, então provar o canônico prova a cobrança.
+  const OTHER = '55555555-5555-4555-8555-555555555555';
+
+  it('computeSplit equal com promoção: partes somam o total DESCONTADO da mesa', async () => {
+    const { service } = makeService({
+      tableItems: [
+        { subtotal_cents: 6_000, customer_id: CUSTOMER },
+        { subtotal_cents: 4_000, customer_id: OTHER },
+      ],
+      participants: [CUSTOMER, OTHER],
+      serviceFeePct: '10.00',
+      promotions: PROMO_20,
+    });
+    const split = await service.computeSplit(SESSION, 'equal', []);
+    // subtotal 10.000 − 20% (2.000) = 8.000; taxa 10% sobre 8.000 = 800;
+    // total descontado = 8.800.
+    expect(split.subtotalCents).toBe(10_000);
+    expect(split.discountCents).toBe(2_000);
+    expect(split.discountLabel).toBe('Terça 20% off');
+    expect(split.totalCents).toBe(8_800);
+    const sum = split.allocations.reduce((s, a) => s + a.amountCents, 0);
+    expect(sum).toBe(8_800);
+  });
+
+  it('computeSplit by_item com promoção: cada parte sai descontada e a soma fecha o total', async () => {
+    const { service } = makeService({
+      tableItems: [
+        { subtotal_cents: 6_000, customer_id: CUSTOMER },
+        { subtotal_cents: 4_000, customer_id: OTHER },
+      ],
+      participants: [CUSTOMER, OTHER],
+      serviceFeePct: '10.00',
+      promotions: PROMO_20,
+    });
+    const split = await service.computeSplit(SESSION, 'by_item', []);
+    expect(split.discountCents).toBe(2_000);
+    expect(split.totalCents).toBe(8_800);
+    // A: 6.000 − 20% (1.200) = 4.800; taxa 10% = 480 → 5.280.
+    const a = split.allocations.find((x) => x.customerId === CUSTOMER);
+    expect(a?.amountCents).toBe(5_280);
+    // B: 4.000 − 20% (800) = 3.200; taxa 10% = 320 → 3.520.
+    const b = split.allocations.find((x) => x.customerId === OTHER);
+    expect(b?.amountCents).toBe(3_520);
+    // Guard de soma: 5.280 + 3.520 = 8.800 = total descontado da mesa.
+    const sum = split.allocations.reduce((s, x) => s + x.amountCents, 0);
+    expect(sum).toBe(8_800);
   });
 });

@@ -43,6 +43,8 @@ function fakeDb(opts: {
   const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
     const s = sql.replace(/\s+/g, ' ').trim();
     if (s.includes('SELECT service_fee_pct FROM settings')) return [{ service_fee_pct: '10.00' }];
+    // Feature promoções (2026-07-05): sem promoção ativa → sem desconto.
+    if (s.includes('FROM promotions')) return [];
     if (s.startsWith('SELECT COALESCE(SUM(total_cents)')) {
       return s.includes(`billing_mode = 'individual'`)
         ? [{ total: String(opts.individualSubtotal ?? 0) }]

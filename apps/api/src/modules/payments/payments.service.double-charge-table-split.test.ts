@@ -70,6 +70,8 @@ function fakeDb(opts: {
     if (s.includes('SELECT service_fee_pct FROM settings')) {
       return [{ service_fee_pct: opts.serviceFeePct ?? '10.00' }];
     }
+    // Feature promoções (2026-07-05): sem promoção ativa → sem desconto.
+    if (s.includes('FROM promotions')) return [];
     if (s.includes('FROM session_participants')) {
       return (opts.participants ?? []).map((cid) => ({ customer_id: cid }));
     }

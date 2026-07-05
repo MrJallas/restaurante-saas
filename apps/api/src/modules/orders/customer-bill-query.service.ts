@@ -89,6 +89,11 @@ export class CustomerBillQueryService {
       mode,
       totalCents: totals.totalCents,
       subtotalCents: totals.subtotalCents,
+      // Promoção ativa (migration 014) aplicada server-side pelo BillingService:
+      // o mesmo desconto que o POST /payments cobra. 0/null quando nenhuma
+      // promoção qualifica. `discountLabel` é o rótulo pra UI ("Terça 20% off").
+      discountCents: totals.discountCents,
+      discountLabel: totals.discountLabel,
       serviceFeePct: totals.serviceFeePct,
       serviceFeeCents: totals.serviceFeeCents,
       orderCount: orders.length,
