@@ -71,3 +71,22 @@ não o 200-malformado. Distinguir "sem api_client" (handoff, OK mintar) de
 
 _Contexto: `MEMORY.md` → `project_rescan_megaloop_2026-07-04.md`;
 `docs/PIX-STATUS.md` (Pix é STUB por decisão de produto, não bug)._
+
+## Re-scan Fable-style (2026-07-05) — achou e fechou 2 P1 + 4 P2
+
+Scan multi-agente (8 dimensões, cada achado verificado adversarialmente). 13
+brutos → 2 P1 CONFIRMADOS (ambos meus desta sessão) + 6 P2. Fechados:
+- P1 **LLM01 não fechou de verdade**: o sanitizer não cobria a classe AFIRMATIVA
+  (sim/pode/liberar/deixa) que o prompt usa como gatilho de accept → nome de
+  joiner envenenado auto-admitia. Fix: denylist estendida + GATE na fala do host
+  (accept só se a MENSAGEM DO HOST afirma, não o nome atacante-controlado).
+- P1 **CSP frame-ancestors 'none'** quebrava o iframe do cardápio (MenuOverlay) →
+  'self'.
+- P2 CSP bloqueava Google Fonts do tenant → hosts no style/font-src.
+- P2 ScreenHostProfile placebo '17:08' (mesmo do manager) → removido.
+- P2 open-redirect no /cozinha/unlock (next não validado) → só path interno.
+- P2 must_change_pin não checado no WS handshake de staff → rejeita+disconnect.
+Não-acionados: must_change_pin no StaffOrSessionGuard (path da x-staff-key
+COMPARTILHADA, sem identidade per-staff — non-issue); partySize-persist do host
+(decisão de produto, exige coluna nova).
+Estado: API 714/714, ai-service 386/386, tsc 0, boot 200, CSP+iframe+fontes ao vivo.
