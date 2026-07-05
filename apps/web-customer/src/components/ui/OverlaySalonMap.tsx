@@ -230,9 +230,12 @@ export function OverlaySalonMap({
               <div className="grid grid-cols-3 gap-2">
                 {g.tables.map((t) => (
                   <SalonTableCell
-                    key={`${t.num}-${t.sessionId ?? t.tableCode ?? 'nosession'}`}
+                    key={`${t.num}-${t.tableCode ?? 'x'}`}
                     table={t}
-                    isSelected={selected?.sessionId === t.sessionId && t.sessionId !== undefined}
+                    // Casa por `num` (sempre presente, único) — NÃO por sessionId:
+                    // o salon/adjacent parou de expor o token da mesa (A07), então
+                    // sessionId agora é sempre undefined e a seleção quebraria.
+                    isSelected={selected?.num === t.num}
                     onTap={() => {
                       if (t.status !== 'occupied') return;
                       setSelected(t);

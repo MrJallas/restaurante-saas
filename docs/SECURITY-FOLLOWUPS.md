@@ -83,8 +83,21 @@
 - **salon/tables/adjacent** vazava `active_session_id` pro CLIENTE (hijack
   customer→customer, pior audiência) → cortado + teste `salon.service.test.ts`.
   Supersede a task de spawn `task_ff071c0c`.
+- **table-merge-requests** (create/approve/reject, SessionGuard=cliente)
+  devolvia `sourceTableSessionId`/`targetTableSessionId` no body = tokens das 2
+  mesas (mesmo hijack customer→customer). O verificador adversarial achou este
+  flanco depois do salon. → controller tira os tokens na fronteira HTTP do
+  cliente (`stripSessionTokens`; o mapRow interno os mantém pros WS emits) +
+  teste `table-merge.controller.test.ts`. O merge continua funcionando: o
+  cliente identifica o alvo por NÚMERO (não pelo token), e o backend
+  `resolveTargetSession` já resolvia por número.
 - **tv-unlock** reintroduziu o XFF-bypass no upgrade Next 16 (rate-limit por
   x-forwarded-for) → backstop GLOBAL + teste `rate-limit.test.ts`.
+
+> Família A07 customer-facing agora exaustivamente varrida: os únicos endpoints
+> guardados por SessionGuard que expunham `table_sessions.id` de OUTRA mesa eram
+> salon/adjacent e table-merge — ambos fechados. Resta só o staff-facing (§5,
+> `host/tables` como chave de navegação — refactor de nav-id, semi-trusted).
 
 ---
 

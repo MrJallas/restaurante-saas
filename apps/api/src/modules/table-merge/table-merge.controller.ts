@@ -80,6 +80,23 @@ export class TableMergeController {
   ) {}
 
   /**
+   * [SEGURANÇA A07] O payload do CLIENTE não pode carregar
+   * `sourceTableSessionId`/`targetTableSessionId` — são os `table_sessions.id`
+   * (= `x-session-token`) das duas mesas. Como esta rota é guardada por
+   * `SessionGuard` (cliente), devolvê-los deixa um cliente forjar a sessão da
+   * outra mesa (hijack customer→customer, mesma classe do salon/adjacent). O
+   * `mapRow` interno mantém os tokens pros WS emits (que já dispararam dentro do
+   * service, antes deste return); aqui, na fronteira HTTP do cliente, eles saem.
+   * O staff GET (`list`) segue por StaffOnlyGuard.
+   */
+  private stripSessionTokens<T extends Record<string, unknown>>(dto: T) {
+    const { sourceTableSessionId: _s, targetTableSessionId: _t, ...rest } = dto;
+    void _s;
+    void _t;
+    return rest;
+  }
+
+  /**
    * Round 10 (B-NEW-50): requestingCustomerId derivado do cookie.
    * Antes: customer A criava merge request "em nome de" customer Y
    * conhecendo UUID — audit log mostrava B como requester, manager DM
@@ -109,13 +126,15 @@ export class TableMergeController {
       );
     }
     const callerCustomerId = await this.callerResolver.requireCustomerId(req);
-    return this.service.createCustomerRequest(
-      {
-        ...dto,
-        sourceTableSessionId: session.sessionId,
-        requestingCustomerId: callerCustomerId,
-      },
-      slug,
+    return this.stripSessionTokens(
+      await this.service.createCustomerRequest(
+        {
+          ...dto,
+          sourceTableSessionId: session.sessionId,
+          requestingCustomerId: callerCustomerId,
+        },
+        slug,
+      ),
     );
   }
 
@@ -135,7 +154,7 @@ export class TableMergeController {
     @Req() req: Request,
   ) {
     const callerCustomerId = await this.callerResolver.requireCustomerId(req);
-    return this.service.approve(id, callerCustomerId, slug);
+    return this.stripSessionTokens(await this.service.approve(id, callerCustomerId, slug));
   }
 
   @Post(':id/reject')
@@ -147,7 +166,7 @@ export class TableMergeController {
     @Req() req: Request,
   ) {
     const callerCustomerId = await this.callerResolver.requireCustomerId(req);
-    return this.service.reject(id, callerCustomerId, dto.reason, slug);
+    return this.stripSessionTokens(await this.service.reject(id, callerCustomerId, dto.reason, slug));
   }
 
   /**
