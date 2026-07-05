@@ -7,17 +7,20 @@ const nextConfig = {
   // NÃO alteram render: anti-MIME-sniff, anti-clickjacking, referrer, HSTS).
   // CSP/Permissions-Policy ficam de follow-up (precisam de teste por-página).
   async headers() {
-    return [
-      {
-        source: '/:path*',
-        headers: [
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
-          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
-        ],
-      },
+    const base = [
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
     ];
+    // HSTS só em produção: o browser ignora sobre HTTP, e não queremos pinar
+    // HTTPS num domínio de dev LAN (espelha o gate do middleware da API).
+    if (process.env.NODE_ENV === 'production') {
+      base.push({
+        key: 'Strict-Transport-Security',
+        value: 'max-age=63072000; includeSubDomains',
+      });
+    }
+    return [{ source: '/:path*', headers: base }];
   },
 };
 

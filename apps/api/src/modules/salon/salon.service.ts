@@ -8,7 +8,6 @@ export interface SalonTableDto {
   tableCode: string;
   tableLabel: string;
   status: SalonTableStatus;
-  sessionId?: string;
   host?: string;
   party?: number;
 }
@@ -98,7 +97,12 @@ export class SalonService {
           tableCode: row.table_code,
           tableLabel: row.table_label,
           status,
-          ...(row.active_session_id ? { sessionId: row.active_session_id } : {}),
+          // A07: NÃO expor active_session_id (= x-session-token do cliente) — o
+          // /salon/tables/adjacent é guardado por SessionGuard (cliente), então
+          // vazar o token de mesas vizinhas = qualquer cliente forja a sessão de
+          // outra mesa (hijack customer→customer). O 'isCurrent'/'you' já é
+          // resolvido server-side via input.currentSessionId; o cliente não
+          // precisa do token de ninguém.
           ...(row.host_name ? { host: row.host_name } : {}),
           ...(row.active_session_id ? { party: Number(row.party ?? 0) } : {}),
         };

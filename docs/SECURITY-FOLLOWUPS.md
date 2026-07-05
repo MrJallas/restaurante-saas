@@ -49,6 +49,43 @@
   surface do cliente (V20-locked) e do staff, e um `Permissions-Policy` que
   preserve `geolocation=(self)`.
 
+## 5. `table_sessions.id` (credencial) usado como chave de NAVEGAÇÃO no staff
+
+- **O quê (A07 residual, staff-facing):** `GET /:slug/host/tables` (`host.service.ts`
+  `mapTableRow` → `active_session_id`) devolve o `table_sessions.id` de cada mesa
+  ativa pro staff. Esse id **É** o `x-session-token` do cliente (o `SessionGuard`
+  autentica com `redis.get('session:'+token)`), então um staff pode forjar a
+  sessão do cliente. Mesmo valor reaparece no `session-timeline/*` mappers.
+- **Por que NÃO foi cortado agora:** ao contrário do swap/liberate/vip (fechados
+  no commit A07 f8748d0) e do salon (fechado nesta sessão — cliente-facing,
+  pior), aqui o token é a **chave de navegação** do manager: `manager/mesa/[n]`
+  navega pra `table-menu/${active_session_id}`, e `ScreenManagerCompensateClient`
+  seleciona por ele. Cortar cru quebra 3 fluxos. Audiência é staff (semi-trusted,
+  já opera as mesas), severidade menor que o salon.
+- **Caminho certo (refactor escopado):** introduzir um **identificador de
+  navegação distinto da credencial** (ex.: um id opaco/handle por sessão, ou usar
+  `table_id`+número) e thre'-lo por `host/tables → manager/mesa/[n] →
+  table-menu → session-timeline → compensate`, mantendo `table_sessions.id`
+  secreto. NÃO é um one-liner — é a raiz da família A07 staff-side.
+
+## 6. LGPD erasure: 200-sem-protocolo ainda minta sucesso (edge de baixa confiança)
+
+- Se o backend LGPD responder **200 mas sem `protocolNumber`** (violação de
+  contrato), `lgpd_data_request.py` cai no `if not protocol_number:` → minta um
+  protocolo cliente-side + devolve a copy canônica "apagados" + `fulfilled`. O
+  fix desta sessão cobriu o branch da **exceção**, não o 200-malformado.
+- **Caminho:** distinguir "sem api_client" (handoff in-process, protocolo mintado
+  OK) de "api_client chamado e voltou 200 sem protocolo" (tratar como pending
+  honesto, igual à falha). Baixa probabilidade (backend do mesmo time).
+
+## Já FECHADO nesta sessão (não são mais follow-up)
+
+- **salon/tables/adjacent** vazava `active_session_id` pro CLIENTE (hijack
+  customer→customer, pior audiência) → cortado + teste `salon.service.test.ts`.
+  Supersede a task de spawn `task_ff071c0c`.
+- **tv-unlock** reintroduziu o XFF-bypass no upgrade Next 16 (rate-limit por
+  x-forwarded-for) → backstop GLOBAL + teste `rate-limit.test.ts`.
+
 ---
 
 _Contexto: fechamento do re-scan OWASP + backlog P2 + upgrade Next 16
