@@ -95,11 +95,11 @@ def test_join_request_decision_tools_do_not_call_api(tool_name: str, decision: s
 def test_delete_chat_hits_canonical_route():
     api = RecordingApiClient(default=None)
     ctx = ToolContext(tenant_id="my-rest", customer_id="cust-1", api_client=api)
-    # `delete_chat` is destructive → the dispatcher gates it behind an explicit
-    # confirm (see test_tools_registry.py). Pass confirm=True so we exercise the
-    # canonical-route contract this test is about.
+    # `delete_chat` is destructive → the dispatcher only honors `confirm` from
+    # the out-of-band chip path (origin="chip"); the LLM stream never confirms
+    # (see test_tools_registry.py). Use origin="chip" to exercise the delete.
     result = dispatch_tool(
-        "delete_chat", {"threadId": "thread-xyz", "confirm": True}, ctx
+        "delete_chat", {"threadId": "thread-xyz", "confirm": True}, ctx, origin="chip"
     )
     assert result.error is None
     assert len(api.calls) == 1
@@ -116,9 +116,10 @@ def test_delete_chat_hits_canonical_route():
 def test_delete_all_chats_hits_canonical_route():
     api = RecordingApiClient(default={"deletedCount": 3})
     ctx = ToolContext(tenant_id="my-rest", customer_id="cust-1", api_client=api)
-    # Destructive → gated behind confirm (see test_tools_registry.py). Pass
-    # confirm=True to exercise the canonical-route contract under test here.
-    result = dispatch_tool("delete_all_chats", {"confirm": True}, ctx)
+    # Destructive → gated behind out-of-band confirm (see test_tools_registry.py).
+    # confirm=true só é honrado quando a ORIGEM é o chip (origin="chip") tocado
+    # pelo humano — o token-stream do LLM (origin default) nunca confirma.
+    result = dispatch_tool("delete_all_chats", {"confirm": True}, ctx, origin="chip")
     assert result.error is None
     assert len(api.calls) == 1
     method, path, _ = api.calls[0]

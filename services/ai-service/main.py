@@ -638,6 +638,12 @@ class ToolDispatchRequest(BaseModel):
     isManager: bool = False
     sessionFlags: dict = {}
     rawMessage: str | None = None
+    # Origin of this dispatch. `/tools/dispatch` is the OUT-OF-BAND path an
+    # orchestrator hits directly (chip the human tapped) — distinct from the
+    # LLM tool-call loop. Default "chip" so a destructive confirm the human
+    # approved is honored here; the LLM loop never touches this endpoint (it
+    # calls dispatch_tool with the default origin="llm", which strips confirm).
+    origin: str = "chip"
 
 
 class ToolDispatchResponse(BaseModel):
@@ -992,7 +998,11 @@ async def chat(req: ChatRequest):
             raw_message=text,
         )
         try:
-            tool_result = await asyncio.to_thread(dispatch_tool, name, args, ctx)
+            # origin="llm" (explicit): this is the model's tool-call stream —
+            # UNTRUSTED. dispatch_tool strips any forged `confirm` here so a
+            # hallucinating/jailbroken model can NEVER delete on its own. The
+            # human confirms only out-of-band via the chip → /tools/dispatch.
+            tool_result = await asyncio.to_thread(dispatch_tool, name, args, ctx, "llm")
             tc_record = dict(tc)
             tc_record["result"] = {
                 "message": tool_result.message,
@@ -1178,7 +1188,9 @@ async def tools_dispatch(req: ToolDispatchRequest):
     )
 
     try:
-        result = await asyncio.to_thread(dispatch_tool, req.name, req.args or {}, ctx)
+        result = await asyncio.to_thread(
+            dispatch_tool, req.name, req.args or {}, ctx, req.origin
+        )
     except ToolNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ToolValidationError as e:

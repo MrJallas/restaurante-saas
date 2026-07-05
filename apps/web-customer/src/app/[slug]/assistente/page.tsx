@@ -6,7 +6,7 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { apiPost, apiGet, apiPatch, ApiRequestError } from '../../../lib/api';
 import { clearDeliveredContinuationHint } from '../../../lib/continuationHints';
 import { recordCustomerEvent } from '../../../lib/customerEvents';
-import { listMessages } from '../../../lib/api/chat-history';
+import { listMessages, deleteThread, deleteAllThreads } from '../../../lib/api/chat-history';
 import { listCustomerCourtesies, respondCustomerCourtesy } from '../../../lib/api/courtesies';
 import {
   approveTableMerge,
@@ -587,6 +587,33 @@ function isMergeCooldownStartedPayload(value: unknown): value is WsMergeCooldown
   return (
     isRecord(value) && typeof value.cooldownId === 'string' && typeof value.expiresAt === 'string'
   );
+}
+
+/**
+ * Payload OBJETO de um chip de confirmação destrutiva (round 5 P0): o gate
+ * server-side (`services/ai-service/services/tools/__init__.py::
+ * _destructive_confirm_prompt`) devolve `{ tool, args: { confirm: true, … } }`.
+ * Esse chip NÃO pode virar texto pro LLM — o `confirm` só é honrado por um
+ * sinal OUT-OF-BAND tocado pelo humano. A deleção dispara direto no endpoint
+ * canônico (SessionGuard + cookie recognition_token), NUNCA re-roteando pelo
+ * token-stream do modelo (senão: loop infinito, o humano nunca deleta).
+ */
+interface DestructiveConfirmPayload {
+  tool: 'delete_chat' | 'delete_all_chats';
+  args: { confirm?: unknown; threadId?: unknown; thread_id?: unknown };
+}
+
+function asDestructiveConfirmPayload(payload: unknown): DestructiveConfirmPayload | null {
+  if (!isRecord(payload)) return null;
+  const tool = payload.tool;
+  if (tool !== 'delete_chat' && tool !== 'delete_all_chats') return null;
+  const args = isRecord(payload.args) ? payload.args : {};
+  const confirmed =
+    args.confirm === true ||
+    (typeof args.confirm === 'string' &&
+      ['true', 'yes', 'sim', '1'].includes(args.confirm.trim().toLowerCase()));
+  if (!confirmed) return null;
+  return { tool, args } as DestructiveConfirmPayload;
 }
 
 /**
@@ -1683,6 +1710,60 @@ export default function AssistentePage() {
         content,
       },
     ]);
+  };
+
+  /**
+   * Round 5 P0 (A2) — confirmação destrutiva OUT-OF-BAND.
+   *
+   * O chip "Sim, apagar" carrega payload OBJETO `{ tool, args: { confirm } }`.
+   * Ele NÃO pode virar texto pro LLM (`sendMessage(label)`): o modelo não
+   * consegue re-emitir `confirm=true` legitimamente (fora do schema), então
+   * o gate re-bate → loop infinito e o humano NUNCA deleta. Aqui o toque do
+   * humano dispara a deleção DIRETO no endpoint canônico
+   * (`DELETE /:slug/chat-history[...]`, SessionGuard + cookie recognition_token)
+   * — a MESMA rota que a tool bateria, mas por um caminho confiável e fora do
+   * token-stream do modelo. Retorna true quando tratou o chip.
+   */
+  const handleDestructiveConfirmChip = async (payload: unknown): Promise<boolean> => {
+    const confirm = asDestructiveConfirmPayload(payload);
+    if (!confirm) return false;
+
+    if (!session.customerId) {
+      appendToolFeedback('Pra apagar suas conversas, preciso te identificar primeiro.');
+      setSuggestions(DEFAULT_SUGGESTIONS);
+      return true;
+    }
+
+    try {
+      if (confirm.tool === 'delete_all_chats') {
+        const res = await deleteAllThreads(slug, session.customerId);
+        const count = res?.deletedCount ?? 0;
+        appendToolFeedback(
+          count > 0
+            ? `Apaguei suas ${count} conversa(s). Não tem volta — nem pra você nem pra mim.`
+            : 'Apaguei todo o histórico de conversas.',
+        );
+      } else {
+        const threadId =
+          typeof confirm.args.threadId === 'string'
+            ? confirm.args.threadId
+            : typeof confirm.args.thread_id === 'string'
+              ? confirm.args.thread_id
+              : '';
+        if (!threadId) {
+          appendToolFeedback('Não consegui identificar qual conversa apagar.');
+          setSuggestions(DEFAULT_SUGGESTIONS);
+          return true;
+        }
+        await deleteThread(slug, threadId, session.customerId);
+        appendToolFeedback('Conversa apagada. Não tem volta.');
+      }
+    } catch {
+      appendToolFeedback('Não consegui apagar agora. Tente de novo em instantes.');
+    }
+    // Consome os chips binários de confirmação (o gate já foi resolvido).
+    setSuggestions(DEFAULT_SUGGESTIONS);
+    return true;
   };
 
   const showCourtesiesFromTool = async () => {
@@ -3268,6 +3349,14 @@ export default function AssistentePage() {
                     if (chipBusy) return;
                     setChipBusy(true);
                     try {
+                      // Round 5 P0 (A2): chip de confirmação destrutiva carrega
+                      // payload OBJETO `{ tool, args: { confirm } }`. Ele dispara
+                      // a deleção OUT-OF-BAND (endpoint canônico) — NUNCA vira
+                      // texto pro LLM (senão o gate re-bate → loop infinito e o
+                      // humano nunca deleta). Checa ANTES da coerção pra string.
+                      if (await handleDestructiveConfirmChip((c as ChipCanon).payload)) {
+                        return;
+                      }
                       const txt = chipText(c as ChipCanon);
                       if (c.action === 'navigate') {
                         router.push(chipNavigationDestination(slug, txt));

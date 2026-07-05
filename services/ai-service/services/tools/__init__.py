@@ -441,9 +441,39 @@ class ToolValidationError(Exception):
         self.chip_label = chip_label
 
 
-def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+# The ONLY dispatch origin whose `confirm` is trusted. Confirmation of a
+# destructive action must be an OUT-OF-BAND human signal (a chip the customer
+# physically tapped, dispatched via the trusted `/tools/dispatch` path) —
+# NEVER a token the LLM emitted in its tool-call stream. Any other origin
+# (default "llm", the tool-call loop in main.py) gets `confirm` stripped
+# before the tool ever sees it.
+_TRUSTED_CONFIRM_ORIGIN = "chip"
+
+
+def dispatch_tool(
+    name: str,
+    args: dict[str, Any],
+    ctx: ToolContext,
+    origin: str = "llm",
+) -> ToolResult:
     """
     Validate args + invoke the tool. Returns the ToolResult unchanged.
+
+    `origin` marks WHERE this dispatch came from and is the server-side
+    invariant that closes the destructive-confirm gate on both sides:
+
+      - "llm"  (default): the LLM tool-call loop. The model controls `args`,
+        so `confirm` here is UNTRUSTED — it is stripped before the gate runs.
+        A hallucinating/jailbroken model emitting {"confirm": true} therefore
+        re-hits the gate and gets a confirmation chip instead of a delete.
+      - "chip" (`_TRUSTED_CONFIRM_ORIGIN`): an out-of-band dispatch the human
+        triggered by tapping the confirm chip (via the trusted `/tools/dispatch`
+        endpoint, authenticated with X-AI-Service-Key). Only here is `confirm`
+        honored, so the destructive action actually runs.
+
+    The default is the SECURE one: any caller that forgets to pass `origin`
+    cannot confirm a destructive action. `additionalProperties:False` in
+    schemas.py is a prompt hint, not a server invariant — this is.
 
     Raises:
       - ToolNotFoundError: unknown tool
@@ -452,6 +482,13 @@ def dispatch_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResu
     meta = TOOLS.get(name)
     if meta is None:
         raise ToolNotFoundError(f"unknown tool: {name}")
+
+    # Server-side invariant: strip any `confirm` the LLM may have forged. The
+    # model's token-stream can NEVER confirm a destructive action — only the
+    # out-of-band chip path is trusted. We copy so we don't mutate the caller's
+    # dict (the tool-call audit record keeps the raw args the model emitted).
+    if origin != _TRUSTED_CONFIRM_ORIGIN and args and "confirm" in args:
+        args = {k: v for k, v in args.items() if k != "confirm"}
 
     # Staff tools that require a `text` payload are validated up-front. We
     # short-circuit here instead of letting each tool re-implement the check,

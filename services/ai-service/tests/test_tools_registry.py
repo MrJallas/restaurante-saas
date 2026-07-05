@@ -395,15 +395,112 @@ def test_delete_all_chats_without_confirm_does_not_delete():
     assert confirm_chip is not None, f"faltou chip de confirmação re-emitindo a tool: {result.chips}"
 
 
-def test_delete_all_chats_with_confirm_deletes():
-    """GREEN path: com confirm=true, a deleção acontece."""
+def test_delete_all_chats_with_confirm_from_chip_deletes():
+    """GREEN path A2: com confirm=true VINDO DO CHIP (out-of-band, humano), deleta.
+
+    O invariante é: confirmação só vale quando a ORIGEM do dispatch é o chip
+    tocado pelo humano (`origin="chip"`), nunca o token-stream do LLM.
+    """
     api = _RecordingApiClient()
     ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
-    result = dispatch_tool("delete_all_chats", {"confirm": True}, ctx)
+    result = dispatch_tool("delete_all_chats", {"confirm": True}, ctx, origin="chip")
     assert len(api.calls) == 1, f"esperava 1 DELETE, veio: {api.calls}"
     method, path, _ = api.calls[0]
     assert method == "DELETE"
     assert result.error is None
+
+
+# ─────────────────────────────────────────────────────────────
+# P0 REGRESSÃO (re-scan) — o gate estava furado dos DOIS lados.
+# A1 (BYPASS): o modelo forja confirm=true no token-stream do LLM e DELETA
+#   sem toque humano. O confirm NÃO pode vir dos args controlados pelo LLM.
+# A2 (CAMINHO LEGÍTIMO): só o chip out-of-band (humano) pode confirmar.
+# Invariante: confirmação vem SÓ de um sinal out-of-band (origin="chip"),
+# NUNCA do fluxo do LLM (origin default "llm" / qualquer coisa != "chip").
+# ─────────────────────────────────────────────────────────────
+
+
+def test_a1_llm_forged_confirm_does_not_delete_default_origin():
+    """A1: confirm=true pelo caminho do LLM (origin default) é IGNORADO — NÃO deleta.
+
+    Reproduz o threat-model: um LLM alucinando/jailbroken emite
+    {"confirm": true}. O dispatch default (o do loop de tool-calls do LLM
+    em main.py) NÃO pode honrar esse confirm. Em vez de deletar, volta o
+    gate de confirmação (chip out-of-band) — o humano ainda tem que tocar.
+    """
+    api = _RecordingApiClient()
+    ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
+    # origin default = "llm" (o loop de tool-calls chama posicionalmente)
+    result = dispatch_tool("delete_all_chats", {"confirm": True}, ctx)
+    assert api.calls == [], f"A1 BYPASS: o modelo deletou forjando confirm: {api.calls}"
+    # Continua sendo um gate, não erro — devolve chip pra confirmação humana.
+    assert result.error is None
+    assert result.chips, "gate deve oferecer chip de confirmação out-of-band"
+    confirm_chip = next(
+        (
+            c for c in result.chips
+            if isinstance(c.get("payload"), dict)
+            and c["payload"].get("tool") == "delete_all_chats"
+            and (c["payload"].get("args") or {}).get("confirm") is True
+        ),
+        None,
+    )
+    assert confirm_chip is not None
+
+
+def test_a1_llm_forged_confirm_explicit_origin_does_not_delete():
+    """A1: mesmo com origin='llm' EXPLÍCITO, confirm forjado é stripado — NÃO deleta."""
+    api = _RecordingApiClient()
+    ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
+    result = dispatch_tool("delete_all_chats", {"confirm": "sim"}, ctx, origin="llm")
+    assert api.calls == [], f"A1 BYPASS via origin=llm explícito: {api.calls}"
+    assert result.error is None
+    assert result.chips
+
+
+def test_a2_chip_out_of_band_confirm_deletes():
+    """A2: o caminho do chip (out-of-band, humano) COM confirm DELETA — o humano consegue."""
+    api = _RecordingApiClient()
+    ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
+    result = dispatch_tool("delete_all_chats", {"confirm": True}, ctx, origin="chip")
+    assert len(api.calls) == 1, f"A2 QUEBRADO: humano não conseguiu deletar: {api.calls}"
+    assert api.calls[0][0] == "DELETE"
+    assert result.error is None
+
+
+def test_a2_chip_confirm_preserves_thread_target_and_deletes():
+    """A2 (delete_chat): chip out-of-band preserva threadId e deleta o alvo certo."""
+    api = _RecordingApiClient()
+    ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
+    result = dispatch_tool(
+        "delete_chat", {"threadId": "thr-1", "confirm": True}, ctx, origin="chip"
+    )
+    assert len(api.calls) == 1, f"A2 delete_chat não deletou: {api.calls}"
+    method, path, _ = api.calls[0]
+    assert method == "DELETE"
+    assert "thr-1" in path, f"alvo do delete perdido: {path}"
+    assert result.error is None
+
+
+def test_a1_delete_chat_llm_forged_confirm_does_not_delete():
+    """A1 (delete_chat): confirm forjado pelo LLM com threadId presente NÃO deleta."""
+    api = _RecordingApiClient()
+    ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
+    result = dispatch_tool("delete_chat", {"threadId": "thr-1", "confirm": True}, ctx)
+    assert api.calls == [], f"A1 delete_chat BYPASS: {api.calls}"
+    assert result.error is None
+    # Volta o gate com chip re-emitindo a MESMA tool (threadId preservado).
+    confirm_chip = next(
+        (
+            c for c in result.chips
+            if isinstance(c.get("payload"), dict)
+            and c["payload"].get("tool") == "delete_chat"
+            and (c["payload"].get("args") or {}).get("confirm") is True
+        ),
+        None,
+    )
+    assert confirm_chip is not None
+    assert (confirm_chip["payload"]["args"] or {}).get("threadId") == "thr-1"
 
 
 def test_delete_chat_without_confirm_does_not_delete():
@@ -428,10 +525,13 @@ def test_delete_chat_without_confirm_does_not_delete():
     assert (confirm_chip["payload"]["args"] or {}).get("threadId") == "thr-1"
 
 
-def test_delete_chat_with_confirm_deletes():
+def test_delete_chat_with_confirm_from_chip_deletes():
+    """delete_chat só deleta com confirm vindo do chip out-of-band (origin='chip')."""
     api = _RecordingApiClient()
     ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
-    result = dispatch_tool("delete_chat", {"threadId": "thr-1", "confirm": True}, ctx)
+    result = dispatch_tool(
+        "delete_chat", {"threadId": "thr-1", "confirm": True}, ctx, origin="chip"
+    )
     assert len(api.calls) == 1, f"esperava 1 DELETE, veio: {api.calls}"
     assert result.error is None
 

@@ -134,6 +134,21 @@ function continuationChipPayloadText(chip: ContinuationChip): string {
   return chip.label.trim();
 }
 
+/**
+ * Round 5 P0 (A2): um chip de confirmação destrutiva carrega payload OBJETO
+ * `{ tool: 'delete_chat'|'delete_all_chats', args: { confirm } }`. Os pools de
+ * continuation da home NUNCA emitem isso (só payload string) — mas se algum dia
+ * chegar aqui, JAMAIS pode ser coagido pro label e roteado como texto pro LLM
+ * (isso re-bate no gate → loop, o humano nunca deleta). A home não tem
+ * superfície de bolha pra confirmar out-of-band; então esse chip é ignorado
+ * aqui (a confirmação destrutiva vive só na tela /assistente).
+ */
+function isDestructiveConfirmChipPayload(payload: unknown): boolean {
+  if (typeof payload !== 'object' || payload === null) return false;
+  const tool = (payload as { tool?: unknown }).tool;
+  return tool === 'delete_chat' || tool === 'delete_all_chats';
+}
+
 function normalizeContinuationChip(
   chip: ContinuationChip | ContinuationPrimaryCta,
   fallbackId: string,
@@ -759,6 +774,9 @@ export default function MesaPage() {
   const hasContinuationChips = continuationChips.length > 0;
   const handleContinuationChip = useCallback(
     (chip: ContinuationChip) => {
+      // Round 5 P0 (A2): nunca coagir um chip de confirmação destrutiva
+      // (payload objeto {tool,args}) pro label e mandar como texto pro LLM.
+      if (isDestructiveConfirmChipPayload(chip.payload)) return;
       const payload = continuationChipPayloadText(chip);
       if (!payload) return;
       if (chip.action === 'navigate') {
