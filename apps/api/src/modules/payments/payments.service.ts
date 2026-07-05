@@ -90,17 +90,33 @@ export class PaymentsService {
    *   - scope 'table'      → visit_id IS NULL (conta cheia da mesa).
    *   - scope 'individual' → visit_id = X AND split_mode IS NULL (comanda).
    *   - scope 'split'      → visit_id = X AND split_mode IS NOT NULL
-   *     (parte do rateio da mesa paga por este cliente).
+   *     (parte do rateio da mesa paga por ESTE cliente — o próprio já-pago).
+   *
+   * Re-scan de convergência 2026-07-04 (DOUBLE-CHARGE cross-scope table↔split):
+   *   A conta da MESA é UMA dívida, mas liquida por DOIS caminhos que o fix
+   *   cross-mode isolou: mode='table' (visit_id NULL) e split (visit_id=X,
+   *   split_mode≠null, um por participante). Isolados, um não via o outro →
+   *   nada impedia liquidar a mesa DUAS vezes (A paga tudo por mode=table;
+   *   B/C/D abrem 'dividir' e pagam a parte cheia por cima da conta já paga).
+   *   O escopo 'table_bill' soma AMBOS os caminhos — table-scope + TODOS os
+   *   split-scope (qualquer visita) — porque os dois pagam a MESMA conta da
+   *   mesa. É o "já-pago" correto do devido da mesa. A comanda INDIVIDUAL
+   *   (split_mode NULL) fica de FORA — dívida separada da pessoa.
    */
   private async sumSettled(
     tableSessionId: string,
     visitId: string | null,
-    scope: 'table' | 'individual' | 'split',
+    scope: 'table' | 'individual' | 'split' | 'table_bill',
   ): Promise<number> {
     let scopeClause: string;
     if (scope === 'table') {
       // Conta cheia da mesa: pagamentos table-scoped nunca têm visit_id.
       scopeClause = 'AND visit_id IS NULL';
+    } else if (scope === 'table_bill') {
+      // Devido da MESA: table-scope (visit_id NULL) + TODOS os split-scope
+      // (split_mode≠null, qualquer visita) juntos — ambos pagam a MESMA conta
+      // da mesa. Exclui a comanda individual (visit_id=X, split_mode NULL).
+      scopeClause = 'AND (visit_id IS NULL OR split_mode IS NOT NULL)';
     } else if (scope === 'split') {
       // Parte do rateio: mesmo visit_id, mas só os pagamentos de rateio
       // (split_mode não-nulo) contam contra a parte canônica da mesa.
@@ -110,7 +126,10 @@ export class PaymentsService {
       // (sem split_mode) — o rateio da mesa é dívida separada.
       scopeClause = 'AND visit_id = $2 AND split_mode IS NULL';
     }
-    const params = scope === 'table' ? [tableSessionId] : [tableSessionId, visitId];
+    const params =
+      scope === 'table' || scope === 'table_bill'
+        ? [tableSessionId]
+        : [tableSessionId, visitId];
     const rows = (await this.tenantConn.query(
       `SELECT COALESCE(SUM(amount_cents), 0) as paid
          FROM payments
@@ -222,11 +241,20 @@ export class PaymentsService {
             'Sua parte na divisão precisa ser maior que zero. Atualize a tela e tente novamente.',
           );
         }
-        // P1-A + cross-mode scope: subtrai só o já-pago DO RATEIO da mesa
-        // (mesmo visit, split_mode não-nulo). Um pagamento da comanda
-        // individual (split_mode NULL) NÃO abate a parte do rateio.
+        // P1-A + cross-mode scope: subtrai o já-pago DO PRÓPRIO rateio deste
+        // cliente (mesmo visit, split_mode não-nulo) pra não re-cobrar retries
+        // dele. Um pagamento da comanda individual (split_mode NULL) NÃO abate.
         const settledForSplit = await this.sumSettled(tableSessionId, effectiveVisitId, 'split');
-        amountCents = mine.amountCents - settledForSplit;
+        // DOUBLE-CHARGE cross-scope (re-scan de convergência): table e split
+        // pagam a MESMA conta da mesa. A parte canônica sozinha não protege a
+        // mesa de ser liquidada duas vezes (A paga tudo por mode=table; B abre
+        // split → parte cheia por cima). Limitamos o cobrado ao que a MESA
+        // AINDA deve = total da mesa - (já-pago table-scope + TODOS os splits).
+        // Assim: mesa já quitada → 0 (recusa); table parcial → cobra só o que
+        // falta; e a soma coletada NUNCA passa do total da mesa.
+        const settledTableBill = await this.sumSettled(tableSessionId, null, 'table_bill');
+        const tableRemaining = split.totalCents - settledTableBill;
+        amountCents = Math.min(mine.amountCents - settledForSplit, tableRemaining);
         billTotals = {
           subtotalCents: split.subtotalCents,
           serviceFeePct: split.serviceFeePct,
@@ -254,9 +282,13 @@ export class PaymentsService {
         [tableSessionId],
       )) as { total: number }[];
       billTotals = await this.billing.computeTotals(rows[0].total);
-      // P1-A: subtrai o já-pago no escopo da MESA (pagamentos table-scoped,
-      // visit_id NULL). Sem isso a conta da mesa era re-cobrada inteira.
-      amountCents = billTotals.totalCents - (await this.sumSettled(tableSessionId, null, 'table'));
+      // P1-A + DOUBLE-CHARGE cross-scope: subtrai o já-pago da conta da MESA —
+      // table-scope (visit_id NULL) E TODOS os splits (split_mode≠null). Antes
+      // só descontava table-scope, então uma mesa já liquidada via 'dividir'
+      // (todos pagaram suas partes) era re-cobrada INTEIRA por um mode=table.
+      // A comanda individual fica de fora (dívida separada).
+      amountCents =
+        billTotals.totalCents - (await this.sumSettled(tableSessionId, null, 'table_bill'));
     }
 
     if (amountCents <= 0) {
