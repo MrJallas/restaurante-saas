@@ -87,6 +87,11 @@ export class CustomersService {
     let totalVisits = 1;
     let resolvedName = name.trim();
     let wasReclaim = false;
+    // Returning branch (CPF já existe) DEFERE o incremento de total_visits pra
+    // depois do INSERT idempotente em `visits`, gateando-o na visita ser NOVA
+    // (P1 super-count). O counter existente da row é o baseline até sabermos se
+    // esta sessão é uma visita nova ou um reload.
+    let returningExistingVisits: number | null = null;
 
     if ((existing as unknown[]).length > 0) {
       const customer = (existing as Record<string, unknown>[])[0];
@@ -94,6 +99,8 @@ export class CustomersService {
       resolvedName = customer.name as string;
       const storedToken = customer.recognition_token as string;
       isReturning = true;
+      returningExistingVisits = customer.total_visits as number;
+      totalVisits = returningExistingVisits;
 
       const tokenMatches = callerRecognitionToken != null && callerRecognitionToken === storedToken;
 
@@ -118,14 +125,6 @@ export class CustomersService {
           }),
         );
       }
-
-      const updatedRows = unwrapRows<{ total_visits: number }>(
-        await this.tenantConn.query(
-          `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
-          [customerId],
-        ),
-      );
-      totalVisits = updatedRows[0].total_visits;
     } else {
       const newRecognitionToken = uuidv4();
       // ON CONFLICT (cpf): sob welcomes concorrentes do MESMO CPF novo, todos
@@ -162,17 +161,54 @@ export class CustomersService {
       }
     }
 
-    // Idempotent visit: ON CONFLICT returns nothing, so we SELECT after.
-    await this.tenantConn.query(
-      `INSERT INTO visits (customer_id, table_session_id) VALUES ($1, $2)
-       ON CONFLICT (table_session_id, customer_id) DO NOTHING`,
-      [customerId, sessionId],
+    // P1 super-count: INSERT idempotente PRIMEIRO. `RETURNING id` só volta linha
+    // num insert real; ON CONFLICT DO NOTHING (reload/re-submit na mesma sessão)
+    // volta vazio. Esse sinal gateia o incremento de total_visits abaixo.
+    const insertedVisit = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `INSERT INTO visits (customer_id, table_session_id) VALUES ($1, $2)
+         ON CONFLICT (table_session_id, customer_id) DO NOTHING
+         RETURNING id`,
+        [customerId, sessionId],
+      ),
     );
-    const visitRow = await this.tenantConn.query(
-      `SELECT id FROM visits WHERE customer_id = $1 AND table_session_id = $2`,
-      [customerId, sessionId],
-    );
-    const visitId = (visitRow as Record<string, unknown>[])[0].id as string;
+    const isNewVisit = insertedVisit.length > 0;
+
+    let visitId: string;
+    if (isNewVisit) {
+      visitId = insertedVisit[0].id;
+    } else {
+      const visitRow = await this.tenantConn.query(
+        `SELECT id FROM visits WHERE customer_id = $1 AND table_session_id = $2`,
+        [customerId, sessionId],
+      );
+      visitId = (visitRow as Record<string, unknown>[])[0].id as string;
+    }
+
+    // Incremento gated do contador denormalizado, SÓ pro returning-branch (CPF
+    // já existia). O new-CPF branch acima já cravou total_visits via o upsert
+    // ON CONFLICT (cpf) — customer recém-criado sempre tem visita nova nesta
+    // sessão, sem risco de reload duplo. `last_visit_at` é carimbado nos dois
+    // casos (visto por último ≠ contagem).
+    if (returningExistingVisits !== null) {
+      if (isNewVisit) {
+        const updatedRows = unwrapRows<{ total_visits: number }>(
+          await this.tenantConn.query(
+            `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
+            [customerId],
+          ),
+        );
+        totalVisits = updatedRows[0].total_visits;
+      } else {
+        // Reload da mesma sessão: reusa a contagem existente, só atualiza o
+        // "visto por último". Não infla o contador.
+        await this.tenantConn.query(
+          `UPDATE customers SET last_visit_at = now(), updated_at = now() WHERE id = $1`,
+          [customerId],
+        );
+        totalVisits = returningExistingVisits;
+      }
+    }
 
     const participant = await this.tableSessionService.upsertParticipant(
       sessionId,
@@ -338,24 +374,52 @@ export class CustomersService {
     const customer = (customers as Record<string, unknown>[])[0];
     const customerId = customer.id as string;
 
-    const updatedRows = unwrapRows<{ total_visits: number }>(
+    // P1 super-count: o INSERT idempotente em `visits` roda PRIMEIRO e diz se a
+    // visita é NOVA pra esta sessão (RETURNING id só volta linha em insert real;
+    // ON CONFLICT DO NOTHING → vazio no reload). O contador denormalizado
+    // total_visits só incrementa nessa condição, ficando alinhado com a
+    // fonte-da-verdade UNIQUE (visits). `last_visit_at` é "visto por último" e
+    // continua sendo carimbado a cada call. Sem isso, cada reload da página da
+    // mesa somava +1 em total_visits enquanto `visits` mantinha 1 row.
+    const insertedVisit = unwrapRows<{ id: string }>(
       await this.tenantConn.query(
-        `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
-        [customerId],
+        `INSERT INTO visits (customer_id, table_session_id) VALUES ($1, $2)
+         ON CONFLICT (table_session_id, customer_id) DO NOTHING
+         RETURNING id`,
+        [customerId, sessionId],
       ),
     );
-    const totalVisits = updatedRows[0].total_visits;
+    const isNewVisit = insertedVisit.length > 0;
 
-    await this.tenantConn.query(
-      `INSERT INTO visits (customer_id, table_session_id) VALUES ($1, $2)
-       ON CONFLICT (table_session_id, customer_id) DO NOTHING`,
-      [customerId, sessionId],
-    );
-    const visitRow = await this.tenantConn.query(
-      `SELECT id FROM visits WHERE customer_id = $1 AND table_session_id = $2`,
-      [customerId, sessionId],
-    );
-    const visitId = (visitRow as Record<string, unknown>[])[0].id as string;
+    let visitId: string;
+    if (isNewVisit) {
+      visitId = insertedVisit[0].id;
+    } else {
+      const visitRow = await this.tenantConn.query(
+        `SELECT id FROM visits WHERE customer_id = $1 AND table_session_id = $2`,
+        [customerId, sessionId],
+      );
+      visitId = (visitRow as Record<string, unknown>[])[0].id as string;
+    }
+
+    let totalVisits: number;
+    if (isNewVisit) {
+      const updatedRows = unwrapRows<{ total_visits: number }>(
+        await this.tenantConn.query(
+          `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
+          [customerId],
+        ),
+      );
+      totalVisits = updatedRows[0].total_visits;
+    } else {
+      // Reload da mesma sessão: reusa a contagem existente, só atualiza o
+      // "visto por último". Não infla o contador.
+      await this.tenantConn.query(
+        `UPDATE customers SET last_visit_at = now(), updated_at = now() WHERE id = $1`,
+        [customerId],
+      );
+      totalVisits = customer.total_visits as number;
+    }
 
     const participant = await this.tableSessionService.upsertParticipant(
       sessionId,
