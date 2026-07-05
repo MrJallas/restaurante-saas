@@ -1,4 +1,11 @@
-import { HttpException, HttpStatus, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -46,6 +53,42 @@ export class ComplaintsService {
         [input.tableSessionId, input.customerId],
       )) as Array<{ visit_id: string | null }>;
       visitId = participantRows[0]?.visit_id ?? null;
+    }
+
+    // P1 IDOR (write-path): o endpoint público POST /:slug/complaints roda sob
+    // SessionGuard e passa tableSessionId = session.sessionId. Antes gravávamos
+    // input.orderId / input.visitId VERBATIM do body — um atacante fornecia o
+    // UUID de um pedido/visita de OUTRA mesa e a reclamação era anexada àquele
+    // pedido, poluindo a linkagem complaint→order/visit que o manager vê.
+    // Agora, quando o caller vem de uma sessão (tableSessionId presente), só
+    // aceitamos orderId/visitId que PERTENÇAM a essa sessão — espelhando o
+    // guard de feedbacks.service (visits.table_session_id === tableSessionId) e
+    // courtesies (Forbidden se table_session_id !== sessionId).
+    //
+    // Importante: só validamos o que veio do BODY. O visitId resolvido
+    // server-side (via session_participants, acima) já é confiável, então
+    // guardamos o valor ORIGINAL do body antes de resolver. O caminho interno
+    // createFromRating NÃO passa tableSessionId — permanece isento (não é um
+    // caller de sessão; roda depois do order-ratings já ter validado o pedido).
+    if (input.tableSessionId) {
+      if (input.orderId) {
+        const orderOwner = (await this.tenantConn.query(
+          `SELECT id FROM orders WHERE id = $1 AND table_session_id = $2`,
+          [input.orderId, input.tableSessionId],
+        )) as Array<{ id: string }>;
+        if (!orderOwner.length) {
+          throw new ForbiddenException('Pedido nao pertence a esta sessao.');
+        }
+      }
+      if (input.visitId) {
+        const visitOwner = (await this.tenantConn.query(
+          `SELECT id FROM visits WHERE id = $1 AND table_session_id = $2`,
+          [input.visitId, input.tableSessionId],
+        )) as Array<{ id: string }>;
+        if (!visitOwner.length) {
+          throw new ForbiddenException('Visita nao pertence a esta sessao.');
+        }
+      }
     }
 
     const rows = (await this.tenantConn.query(
