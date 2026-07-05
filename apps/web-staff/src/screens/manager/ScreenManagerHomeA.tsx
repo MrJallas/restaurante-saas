@@ -8,12 +8,11 @@
 //      Mensagem Equipe)
 //   3. EM CURSO — persistent cards for async ops the manager dispatched
 //   4. HOJE NO TURNO — alerts (compacted)
-//   5. EQUIPE EM TURNO — top 4 + warning de sobrecarga
-//   6. PRÓXIMAS RESERVAS — top 3
+//   5. EQUIPE ATIVA — top 4 (contas com is_active; NÃO é presença de turno)
+//   6. PRÓXIMAS RESERVAS — top 3 (GET /host/reservations, awaited)
 //
 // All real data is loaded via the manager API helpers + useManagerEvents for
-// live updates. Mock arrays for sections that don't have a v1 endpoint yet
-// (M_TEAM, NEXT_RESERVATIONS) are clearly marked.
+// live updates.
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -33,6 +32,7 @@ import {
   type InProgressState,
 } from '../../components/manager';
 import { manager, staffRosterApi, teamKpisApi } from '../../lib/api/manager';
+import { listReservations, type ReservationEntry } from '../../lib/api/host';
 import { useManagerEvents } from '../../hooks/useManagerEvents';
 import type { ComplaintDto } from '@restaurant/shared-types';
 
@@ -84,19 +84,10 @@ const M_TEAM_FALLBACK: TeamMember[] = [];
 
 const HOME_ROLE_PALETTE = ['#4F6BFF', '#E37D2F', '#7A4FBE', '#1E8C5A', '#C43A3A', '#0B7A8B'];
 
-// P1 #34 — empty until /host/reservations endpoint is wired. Empty-state
-// copy below covers the gap so the panel doesn't pollute screenshots with
-// invented Ana/Bruno/Costa names.
-const NEXT_RESERVATIONS: Array<{
-  id: number;
-  time: string;
-  name: string;
-  party: number;
-  in: string;
-  table: string;
-  tag: string | null;
-  tagTone: 'warn' | 'success' | null;
-}> = [];
+// P2 (re-scan 2026-07-05) — "Próximas reservas" agora vem do GET
+// /:slug/host/reservations (listReservations). Mostra só as `awaited`
+// ordenadas por horário, top 3 (sem fabricar "em X min" — `when` é HH:MM,
+// não temos data/tz confiável). Sem reservas → empty-state honesto.
 
 interface InProgressItem {
   id: string;
@@ -146,6 +137,7 @@ export function ScreenManagerHomeA({
   const [team, setTeam] = useState(M_TEAM_FALLBACK);
   const [, setRefreshTick] = useState(0);
   const [alerts, setAlerts] = useState<HomeAlert[]>([]);
+  const [reservations, setReservations] = useState<ReservationEntry[]>([]);
 
   useEffect(() => {
     let stop = false;
@@ -331,6 +323,8 @@ export function ScreenManagerHomeA({
                 .slice(0, 2)
                 .join('')
                 .toUpperCase(),
+              // is_active = conta ativa no sistema (não presença de turno ao
+              // vivo — o app não registra login/entrada). "on" = conta ativa.
               shift: s.is_active ? 'on' : 'off',
               avgRating: k?.avgRating ?? null,
               ratingsCount: k?.ratingsCount ?? 0,
@@ -344,6 +338,22 @@ export function ScreenManagerHomeA({
         // keep fallback
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantSlug]);
+
+  // Próximas reservas (P2 re-scan) — dado real de GET /host/reservations.
+  // Sem reservas ou endpoint fora → lista vazia e a UI mostra empty-state.
+  useEffect(() => {
+    let cancelled = false;
+    listReservations(tenantSlug)
+      .then((data) => {
+        if (!cancelled) setReservations(data);
+      })
+      .catch(() => {
+        // keep empty → empty-state honesto
+      });
     return () => {
       cancelled = true;
     };
@@ -379,6 +389,11 @@ export function ScreenManagerHomeA({
     (o) => o.kind === 'zone-pause-active' && o.zonePauseRemaining != null,
   );
   const topAlerts = alerts.slice(0, 3);
+  // Só as que ainda vão chegar, por horário, top 3.
+  const upcomingReservations = reservations
+    .filter((r) => r.status === 'awaited')
+    .sort((a, b) => a.when.localeCompare(b.when))
+    .slice(0, 3);
 
   return (
     <div
@@ -596,7 +611,7 @@ export function ScreenManagerHomeA({
 
         <MSection
           dark={dark}
-          title={`Equipe em turno · ${onShift.length}`}
+          title={`Equipe ativa · ${onShift.length}`}
           action="Ver mais →"
           onAction={() => router.push('/manager/equipe')}
         >
@@ -674,80 +689,107 @@ export function ScreenManagerHomeA({
           </div>
         </MSection>
 
-        <MSection dark={dark} title="Próximas reservas" action="Agenda completa →">
+        <MSection
+          dark={dark}
+          title="Próximas reservas"
+          action={upcomingReservations.length > 0 ? 'Agenda completa →' : undefined}
+          onAction={
+            upcomingReservations.length > 0
+              ? () => router.push(`/host/reservations?tenant=${tenantSlug}`)
+              : undefined
+          }
+        >
           <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {NEXT_RESERVATIONS.map((r) => (
+            {upcomingReservations.length === 0 ? (
               <div
-                key={r.id}
                 style={{
-                  padding: 12,
+                  padding: '16px 12px',
                   borderRadius: 12,
-                  border: `1px solid ${C.borderSoft}`,
+                  border: `1px dashed ${C.borderSoft}`,
                   background: C.bg,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
+                  fontSize: 12.5,
+                  color: C.faint,
+                  fontWeight: 500,
+                  lineHeight: 1.5,
                 }}
               >
-                <div
+                Nenhuma reserva aguardada. Reservas criadas na recepção aparecem aqui.
+              </div>
+            ) : (
+              upcomingReservations.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => router.push(`/host/reservations?tenant=${tenantSlug}`)}
                   style={{
-                    minWidth: 64,
-                    padding: '8px 10px',
-                    borderRadius: 10,
-                    background: '#F4F0E8',
-                    textAlign: 'center',
+                    all: 'unset',
+                    cursor: 'pointer',
+                    boxSizing: 'border-box',
+                    width: '100%',
+                    padding: 12,
+                    borderRadius: 12,
+                    border: `1px solid ${C.borderSoft}`,
+                    background: C.bg,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
                   }}
                 >
                   <div
                     style={{
-                      fontSize: 16,
-                      fontWeight: 800,
-                      color: C.ink,
-                      letterSpacing: -0.4,
-                      fontVariantNumeric: 'tabular-nums',
+                      minWidth: 64,
+                      padding: '8px 10px',
+                      borderRadius: 10,
+                      background: '#F4F0E8',
+                      textAlign: 'center',
                     }}
                   >
-                    {r.time}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 9.5,
-                      color: C.faint,
-                      fontWeight: 700,
-                      marginTop: 1,
-                      letterSpacing: 0.3,
-                    }}
-                  >
-                    EM {r.in.replace(' min', "'")}
-                  </div>
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 13.5,
-                      fontWeight: 700,
-                      color: C.ink,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {r.name}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: C.faint, fontWeight: 500, marginTop: 2 }}>
-                    {r.party} pessoas · {r.table}
-                  </div>
-                  {r.tag && r.tagTone && (
-                    <div style={{ marginTop: 4 }}>
-                      <MPill tone={r.tagTone} dark={dark}>
-                        {r.tag}
-                      </MPill>
+                    <div
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 800,
+                        color: C.ink,
+                        letterSpacing: -0.4,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {r.when}
                     </div>
-                  )}
-                </div>
-                <span style={{ color: C.faint, opacity: 0.6 }}>{Icon.arrow(16)}</span>
-              </div>
-            ))}
+                    <div
+                      style={{
+                        fontSize: 9.5,
+                        color: C.faint,
+                        fontWeight: 700,
+                        marginTop: 1,
+                        letterSpacing: 0.3,
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Aguardada
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13.5,
+                        fontWeight: 700,
+                        color: C.ink,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {r.name}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: C.faint, fontWeight: 500, marginTop: 2 }}>
+                      {r.party} {r.party === 1 ? 'pessoa' : 'pessoas'}
+                      {r.table != null ? ` · Mesa ${r.table}` : ''}
+                    </div>
+                  </div>
+                  <span style={{ color: C.faint, opacity: 0.6 }}>{Icon.arrow(16)}</span>
+                </button>
+              ))
+            )}
           </div>
         </MSection>
 

@@ -10,6 +10,13 @@
 //   • REAL: GET /:slug/complaints + GET /:slug/late-arrival-requests
 //     populam o pool. Aqui filtramos só os "críticos" (status pendente
 //     + além da meta).
+//
+// P2 (re-scan): antes qualquer complaint não-resolvida virava "crítica /
+// excedeu a meta" — sem filtro de TEMPO. Agora só entra o que passou da meta
+// de resposta (COMPLAINT_SLA_MIN), casando com o rótulo "além da meta" e a
+// Fórmula. Não há SLA compartilhado no backend (o próprio dashboard conta
+// "critical_alerts" como complaint aberta do dia, sem tempo), então o limiar
+// vive documentado aqui — alinhado à janela de 10 min do continuation service.
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -23,6 +30,11 @@ import {
   MBottomNav,
 } from '../../components/manager';
 import { manager } from '../../lib/api/manager';
+
+// Meta de resposta a reclamação: acima disso a reclamação conta como "crítica"
+// (cliente esperando além da meta). Janela de 10 min espelha a prioridade
+// pos_reclamacao do continuation service.
+const COMPLAINT_SLA_MIN = 10;
 
 interface CriticalAlert {
   id: string;
@@ -55,13 +67,14 @@ export function ScreenManagerOpsCriticos({ dark, tenantSlug }: ScreenManagerOpsC
       .complaints.list()
       .then((list) => {
         if (cancelled || !list.length) return;
-        // Filtra só não-resolvidos. Se houver dados reais, mostramos eles.
-        const open = list.filter((c) => c.status !== 'resolved').slice(0, 5);
+        const ageMin = (iso: string) => (Date.now() - new Date(iso).getTime()) / 60000;
+        // Crítico = reclamação aberta E além da meta de resposta. Sem o filtro
+        // de tempo, toda reclamação recém-aberta era rotulada "excedeu a meta".
+        const open = list
+          .filter((c) => c.status !== 'resolved' && ageMin(c.createdAt) >= COMPLAINT_SLA_MIN)
+          .slice(0, 5);
         if (open.length === 0) return;
-        const minutesAgo = (iso: string) => {
-          const diff = Date.now() - new Date(iso).getTime();
-          return `${Math.max(1, Math.round(diff / 60000))} min`;
-        };
+        const minutesAgo = (iso: string) => `${Math.max(1, Math.round(ageMin(iso)))} min`;
         setItems(
           open.map((c) => ({
             id: c.id,
@@ -216,8 +229,8 @@ export function ScreenManagerOpsCriticos({ dark, tenantSlug }: ScreenManagerOpsC
 
         <div style={{ height: 18 }} />
         <Formula C={C}>
-          Pedidos ou chamados que <b>excederam a meta de tempo</b> · meta varia por tipo (12 min
-          cozinha · 5 min chamado · etc).
+          Reclamações abertas que <b>passaram da meta de resposta</b> ({COMPLAINT_SLA_MIN} min sem
+          serem resolvidas). Reclamação recém-aberta ainda dentro da meta não entra aqui.
         </Formula>
       </div>
 

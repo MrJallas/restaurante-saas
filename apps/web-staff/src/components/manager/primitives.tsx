@@ -343,7 +343,6 @@ export function MStat({
   value,
   sub,
   subColor,
-  trend,
   help,
   dark,
   accent,
@@ -354,7 +353,6 @@ export function MStat({
   value: ReactNode;
   sub?: string;
   subColor?: string;
-  trend?: { dir: 'up' | 'down' | 'flat' };
   help?: string;
   dark?: boolean;
   accent?: string | null;
@@ -362,8 +360,7 @@ export function MStat({
   onHelp?: () => void;
 }) {
   const C = useG(!!dark);
-  const trendColor = trend?.dir === 'up' ? '#1E8C5A' : trend?.dir === 'down' ? '#C43A3A' : C.faint;
-  const subFinal = subColor ?? (trend ? trendColor : C.faint);
+  const subFinal = subColor ?? C.faint;
   return (
     <div
       style={{
@@ -402,7 +399,7 @@ export function MStat({
       >
         {value}
       </div>
-      {(sub || trend) && (
+      {sub && (
         <div
           style={{
             fontSize: compact ? 10 : 11,
@@ -414,7 +411,7 @@ export function MStat({
             fontFamily: compact ? MONO_FONT : undefined,
           }}
         >
-          {trend && (trend.dir === 'up' ? '↑' : trend.dir === 'down' ? '↓' : '·')} {sub}
+          {sub}
         </div>
       )}
       {help && !compact && (

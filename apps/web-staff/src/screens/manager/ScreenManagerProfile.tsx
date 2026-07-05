@@ -257,8 +257,8 @@ export function ScreenManagerProfile({
                 {fmtCents(salesCentsThisShift)}
               </div>
               {tablesServedThisShift != null && (
-                <div style={{ fontSize: 11.5, color: '#1E8C5A', marginTop: 4, fontWeight: 700 }}>
-                  ↑ {tablesServedThisShift} mesas atendidas
+                <div style={{ fontSize: 11.5, color: C.mute, marginTop: 4, fontWeight: 700 }}>
+                  {tablesServedThisShift} mesas atendidas
                   {avgTicketCents != null && ` · ticket médio ${fmtCents(avgTicketCents)}`}
                 </div>
               )}

@@ -141,19 +141,19 @@ export function ScreenManagerStaffEmCampo({ dark, tenantSlug }: ScreenManagerSta
               textTransform: 'uppercase',
             }}
           >
-            {offCount > 0 ? `${offCount} fora` : 'todos no turno'}
+            {offCount > 0 ? `${offCount} desativado${offCount > 1 ? 's' : ''}` : 'todos ativos'}
           </div>
           <div
             style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}
           >
-            {inFieldCount} funcionários ativos no turno
-            {offCount > 0 ? ` · ${offCount} esperado mas ausente.` : '.'}
+            {inFieldCount} funcionário{inFieldCount === 1 ? '' : 's'} com conta ativa
+            {offCount > 0 ? ` · ${offCount} desativado${offCount > 1 ? 's' : ''}.` : '.'}
           </div>
         </div>
 
         {offCount > 0 && (
           <>
-            <SectionLabel C={C}>Quem está fora</SectionLabel>
+            <SectionLabel C={C}>Contas desativadas</SectionLabel>
             <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               {offShift.map((p, i) => (
                 <PersonRow
@@ -161,7 +161,7 @@ export function ScreenManagerStaffEmCampo({ dark, tenantSlug }: ScreenManagerSta
                   C={C}
                   name={p.name}
                   color={ROLE_PALETTE[i % ROLE_PALETTE.length]}
-                  badgeMono="NÃO LOGOU AINDA"
+                  badgeMono="CONTA DESATIVADA"
                   badgeColor="#A12626"
                 />
               ))}
@@ -181,7 +181,16 @@ export function ScreenManagerStaffEmCampo({ dark, tenantSlug }: ScreenManagerSta
               )
             }
           >
-            Avisar quem ainda não logou
+            Enviar mensagem à equipe
+          </ActionPill>
+          <ActionPill
+            C={C}
+            icon={Icon.user(13)}
+            onClick={() =>
+              router.push(slugQs ? `/manager/equipe?slug=${slugQs}` : '/manager/equipe')
+            }
+          >
+            Gerenciar equipe e contas
           </ActionPill>
           <ActionPill
             C={C}
@@ -192,25 +201,15 @@ export function ScreenManagerStaffEmCampo({ dark, tenantSlug }: ScreenManagerSta
               )
             }
           >
-            Marcar folga retroativa
-          </ActionPill>
-          <ActionPill
-            C={C}
-            icon={Icon.user(13)}
-            onClick={() =>
-              router.push(
-                slugQs ? `/manager/equipe/turnos?slug=${slugQs}` : '/manager/equipe/turnos',
-              )
-            }
-          >
-            Substituir por outro funcionário
+            Editar turnos
           </ActionPill>
         </div>
 
         <div style={{ height: 18 }} />
         <Formula C={C}>
-          Funcionários com status <b>em turno</b> agora · não inclui pausados ou fora. Escala
-          configurada em <span style={{ color: C.ink, fontWeight: 700 }}>Editar turnos</span>.
+          Funcionários com <b>conta ativa</b> no sistema · não é presença de turno ao vivo (o app
+          ainda não registra login/entrada). Contas gerenciadas em{' '}
+          <span style={{ color: C.ink, fontWeight: 700 }}>Equipe</span>.
         </Formula>
       </div>
 

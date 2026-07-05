@@ -74,6 +74,14 @@ export function ScreenManagerAlertsAll({
   const high = alerts.filter((a) => a.sev === 'crítica').length;
   const med = alerts.filter((a) => a.sev === 'atenção').length;
 
+  // "Resolvidos hoje" precisa ser DE HOJE e usar resolved_at (não created_at):
+  // filtra por resolved_at no dia local corrente. Rows sem resolved_at (ou de
+  // outro dia) ficam de fora. (P2 re-scan)
+  const todayKey = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local
+  const resolvedToday = resolved.filter(
+    (r) => r.resolved_at != null && new Date(r.resolved_at).toLocaleDateString('en-CA') === todayKey,
+  );
+
   const filtered =
     filter === 'todos'
       ? alerts
@@ -362,10 +370,10 @@ export function ScreenManagerAlertsAll({
               fontFamily: MONO_FONT,
             }}
           >
-            Resolvidos hoje · {resolved.length}
+            Resolvidos hoje · {resolvedToday.length}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {resolved.map((h) => (
+            {resolvedToday.map((h) => (
               <div
                 key={h.id}
                 style={{
@@ -387,7 +395,7 @@ export function ScreenManagerAlertsAll({
                     fontFamily: MONO_FONT,
                   }}
                 >
-                  {relativeMinutes(h.created_at)}
+                  {relativeMinutes(h.resolved_at ?? h.created_at)}
                 </div>
                 <div style={{ flex: 1, fontSize: 12, color: C.ink, fontWeight: 500 }}>
                   {h.title}
