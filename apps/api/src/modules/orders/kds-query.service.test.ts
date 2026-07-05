@@ -78,10 +78,47 @@ describe('KdsQueryService — characterization (extraído do orders.service)', (
     expect(barSql.toLowerCase()).not.toContain('bebidas');
   });
 
+  it("P2 (drink size): getActiveOrdersForKds expõe 'size' por item pra cozinha/bar preparar o tamanho certo", async () => {
+    const { calls, conn } = fakeConn([]);
+    await new KdsQueryService(conn).getActiveOrdersForKds('bar');
+    // O commit 38b99be fez o PREÇO do tamanho chegar, mas o LABEL escolhido
+    // (Peq/Méd/Grande) não era exposto no feed do KDS. Agora cada item traz
+    // 'size' (oi.size) pra renderizar o badge de tamanho no card.
+    expect(calls[0].sql).toContain("'size', oi.size");
+  });
+
+  it("P2 (drink size): getKitchenQueue expõe 'size' por item na fila do /cozinha", async () => {
+    const { calls, conn } = fakeConn([]);
+    await new KdsQueryService(conn).getKitchenQueue();
+    expect(calls[0].sql).toContain("'size', oi.size");
+  });
+
   it('getKitchenQueue devolve o resultado da query direto (passthrough)', async () => {
     const rows = [{ id: 'k1', status: 'received' }];
     const { conn } = fakeConn(rows);
     const out = await new KdsQueryService(conn).getKitchenQueue();
     expect(out).toBe(rows);
+  });
+
+  it('BUG P2: getKitchenQueue só traz pedidos de sessão ATIVA (pedido órfão de sessão FECHADA não fica preso na fila)', async () => {
+    // Uma sessão encerrada sem o pedido sair da fila deixava um pedido órfão
+    // preso pra sempre (a query só filtrava por o.status). Agora exige sessão
+    // ativa OU pedido já em preparo (in_progress/ready) pra não esconder um
+    // pedido legítimo sendo cozinhado quando a sessão fecha no meio.
+    const { calls, conn } = fakeConn([]);
+    await new KdsQueryService(conn).getKitchenQueue();
+    const sql = calls[0].sql;
+    expect(sql).toContain("ts.status = 'active'");
+    // Safeguard: pedido em preparo permanece mesmo se a sessão fechou.
+    expect(sql).toContain("o.status IN ('in_progress', 'ready')");
+  });
+
+  it('BUG P2: getKitchenQueue tem janela de tempo (pedido antigo não fica preso indefinidamente)', async () => {
+    const { calls, conn } = fakeConn([]);
+    await new KdsQueryService(conn).getKitchenQueue();
+    const sql = calls[0].sql;
+    // Mesma janela do feed da TV (8h) — cobre um turno longo sem prender
+    // pedidos zumbis de dias atrás.
+    expect(sql).toContain("o.created_at > now() - interval '8 hours'");
   });
 });

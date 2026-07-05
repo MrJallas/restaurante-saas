@@ -11,6 +11,7 @@ import {
   getQuantityLabel,
   getPrimaryActionLabel,
   isAlertNote,
+  nextKdsAction,
   LATE_THRESHOLD_MIN,
   type KdsOrder,
 } from './types';
@@ -72,6 +73,37 @@ describe('getPrimaryActionLabel', () => {
     expect(getPrimaryActionLabel('received', 'bar')).toBe('▶  Preparar');
     expect(getPrimaryActionLabel('in_progress', 'kitchen')).toBe('Marcar pronto');
     expect(getPrimaryActionLabel('ready', 'kitchen')).toBe('Chamar garçom');
+  });
+});
+
+describe('nextKdsAction', () => {
+  // O mapa DEVE bater com VALID_TRANSITIONS do backend
+  // (apps/api/src/modules/orders/order-state-machine.ts). Transições que o
+  // backend rejeita com 400 (open->in_progress, confirmed->ready) NÃO podem
+  // sair daqui, senão o botão "Iniciar preparo" / "Marcar pronto" da TV
+  // dispara um PATCH que o backend nega e o card fica travado.
+  it('avança received/in_progress pelo caminho moderno válido', () => {
+    expect(nextKdsAction('received')).toEqual({ kind: 'status', status: 'in_progress' });
+    expect(nextKdsAction('in_progress')).toEqual({ kind: 'status', status: 'ready' });
+  });
+
+  it('ready chama garçom (não é transição de status)', () => {
+    expect(nextKdsAction('ready')).toEqual({ kind: 'call_waiter' });
+  });
+
+  it('legacy open avança para received (NUNCA in_progress — backend rejeita)', () => {
+    // VALID_TRANSITIONS.open = ['confirmed', 'received', 'cancelled']
+    expect(nextKdsAction('open')).toEqual({ kind: 'status', status: 'received' });
+  });
+
+  it('legacy confirmed avança para in_progress (NUNCA ready — backend rejeita)', () => {
+    // VALID_TRANSITIONS.confirmed = ['preparing', 'in_progress', 'cancelled']
+    expect(nextKdsAction('confirmed')).toEqual({ kind: 'status', status: 'in_progress' });
+  });
+
+  it('legacy preparing avança para ready (transição válida)', () => {
+    // VALID_TRANSITIONS.preparing = ['ready', 'cancelled']
+    expect(nextKdsAction('preparing')).toEqual({ kind: 'status', status: 'ready' });
   });
 });
 

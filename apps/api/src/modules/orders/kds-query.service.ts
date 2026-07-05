@@ -30,8 +30,7 @@ export class KdsQueryService {
     // categoria literal "Bebidas", o que MASCARAVA o bug). Cozinha recebe
     // tudo que NÃO é bebida — incluindo kind default 'food' e qualquer
     // valor legacy inesperado (`<> 'drink'`).
-    const itemPredicate =
-      station === 'bar' ? `mi.kind = 'drink'` : `mi.kind <> 'drink'`;
+    const itemPredicate = station === 'bar' ? `mi.kind = 'drink'` : `mi.kind <> 'drink'`;
 
     // Três filas/prioridades canônicas (decisão 2026-06-10, prompt 99 §6):
     // 1. urgência (priority_rank > 0 — reorder/urgência da cozinha),
@@ -67,6 +66,10 @@ export class KdsQueryService {
               'name', mi.name,
               'quantity', oi.quantity,
               'notes', oi.notes,
+              -- Rótulo do tamanho escolhido (Peq/Méd/Grande). O preço já chegava
+              -- (38b99be), mas o LABEL não — sem ele a cozinha/bar não sabia qual
+              -- tamanho preparar. NULL quando o item não tem tamanho.
+              'size', oi.size,
               'categoryName', mc.name
             )
             ORDER BY oi.created_at ASC
@@ -152,6 +155,9 @@ export class KdsQueryService {
                  'unitPriceCents', oi.unit_price_cents,
                  'subtotalCents', oi.subtotal_cents,
                  'notes', oi.notes,
+                 -- Tamanho escolhido (Peq/Méd/Grande) pra fila do /cozinha; ver
+                 -- nota no getActiveOrdersForKds. NULL quando sem tamanho.
+                 'size', oi.size,
                  'customerId', oi.customer_id,
                  'createdAt', oi.created_at
                )
@@ -173,6 +179,16 @@ export class KdsQueryService {
          LIMIT 1
       ) delivery ON true
       WHERE o.status NOT IN ('delivered', 'cancelled', 'pending_confirmation')
+        -- Só pedidos de sessão ATIVA — OU já em preparo (in_progress/ready).
+        -- Antes a fila do /cozinha só filtrava por o.status, então um pedido
+        -- órfão (sessão encerrada sem o pedido sair da fila) ficava preso pra
+        -- sempre. O OR preserva o pedido legítimo que a cozinha ainda está
+        -- fazendo quando a sessão fecha no meio (não some do painel).
+        AND (ts.status = 'active' OR o.status IN ('in_progress', 'ready'))
+        -- Janela de tempo (mesma do feed da TV): cobre um turno longo sem
+        -- prender pedidos zumbis de dias atrás.
+        AND o.created_at > now() - interval '8 hours'
+        AND o.created_at <= now()
       GROUP BY o.id, t.label, t.code, delivery.id, delivery.status,
                delivery.called_at, delivery.claimed_at,
                delivery.target_waiter_id, delivery.target_waiter_name

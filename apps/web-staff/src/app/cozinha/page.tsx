@@ -27,6 +27,9 @@ interface OrderItem {
   quantity: number;
   subtotalCents: number;
   notes?: string | null;
+  // Rótulo do tamanho escolhido (Peq/Méd/Grande) — a cozinha precisa dele pra
+  // preparar o tamanho certo. NULL quando o item não tem tamanho.
+  size?: string | null;
 }
 
 interface Order {
@@ -64,6 +67,23 @@ type CardColor = 'yellow' | 'orange' | 'green' | 'blue';
 
 const TENANT_SLUG = process.env.NEXT_PUBLIC_TENANT_SLUG || 'restaurant_dev';
 const STAFF_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Próximo status ao clicar "Preparar" na coluna NOVOS. DEVE respeitar as
+ * transições VÁLIDAS do backend (VALID_TRANSITIONS em order-state-machine.ts) —
+ * senão o PATCH volta 400 e o card fica travado.
+ *
+ * Bug P2 (re-scan): a coluna NOVOS agrupava received|open|confirmed e mandava
+ * TODOS pra `in_progress`. Mas o legado `open` só transiciona pra
+ * received|confirmed|cancelled → `open -> in_progress` era rejeitado (400).
+ * Aqui `open` avança pro primeiro passo válido (`received`), que na próxima
+ * atualização vira in_progress. received/confirmed já podem ir direto pra
+ * in_progress.
+ */
+function nextNewOrderStatus(status: string): string {
+  if (status === 'open') return 'received';
+  return 'in_progress';
+}
 
 function resolveWsUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_WS_URL;
@@ -409,7 +429,7 @@ export default function CozinhaKDS() {
               color="yellow"
               dark={dark}
               busy={busyOrderId === order.id}
-              onAdvance={() => handleAdvanceStatus(order.id, 'in_progress')}
+              onAdvance={() => handleAdvanceStatus(order.id, nextNewOrderStatus(order.status))}
               actionLabel="Preparar"
             />
           ))}
@@ -651,8 +671,23 @@ function KdsCard({
       <div className="mb-3 space-y-2">
         {order.items.map((item) => (
           <div key={item.id}>
-            <div className={`text-lg font-bold ${dark ? 'text-white' : 'text-zinc-950'}`}>
-              {item.quantity}x {item.name}
+            <div
+              className={`flex flex-wrap items-center gap-2 text-lg font-bold ${dark ? 'text-white' : 'text-zinc-950'}`}
+            >
+              <span>
+                {item.quantity}x {item.name}
+              </span>
+              {/* Tamanho escolhido (Peq/Méd/Grande) — a cozinha precisa preparar
+                  o tamanho certo. Badge de destaque; nada renderiza sem tamanho. */}
+              {item.size && (
+                <span
+                  className={`rounded px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide ${
+                    dark ? 'bg-white text-zinc-950' : 'bg-zinc-950 text-white'
+                  }`}
+                >
+                  {item.size}
+                </span>
+              )}
             </div>
             {item.notes && (
               <div className="mt-0.5 rounded bg-red-600/20 px-2 py-1 text-sm font-bold uppercase text-red-400">

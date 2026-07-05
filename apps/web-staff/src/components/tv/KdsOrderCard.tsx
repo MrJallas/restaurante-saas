@@ -261,9 +261,33 @@ export function KdsOrderCard({
                     letterSpacing: -0.3,
                     lineHeight: 1.15,
                     marginBottom: variant === 'kitchen' ? 4 : 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    flexWrap: 'wrap',
                   }}
                 >
-                  {it.name}
+                  <span>{it.name}</span>
+                  {/* Tamanho escolhido (Peq/Méd/Grande) — a cozinha/bar precisa
+                      preparar o tamanho certo. Badge ink pra saltar à vista,
+                      como as preferências/notes. Nada renderiza sem tamanho. */}
+                  {it.size && (
+                    <span
+                      style={{
+                        background: C.ink,
+                        color: '#fff',
+                        borderRadius: 6,
+                        padding: '2px 8px',
+                        fontSize: variant === 'bar' ? 13 : 12,
+                        fontWeight: 800,
+                        letterSpacing: 0.8,
+                        textTransform: 'uppercase',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {it.size}
+                    </span>
+                  )}
                 </div>
                 {variant === 'kitchen' && it.categoryName && (
                   <div

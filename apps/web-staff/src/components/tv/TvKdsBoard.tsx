@@ -7,6 +7,7 @@ import { C, FONT, TV_KEYFRAMES } from './styles';
 import {
   countActiveDrinks,
   deriveStatus,
+  nextKdsAction,
   LATE_THRESHOLD_MIN,
   type KdsOrder,
   type KdsResponse,
@@ -39,8 +40,6 @@ async function tvApi<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-type NextKdsAction = { kind: 'status'; status: KdsOrder['status'] } | { kind: 'call_waiter' };
-
 interface TvKdsBoardProps {
   station: KdsStation;
   // Header config — preserva o estilo do handoff (Cozinha tem logo
@@ -51,29 +50,6 @@ interface TvKdsBoardProps {
   iconIsEmoji?: boolean;
   // Grid colunas: cozinha 4, bar 3 (handoff).
   gridColumns: number;
-}
-
-/**
- * Mapa de status atual → proximo status (transicao de avanco).
- * Sempre refletindo as transicoes validas do backend
- * (`VALID_TRANSITIONS` em orders.service.ts). Legacy aliases sao
- * normalizados pra o caminho moderno pra que pedidos antigos rodando
- * em paralelo nao quebrem a TV.
- */
-function nextAction(current: KdsOrder['status']): NextKdsAction | null {
-  switch (current) {
-    case 'received':
-    case 'open':
-      return { kind: 'status', status: 'in_progress' };
-    case 'in_progress':
-    case 'preparing':
-    case 'confirmed':
-      return { kind: 'status', status: 'ready' };
-    case 'ready':
-      return { kind: 'call_waiter' };
-    default:
-      return null;
-  }
 }
 
 export function TvKdsBoard({
@@ -150,7 +126,7 @@ export function TvKdsBoard({
 
   const handleAdvance = useCallback(
     async (order: KdsOrder) => {
-      const action = nextAction(order.status);
+      const action = nextKdsAction(order.status);
       if (!action) return;
       setPendingIds((prev) => {
         const s = new Set(prev);

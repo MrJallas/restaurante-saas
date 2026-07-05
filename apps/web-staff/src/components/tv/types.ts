@@ -17,6 +17,9 @@ export interface KdsOrderItem {
   name: string;
   quantity: number;
   notes: string | null;
+  // Rótulo do tamanho escolhido (Peq/Méd/Grande). NULL/undefined quando o item
+  // não tem tamanho. A cozinha/bar precisa dele pra preparar o tamanho certo.
+  size?: string | null;
   categoryName: string | null;
 }
 
@@ -100,6 +103,50 @@ export function getPrimaryActionLabel(status: KdsOrderStatus, variant: KdsStatio
   }
   // in_progress | preparing | confirmed -> proximo passo e marcar pronto
   return 'Marcar pronto';
+}
+
+/**
+ * Ação de avanço do card na TV. `status` avança o pedido um passo na máquina
+ * de estados; `call_waiter` chama o garçom pro pedido pronto.
+ */
+export type NextKdsAction = { kind: 'status'; status: KdsOrderStatus } | { kind: 'call_waiter' };
+
+/**
+ * Mapa status atual → próxima ação de avanço na TV. DEVE espelhar as
+ * transições VÁLIDAS de `VALID_TRANSITIONS`
+ * (apps/api/src/modules/orders/order-state-machine.ts) — o botão do card
+ * dispara um PATCH /status com o `status` retornado, e o backend REJEITA (400)
+ * qualquer transição fora do mapa dele.
+ *
+ * Bug corrigido (P2 re-scan): antes o alias legacy `open` mapeava pra
+ * `in_progress` e `confirmed` pra `ready` — mas o backend só permite
+ * `open -> received|confirmed` e `confirmed -> in_progress|preparing`. Os dois
+ * PATCHes voltavam 400 e o card ficava travado. Agora cada legado avança pelo
+ * PRIMEIRO passo válido do seu caminho, convergindo pro fluxo moderno
+ * (received -> in_progress -> ready).
+ */
+export function nextKdsAction(current: KdsOrderStatus): NextKdsAction | null {
+  switch (current) {
+    // Caminho moderno.
+    case 'received':
+      return { kind: 'status', status: 'in_progress' };
+    case 'in_progress':
+      return { kind: 'status', status: 'ready' };
+    case 'ready':
+      return { kind: 'call_waiter' };
+    // Legado: avança pelo primeiro passo VÁLIDO que reconverge pro fluxo novo.
+    case 'open':
+      // open -> received (received depois vira in_progress). NÃO in_progress.
+      return { kind: 'status', status: 'received' };
+    case 'confirmed':
+      // confirmed -> in_progress (depois in_progress -> ready). NÃO ready.
+      return { kind: 'status', status: 'in_progress' };
+    case 'preparing':
+      // preparing -> ready é transição válida direta.
+      return { kind: 'status', status: 'ready' };
+    default:
+      return null;
+  }
 }
 
 /**
