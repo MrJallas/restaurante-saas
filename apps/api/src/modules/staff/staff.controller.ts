@@ -27,6 +27,7 @@ import {
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { RedisService } from '../../infra/redis/redis.service';
+import { throttleClientIp } from '../../common/utils/throttle-client-ip';
 import { StaffService } from './staff.service';
 import { ZoneAssignmentsService } from './zone-assignments.service';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
@@ -268,7 +269,7 @@ export class StaffController {
   async verifyPin(
     @Param('id') id: string,
     @Body() dto: VerifyPinDto,
-    @Req() req: { ip?: string; headers: Record<string, string | string[]> },
+    @Req() req: { ip?: string; socket?: { remoteAddress?: string } },
   ) {
     // Round 8 (B-NEW-30): throttle global por IP ALÉM do throttle por
     // staffId que já existe no service. Bloqueia atacante distribuindo
@@ -300,10 +301,12 @@ export class StaffController {
     return { valid };
   }
 
-  private pinIpKey(req: { ip?: string; headers: Record<string, string | string[]> }): string {
-    const xff = req.headers['x-forwarded-for'];
-    const xffStr = Array.isArray(xff) ? xff[0] : xff;
-    const ip = (xffStr ?? req.ip ?? 'unknown').toString().split(',')[0].trim();
-    return `staff:pin_ip:${ip}`;
+  private pinIpKey(req: { ip?: string; socket?: { remoteAddress?: string } }): string {
+    // P1 OWASP API4: IP real do peer TCP, não XFF forjável. verify-pin é o
+    // mecanismo de login (sem guard); ler o header deixaria o atacante
+    // rotacioná-lo a cada tentativa e nunca armar o lock global por IP →
+    // brute-force distribuído de PIN 4-6 dígitos. Mesma disciplina do
+    // customers.identify e dos guards endurecidos.
+    return `staff:pin_ip:${throttleClientIp(req)}`;
   }
 }

@@ -33,6 +33,7 @@ import { Session } from '../../common/decorators/session.decorator';
 import { SessionData } from '../../common/guards/session.guard';
 import { RedisService } from '../../infra/redis/redis.service';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
+import { throttleClientIp } from '../../common/utils/throttle-client-ip';
 import { CustomersService } from './customers.service';
 
 const RECOGNITION_COOKIE_MAX_AGE = 365 * 24 * 60 * 60 * 1000;
@@ -142,7 +143,12 @@ export class CustomersController {
   @Post('identify')
   async identify(
     @Body() dto: CustomerIdentifyDto,
-    @Req() req: { ip?: string; headers: Record<string, string | string[]> },
+    @Req()
+    req: {
+      ip?: string;
+      socket?: { remoteAddress?: string };
+      headers: Record<string, string | string[]>;
+    },
     @Res({ passthrough: true }) res: Response,
   ) {
     const ipKey = this.identifyClientKey(req);
@@ -180,15 +186,15 @@ export class CustomersController {
     };
   }
 
-  private identifyClientKey(req: {
-    ip?: string;
-    headers: Record<string, string | string[]>;
-  }): string {
-    // Atrás de proxy/CDN x-forwarded-for é a fonte real do IP do client.
-    const xff = req.headers['x-forwarded-for'];
-    const xffStr = Array.isArray(xff) ? xff[0] : xff;
-    const ip = (xffStr ?? req.ip ?? 'unknown').toString().split(',')[0].trim();
-    return `customers:identify:${ip}`;
+  private identifyClientKey(req: { ip?: string; socket?: { remoteAddress?: string } }): string {
+    // P1 OWASP API4: chave pelo IP REAL do peer TCP (`req.socket.remoteAddress`
+    // via throttleClientIp), NÃO por `X-Forwarded-For`. /identify é rota
+    // NÃO-autenticada e o throttle é a única barreira; a API é exposta direto
+    // (:3001) sem `trust proxy`, então o XFF é forjável — lê-lo deixaria o
+    // atacante rotacioná-lo a cada request e nunca acumular na mesma chave,
+    // burlando o lock → enumeração ilimitada de CPF. Mesma disciplina dos
+    // guards endurecidos (RedisThrottleGuard / staff-auth.controller).
+    return `customers:identify:${throttleClientIp(req)}`;
   }
 
   private async assertIdentifyRateLimit(ipKey: string): Promise<void> {
@@ -218,14 +224,11 @@ export class CustomersController {
   // pra /welcome. Compartilha as constants IDENTIFY_RATE_* (pattern
   // single-source-of-truth). Key separado pra que rate-limit de /identify
   // não engargale /welcome do mesmo IP (e vice-versa).
-  private welcomeClientKey(req: {
-    ip?: string;
-    headers: Record<string, string | string[]>;
-  }): string {
-    const xff = req.headers['x-forwarded-for'];
-    const xffStr = Array.isArray(xff) ? xff[0] : xff;
-    const ip = (xffStr ?? req.ip ?? 'unknown').toString().split(',')[0].trim();
-    return `customers:welcome:${ip}`;
+  private welcomeClientKey(req: { ip?: string; socket?: { remoteAddress?: string } }): string {
+    // Mesma disciplina do identifyClientKey: IP real do peer TCP, nunca XFF
+    // forjável. Sem isso o atacante rotaciona o header e faz brute-force de
+    // CPF pra rotacionar o recognition_token de qualquer customer.
+    return `customers:welcome:${throttleClientIp(req)}`;
   }
 
   private async assertWelcomeRateLimit(ipKey: string): Promise<void> {
@@ -323,6 +326,7 @@ export class CustomersController {
     @Req()
     req: {
       ip?: string;
+      socket?: { remoteAddress?: string };
       cookies?: Record<string, string>;
       headers: Record<string, string | string[]>;
     },

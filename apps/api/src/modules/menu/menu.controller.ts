@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
 import { RedisService } from '../../infra/redis/redis.service';
+import { throttleClientIp } from '../../common/utils/throttle-client-ip';
 import { MenuService } from './menu.service';
 
 // Round 16 (B-NEW-52): rate-limit /search por IP — ILIKE em menu_items
@@ -62,7 +63,7 @@ export class MenuController {
   @UseGuards(StaffOrSessionGuard)
   async search(
     @Query('q') query: string,
-    @Req() req: { ip?: string; headers: Record<string, string | string[]> },
+    @Req() req: { ip?: string; socket?: { remoteAddress?: string } },
   ) {
     if (!query || query.trim().length < 2) {
       return { items: [] };
@@ -85,14 +86,11 @@ export class MenuController {
     return { items };
   }
 
-  private searchClientKey(req: {
-    ip?: string;
-    headers: Record<string, string | string[]>;
-  }): string {
-    const xff = req.headers['x-forwarded-for'];
-    const xffStr = Array.isArray(xff) ? xff[0] : xff;
-    const ip = (xffStr ?? req.ip ?? 'unknown').toString().split(',')[0].trim();
-    return `menu:search:${ip}`;
+  private searchClientKey(req: { ip?: string; socket?: { remoteAddress?: string } }): string {
+    // P1 OWASP API4: IP real do peer TCP, não XFF forjável (defense-in-depth
+    // — mesma disciplina do customers.identify). Sem isso o atacante rotaciona
+    // o header e scaneia o menu inteiro burlando o limite de 30/60s.
+    return `menu:search:${throttleClientIp(req)}`;
   }
 
   private async assertSearchRateLimit(ipKey: string): Promise<void> {
