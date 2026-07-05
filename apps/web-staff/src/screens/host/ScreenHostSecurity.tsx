@@ -1,54 +1,49 @@
 'use client';
 
 // ScreenHostSecurity — segurança e senha do host.
-// 3 blocos canon: Senha (sheet com current/new/confirm) · 2FA (toggle) ·
-// Sessões ativas (mock list + Encerrar). Trocar senha e encerrar sessão
-// são stubs anunciados — endpoint chega no round 19.
+// 3 blocos canon: Senha (sheet Trocar PIN real) · 2FA (em breve, honesto) ·
+// Sessão deste dispositivo (Encerrar = logout real que revoga a sessão).
+//
+// TROCAR-PIN / logout são features REAIS agora (reusam o staff-auth que o
+// manager e o /trocar-pin já usam):
+//   - `staffAuthChangePin` → POST /staff-auth/change-pin (revoga sessões
+//     antigas; o proxy troca o cookie httpOnly pelo token novo).
+//   - `performStaffLogout` → POST /staff-auth/logout (revoga a sessão no
+//     Redis + limpa o cookie) e limpa o localStorage.
+// Não há endpoint staff-auth de "sessões ativas" nem de 2FA pro host, então
+// aqui NÃO se inventa lista mock nem toggle placebo: sessão = este dispositivo,
+// e 2FA fica honestamente desabilitado ("em breve").
 
 import * as React from 'react';
 import { useEffect, useState } from 'react';
-import { useG, G_FONT } from '../../components/waiter/tokens';
+import { useG, G_FONT, MONO_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GButton, GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
 import { useStaffTheme } from '../../lib/theme';
-
-const STORAGE_2FA = 'host:security:2fa';
-
-interface SessionRow {
-  id: string;
-  label: string;
-  sub: string;
-  current: boolean;
-}
-
-const MOCK_SESSIONS: SessionRow[] = [
-  { id: 'self', label: 'Este dispositivo', sub: 'Ativo agora · Safari iOS', current: true },
-  { id: 'iphone', label: 'iPhone — sala dos garçons', sub: 'Há 2h · Safari iOS', current: false },
-];
+import { staffAuthChangePin } from '../../lib/api';
 
 interface ScreenHostSecurityProps {
+  /** Slug do tenant — necessário pro change-pin/logout real. */
+  tenantSlug: string;
   onBack?: () => void;
   onTabChange?: (tab: string) => void;
+  /** Logout real: revoga a sessão server-side e redireciona pro login. */
+  onLogout?: () => void | Promise<void>;
 }
 
 type Toast = { kind: 'info' | 'success' | 'danger'; text: string } | null;
 
-export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, onTabChange }) => {
+export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({
+  tenantSlug,
+  onBack,
+  onTabChange,
+  onLogout,
+}) => {
   const { dark } = useStaffTheme();
   const C = useG(dark);
-  const [showPassSheet, setShowPassSheet] = useState(false);
-  const [twoFa, setTwoFa] = useState(false);
+  const [showPinSheet, setShowPinSheet] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
-  const [sessions, setSessions] = useState<SessionRow[]>(MOCK_SESSIONS);
-
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(STORAGE_2FA);
-      if (raw === '1') setTwoFa(true);
-    } catch {
-      /* swallow */
-    }
-  }, []);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     if (!toast) return;
@@ -56,39 +51,16 @@ export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, 
     return () => window.clearTimeout(tid);
   }, [toast]);
 
-  const handle2fa = () => {
-    if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
-    setTwoFa((prev) => {
-      const next = !prev;
-      try {
-        window.localStorage.setItem(STORAGE_2FA, next ? '1' : '0');
-      } catch {
-        /* swallow */
-      }
-      setToast({
-        kind: 'info',
-        text: next ? '2FA marcado como ativo para QA.' : '2FA marcado como inativo para QA.',
-      });
-      return next;
-    });
-  };
-
-  const handleEndSession = (id: string) => {
-    const row = sessions.find((s) => s.id === id);
-    if (!row) return;
-    if (row.current) {
-      setToast({
-        kind: 'danger',
-        text: 'Não é possível encerrar esta sessão por aqui — use Sair do app.',
-      });
-      return;
+  const handleEndSession = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      // performStaffLogout NUNCA rejeita (engole falha de rede), mas o
+      // redirect fica com o caller (route) via onLogout.
+      await onLogout?.();
+    } finally {
+      setLoggingOut(false);
     }
-    if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
-    setSessions((prev) => prev.filter((s) => s.id !== id));
-    setToast({
-      kind: 'info',
-      text: `${row.label} encerrada localmente para QA.`,
-    });
   };
 
   return (
@@ -136,16 +108,16 @@ export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, 
           <ActionRow
             dark={dark}
             icon={Icon.shield(18)}
-            lbl="Trocar senha"
-            sub="Defina uma nova senha de acesso"
-            onClick={() => setShowPassSheet(true)}
+            lbl="Trocar PIN"
+            sub="4 a 6 dígitos"
+            onClick={() => setShowPinSheet(true)}
           />
         </div>
 
-        {/* 2FA */}
+        {/* 2FA — sem backend staff-auth ainda; honesto "em breve", desabilitado. */}
         <SectionTitle dark={dark}>Autenticação em 2 fatores</SectionTitle>
         <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <label
+          <div
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -156,7 +128,7 @@ export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, 
               borderRadius: 12,
               border: `1px solid ${C.borderSoft}`,
               background: C.bg,
-              cursor: 'pointer',
+              opacity: 0.62,
             }}
           >
             <div
@@ -190,132 +162,103 @@ export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, 
                 Adiciona uma camada extra no login do app
               </div>
             </div>
-            <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
-              <input
-                type="checkbox"
-                checked={twoFa}
-                onChange={handle2fa}
-                aria-label="Pedir código a cada login"
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  opacity: 0,
-                  margin: 0,
-                  cursor: 'pointer',
-                }}
-              />
-              <span
-                aria-hidden="true"
-                style={{
-                  width: 44,
-                  height: 26,
-                  borderRadius: 999,
-                  background: twoFa ? C.ink : C.borderSoft,
-                  transition: 'background 120ms ease',
-                  display: 'inline-block',
-                  position: 'relative',
-                }}
-              >
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: 3,
-                    left: twoFa ? 21 : 3,
-                    width: 20,
-                    height: 20,
-                    borderRadius: '50%',
-                    background: '#fff',
-                    transition: 'left 140ms ease',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.18)',
-                  }}
-                />
-              </span>
-            </span>
-          </label>
-        </div>
-
-        {/* SESSÕES */}
-        <SectionTitle dark={dark}>Sessões ativas</SectionTitle>
-        <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {sessions.map((s) => (
-            <div
-              key={s.id}
+            <span
               style={{
-                padding: '12px 14px',
-                borderRadius: 12,
-                border: `1px solid ${C.borderSoft}`,
-                background: C.bg,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
+                flexShrink: 0,
+                fontSize: 10,
+                fontWeight: 800,
+                padding: '3px 8px',
+                borderRadius: 100,
+                background: '#F4F0E8',
+                color: C.faint,
+                letterSpacing: 0.5,
+                textTransform: 'uppercase',
+                fontFamily: MONO_FONT,
               }}
             >
-              <div
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 10,
-                  background: '#F4F0E8',
-                  color: C.ink,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                {Icon.user(18)}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, letterSpacing: -0.1 }}>
-                  {s.label}
-                  {s.current && (
-                    <span
-                      style={{
-                        marginLeft: 6,
-                        fontSize: 10,
-                        fontWeight: 800,
-                        padding: '2px 7px',
-                        borderRadius: 100,
-                        background: '#E5F2EA',
-                        color: '#0F5A37',
-                        letterSpacing: 0.4,
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      Você
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, fontWeight: 500 }}>
-                  {s.sub}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleEndSession(s.id)}
-                aria-label={`Encerrar sessão ${s.label}`}
-                style={{
-                  all: 'unset',
-                  cursor: s.current ? 'not-allowed' : 'pointer',
-                  padding: '8px 12px',
-                  borderRadius: 10,
-                  border: `1px solid ${s.current ? C.borderSoft : '#F4C7C7'}`,
-                  background: s.current ? 'transparent' : '#FFF1F1',
-                  color: s.current ? C.faint : '#A12626',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  flexShrink: 0,
-                }}
-              >
-                Encerrar
-              </button>
+              Em breve
+            </span>
+          </div>
+        </div>
+
+        {/* SESSÃO — só este dispositivo é conhecido do lado do host (não há
+            endpoint staff-auth de sessões ativas). Encerrar = logout real. */}
+        <SectionTitle dark={dark}>Sessão deste dispositivo</SectionTitle>
+        <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: `1px solid ${C.borderSoft}`,
+              background: C.bg,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: '#F4F0E8',
+                color: C.ink,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              {Icon.user(18)}
             </div>
-          ))}
-          {sessions.length === 0 && (
-            <div style={{ fontSize: 12, color: C.faint, padding: '8px 4px' }}>
-              Nenhuma sessão ativa além desta.
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, letterSpacing: -0.1 }}>
+                Este dispositivo
+                <span
+                  style={{
+                    marginLeft: 6,
+                    fontSize: 10,
+                    fontWeight: 800,
+                    padding: '2px 7px',
+                    borderRadius: 100,
+                    background: '#E5F2EA',
+                    color: '#0F5A37',
+                    letterSpacing: 0.4,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Você
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, fontWeight: 500 }}>
+                Ativo agora · encerrar sai do app e revoga a sessão
+              </div>
             </div>
-          )}
+            <button
+              type="button"
+              onClick={handleEndSession}
+              disabled={loggingOut}
+              aria-label="Encerrar sessão deste dispositivo"
+              style={{
+                all: 'unset',
+                cursor: loggingOut ? 'progress' : 'pointer',
+                padding: '8px 12px',
+                borderRadius: 10,
+                border: `1px solid #F4C7C7`,
+                background: '#FFF1F1',
+                color: '#A12626',
+                fontSize: 12,
+                fontWeight: 700,
+                flexShrink: 0,
+                opacity: loggingOut ? 0.6 : 1,
+              }}
+            >
+              {loggingOut ? 'Saindo…' : 'Encerrar'}
+            </button>
+          </div>
+          <div style={{ fontSize: 11.5, color: C.faint, padding: '2px 4px', lineHeight: 1.4 }}>
+            Só é possível ver e encerrar a sessão deste aparelho por aqui.
+          </div>
         </div>
       </div>
 
@@ -330,9 +273,21 @@ export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, 
             right: 16,
             padding: '12px 14px',
             borderRadius: 12,
-            background: toast.kind === 'danger' ? '#FFE6E6' : '#F4F0E8',
-            color: toast.kind === 'danger' ? '#A12626' : C.ink,
-            border: `1px solid ${toast.kind === 'danger' ? '#F4C7C7' : C.borderSoft}`,
+            background:
+              toast.kind === 'danger'
+                ? '#FFE6E6'
+                : toast.kind === 'success'
+                  ? '#E5F2EA'
+                  : '#F4F0E8',
+            color:
+              toast.kind === 'danger' ? '#A12626' : toast.kind === 'success' ? '#0F5A37' : C.ink,
+            border: `1px solid ${
+              toast.kind === 'danger'
+                ? '#F4C7C7'
+                : toast.kind === 'success'
+                  ? '#BFE3CC'
+                  : C.borderSoft
+            }`,
             fontSize: 13,
             fontWeight: 600,
             lineHeight: 1.4,
@@ -346,17 +301,21 @@ export const ScreenHostSecurity: React.FC<ScreenHostSecurityProps> = ({ onBack, 
 
       <HBottomNav active="me" dark={dark} onTabChange={(id) => onTabChange?.(id)} />
 
-      {showPassSheet && (
-        <ChangePasswordSheet
+      {showPinSheet && (
+        <ChangePinSheet
           dark={dark}
-          onClose={() => setShowPassSheet(false)}
-          onStubSubmit={() => {
-            setShowPassSheet(false);
-            if (process.env.NEXT_PUBLIC_SHOW_WIP_FEATURES !== 'true') return;
-            setToast({
-              kind: 'info',
-              text: 'Troca de senha marcada localmente para QA.',
-            });
+          onClose={() => setShowPinSheet(false)}
+          onSubmit={async (currentPin, newPin) => {
+            // change-pin REAL — revoga sessões antigas; o proxy troca o cookie
+            // httpOnly pelo token novo, então a sessão atual segue válida.
+            try {
+              const res = await staffAuthChangePin(tenantSlug, { currentPin, newPin });
+              setShowPinSheet(false);
+              setToast({ kind: 'success', text: res.message_user || 'PIN atualizado.' });
+            } catch (err) {
+              // Deixa a sheet aberta; propaga o erro pro sheet exibir inline.
+              throw err instanceof Error ? err : new Error('Não foi possível trocar o PIN.');
+            }
           }}
         />
       )}
@@ -456,14 +415,16 @@ function ActionRow({
   );
 }
 
-// ─── ChangePasswordSheet — modal simples, validação local antes do stub.
-function ChangePasswordSheet({
+// ─── ChangePinSheet — PIN numérico 4-6 dígitos, validação local antes do
+// change-pin real. onSubmit é async e pode rejeitar (erro do backend) → a
+// sheet exibe a mensagem inline e permanece aberta.
+function ChangePinSheet({
   onClose,
-  onStubSubmit,
+  onSubmit,
   dark,
 }: {
   onClose: () => void;
-  onStubSubmit: () => void;
+  onSubmit: (currentPin: string, newPin: string) => Promise<void>;
   dark?: boolean;
 }) {
   const C = useG(!!dark);
@@ -471,29 +432,40 @@ function ChangePasswordSheet({
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     setErr(null);
-    if (!current.trim()) {
-      setErr('Informe a senha atual.');
+    if (!/^\d{4,6}$/.test(current)) {
+      setErr('Informe o PIN atual (4 a 6 dígitos).');
       return;
     }
-    if (next.length < 8) {
-      setErr('A nova senha precisa ter pelo menos 8 caracteres.');
+    if (!/^\d{4,6}$/.test(next)) {
+      setErr('O novo PIN precisa ter de 4 a 6 dígitos.');
+      return;
+    }
+    if (next === current) {
+      setErr('O novo PIN precisa ser diferente do atual.');
       return;
     }
     if (next !== confirm) {
-      setErr('Nova senha e confirmação não conferem.');
+      setErr('Novo PIN e confirmação não conferem.');
       return;
     }
-    onStubSubmit();
+    setSubmitting(true);
+    try {
+      await onSubmit(current, next);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Não foi possível trocar o PIN.');
+      setSubmitting(false);
+    }
   };
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Trocar senha"
+      aria-label="Trocar PIN"
       style={{
         position: 'fixed',
         inset: 0,
@@ -526,37 +498,34 @@ function ChangePasswordSheet({
           }}
         />
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>
-          Trocar senha
+          Trocar PIN
         </h2>
         <div
           style={{ fontSize: 12.5, color: C.mute, marginTop: 4, fontWeight: 500, lineHeight: 1.4 }}
         >
-          Defina uma senha forte com pelo menos 8 caracteres.
+          Use de 4 a 6 dígitos. Ao trocar, as outras sessões são desconectadas.
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
-          <Field
+          <PinField
             dark={dark}
-            label="Senha atual"
+            label="PIN atual"
             value={current}
             onChange={setCurrent}
-            type="password"
             autoComplete="current-password"
           />
-          <Field
+          <PinField
             dark={dark}
-            label="Nova senha"
+            label="Novo PIN"
             value={next}
             onChange={setNext}
-            type="password"
             autoComplete="new-password"
           />
-          <Field
+          <PinField
             dark={dark}
-            label="Confirmar nova senha"
+            label="Confirmar novo PIN"
             value={confirm}
             onChange={setConfirm}
-            type="password"
             autoComplete="new-password"
           />
         </div>
@@ -582,8 +551,8 @@ function ChangePasswordSheet({
           <GButton dark={dark} full kind="ghost" onClick={onClose}>
             Cancelar
           </GButton>
-          <GButton dark={dark} full kind="primary" onClick={submit}>
-            Trocar senha
+          <GButton dark={dark} full kind="primary" onClick={submit} disabled={submitting}>
+            {submitting ? 'Salvando…' : 'Trocar PIN'}
           </GButton>
         </div>
       </div>
@@ -591,19 +560,17 @@ function ChangePasswordSheet({
   );
 }
 
-// ─── Field — input padronizado pra sheet de senha.
-function Field({
+// ─── PinField — input numérico (4-6 dígitos) padronizado pra sheet de PIN.
+function PinField({
   label,
   value,
   onChange,
-  type,
   autoComplete,
   dark,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  type: string;
   autoComplete?: string;
   dark?: boolean;
 }) {
@@ -622,9 +589,10 @@ function Field({
         {label}
       </span>
       <input
-        type={type}
+        type="password"
+        inputMode="numeric"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
         autoComplete={autoComplete}
         style={{
           padding: '12px 12px',
@@ -632,8 +600,9 @@ function Field({
           border: `1px solid ${C.borderSoft}`,
           background: C.surface,
           color: C.ink,
-          fontSize: 14,
-          fontFamily: G_FONT,
+          fontSize: 18,
+          fontFamily: MONO_FONT,
+          letterSpacing: 2,
           outline: 'none',
         }}
       />
