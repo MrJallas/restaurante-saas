@@ -43,11 +43,18 @@ export class OrderRatingsController {
    */
   @Post()
   @UseGuards(SessionGuard)
-  async submit(@Body() dto: SubmitRatingDto, @Req() req: Request) {
+  async submit(
+    @Body() dto: SubmitRatingDto,
+    @Req() req: Request,
+    @Session() session: SessionData,
+  ) {
     const callerCustomerId = await this.callerResolver.requireCustomerId(req);
     return this.service.submit({
       orderId: dto.orderId,
       customerId: callerCustomerId,
+      // IDOR write-path: o service exige que orders.table_session_id bata
+      // com a sessão de mesa do caller (do SessionGuard) antes do INSERT.
+      sessionId: session.sessionId,
       visitId: dto.visitId,
       rating: dto.rating,
       comment: dto.comment,

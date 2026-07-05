@@ -19,6 +19,8 @@ import type { ComplaintsService } from '../complaints/complaints.service';
 const ORDER = 'aaaaaaa1-0000-4000-8000-000000000001';
 const CUSTOMER = 'bbbbbbb1-0000-4000-8000-000000000001';
 const VISIT = 'ccccccc1-0000-4000-8000-000000000001';
+const SESSION = 'ddddddd1-0000-4000-8000-000000000001';
+const OTHER_SESSION = 'ddddddd1-0000-4000-8000-000000000002';
 const NOW = '2026-07-03T12:00:00.000Z';
 
 interface RatingRow {
@@ -35,6 +37,9 @@ interface RatingRow {
 /** Mini-modelo em memória da order_ratings com semântica de upsert do PG. */
 function fakeOrderRatingsDb() {
   const rows = new Map<string, RatingRow>();
+  // orders(id → table_session_id): modela o ownership guard do write-path.
+  // Sem entrada aqui = pedido de outra mesa/inexistente → SELECT vazio → 403.
+  const orders = new Map<string, string>([[ORDER, SESSION]]);
   let seq = 0;
 
   const resolveValue = (expr: string, params: unknown[]): unknown => {
@@ -81,6 +86,12 @@ function fakeOrderRatingsDb() {
 
   const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
     const s = sql.replace(/\s+/g, ' ').trim();
+
+    // Ownership guard do write-path: SELECT 1 FROM orders WHERE id=$1 AND table_session_id=$2.
+    if (/^SELECT 1 FROM orders WHERE id = \$1 AND table_session_id = \$2/.test(s)) {
+      const owner = orders.get(params[0] as string);
+      return owner !== undefined && owner === (params[1] as string) ? [{ '?column?': 1 }] : [];
+    }
 
     if (s.startsWith('INSERT INTO order_ratings')) {
       const shape = s.match(/INSERT INTO order_ratings \(([^)]+)\) VALUES \((.+?)\) ON CONFLICT/);
@@ -136,6 +147,7 @@ function fakeOrderRatingsDb() {
 
   return {
     rows,
+    orders,
     conn: { query } as unknown as TenantConnectionProvider,
   };
 }
@@ -172,6 +184,7 @@ describe('OrderRatingsService — fluxo prompt (delivered) → resposta real do 
     const result = await service.submit({
       orderId: ORDER,
       customerId: CUSTOMER,
+      sessionId: SESSION,
       visitId: VISIT,
       rating: 5,
       comment: 'Tudo excelente',
@@ -193,6 +206,7 @@ describe('OrderRatingsService — fluxo prompt (delivered) → resposta real do 
     const result = await service.submit({
       orderId: ORDER,
       customerId: CUSTOMER,
+      sessionId: SESSION,
       rating: 1,
       comment: 'Veio frio e atrasado',
     });
@@ -206,11 +220,18 @@ describe('OrderRatingsService — fluxo prompt (delivered) → resposta real do 
   it('segunda avaliação do mesmo pedido continua bloqueada (idempotência)', async () => {
     const { service, complaints, db } = makeService();
     await service.schedulePromptForDelivered({ orderId: ORDER, customerId: CUSTOMER });
-    await service.submit({ orderId: ORDER, customerId: CUSTOMER, rating: 5, comment: 'Ótimo' });
+    await service.submit({
+      orderId: ORDER,
+      customerId: CUSTOMER,
+      sessionId: SESSION,
+      rating: 5,
+      comment: 'Ótimo',
+    });
 
     const second = await service.submit({
       orderId: ORDER,
       customerId: CUSTOMER,
+      sessionId: SESSION,
       rating: 1,
       comment: 'mudei de ideia',
     });
@@ -226,6 +247,7 @@ describe('OrderRatingsService — fluxo prompt (delivered) → resposta real do 
     const result = await service.submit({
       orderId: ORDER,
       customerId: CUSTOMER,
+      sessionId: SESSION,
       rating: 4,
       comment: undefined,
     });
@@ -237,8 +259,64 @@ describe('OrderRatingsService — fluxo prompt (delivered) → resposta real do 
     const { service, db } = makeService();
     await service.schedulePromptForDelivered({ orderId: ORDER, customerId: null });
 
-    await service.submit({ orderId: ORDER, customerId: CUSTOMER, rating: 3 });
+    await service.submit({ orderId: ORDER, customerId: CUSTOMER, sessionId: SESSION, rating: 3 });
 
     expect(db.rows.get(ORDER)!.customer_id).toBe(CUSTOMER);
+  });
+});
+
+describe('OrderRatingsService.submit — IDOR write-path (ownership por mesa)', () => {
+  it('rejeita (403) submit num orderId que pertence a OUTRA sessão de mesa', async () => {
+    const { service, db, complaints } = makeService();
+    // ORDER pertence a SESSION; caller está em OTHER_SESSION.
+    await expect(
+      service.submit({
+        orderId: ORDER,
+        customerId: CUSTOMER,
+        sessionId: OTHER_SESSION,
+        rating: 1,
+        comment: 'sabotagem na conta alheia',
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+
+    // Nada foi gravado no slot da vítima, e nenhum complaint foi fabricado.
+    expect(db.rows.get(ORDER)).toBeUndefined();
+    expect(complaints.calls).toHaveLength(0);
+  });
+
+  it('não sequestra o slot: o cliente legítimo de SESSION ainda consegue avaliar', async () => {
+    const { service, db } = makeService();
+    await service.schedulePromptForDelivered({ orderId: ORDER, customerId: null });
+
+    // Ataque da outra mesa é rejeitado…
+    await expect(
+      service.submit({ orderId: ORDER, customerId: CUSTOMER, sessionId: OTHER_SESSION, rating: 1 }),
+    ).rejects.toMatchObject({ status: 403 });
+    // …e o slot do prompt segue não-avaliado.
+    expect(db.rows.get(ORDER)!.submitted_at).toBeNull();
+
+    // O dono legítimo (SESSION) avalia normalmente.
+    const ok = await service.submit({
+      orderId: ORDER,
+      customerId: CUSTOMER,
+      sessionId: SESSION,
+      rating: 5,
+      comment: 'Tudo certo',
+    });
+    expect(ok.alreadyRated).toBe(false);
+    expect(ok.rating).toBe(5);
+    expect(db.rows.get(ORDER)!.submitted_at).not.toBeNull();
+  });
+
+  it('submit no orderId da própria sessão continua funcionando (preservado)', async () => {
+    const { service } = makeService();
+    const result = await service.submit({
+      orderId: ORDER,
+      customerId: CUSTOMER,
+      sessionId: SESSION,
+      rating: 4,
+    });
+    expect(result.alreadyRated).toBe(false);
+    expect(result.rating).toBe(4);
   });
 });

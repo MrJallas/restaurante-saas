@@ -1,4 +1,10 @@
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import {
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { ComplaintsService } from '../complaints/complaints.service';
 
@@ -14,10 +20,27 @@ export class OrderRatingsService {
   async submit(input: {
     orderId: string;
     customerId: string;
+    sessionId: string;
     visitId?: string | null;
     rating: number;
     comment?: string;
   }) {
+    // IDOR write-path (re-scan de convergência): o customerId vem do cookie
+    // (round 8 B-NEW-27), mas o orderId ainda era confiado cru. Sem este
+    // guard, um cliente na mesa X com um orderId da mesa Y podia (a) gravar
+    // rating na conta de Y, (b) SEQUESTRAR o slot do prompt (o guard
+    // `submitted_at IS NULL` flipa → vítima vê alreadyRated) e (c) fabricar
+    // um complaint sobre o pedido de Y. Espelha o guard de ownership do
+    // read-path (getByOrderIdForSession) e do sibling feedbacks: o pedido
+    // tem que pertencer à sessão de mesa do caller (vinda do SessionGuard).
+    const owner = (await this.tenantConn.query(
+      `SELECT 1 FROM orders WHERE id = $1 AND table_session_id = $2`,
+      [input.orderId, input.sessionId],
+    )) as Array<Record<string, unknown>>;
+    if (!owner.length) {
+      throw new ForbiddenException('Pedido nao pertence a esta sessao.');
+    }
+
     // A UNIQUE(order_id) é compartilhada com a row do PROMPT que o
     // `delivered` cria (rating NULL, submitted_at NULL) — então a resposta
     // real do cliente é uma TRANSIÇÃO DE ESTADO (completar o prompt), não
