@@ -16,7 +16,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 function TvUnlockContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get('next') || '/cozinha/tv';
+  // Open-redirect guard: `next` vem do query param. Só aceita PATH interno
+  // (começa com '/' mas não '//' protocol-relative, sem esquema). Um
+  // `next=https://evil.com` ou `//evil.com` cairia no default, não redireciona
+  // pra fora após o PIN.
+  const rawNext = searchParams.get('next') || '';
+  const next = /^\/(?!\/)/.test(rawNext) ? rawNext : '/cozinha/tv';
 
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);

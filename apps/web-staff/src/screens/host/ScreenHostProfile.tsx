@@ -48,8 +48,10 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
   hostInitials,
   hostColor = '#7A4FBE',
   roleLabel = 'Recepcionista',
-  shift = 'Turno da noite (17h–23h)',
-  shiftStartedAt = '17:08',
+  // Anti-placebo: sem default cravado. Turno/horário só aparecem com dado real
+  // (mesma correção do ScreenManagerProfile).
+  shift,
+  shiftStartedAt,
   unreadMessages = 0,
   bellBadge = 0,
   tablesReleasedThisShift,
@@ -169,32 +171,35 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
               {hostName}
             </div>
             <div style={{ fontSize: 12, color: C.faint, marginTop: 3, fontWeight: 600 }}>
-              {roleLabel} · {shift}
+              {roleLabel}
+              {shift ? ` · ${shift}` : ''}
             </div>
-            <div
-              style={{
-                fontSize: 11,
-                color: '#1E8C5A',
-                marginTop: 6,
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                letterSpacing: 0.3,
-                textTransform: 'uppercase',
-              }}
-            >
-              <span
+            {shiftStartedAt && (
+              <div
                 style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: '50%',
-                  background: '#1E8C5A',
-                  animation: 'gPulse 2s infinite',
+                  fontSize: 11,
+                  color: '#1E8C5A',
+                  marginTop: 6,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  letterSpacing: 0.3,
+                  textTransform: 'uppercase',
                 }}
-              />
-              em turno desde {shiftStartedAt}
-            </div>
+              >
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    background: '#1E8C5A',
+                    animation: 'gPulse 2s infinite',
+                  }}
+                />
+                em turno desde {shiftStartedAt}
+              </div>
+            )}
           </div>
         </div>
 
@@ -275,7 +280,8 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
                   lineHeight: 1.4,
                 }}
               >
-                Só o que você liberou desde {shiftStartedAt}. Histórico do dia inteiro fica em
+                Só o que você liberou {shiftStartedAt ? `desde ${shiftStartedAt}` : 'neste turno'}.
+                Histórico do dia inteiro fica em
                 Avisos &gt; resumo.
               </div>
             </div>

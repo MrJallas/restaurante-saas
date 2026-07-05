@@ -25,9 +25,10 @@ function buildCsp(): { csp: string; nonce: string } {
     // cross-origin — espelha o web-customer (MenuOverlay iframe).
     "frame-ancestors 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${scriptEval}`,
-    "style-src 'self' 'unsafe-inline'",
+    // Google Fonts (tema do tenant) — espelha o web-customer.
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob:",
-    "font-src 'self' data:",
+    "font-src 'self' data: https://fonts.gstatic.com",
     "connect-src 'self' ws: wss: http: https:",
     "form-action 'self'",
   ].join('; ');

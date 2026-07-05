@@ -308,6 +308,16 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
         tenantHintForToken,
       );
       if (payload) {
+        // must_change_pin (paridade com StaffOnly/ManagerOnly HTTP): um token
+        // emitido com PIN temporário NÃO abre o WS de staff — senão o staff
+        // observaria orders/host events em realtime sem trocar o PIN. Rejeita
+        // até a troca (a rota de trocar PIN não usa WS).
+        if (payload.mustChangePin) {
+          this.logger.warn(`Staff WS rejeitado: troca de PIN obrigatória (${client.id})`);
+          client.emit('error', { message: 'Troca de PIN obrigatória antes de continuar.' });
+          client.disconnect(true);
+          return;
+        }
         client.data.authType = 'staff';
         client.data.staffId = payload.staffId;
         client.data.staffRole = payload.role;

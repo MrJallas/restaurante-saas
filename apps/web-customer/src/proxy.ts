@@ -29,9 +29,12 @@ export function proxy(request: NextRequest): NextResponse {
     // deixaria o overlay em branco. 'self' preserva o anti-clickjacking cross-origin.
     "frame-ancestors 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${scriptEval}`,
-    "style-src 'self' 'unsafe-inline'",
+    // fonts.googleapis.com no style-src + gstatic no font-src: o tema do tenant
+    // (useTenantTheme) carrega Google Fonts via <link>. Sem isso o CSP enforce
+    // bloquearia a fonte custom do restaurante.
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob:",
-    "font-src 'self' data:",
+    "font-src 'self' data: https://fonts.gstatic.com",
     "connect-src 'self' ws: wss: http: https:",
     "form-action 'self'",
   ].join('; ');
