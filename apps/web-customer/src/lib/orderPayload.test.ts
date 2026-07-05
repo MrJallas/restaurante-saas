@@ -1,8 +1,12 @@
 import {
   buildOrderItemPayload,
+  createCheckoutIdempotency,
+  idempotencyKeyForMode,
   mergePreferencesIntoNotes,
   type DraftItemForPayload,
 } from './orderPayload';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 describe('mergePreferencesIntoNotes', () => {
   it('dobra preferências dentro de notes quando não há nota livre', () => {
@@ -92,5 +96,41 @@ describe('buildOrderItemPayload', () => {
   it('item sem tamanho não inclui size no payload (comportamento antigo preservado)', () => {
     const payload = buildOrderItemPayload(base, 'cust-123');
     expect(payload.size).toBeUndefined();
+  });
+});
+
+describe('idempotência do checkout (P1 re-scan #7: pedido duplicado / dupla cobrança)', () => {
+  it('a chave é um UUID canônico (contrato @IsUUID do DTO idempotencyKey)', () => {
+    const bundle = createCheckoutIdempotency();
+    expect(idempotencyKeyForMode(bundle, 'individual')).toMatch(UUID_RE);
+    expect(idempotencyKeyForMode(bundle, 'table')).toMatch(UUID_RE);
+  });
+
+  it('RETRY da mesma tentativa reusa a mesma chave por modo (backend dedupa)', () => {
+    // Mesma tentativa de checkout = mesmo bundle preservado no ref através do
+    // catch. Ler a chave de novo (retry) devolve exatamente o mesmo UUID.
+    const bundle = createCheckoutIdempotency();
+    expect(idempotencyKeyForMode(bundle, 'individual')).toBe(
+      idempotencyKeyForMode(bundle, 'individual'),
+    );
+    expect(idempotencyKeyForMode(bundle, 'table')).toBe(idempotencyKeyForMode(bundle, 'table'));
+  });
+
+  it('um checkout NOVO gera chaves diferentes (pedido legítimo distinto não é dedupado)', () => {
+    const first = createCheckoutIdempotency();
+    const second = createCheckoutIdempotency();
+    expect(idempotencyKeyForMode(second, 'individual')).not.toBe(
+      idempotencyKeyForMode(first, 'individual'),
+    );
+    expect(idempotencyKeyForMode(second, 'table')).not.toBe(idempotencyKeyForMode(first, 'table'));
+  });
+
+  it('carrinho misto: UMA chave por billingMode, e grupos diferentes não colidem', () => {
+    // Um POST por grupo billingMode. Cada grupo tem sua própria chave, senão o
+    // dedup do backend faria o 2º grupo (mesma session) devolver o order do 1º.
+    const bundle = createCheckoutIdempotency();
+    expect(idempotencyKeyForMode(bundle, 'individual')).not.toBe(
+      idempotencyKeyForMode(bundle, 'table'),
+    );
   });
 });

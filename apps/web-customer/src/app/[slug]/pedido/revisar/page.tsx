@@ -1,9 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { ApiRequestError, apiGet, apiPatch, apiPost } from '../../../../lib/api';
-import { buildOrderItemPayload } from '../../../../lib/orderPayload';
+import {
+  buildOrderItemPayload,
+  createCheckoutIdempotency,
+  idempotencyKeyForMode,
+  type CheckoutIdempotency,
+} from '../../../../lib/orderPayload';
 import { useDraftOrder } from '../../../../providers/DraftOrderProvider';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
@@ -20,6 +25,15 @@ export default function PedidoRevisarPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [editingNoteFor, setEditingNoteFor] = useState<string | null>(null);
+
+  // Idempotência estável-por-tentativa (P1 re-scan #7): uma chave UUID por
+  // billingMode, criada na 1ª tentativa e PRESERVADA no ref através do
+  // catch+retry (a resposta que deu timeout pode ter criado o order — o retry
+  // manda a MESMA chave e o backend dedupa em vez de criar um 2º pedido). É
+  // renovada só num checkout NOVO (após sucesso), pra não dedupar um pedido
+  // legítimo diferente. Ref (não state) porque não precisa re-render e tem que
+  // sobreviver ao reset de `submitting` no catch.
+  const checkoutIdemRef = useRef<CheckoutIdempotency | null>(null);
 
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 
@@ -66,12 +80,23 @@ export default function PedidoRevisarPage() {
         return acc;
       }, {});
       const groups = Object.entries(groupedByMode) as Array<['individual' | 'table', typeof items]>;
+      // Reusa o bundle de idempotência se esta é uma RETENTATIVA da mesma
+      // tentativa de checkout (ref preservado através do catch); cria um novo
+      // só na 1ª tentativa deste pedido. Assim o retry pós-timeout manda a
+      // mesma chave por grupo e o backend dedupa.
+      const checkoutIdem = (checkoutIdemRef.current ??= createCheckoutIdempotency());
       const createdIds: string[] = [];
       try {
         for (const [billingMode, groupItems] of groups) {
           const res = await apiPost<{ id: string; autoConfirmAt?: string }>(`/${slug}/orders`, {
             billingMode,
             visitId: visitId || undefined,
+            // Idempotência por grupo: UMA chave UUID por billingMode, estável
+            // por tentativa. O retry do MESMO grupo reusa a chave (backend
+            // dedupa via order_idem:<session>:<key>); grupos diferentes usam
+            // chaves diferentes e não colidem. Campo do DTO = `idempotencyKey`
+            // (@IsUUID no backend).
+            idempotencyKey: idempotencyKeyForMode(checkoutIdem, billingMode),
             // As preferências de bebida ('sem gelo', 'sem açúcar') são dobradas
             // dentro de `notes` pelo buildOrderItemPayload — antes ficavam só no
             // rascunho e a cozinha nunca as recebia (P1-N re-scan).
@@ -87,6 +112,10 @@ export default function PedidoRevisarPage() {
         );
         throw err;
       }
+      // Sucesso: descarta o bundle de idempotência desta tentativa. Um pedido
+      // NOVO montado depois (mesmo draft/sessão) gera chaves frescas e não é
+      // dedupado contra o pedido que acabou de ir pra cozinha.
+      checkoutIdemRef.current = null;
       if (createdIds.length === 1) {
         push(`/${slug}/pedido/confirmando?orderId=${createdIds[0]}`);
       } else {

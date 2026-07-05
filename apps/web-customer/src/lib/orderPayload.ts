@@ -23,6 +23,72 @@
  * preferências aparecem como observação normal, que é o comportamento correto.
  */
 
+/**
+ * IDEMPOTÊNCIA DO CHECKOUT (P1 re-scan #7 — pedido duplicado / dupla cobrança).
+ *
+ * O backend construiu o mecanismo COMPLETO de dedup no `POST /:slug/orders`
+ * (Redis SETNX + poll, `order_idem:${tableSessionId}:${idempotencyKey}`,
+ * TTL 5min) EXPLICITAMENTE contra "double-tap do Confirmar virando 2 pedidos".
+ * Mas o customer nunca mandava a chave, então o backend setava idemKey=null e
+ * PULAVA todo o dedup.
+ *
+ * O buraco real não é o double-tap síncrono (o `submitting` já cobre esse), é o
+ * RETRY pós-erro: o POST cria o order server-side (tx commita) mas a resposta
+ * dá timeout (>15s) / a rede cai → o api client aborta e lança, o handleSubmit
+ * cai no catch, reseta `submitting=false` SEM limpar o draft, e o cliente toca
+ * "Confirmar" de novo → 2º INSERT idêntico → 2 comandas na cozinha + cobrança
+ * dobrada. A chave precisa SOBREVIVER ao catch+retry (mesma tentativa reusa a
+ * MESMA chave → o backend dedup) mas ser NOVA quando o cliente monta um pedido
+ * novo depois de um sucesso.
+ *
+ * Contrato do DTO (apps/api orders.controller.ts:123-125): o campo é
+ * `idempotencyKey` e é validado com `@IsUUID()` — TEM que ser um UUID canônico.
+ * Por isso NÃO dá pra usar uma string composta `${checkoutKey}:${billingMode}`:
+ * o backend rejeitaria (400). O backend já namespaceia por `tableSessionId`,
+ * então basta UMA chave UUID DISTINTA por grupo de billingMode, estável por
+ * tentativa. No carrinho misto (um POST por billingMode), grupos diferentes
+ * recebem UUIDs diferentes (não colidem no dedup) e o retry do MESMO grupo
+ * reusa o mesmo UUID (dedupa).
+ */
+export interface CheckoutIdempotency {
+  /** Um UUID canônico por billingMode. Estável por tentativa de checkout. */
+  keyByMode: Record<'individual' | 'table', string>;
+}
+
+/** Gera um UUID (usa crypto.randomUUID; fallback manual pra ambientes sem ele). */
+function randomUuid(): string {
+  const c = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  // Fallback RFC-4122 v4 (jsdom antigo / ambiente sem WebCrypto).
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    const v = ch === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/**
+ * Cria um bundle de idempotência NOVO para uma tentativa de checkout — uma
+ * chave UUID por billingMode. Chame UMA vez por tentativa (memoizado num
+ * useRef/state do checkout) e renove só em sucesso ou limpeza explícita do
+ * draft. O retry pós-erro DEVE reusar o mesmo bundle pra o backend dedupar.
+ */
+export function createCheckoutIdempotency(): CheckoutIdempotency {
+  return { keyByMode: { individual: randomUuid(), table: randomUuid() } };
+}
+
+/**
+ * Resolve a idempotencyKey (UUID) do billingMode dentro de um bundle de
+ * checkout. Grupos diferentes → chaves diferentes; mesmo grupo no retry →
+ * mesma chave.
+ */
+export function idempotencyKeyForMode(
+  bundle: CheckoutIdempotency,
+  billingMode: 'individual' | 'table',
+): string {
+  return bundle.keyByMode[billingMode];
+}
+
 /** Formato do item consumido pelo POST /orders. */
 export interface OrderItemPayload {
   menuItemId: string;
