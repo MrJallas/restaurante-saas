@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TenantModule } from '../tenant/tenant.module';
+import { CallerResolverModule } from '../../common/services/caller-resolver.module';
 import { ContinuationController } from './continuation.controller';
 import { ContinuationService } from './continuation.service';
 
@@ -12,7 +13,10 @@ import { ContinuationService } from './continuation.service';
  * have to extend `AiServiceClient` for a single proxy call.
  */
 @Module({
-  imports: [TenantModule],
+  // P1 IDOR-READ: CallerResolverModule pra derivar customerId do cookie e
+  // sobrescrever o tableSessionId do caller de sessão (mesmo padrão de
+  // HomeModule B-NEW-63). Staff mantém acesso cross-mesa via body.
+  imports: [TenantModule, CallerResolverModule],
   controllers: [ContinuationController],
   providers: [ContinuationService],
 })

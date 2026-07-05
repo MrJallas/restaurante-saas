@@ -1,6 +1,9 @@
 import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import { IsBoolean, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
+import type { ActorType } from '../../common/guards/staff-or-session.guard';
+import type { SessionData } from '../../common/guards/session.guard';
+import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import type { TenantRequest } from '../tenant/tenant.middleware';
 import { ContinuationResponse, ContinuationService } from './continuation.service';
 
@@ -54,21 +57,42 @@ class ContinuationDto {
  */
 @Controller(':slug/continuation')
 export class ContinuationController {
-  constructor(private readonly service: ContinuationService) {}
+  constructor(
+    private readonly service: ContinuationService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
   @Post()
   @UseGuards(StaffOrSessionGuard)
   async getContinuation(
     @Body() dto: ContinuationDto,
-    @Req() req: TenantRequest,
+    @Req() req: TenantRequest & { actorType?: ActorType; sessionData?: SessionData },
   ): Promise<ContinuationResponse> {
     const headerHint = Array.isArray(req.headers['x-continuation-kind-hint'])
       ? req.headers['x-continuation-kind-hint'][0]
       : req.headers['x-continuation-kind-hint'];
     const draftCount = Number(req.headers['x-draft-order-count'] ?? 0);
+
+    // P1 IDOR-READ (re-scan de convergência #4): pra um caller de SESSÃO
+    // (customer) SOBRESCREVE tableSessionId com o `sessionId` carimbado pelo
+    // StaffOrSessionGuard e deriva customerId do cookie via callerResolver —
+    // IGNORANDO o body. Antes um cliente com token válido passava
+    // `tableSessionId` de OUTRA mesa ativa + customerId da vítima e vazava
+    // customer_name + last_order_summary cross-session dentro do tenant. Mesmo
+    // padrão de home.controller (B-NEW-63) e late-arrival.controller (B-NEW-58).
+    //
+    // Caller STAFF (x-staff-key/x-staff-token) mantém o tableSessionId do body:
+    // staff PRECISA de acesso cross-mesa legítimo (KDS, garçom, host).
+    let tableSessionId = dto.tableSessionId;
+    let customerId = dto.customerId ?? null;
+    if (req.actorType === 'session') {
+      tableSessionId = req.sessionData?.sessionId ?? dto.tableSessionId;
+      customerId = await this.callerResolver.tryGetCustomerId(req);
+    }
+
     return this.service.getContinuation(
-      dto.tableSessionId,
-      dto.customerId ?? null,
+      tableSessionId,
+      customerId,
       req.tenantSchemaName ?? req.tenantSlug ?? 'restaurant_dev',
       {
         clientKindHint: dto.clientKindHint ?? headerHint,
