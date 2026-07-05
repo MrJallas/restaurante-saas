@@ -702,9 +702,21 @@ export class PaymentsService {
       // Cada um paga os próprios itens + share igual dos compartilhados,
       // e a taxa sobre a PRÓPRIA parte.
       const totalsByPerson = new Map<string, number>(participantIds.map((id) => [id, 0]));
-      const sharedItems = items.filter((it) => !it.customer_id);
+      // ITEM ÓRFÃO (re-scan 2026-07-04): um item pode ter customer_id de um
+      // participante que SAIU depois de pedir (left_at setado — só o índice
+      // parcial some, a row do pedido permanece na conta da mesa). Esse dono
+      // não está em `participantIds` (derivado dos presentes). Antes o item
+      // caía FORA de todos os buckets: não era do próprio (has() falso) e não
+      // era compartilhado (customer_id não-nulo), então a soma das allocations
+      // ficava MENOR que o total da mesa — subcobrança (um buraco que ninguém
+      // pagava). Como não há caminho que reatribua/remova o pedido de quem
+      // sai, o valor continua devido pela mesa: redistribuímos o item órfão
+      // como COMPARTILHADO entre os presentes (mesmo tratamento de item sem
+      // dono). Assim as partes fecham o total da mesa.
+      const present = totalsByPerson;
+      const sharedItems = items.filter((it) => !it.customer_id || !present.has(it.customer_id));
       for (const it of items) {
-        if (it.customer_id && totalsByPerson.has(it.customer_id)) {
+        if (it.customer_id && present.has(it.customer_id)) {
           totalsByPerson.set(
             it.customer_id,
             (totalsByPerson.get(it.customer_id) ?? 0) + Number(it.subtotal_cents),
@@ -725,6 +737,18 @@ export class PaymentsService {
           amountCents: sub + Math.round((sub * totals.serviceFeePct) / 100),
         };
       });
+      // GUARD DE SOMA (re-scan 2026-07-04): espelha o check do custom — a soma
+      // das partes TEM que fechar o total da mesa com taxa. Blinda contra
+      // qualquer item que escape dos buckets (órfão redistribuído mal, dado
+      // sujo) virar buraco silencioso no pay-path. Tolerância de
+      // arredondamento: a taxa é aplicada per-capita e arredondada por pessoa,
+      // então o desvio possível é até ~1 centavo por participante.
+      const byItemSum = allocations.reduce((s, a) => s + a.amountCents, 0);
+      if (Math.abs(byItemSum - totals.totalCents) > participantIds.length) {
+        throw new BadRequestException(
+          `Soma das partes (${byItemSum}) diferente do total da mesa com taxa (${totals.totalCents}).`,
+        );
+      }
     } else {
       // custom — soma deve bater com o total da mesa COM taxa (tolerância
       // de arredondamento de 1 centavo por participante).

@@ -139,6 +139,34 @@ describe('computeSplit — rateio canônico da conta da MESA com taxa', () => {
       /participante/i,
     );
   });
+
+  it('by_item: item de participante que SAIU não vira buraco — a soma fecha o total da mesa', async () => {
+    // Ana continua na mesa; DIONE pediu R$40 e depois saiu (left_at setado),
+    // então não aparece em `participants`. O item dela NÃO tem que sumir da
+    // conta: hoje caía fora de todos os buckets (nem próprio, nem shared) e a
+    // soma das allocations ficava < total da mesa (subcobrança).
+    const DIONE_SAIU = 'dddddddd-0000-4000-8000-00000000000d';
+    const { service } = makeService({
+      serviceFeePct: '10.00',
+      tableItems: [
+        { subtotal_cents: 6_000, customer_id: ANA }, // Ana continua
+        { subtotal_cents: 4_000, customer_id: DIONE_SAIU }, // pediu e saiu
+      ],
+      participants: [ANA, BETO], // DIONE não está mais na mesa
+    });
+    const res = await service.computeSplit(SESSION, 'by_item', []);
+    // Mesa: 10000 + 10% = 11000. A soma das partes TEM que fechar o total.
+    expect(res.totalCents).toBe(11_000);
+    const soma = res.allocations.reduce((s, a) => s + a.amountCents, 0);
+    expect(soma).toBe(11_000);
+    // O item órfão (R$40) vira compartilhado entre os PRESENTES (Ana, Beto):
+    // Ana: 6000 (próprio) + 2000 (metade do órfão) = 8000 → +10% = 8800
+    // Beto: 2000 (metade do órfão) = 2000 → +10% = 2200
+    expect(res.allocations).toEqual([
+      { customerId: ANA, amountCents: 8_800 },
+      { customerId: BETO, amountCents: 2_200 },
+    ]);
+  });
 });
 
 describe('requestPayment — "pagar minha parte" cobra a parte canônica do rateio', () => {
@@ -179,6 +207,30 @@ describe('requestPayment — "pagar minha parte" cobra a parte canônica do rate
       callerCustomerId: ANA,
     });
     expect(res.amountCents).toBe(5_500);
+  });
+
+  it('by_item com item de participante que saiu: cobra a parte que FECHA a mesa (sem buraco)', async () => {
+    // DIONE pediu R$40 e saiu; a mesa continua devendo esse valor. O
+    // "pagar minha parte" by_item de Ana tem que refletir a redistribuição
+    // (o órfão vira compartilhado entre Ana e Beto) — antes a allocation da
+    // Ana ignorava o órfão e a soma da mesa ficava a descoberto.
+    const DIONE_SAIU = 'dddddddd-0000-4000-8000-00000000000d';
+    const { service } = makeService({
+      serviceFeePct: '10.00',
+      tableItems: [
+        { subtotal_cents: 6_000, customer_id: ANA },
+        { subtotal_cents: 4_000, customer_id: DIONE_SAIU },
+      ],
+      participants: [ANA, BETO],
+      visitForCustomer: { [ANA]: '22222222-2222-4222-8222-222222222222' },
+    });
+    // Ana: 6000 + metade do órfão (2000) = 8000 → +10% = 8800.
+    const res = await service.requestPayment(SESSION, null, 'individual', 'pix', {
+      callerCustomerId: ANA,
+      splitMode: 'by_item',
+      allocations: [{ customerId: ANA, amountCents: 8_800 }],
+    });
+    expect(res.amountCents).toBe(8_800);
   });
 });
 
