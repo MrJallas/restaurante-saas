@@ -143,6 +143,25 @@ export async function rejectLateArrival(
   });
 }
 
+/**
+ * `POST /:slug/late-arrival-requests/:id/cancel` — o PRÓPRIO solicitante
+ * (Customer B) derruba o próprio pedido de join enquanto o host não decidiu.
+ *
+ * P1 (re-scan): antes o "Cancelar pedido" da waiting-approval só fazia
+ * router.back() (no-op) — o request seguia 'pending' e escalava pro gerente
+ * como timeout fantasma. O BE valida (cookie recognition_token) que o caller
+ * é o requester da row, flipa 'cancelled', fecha a escalation_chain e dispensa
+ * o card do host. O customerId derivado do cookie é a fonte de verdade; o
+ * campo aqui é só best-effort (o BE ignora body).
+ */
+export async function cancelLateArrivalRequest(
+  id: string,
+  input: { slug?: string } = {},
+): Promise<LateArrivalRequestDto> {
+  const slug = input.slug ?? getSlugFromPath();
+  return apiPost<LateArrivalRequestDto>(`/${slug}/late-arrival-requests/${id}/cancel`, {});
+}
+
 // ─── Table merge ─────────────────────────────────────────────────────────────
 
 /**

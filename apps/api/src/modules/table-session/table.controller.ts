@@ -68,4 +68,19 @@ export class TableController {
       dto.decision,
     );
   }
+
+  /**
+   * P1 (re-scan mega-loop): B cancela o PRÓPRIO pedido de join pendente
+   * (System A / host-approval). Não precisa de host — o caller (customerId
+   * do cookie) só derruba a própria row 'pending'. Antes o FE só fazia
+   * router.back() (no-op) e a row ficava órfã 'pending' pra sempre (System A
+   * não tem TTL). O service soft-leave a row + emite participant:decision
+   * pra o host tirar B dos pendentes ao vivo.
+   */
+  @Post('participants/cancel')
+  @UseGuards(SessionGuard)
+  async cancelOwnJoin(@Session() session: SessionData, @Req() req: Request) {
+    const callerCustomerId = await this.callerResolver.requireCustomerId(req);
+    return this.tableSessionService.cancelOwnPendingJoin(session.sessionId, callerCustomerId);
+  }
 }

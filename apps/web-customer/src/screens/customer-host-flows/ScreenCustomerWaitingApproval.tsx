@@ -6,7 +6,11 @@ import { PillButton } from '../../components/ui/PillButton';
 import { useSession } from '../../hooks/useSession';
 import { useCustomerHostEvents } from '../../hooks/useCustomerHostEvents';
 import { ScreenCustomerMergeCooldown } from './ScreenCustomerMergeCooldown';
-import { rejectTableMerge, requestHostAssist } from '../../lib/api/customer-host';
+import {
+  cancelLateArrivalRequest,
+  rejectTableMerge,
+  requestHostAssist,
+} from '../../lib/api/customer-host';
 
 export type WaitingMode = 'late-arrival' | 'merge-target' | 'merge-origin';
 export type WaitingState = 'waiting' | 'approved' | 'rejected' | 'expired' | 'cooldown';
@@ -35,6 +39,14 @@ interface ScreenCustomerWaitingApprovalProps {
    * complaint flow may want a different label.
    */
   retryEnabled?: boolean;
+  /**
+   * P1 (re-scan): override do "Cancelar pedido". System A (session_participants
+   * via PendingApprovalWrapper) monta sem requestId/expiresAt e precisa cancelar
+   * o próprio participant pending por um endpoint diferente do System B. Quando
+   * fornecido, substitui o handler interno (que só cobre late-arrival/merge).
+   * Deve devolver uma Promise; a tela cuida do busy-state e navegação de saída.
+   */
+  onCancel?: () => Promise<void> | void;
 }
 
 /**
@@ -59,6 +71,7 @@ export function ScreenCustomerWaitingApproval({
   hostName = null,
   approvedRedirectTo,
   retryEnabled = true,
+  onCancel,
 }: ScreenCustomerWaitingApprovalProps) {
   const router = useRouter();
   const { sessionId, customerId } = useSession();
@@ -87,21 +100,44 @@ export function ScreenCustomerWaitingApproval({
   };
 
   const cancelMergeRequest = async () => {
-    // Cancelamento REAL do convite (origin host = lado 'a'); o handler do
-    // assistente filtra o card pra quem cancelou. Late-arrival não tem
-    // cancel customer-side — mantém o back() de antes.
-    if (mode === 'late-arrival' || !requestId) {
+    // System A (PendingApprovalWrapper) passa um onCancel próprio: cancela o
+    // session_participant pending do caller por endpoint distinto do System B.
+    // Prioridade sobre o back()/late-arrival/merge interno.
+    if (onCancel) {
+      if (cancelBusy) return;
+      setCancelBusy(true);
+      try {
+        await onCancel();
+      } catch {
+        setCancelBusy(false);
+        setHostAssist('error');
+      }
+      return;
+    }
+    // Sem requestId não há o que cancelar server-side (ex.: a tela montou antes
+    // do create devolver o id) — cai no back() defensivo.
+    if (!requestId) {
       router.back();
       return;
     }
     if (cancelBusy) return;
     setCancelBusy(true);
     try {
-      await rejectTableMerge(requestId, {
-        slug,
-        decidedByCustomerId: customerId ?? undefined,
-        reason: 'cancelled_by_requester',
-      });
+      if (mode === 'late-arrival') {
+        // P1 (re-scan): cancelamento REAL do pedido de join pelo PRÓPRIO
+        // solicitante. Antes era só router.back() (no-op) — o request seguia
+        // 'pending' até o TTL e escalava pro gerente como timeout fantasma.
+        // O BE flipa 'cancelled', fecha a chain e dispensa o card do host.
+        await cancelLateArrivalRequest(requestId, { slug });
+      } else {
+        // Cancelamento REAL do convite de junção (origin host = lado 'a'); o
+        // handler do assistente filtra o card pra quem cancelou.
+        await rejectTableMerge(requestId, {
+          slug,
+          decidedByCustomerId: customerId ?? undefined,
+          reason: 'cancelled_by_requester',
+        });
+      }
       router.push(`/${slug}/assistente`);
     } catch {
       // Sem desfecho confirmado → mantém a tela; o WS autoritativo decide.

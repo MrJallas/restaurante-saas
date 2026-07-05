@@ -842,6 +842,21 @@ export default function MesaPage() {
           );
           setPageState('error');
         }}
+        onCancel={async () => {
+          // P1 (re-scan): cancelamento REAL do join pendente (System A).
+          // Derruba o session_participant 'pending' do caller no BE e sai da
+          // tela de espera. Best-effort: mesmo se o POST falhar, tiramos B do
+          // limbo pra ele não ficar preso (o BE é CAS-idempotente).
+          try {
+            await apiPost(`/${slug}/table/participants/cancel`, {});
+          } catch {
+            /* ignore — o BE é idempotente; ainda assim liberamos o FE */
+          }
+          setErrorMessage(
+            'Você cancelou o pedido de entrada. Escaneie o QR de novo quando quiser tentar.',
+          );
+          setPageState('error');
+        }}
       />
     );
   }
@@ -1041,11 +1056,13 @@ function PendingApprovalWrapper({
   hostName,
   onApproved,
   onRejected,
+  onCancel,
 }: {
   slug: string;
   hostName: string | null;
   onApproved: () => void;
   onRejected: () => void;
+  onCancel: () => Promise<void>;
 }) {
   const { sessionId, customerId } = useSession();
 
@@ -1054,7 +1071,9 @@ function PendingApprovalWrapper({
     const payload = data as { customerId: string; status: string };
     if (payload.customerId !== customerId) return;
     if (payload.status === 'approved') onApproved();
-    else if (payload.status === 'rejected') onRejected();
+    // 'cancelled' = o próprio B derrubou o pedido (possivelmente em outra aba);
+    // trata como rejeição pra sair da tela de espera.
+    else if (payload.status === 'rejected' || payload.status === 'cancelled') onRejected();
   });
 
   // Fallback poll: same 8s cadência do legacy PendingApprovalScreen.
@@ -1087,6 +1106,10 @@ function PendingApprovalWrapper({
       // o canon V20 já cobre esse cenário (linhas 158-181 do screen).
       requestId={null}
       expiresAt={null}
+      // P1 (re-scan): "Cancelar pedido" REAL — derruba o session_participant
+      // pending do caller no BE (antes era router.back() no-op → row órfã
+      // 'pending' pra sempre, sem TTL no System A).
+      onCancel={onCancel}
     />
   );
 }

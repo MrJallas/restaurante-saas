@@ -191,6 +191,105 @@ export class LateArrivalService {
     return !!hostId && hostId === callerCustomerId;
   }
 
+  /**
+   * P1 (re-scan): valida se `callerCustomerId` é o PRÓPRIO solicitante do
+   * `requestId` (o `customer_id` da row). Usado pelo controller do
+   * `/cancel` — só quem pediu pra entrar pode cancelar o próprio pedido
+   * (o host usa /reject, não isto). Retorna false se o request não existe
+   * ou o customer não bate.
+   */
+  async isCallerRequesterOfRequest(requestId: string, callerCustomerId: string): Promise<boolean> {
+    const rows = (await this.tenantConn.query(
+      `SELECT customer_id FROM late_arrival_requests WHERE id = $1`,
+      [requestId],
+    )) as { customer_id: string | null }[];
+    if (!rows.length) return false;
+    return !!rows[0].customer_id && rows[0].customer_id === callerCustomerId;
+  }
+
+  /**
+   * P1 (re-scan mega-loop): cancelamento REAL do pedido de join pelo PRÓPRIO
+   * solicitante (Customer B). Antes o único escape do FE era um router.back()
+   * no-op — o request seguia 'pending' até o TTL e escalava pro gerente como
+   * timeout fantasma. Aqui:
+   *   - flip 'pending' → 'cancelled' + decided_at (mesma tx do close da chain);
+   *   - fecha a escalation_chain vinculada (completed_at) pra não escalar zumbi
+   *     — mesma semântica idempotente do respond()/mig 066;
+   *   - emite late_arrival.expired no room da session, então o card ainda-aberto
+   *     no device do host se dispensa sozinho (o ScreenCustomerHostApproveJoin
+   *     já escuta esse evento pra flipar autoExpired).
+   *
+   * A autorização (caller == requester) é do controller via
+   * isCallerRequesterOfRequest; aqui só barramos re-cancelar um request já
+   * decidido (não-pending) com 409, espelhando o guard do respond().
+   */
+  async cancel(id: string, byCustomerId: string, slug?: string) {
+    const existing = (await this.tenantConn.query(
+      `SELECT * FROM late_arrival_requests WHERE id = $1`,
+      [id],
+    )) as LateArrivalRow[];
+    if (!existing.length) {
+      throw new HttpException('Late-arrival request nao encontrado.', HttpStatus.NOT_FOUND);
+    }
+    if (existing[0].status !== 'pending') {
+      throw new HttpException(
+        `Pedido ja decidido (status=${existing[0].status}).`,
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    const updated = await this.tenantConn.transaction(async (tx) => {
+      const updatedRows = unwrapRows<LateArrivalRow>(
+        await tx.query(
+          `UPDATE late_arrival_requests
+             SET status = 'cancelled',
+                 approved_by_customer_id = COALESCE($2, approved_by_customer_id),
+                 decided_at = now(),
+                 updated_at = now()
+           WHERE id = $1
+             AND status = 'pending'
+           RETURNING *`,
+          [id, byCustomerId ?? null],
+        ),
+      );
+      if (!updatedRows.length) {
+        // Corrida: outra tx decidiu entre o SELECT e o UPDATE.
+        throw new HttpException('Pedido ja decidido.', HttpStatus.CONFLICT);
+      }
+
+      // Fecha a chain vinculada — idempotente (`completed_at IS NULL`).
+      const chainId = updatedRows[0].escalation_chain_id;
+      if (chainId) {
+        await tx.query(
+          `UPDATE escalation_chains
+              SET completed_at = now(),
+                  resolution_notes = COALESCE(resolution_notes, 'requester_cancelled'),
+                  updated_at = now()
+            WHERE id = $1
+              AND completed_at IS NULL`,
+          [chainId],
+        );
+      }
+      return updatedRows;
+    });
+
+    const result = this.mapRow(updated[0]);
+
+    // Dispensa o card do host (room da session) + limpa dashboards (tenant).
+    // Reusa late_arrival.expired: o request está morto e o host não deve mais
+    // poder aprovar. O requester navega pra fora no FE, então não depende do
+    // evento pra si.
+    if (slug && this.events && result.tableSessionId) {
+      this.events.emitLateArrivalExpired(slug, result.customerId, {
+        requestId: result.id,
+        tableSessionId: result.tableSessionId,
+        occurredAt: result.decidedAt ?? new Date().toISOString(),
+      });
+    }
+
+    return result;
+  }
+
   async approve(id: string, by: { staffId?: string; customerId?: string }, slug?: string) {
     return this.respond(id, 'approved', by, undefined, slug);
   }

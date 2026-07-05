@@ -198,6 +198,36 @@ export class LateArrivalController {
     return this.service.reject(id, { customerId: caller.customerId }, dto.reason, slug);
   }
 
+  /**
+   * P1 (re-scan mega-loop): cancelamento REAL do pedido de join pelo PRÓPRIO
+   * solicitante (Customer B). O FE ("Cancelar pedido" da waiting-approval) só
+   * fazia router.back() — o request seguia 'pending' e escalava pro gerente
+   * como timeout fantasma. Aqui B derruba o próprio pedido: valida que o caller
+   * (cookie recognition_token) é o requester da row (NÃO o host — host usa
+   * /reject), flipa 'cancelled', fecha a chain e dispensa o card do host.
+   */
+  @Post(':id/cancel')
+  @UseGuards(SessionGuard)
+  async cancel(@Param('slug') slug: string, @Param('id') id: string, @Req() req: Request) {
+    const token =
+      (req as Request & { cookies?: Record<string, string> }).cookies?.recognition_token ?? '';
+    const caller = await this.customers.resolveByRecognitionToken(token);
+    if (!caller) {
+      throw new HttpException(
+        'Identifique-se primeiro (POST /customer/identify).',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    const isRequester = await this.service.isCallerRequesterOfRequest(id, caller.customerId);
+    if (!isRequester) {
+      throw new HttpException(
+        'Apenas quem pediu pra entrar pode cancelar o pedido.',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    return this.service.cancel(id, caller.customerId, slug);
+  }
+
   @Get()
   @UseGuards(StaffOnlyGuard)
   async list(@Query() q: ListQueryDto) {

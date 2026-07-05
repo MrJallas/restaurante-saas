@@ -527,6 +527,53 @@ export class TableSessionService {
   }
 
   /**
+   * P1 (re-scan mega-loop): B cancela o PRÓPRIO pedido de join enquanto ainda
+   * pende (System A / host-approval). Antes o único escape do FE era um
+   * router.back() no-op — a row 'pending' + left_at IS NULL sobrevivia PRA
+   * SEMPRE (System A não tem TTL), deixando B travado em "Aguardando host" e
+   * poluindo a lista de pendentes do host.
+   *
+   * Soft-leave da própria row via CAS em status='pending' (idempotente — só
+   * cancela quem ainda pende; approved/rejected/já-saído casa 0 linhas). Marca
+   * status='rejected' + left_at pra a row sumir do roster (getParticipants
+   * filtra left_at IS NULL) e o índice `session_participants_active_unique`
+   * liberar B pra reentrar depois. Emite participant:decision(cancelled) pro
+   * room da session pra o host tirar B dos pendentes ao vivo.
+   *
+   * NÃO precisa de host: quem chama é o próprio B (customerId do cookie via
+   * controller). Retorna { cancelled } pro caller distinguir cancelou-de-fato
+   * de no-op (já decidido / sem row).
+   */
+  async cancelOwnPendingJoin(
+    tableSessionId: string,
+    callerCustomerId: string,
+  ): Promise<{ cancelled: boolean }> {
+    const rows = unwrapRows<{ customer_id: string }>(
+      await this.tenantConn.query(
+        `UPDATE session_participants
+            SET status = 'rejected',
+                left_at = now()
+          WHERE table_session_id = $1
+            AND customer_id = $2
+            AND status = 'pending'
+            AND left_at IS NULL
+        RETURNING customer_id`,
+        [tableSessionId, callerCustomerId],
+      ),
+    );
+
+    const cancelled = rows.length > 0;
+    if (cancelled && this.eventsGateway) {
+      this.eventsGateway.emitToSession(tableSessionId, 'participant:decision', {
+        customerId: callerCustomerId,
+        status: 'cancelled',
+        decidedAt: new Date().toISOString(),
+      });
+    }
+    return { cancelled };
+  }
+
+  /**
    * Serve the avatar strip (SM3, SP1) with one row per active participant.
    * Filters out anyone who has left the table. Order is insertion order so
    * colors are visually stable.

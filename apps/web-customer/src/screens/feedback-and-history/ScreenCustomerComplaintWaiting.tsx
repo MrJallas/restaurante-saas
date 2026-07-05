@@ -110,27 +110,35 @@ export function ScreenCustomerComplaintWaiting({
   }, [slug, complaintId]);
 
   // Live updates from the manager's actions.
-  useComplaintEvents(session.sessionId, (evt) => {
-    if (evt.event === 'complaint.responded') {
-      if (evt.payload.complaintId !== complaintId) return;
-      setComplaint((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: 'responded',
-              responseText: evt.payload.content,
-              responseAt: new Date().toISOString(),
-            }
-          : prev,
-      );
-    } else if (evt.event === 'complaint.resolved') {
-      if (evt.payload.complaintId !== complaintId) return;
-      setResolved(true);
-      setComplaint((prev) =>
-        prev ? { ...prev, status: 'closed', closedAt: evt.payload.resolvedAt } : prev,
-      );
-    }
-  });
+  // P1 (re-scan): passamos customerId pra entrar TAMBÉM no room `customer:<id>`
+  // — é pra lá que o BE fan-outa complaint.responded/resolved. Sem isso a tela
+  // não re-hidratava ao vivo depois de um reload (só o session room não recebe
+  // esses eventos).
+  useComplaintEvents(
+    session.sessionId,
+    (evt) => {
+      if (evt.event === 'complaint.responded') {
+        if (evt.payload.complaintId !== complaintId) return;
+        setComplaint((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: 'responded',
+                responseText: evt.payload.content,
+                responseAt: new Date().toISOString(),
+              }
+            : prev,
+        );
+      } else if (evt.event === 'complaint.resolved') {
+        if (evt.payload.complaintId !== complaintId) return;
+        setResolved(true);
+        setComplaint((prev) =>
+          prev ? { ...prev, status: 'closed', closedAt: evt.payload.resolvedAt } : prev,
+        );
+      }
+    },
+    session.customerId,
+  );
 
   const openOthers = async () => {
     setShowOthers(true);
