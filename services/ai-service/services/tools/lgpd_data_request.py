@@ -56,6 +56,7 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     protocol_number = None
     backend_dispatched = False
     backend_failed = False
+    backend_called = bool(ctx.api_client)
     if ctx.api_client:
         try:
             res = ctx.api_client("POST", f"/{ctx.tenant_id}/lgpd-requests", {
@@ -75,9 +76,11 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             # and fall through to an honest pending/error result below.
             backend_failed = True
 
-    if backend_failed:
-        # Backend was reachable-in-principle but errored: be honest. No
-        # affirmation of deletion, no client-minted "proof" protocol.
+    if backend_failed or (backend_called and not protocol_number):
+        # Backend errou (exceção) OU respondeu mas SEM protocolNumber (violação de
+        # contrato — 200 vazio). Nos dois casos NÃO afirmamos apagamento nem
+        # mintamos protocolo: só um backend que devolveu um protocolo confirma a
+        # erasure. (Só o handoff SEM api_client abaixo minta legitimamente.)
         return ToolResult(
             message=LGPD_ERASURE_PENDING,
             silent=True,
@@ -97,9 +100,10 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
 
     if not protocol_number:
-        # No api_client wired (pure in-process dispatch): apps/api completes
-        # the erasure out-of-band after dispatch, so a client-minted protocol
-        # is expected here. This path is NOT a backend failure.
+        # Só chega aqui com backend_called == False: SEM api_client (dispatch puro
+        # in-process) — o apps/api completa a erasure out-of-band após o dispatch,
+        # então o protocolo mintado aqui é o esperado. NÃO é falha de backend nem
+        # 200-sem-protocolo (esses já retornaram pending acima).
         protocol_number = _make_protocol()
 
     # Canonical text — DO NOT paraphrase. Tests assert byte-equality.

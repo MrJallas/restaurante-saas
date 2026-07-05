@@ -75,3 +75,46 @@ def test_backend_success_still_confirms():
     assert payload.get("status") == "fulfilled"
     assert payload.get("protocolNumber") == "LGPD-2026-07-05-ABCD"
     assert payload.get("backendDispatched") is True
+
+
+def test_backend_200_without_protocol_does_not_claim_erasure():
+    """Edge: backend responde 200 mas SEM protocolNumber (violação de contrato).
+    O tool não pode mintar protocolo e afirmar apagamento — é pending honesto,
+    igual à falha. Antes caía no `if not protocol_number` que assumia 'sem
+    api_client' e mintava."""
+
+    def ok_but_no_protocol(method, path, body=None):
+        return {}  # 200, mas o backend não devolveu protocolNumber
+
+    ctx = ToolContext(
+        tenant_id="restaurant_dev",
+        customer_id="cust-123",
+        api_client=ok_but_no_protocol,
+        raw_message="quero apagar meus dados",
+    )
+    res = lgpd_data_request.call({"type": "erasure"}, ctx)
+    status = (res.action_payload or {}).get("lgpdErasure", {}).get("status")
+    assert status != "fulfilled", (
+        "backend voltou 200 sem protocolo, mas o tool marcou fulfilled — mente sucesso"
+    )
+    assert res.message != LGPD_ERASURE_CONFIRMATION, (
+        "não pode afirmar apagamento quando o backend não confirmou (sem protocolo)"
+    )
+
+
+def test_no_api_client_still_mints_inprocess_handoff():
+    """Guarda: SEM api_client (handoff in-process — apps/api completa a erasure
+    out-of-band após o dispatch) o protocolo mintado + fulfilled é o esperado.
+    NÃO pode ser confundido com o 200-sem-protocolo acima."""
+
+    ctx = ToolContext(
+        tenant_id="restaurant_dev",
+        customer_id="cust-123",
+        api_client=None,  # sem cliente HTTP → dispatch in-process
+        raw_message="quero apagar meus dados",
+    )
+    res = lgpd_data_request.call({"type": "erasure"}, ctx)
+    assert res.message == LGPD_ERASURE_CONFIRMATION
+    payload = (res.action_payload or {}).get("lgpdErasure", {})
+    assert payload.get("status") == "fulfilled"
+    assert payload.get("backendDispatched") is False  # mintado, não veio do backend
