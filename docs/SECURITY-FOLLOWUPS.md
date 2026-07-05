@@ -39,12 +39,15 @@
 
 ## ⏳ RESTA
 
-### §A. CSP enforce (nonce-based) — etapa 2 do rollout
-O CSP está em report-only. Pra enforçar sem `unsafe-inline` (o que dá a proteção
-XSS real), o Next precisa de **nonces** por request (middleware/proxy que injeta o
-nonce no header + no `<script>`), OU aceitar `unsafe-inline` no enforce (proteção
-menor). Precisa observar os reports (adicionar um `report-uri`/endpoint de coleta)
-antes de promover, validando cada surface V20-locked.
+### §A. CSP enforce — FEITO (nonce-based); resta só a observação de prod
+CSP agora é ENFORCE com nonce per-request no `src/proxy.ts` dos 2 FE:
+`script-src 'self' 'nonce-X' 'strict-dynamic'` bloqueia `<script>` injetado sem o
+nonce. `style-src 'unsafe-inline'` mantido (React `style={{}}` + styled-jsx).
+Validado no preview (renderiza, zero violação de CSP). **Resta (observação, não
+código):** em prod o `'unsafe-eval'` é removido (dev mantém pro HMR) — se alguma
+lib usar eval em prod, o report surge; adicionar um `report-uri`/endpoint de
+coleta e observar antes do launch. Se algo quebrar, re-permitir `'unsafe-eval'`
+no prod é o fallback documentado.
 
 ### §B. ~~nav-id staff~~ — RESOLVIDO pela separação token↔id (ver "✅ FECHADO")
 Antes o `table_sessions.id` era o `x-session-token`, então expô-lo pro staff
