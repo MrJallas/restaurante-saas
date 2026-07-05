@@ -106,3 +106,27 @@ COMPARTILHADA, sem identidade per-staff — non-issue); partySize-persist do hos
 (decisão de produto, exige coluna nova).
 Estado: API 714/714, ai-service 387/387, tsc 0, boot 200, CSP+iframe+fontes ao vivo.
 LLM01 re-fechado por construção (hard-drop do LLM), não por gate heurístico.
+
+## Re-scan verificação final (2026-07-05, rodada 2) — 4 brutos → 0 exploráveis
+
+Scan multi-agente (8 dimensões, cada achado com 2 refutadores céticos). 4 brutos:
+1 refutado direto, 3 sobreviventes — mas TODOS com veredito DIVIDIDO (1 refutador
+real, 1 falso-positivo). Verificados manualmente à mão:
+- ❌ **FALSO-POSITIVO — "LLM injection via customer.name (P1)"**: o nome vem de
+  `SELECT name FROM customers WHERE id=$1` com o customerId do cookie autenticado
+  (`buildCustomerContext`), ou seja é SEMPRE o nome do próprio cliente. Não é
+  cross-customer — no máximo self-injection, que não escala (a própria `message`
+  do cliente já é texto livre). `/chat` do ai-service está atrás da X-AI-Service-Key,
+  cliente não POSTa `customer_context` forjado. Refutado.
+- 🔧 **DEFENSE-IN-DEPTH (não explorável) — name/last_items/menu_summary/categories
+  crus no system prompt**: inconsistência real (só o joinerName era tratado como
+  dado literal). Fechado com `_neutralize_prompt_meta` — neutralização NARROW (só
+  tokens de tool-call + meta-instruções, sem tocar a classe afirmativa que
+  corromperia cardápio) + colapso de newline nos campos curtos. Aplicado nos dois
+  ramos do prompt. Não era P1/P2 explorável: cardápio é admin-controlado e mutações
+  via LLM já são gated (join dropado, destrutiva exige confirmação humana). Testes
+  em `test_prompt_data_hygiene.py` (7, incl. não-corrupção de cardápio legítimo).
+Vetores confirmados SEGUROS pela refutação: authz/IDOR (host ownership validado
+server-side), sessão/token (HMAC), multi-tenant, frontend/CSP, pagamentos,
+request_table_merge (target_table_number é int computado por regex no backend).
+Estado: API 714/714, ai-service 396/396, tsc 0. Árvore limpa.
