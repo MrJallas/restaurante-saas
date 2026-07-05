@@ -78,8 +78,18 @@ Scan multi-agente (8 dimensões, cada achado verificado adversarialmente). 13
 brutos → 2 P1 CONFIRMADOS (ambos meus desta sessão) + 6 P2. Fechados:
 - P1 **LLM01 não fechou de verdade**: o sanitizer não cobria a classe AFIRMATIVA
   (sim/pode/liberar/deixa) que o prompt usa como gatilho de accept → nome de
-  joiner envenenado auto-admitia. Fix: denylist estendida + GATE na fala do host
-  (accept só se a MENSAGEM DO HOST afirma, não o nome atacante-controlado).
+  joiner envenenado auto-admitia. Fix INICIAL: denylist estendida + gate na fala
+  do host — mas gate por regex é heurístico e VAZA (host diz uma afirmação
+  qualquer + nome envenenado → passa). **Fechamento DEFINITIVO (por construção,
+  não por heurístico):** `_llm_may_decide_join` DROPA todo accept/reject_join_request
+  emitido pelo LLM quando há join pendente. A admissão legítima só vem de (a)
+  `_join_decision_tool` — match determinístico da fala LITERAL do host, que
+  curto-circuita ANTES do LLM — ou (b) o TAP humano no HostJoinRequestBanner/Modal.
+  Nenhum depende de interpretar texto adjacente ao nome atacante-controlado, então
+  não há corrida armamentista de sanitização a perder. O sanitizer vira
+  defense-in-depth. Testes: `_llm_may_decide_join('accept_join_request', pending)
+  is False`; outros tools e sem-pending → True. Regexes `_HOST_AFFIRM_RE`/
+  `_HOST_REJECT_RE` removidas.
 - P1 **CSP frame-ancestors 'none'** quebrava o iframe do cardápio (MenuOverlay) →
   'self'.
 - P2 CSP bloqueava Google Fonts do tenant → hosts no style/font-src.
@@ -89,4 +99,5 @@ brutos → 2 P1 CONFIRMADOS (ambos meus desta sessão) + 6 P2. Fechados:
 Não-acionados: must_change_pin no StaffOrSessionGuard (path da x-staff-key
 COMPARTILHADA, sem identidade per-staff — non-issue); partySize-persist do host
 (decisão de produto, exige coluna nova).
-Estado: API 714/714, ai-service 386/386, tsc 0, boot 200, CSP+iframe+fontes ao vivo.
+Estado: API 714/714, ai-service 387/387, tsc 0, boot 200, CSP+iframe+fontes ao vivo.
+LLM01 re-fechado por construção (hard-drop do LLM), não por gate heurístico.
