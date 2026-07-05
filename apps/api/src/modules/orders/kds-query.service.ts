@@ -97,6 +97,17 @@ export class KdsQueryService {
         AND o.created_at > now() - interval '8 hours'
         AND o.created_at <= now()
         AND ${itemPredicate}
+        -- BUG P1 (pedido MISTO): status por ITEM (migration 071). Antes o card
+        -- carregava TODOS os itens da estação e o pedido saía do feed só pelo
+        -- orders.status — então o bar marcar a bebida ready (que virava o
+        -- order inteiro) sumia a comida da cozinha. Agora, ENQUANTO o pedido
+        -- não está totalmente pronto, a estação vê só os itens NÃO-prontos
+        -- DELA: cada estação avança seu próprio trabalho e o pedido some da
+        -- fila da estação quando os itens DELA acabam, mesmo que a outra
+        -- estação ainda esteja preparando. Quando o PEDIDO inteiro vira 'ready'
+        -- (todos os itens prontos), o card volta completo na coluna "Prontos"
+        -- pra chamar o garçom (preserva o fluxo de entrega/delivery).
+        AND (o.status = 'ready' OR oi.status <> 'ready')
         AND (
           o.status != 'ready'
           -- Pronto continua na TV até chamarem o garçom; entrega ativa

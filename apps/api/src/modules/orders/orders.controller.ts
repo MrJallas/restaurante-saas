@@ -169,6 +169,17 @@ class UpdateStatusDto {
   @IsOptional()
   @IsString()
   changedBy?: string;
+
+  /**
+   * BUG P1 (pedido MISTO comida+bebida): a TV da cozinha/bar manda `station`
+   * pra que o avanço de preparo (in_progress/ready) marque só os ITENS DAQUELA
+   * estação, não o pedido inteiro — senão o bar marcar a bebida "Pronto" sumia
+   * a comida da cozinha. Ausente = comportamento antigo (avança o PEDIDO), pra
+   * clientes/callers que não são estação de KDS.
+   */
+  @IsOptional()
+  @IsIn(['kitchen', 'bar'])
+  station?: 'kitchen' | 'bar';
 }
 
 @Controller(':slug/orders')
@@ -385,10 +396,32 @@ export class OrdersController {
     @Body() dto: UpdateStatusDto,
     @Req() req: SessionRequest & { actorType?: 'staff' | 'session' },
   ) {
-    return this.ordersService.updateStatus(orderId, dto.status, dto.changedBy || 'system', slug, {
-      actorType: req.actorType ?? 'staff',
+    const actor = {
+      actorType: req.actorType ?? ('staff' as const),
       sessionTableId: req.sessionData?.sessionId ?? null,
-    });
+    };
+
+    // BUG P1 (pedido MISTO): quando a TV de uma estação avança o PREPARO
+    // (in_progress/ready) mandando `station`, marca só os ITENS daquela
+    // estação e reconcilia o pedido — o bar marcar a bebida "Pronto" não
+    // some a comida da cozinha. Só cobre os passos de preparo; delivered/
+    // cancelled seguem sendo transições do PEDIDO (updateStatus).
+    if (
+      dto.station &&
+      actor.actorType === 'staff' &&
+      (dto.status === 'in_progress' || dto.status === 'ready')
+    ) {
+      return this.ordersService.advanceStationItems(
+        orderId,
+        dto.station,
+        dto.status,
+        dto.changedBy || 'system',
+        slug,
+        actor,
+      );
+    }
+
+    return this.ordersService.updateStatus(orderId, dto.status, dto.changedBy || 'system', slug, actor);
   }
 
   /**

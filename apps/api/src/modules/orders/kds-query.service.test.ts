@@ -78,6 +78,20 @@ describe('KdsQueryService — characterization (extraído do orders.service)', (
     expect(barSql.toLowerCase()).not.toContain('bebidas');
   });
 
+  it('BUG P1 (pedido MISTO): a estação vê só os itens NÃO-prontos DELA (status por item, migration 071)', async () => {
+    // Pedido food+drink compartilhava UM status: o bar marcar a bebida ready
+    // sumia a comida da cozinha. Agora o feed filtra por oi.status: enquanto o
+    // pedido não está totalmente pronto, exclui os itens ready DA ESTAÇÃO; a
+    // reconciliação do order (advanceStationItems) só vira 'ready' com todos
+    // os itens prontos, e aí o card volta completo pra "Prontos".
+    const { calls, conn } = fakeConn([]);
+    await new KdsQueryService(conn).getActiveOrdersForKds('kitchen');
+    const sql = calls[0].sql.replace(/\s+/g, ' ');
+    // Item pronto é escondido do feed da estação (a menos que o pedido inteiro
+    // já esteja 'ready', quando o card completo reaparece pra chamar o garçom).
+    expect(sql).toContain("(o.status = 'ready' OR oi.status <> 'ready')");
+  });
+
   it("P2 (drink size): getActiveOrdersForKds expõe 'size' por item pra cozinha/bar preparar o tamanho certo", async () => {
     const { calls, conn } = fakeConn([]);
     await new KdsQueryService(conn).getActiveOrdersForKds('bar');

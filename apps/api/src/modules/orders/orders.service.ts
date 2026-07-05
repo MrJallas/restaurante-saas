@@ -1568,6 +1568,117 @@ export class OrdersService {
     return this.customerBillQuery.getBill(tableSessionId, mode, visitId);
   }
 
+  /**
+   * BUG P1 (re-scan · pedido MISTO comida+bebida): avanço do KDS por ESTAÇÃO.
+   *
+   * Antes, a TV da cozinha e a do bar chamavam `updateStatus` no PEDIDO
+   * inteiro — então o bar marcar a bebida "Pronto" virava o `orders.status`
+   * pra 'ready' e a comida SUMIA da fila da cozinha sem ter sido preparada.
+   *
+   * Agora o avanço marca só os ITENS DA ESTAÇÃO (cozinha `mi.kind <> 'drink'`,
+   * bar `mi.kind = 'drink'` — o mesmo predicado autoritativo do
+   * KdsQueryService, migration 016). `order_items.status` (migration 071)
+   * rastreia o preparo por item. Depois de marcar os itens, o `orders.status`
+   * é RECONCILIADO a partir do agregado:
+   *   - TODOS os itens 'ready'      → order avança pra 'ready';
+   *   - algum item 'in_progress'    → order avança pra 'in_progress' (se ainda
+   *                                    estiver 'received'), pra a TV/timeline
+   *                                    refletir que já começou.
+   * A reconciliação REUSA `updateStatus` (mesma máquina de estados, CAS,
+   * history e eventos WS) — nenhuma transição do PEDIDO é inventada aqui.
+   *
+   * `targetItemStatus`: 'in_progress' (a partir de 'received') ou 'ready' (a
+   * partir de 'in_progress'). Idempotente: se nenhum item da estação está no
+   * status esperado, o UPDATE não toca nada e só reconciliamos o order.
+   */
+  async advanceStationItems(
+    orderId: string,
+    station: 'kitchen' | 'bar',
+    targetItemStatus: 'in_progress' | 'ready',
+    changedBy: string,
+    slug?: string,
+    actor?: { actorType: 'staff' | 'session'; sessionTableId: string | null },
+  ) {
+    // Customer não avança preparo — só staff/estação. Mantém a mesma barreira
+    // do updateStatus (session só pode 'cancelled').
+    if (actor?.actorType === 'session') {
+      throw new ForbiddenException('Só a estação (staff) pode avançar o preparo dos itens.');
+    }
+
+    const orderRows = (await this.tenantConn.query(
+      `SELECT id, status, table_session_id FROM orders WHERE id = $1`,
+      [orderId],
+    )) as { id: string; status: string; table_session_id: string }[];
+    if (!orderRows.length) {
+      throw new NotFoundException('Pedido nao encontrado.');
+    }
+
+    // Predicado de estação IDÊNTICO ao KdsQueryService: rota pelo FLAG
+    // `menu_items.kind`, NUNCA pelo nome da categoria.
+    const stationPredicate = station === 'bar' ? `mi.kind = 'drink'` : `mi.kind <> 'drink'`;
+    // Passo esperado: só avança um item que esteja no status anterior canônico
+    // (received → in_progress → ready), pra o botão da TV ser idempotente e não
+    // "pular" received quando o pedido acabou de chegar.
+    const expectedCurrent = targetItemStatus === 'in_progress' ? 'received' : 'in_progress';
+
+    await this.tenantConn.query(
+      `UPDATE order_items oi
+          SET status = $1
+         FROM menu_items mi
+        WHERE oi.order_id = $2
+          AND mi.id = oi.menu_item_id
+          AND ${stationPredicate}
+          AND oi.status = $3`,
+      [targetItemStatus, orderId, expectedCurrent],
+    );
+
+    // Agregado de reconciliação: TODOS os itens do PEDIDO (as duas estações).
+    const aggRows = (await this.tenantConn.query(
+      `SELECT
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE oi.status = 'ready')::int AS ready,
+         COUNT(*) FILTER (WHERE oi.status = 'in_progress')::int AS in_progress
+       FROM order_items oi
+      WHERE oi.order_id = $1`,
+      [orderId],
+    )) as Array<{ total: number; ready: number; in_progress: number }>;
+    const agg = aggRows[0] ?? { total: 0, ready: 0, in_progress: 0 };
+    const total = Number(agg.total);
+    const ready = Number(agg.ready);
+    const inProgress = Number(agg.in_progress);
+
+    const currentOrderStatus = orderRows[0].status;
+    // Order vira 'ready' SÓ com todos os itens prontos. Se ainda tem trabalho
+    // mas já começou (algum in_progress OU algum ready parcial), reflete
+    // 'in_progress' no pedido pra a timeline/TV (sem escondê-lo de nenhuma
+    // estação — o read-side per-estação é quem filtra os itens já prontos).
+    let reconciledTo: string | null = null;
+    if (total > 0 && ready === total) {
+      reconciledTo = 'ready';
+    } else if ((inProgress > 0 || ready > 0) && currentOrderStatus === 'received') {
+      reconciledTo = 'in_progress';
+    }
+
+    if (reconciledTo && reconciledTo !== currentOrderStatus) {
+      // Reusa a máquina de estados/CAS/history/WS. Best-effort: se a transição
+      // for inválida (pedido já cancelado/entregue por baixo), não derruba o
+      // avanço dos itens que já foi persistido.
+      await this.updateStatus(orderId, reconciledTo, changedBy, slug, actor).catch((err) => {
+        this.ordersLogger.warn(
+          `advanceStationItems: reconciliação ${currentOrderStatus}->${reconciledTo} falhou: ${(err as Error).message}`,
+        );
+      });
+    }
+
+    return {
+      orderId,
+      station,
+      targetItemStatus,
+      orderStatus: reconciledTo ?? currentOrderStatus,
+      allReady: total > 0 && ready === total,
+    };
+  }
+
   async updateStatus(
     orderId: string,
     newStatus: string,

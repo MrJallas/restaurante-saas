@@ -145,6 +145,12 @@ export function TvKdsBoard({
             body: JSON.stringify({
               status: action.status,
               changedBy: station,
+              // BUG P1 (pedido MISTO): manda a estação pra o backend marcar só
+              // os ITENS desta estação (cozinha/bar). Sem isso, o bar marcar a
+              // bebida "Pronto" virava o pedido inteiro e sumia a comida da
+              // cozinha. O order só vira 'ready' quando as duas estações
+              // terminam.
+              station,
             }),
           });
         }
