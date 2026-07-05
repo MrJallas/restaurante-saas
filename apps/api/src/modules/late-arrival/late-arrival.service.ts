@@ -62,13 +62,26 @@ export class LateArrivalService {
     // nobody ever created the chain, so a host who ignored a late-arrival
     // request never rolled up to the manager. Mirrors the scan-verification
     // create() pattern (kind='late_arrival', level 0 -> zone_host -> manager).
-    const requestId = await this.tenantConn.transaction(async (tx) => {
+    //
+    // P1 retry-safety (re-scan #8): o POST não era idempotente. O guard
+    // `submitting` do FE só bloqueia double-tap síncrono, mas o api() aborta em
+    // 15s e o catch libera o botão — se o servidor commitou mas a resposta
+    // atrasou, o cliente re-submete → N requests 'pending' + N escalation_chains
+    // pro MESMO joiner (host vê N prompts, cada chain escala sozinha = spam).
+    // Fix (mesma classe do order-retry / waiter-calls, mig 066): INSERT ...
+    // ON CONFLICT (table_session_id, customer_id) WHERE status='pending' DO
+    // NOTHING RETURNING. Se 0 linhas (conflito), o request 'pending' já existe →
+    // busca e RETORNA ele SEM criar 2ª chain. A chain só nasce quando o INSERT
+    // de fato inseriu (request NOVA), senão duplicaria a chain.
+    const { requestId, wasInserted } = await this.tenantConn.transaction(async (tx) => {
       const inserted = unwrapRows<LateArrivalRow>(
         await tx.query(
           `INSERT INTO late_arrival_requests
              (visit_id, table_session_id, customer_id, expected_arrival_at,
               status, ttl_expires_at, message)
            VALUES ($1, $2, $3, $4, 'pending', $5, $6)
+           ON CONFLICT (table_session_id, customer_id) WHERE status = 'pending'
+           DO NOTHING
            RETURNING *`,
           [
             input.visitId ?? null,
@@ -80,6 +93,33 @@ export class LateArrivalService {
           ],
         ),
       );
+
+      // Conflito: já existe um request 'pending' pro mesmo (session, customer).
+      // Retorna o existente e NÃO cria uma 2ª escalation_chain — o host já viu o
+      // prompt e a chain original segue escalando. O ON CONFLICT só dispara com
+      // table_session_id NOT NULL (o índice parcial ignora NULLs), então esse
+      // ramo é sempre alcançável pelo fluxo real de join.
+      if (!inserted.length) {
+        const existing = unwrapRows<LateArrivalRow>(
+          await tx.query(
+            `SELECT * FROM late_arrival_requests
+              WHERE table_session_id = $1
+                AND customer_id = $2
+                AND status = 'pending'
+              ORDER BY created_at DESC
+              LIMIT 1`,
+            [input.tableSessionId ?? null, input.customerId],
+          ),
+        );
+        // Defensivo: se a 'pending' evaporou entre o INSERT e o SELECT (decidida
+        // por outra tx), não temos como devolver a linha existente — deixa o
+        // INSERT tentar de novo no caller. Na prática o índice + a tx tornam isso
+        // improvável; retornamos o que houver.
+        if (existing.length) {
+          return { requestId: existing[0].id, wasInserted: false };
+        }
+      }
+
       const id = inserted[0].id;
 
       const chains = unwrapRows<{ id: string }>(
@@ -103,12 +143,15 @@ export class LateArrivalService {
           [id, chainId],
         );
       }
-      return id;
+      return { requestId: id, wasInserted: true };
     });
 
     const result = await this.getById(requestId);
 
-    if (slug && this.events && result.tableSessionId) {
+    // Só emite `late_arrival:created` quando a request é NOVA. Num retry
+    // (conflito) o host já recebeu o prompt na 1ª vez — re-emitir spammaria o
+    // mesmo card. Preserva o shape retornado (o `result` do request existente).
+    if (wasInserted && slug && this.events && result.tableSessionId) {
       this.events.emitLateArrivalCreated(slug, null, {
         requestId: result.id,
         tableSessionId: result.tableSessionId,
