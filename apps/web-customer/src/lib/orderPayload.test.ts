@@ -1,8 +1,12 @@
 import {
   buildOrderItemPayload,
+  clearCheckoutIdempotency,
   createCheckoutIdempotency,
+  draftFingerprint,
   idempotencyKeyForMode,
   mergePreferencesIntoNotes,
+  resolveCheckoutIdempotency,
+  type DraftFingerprintItem,
   type DraftItemForPayload,
 } from './orderPayload';
 
@@ -107,8 +111,8 @@ describe('idempotência do checkout (P1 re-scan #7: pedido duplicado / dupla cob
   });
 
   it('RETRY da mesma tentativa reusa a mesma chave por modo (backend dedupa)', () => {
-    // Mesma tentativa de checkout = mesmo bundle preservado no ref através do
-    // catch. Ler a chave de novo (retry) devolve exatamente o mesmo UUID.
+    // Mesma tentativa de checkout = mesmo bundle. Ler a chave de novo (retry)
+    // devolve exatamente o mesmo UUID.
     const bundle = createCheckoutIdempotency();
     expect(idempotencyKeyForMode(bundle, 'individual')).toBe(
       idempotencyKeyForMode(bundle, 'individual'),
@@ -132,5 +136,94 @@ describe('idempotência do checkout (P1 re-scan #7: pedido duplicado / dupla cob
     expect(idempotencyKeyForMode(bundle, 'individual')).not.toBe(
       idempotencyKeyForMode(bundle, 'table'),
     );
+  });
+});
+
+describe('draftFingerprint (hash estável do conteúdo do draft)', () => {
+  const a: DraftFingerprintItem = { menuItemId: 'mi-1', quantity: 2, commandMode: 'individual' };
+  const b: DraftFingerprintItem = { menuItemId: 'mi-2', quantity: 1, commandMode: 'table' };
+
+  it('o MESMO carrinho gera o MESMO hash (estável através de re-mounts)', () => {
+    expect(draftFingerprint([a, b])).toBe(draftFingerprint([a, b]));
+  });
+
+  it('a ORDEM dos itens não muda o hash (reordenar o mesmo carrinho não vira outro pedido)', () => {
+    expect(draftFingerprint([a, b])).toBe(draftFingerprint([b, a]));
+  });
+
+  it('mudar quantidade muda o hash (é outro pedido → idem-key nova)', () => {
+    expect(draftFingerprint([{ ...a, quantity: 3 }])).not.toBe(draftFingerprint([a]));
+  });
+
+  it('mudar nota / tamanho / preferência / modo muda o hash', () => {
+    expect(draftFingerprint([{ ...a, note: 'sem cebola' }])).not.toBe(draftFingerprint([a]));
+    expect(draftFingerprint([{ ...a, size: 'Grande' }])).not.toBe(draftFingerprint([a]));
+    expect(draftFingerprint([{ ...a, preferences: ['sem gelo'] }])).not.toBe(draftFingerprint([a]));
+    expect(draftFingerprint([{ ...a, commandMode: 'table' }])).not.toBe(draftFingerprint([a]));
+  });
+
+  it('a ordem das preferências dentro de um item não muda o hash', () => {
+    expect(draftFingerprint([{ ...a, preferences: ['sem gelo', 'sem açúcar'] }])).toBe(
+      draftFingerprint([{ ...a, preferences: ['sem açúcar', 'sem gelo'] }]),
+    );
+  });
+
+  it('adicionar um item muda o hash', () => {
+    expect(draftFingerprint([a])).not.toBe(draftFingerprint([a, b]));
+  });
+});
+
+describe('idempotência persistida por hash do draft (re-mount não re-cobra)', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+  });
+
+  const draftA: DraftFingerprintItem[] = [
+    { menuItemId: 'mi-1', quantity: 2, commandMode: 'individual' },
+  ];
+  const draftB: DraftFingerprintItem[] = [
+    { menuItemId: 'mi-9', quantity: 1, commandMode: 'table' },
+  ];
+
+  it('RE-MOUNT com o MESMO draft reusa a MESMA idem-key (backend dedupa em vez de 2ª comanda)', () => {
+    // Simula o furo real: cliente envia → vai pra /confirmando → SAI → o pedido
+    // auto-confirma → reabre /revisar (MONTAGEM NOVA, mas sessionStorage
+    // persiste) → toca "Enviar" de novo. As duas montagens resolvem a MESMA
+    // chave, então o POST do 2º envio dedupa e NÃO cria um 2º pedido.
+    const hash = draftFingerprint(draftA);
+    const firstMount = resolveCheckoutIdempotency(hash); // 1ª montagem
+    const secondMount = resolveCheckoutIdempotency(hash); // reabertura (re-mount)
+    expect(idempotencyKeyForMode(secondMount, 'individual')).toBe(
+      idempotencyKeyForMode(firstMount, 'individual'),
+    );
+    expect(idempotencyKeyForMode(secondMount, 'table')).toBe(
+      idempotencyKeyForMode(firstMount, 'table'),
+    );
+  });
+
+  it('as chaves persistidas são UUIDs canônicos (contrato @IsUUID)', () => {
+    const bundle = resolveCheckoutIdempotency(draftFingerprint(draftA));
+    expect(idempotencyKeyForMode(bundle, 'individual')).toMatch(UUID_RE);
+    expect(idempotencyKeyForMode(bundle, 'table')).toMatch(UUID_RE);
+  });
+
+  it('um draft DIFERENTE resolve chaves diferentes (pedido legítimo distinto não é dedupado)', () => {
+    const forA = resolveCheckoutIdempotency(draftFingerprint(draftA));
+    const forB = resolveCheckoutIdempotency(draftFingerprint(draftB));
+    expect(idempotencyKeyForMode(forB, 'individual')).not.toBe(
+      idempotencyKeyForMode(forA, 'individual'),
+    );
+    expect(idempotencyKeyForMode(forB, 'table')).not.toBe(idempotencyKeyForMode(forA, 'table'));
+  });
+
+  it('SUCESSO limpa o bundle: um pedido idêntico depois recebe chaves FRESCAS (não dedupa contra o que já foi pra cozinha)', () => {
+    const hash = draftFingerprint(draftA);
+    const before = resolveCheckoutIdempotency(hash);
+    clearCheckoutIdempotency(hash); // sucesso do envio
+    const after = resolveCheckoutIdempotency(hash); // cliente monta o mesmo pedido de novo
+    expect(idempotencyKeyForMode(after, 'individual')).not.toBe(
+      idempotencyKeyForMode(before, 'individual'),
+    );
+    expect(idempotencyKeyForMode(after, 'table')).not.toBe(idempotencyKeyForMode(before, 'table'));
   });
 });

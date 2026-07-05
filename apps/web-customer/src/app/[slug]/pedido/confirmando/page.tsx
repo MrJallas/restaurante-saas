@@ -86,6 +86,23 @@ export default function PedidoConfirmandoPage() {
     }
   }, [seconds, confirmNow]);
 
+  // Reforço (b) do fix de dupla cobrança (P1 re-scan #7): o pedido JÁ FOI
+  // enviado (os orders existem em pending_confirmation e auto-confirmam >15s).
+  // Se o cliente ABANDONA esta tela pelo browser (fecha aba / volta / troca de
+  // rota externa) sem tocar em "Editar"/"Confirmar", o draft sobreviveria no
+  // localStorage e, ao reabrir /revisar, viraria um carrinho reenviável. Aqui
+  // limpamos o draft nesse abandono via `pagehide` — que NÃO dispara nas
+  // navegações internas do Next (router.replace de "Editar"/"Confirmar" são
+  // soft-navigation), então o fluxo de "Editar" (que precisa do carrinho de
+  // volta em /revisar) continua intacto. A proteção principal contra a 2ª
+  // cobrança é a idem-key estável por hash do draft (fix (a) em orderPayload);
+  // isto é só defesa em profundidade.
+  useEffect(() => {
+    const onAbandon = () => clear();
+    window.addEventListener('pagehide', onAbandon);
+    return () => window.removeEventListener('pagehide', onAbandon);
+  }, [clear]);
+
   if (items.length === 0) {
     return (
       <AppShell

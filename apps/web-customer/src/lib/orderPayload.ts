@@ -32,26 +32,40 @@
  * Mas o customer nunca mandava a chave, então o backend setava idemKey=null e
  * PULAVA todo o dedup.
  *
- * O buraco real não é o double-tap síncrono (o `submitting` já cobre esse), é o
- * RETRY pós-erro: o POST cria o order server-side (tx commita) mas a resposta
- * dá timeout (>15s) / a rede cai → o api client aborta e lança, o handleSubmit
- * cai no catch, reseta `submitting=false` SEM limpar o draft, e o cliente toca
- * "Confirmar" de novo → 2º INSERT idêntico → 2 comandas na cozinha + cobrança
- * dobrada. A chave precisa SOBREVIVER ao catch+retry (mesma tentativa reusa a
- * MESMA chave → o backend dedup) mas ser NOVA quando o cliente monta um pedido
- * novo depois de um sucesso.
+ * Dois buracos reais (o `submitting` síncrono cobre só o double-tap na MESMA
+ * montagem):
+ *
+ *  1. RETRY pós-erro na MESMA tela: o POST cria o order server-side (tx
+ *     commita) mas a resposta dá timeout / a rede cai → o handleSubmit cai no
+ *     catch, reseta `submitting=false`, o cliente toca "Enviar" de novo → 2º
+ *     INSERT idêntico.
+ *
+ *  2. RE-MOUNT / REABERTURA (o furo que o useRef NÃO cobre): cliente envia o
+ *     pedido → vai pra /confirmando → SAI antes de tocar nada → o pedido
+ *     auto-confirma (>15s, sweepAutoConfirm) e cai na cozinha → cliente reabre
+ *     /revisar (o draft SOBREVIVE no localStorage `draft:<sessionId>`) → uma
+ *     MONTAGEM NOVA nasce com um useRef fresco → idem-key NOVA → toca "Enviar"
+ *     → 2º pedido idêntico. O useRef é POR MONTAGEM; a chave precisa
+ *     SOBREVIVER ao re-mount enquanto o DRAFT for o mesmo.
+ *
+ * ESTRATÉGIA: a idem-key é persistida em `sessionStorage`, chaveada por um HASH
+ * do conteúdo do draft (billingMode + itens). A MESMA tentativa de checkout (=
+ * mesmo draft) reusa a MESMA key através de re-mounts e retries; muda quando o
+ * draft muda (pedido legítimo diferente → key nova → não dedupa) e some no
+ * sucesso (a próxima montagem com aquele conteúdo geraria uma key nova, mas o
+ * draft também é limpo no sucesso — reforço (b)).
  *
  * Contrato do DTO (apps/api orders.controller.ts:123-125): o campo é
  * `idempotencyKey` e é validado com `@IsUUID()` — TEM que ser um UUID canônico.
- * Por isso NÃO dá pra usar uma string composta `${checkoutKey}:${billingMode}`:
- * o backend rejeitaria (400). O backend já namespaceia por `tableSessionId`,
- * então basta UMA chave UUID DISTINTA por grupo de billingMode, estável por
- * tentativa. No carrinho misto (um POST por billingMode), grupos diferentes
- * recebem UUIDs diferentes (não colidem no dedup) e o retry do MESMO grupo
- * reusa o mesmo UUID (dedupa).
+ * Por isso NÃO dá pra usar uma string composta `${hash}:${billingMode}`: o
+ * backend rejeitaria (400). O backend já namespaceia por `tableSessionId`,
+ * então basta UMA chave UUID DISTINTA por grupo de billingMode, estável pelo
+ * hash do draft. No carrinho misto (um POST por billingMode), grupos diferentes
+ * recebem UUIDs diferentes (não colidem no dedup) e o retry/re-mount do MESMO
+ * grupo reusa o mesmo UUID (dedupa).
  */
 export interface CheckoutIdempotency {
-  /** Um UUID canônico por billingMode. Estável por tentativa de checkout. */
+  /** Um UUID canônico por billingMode. Estável pelo hash do draft. */
   keyByMode: Record<'individual' | 'table', string>;
 }
 
@@ -68,10 +82,10 @@ function randomUuid(): string {
 }
 
 /**
- * Cria um bundle de idempotência NOVO para uma tentativa de checkout — uma
- * chave UUID por billingMode. Chame UMA vez por tentativa (memoizado num
- * useRef/state do checkout) e renove só em sucesso ou limpeza explícita do
- * draft. O retry pós-erro DEVE reusar o mesmo bundle pra o backend dedupar.
+ * Cria um bundle de idempotência NOVO — uma chave UUID por billingMode. Uso
+ * interno de `resolveCheckoutIdempotency` (e exposto pros testes de shape); no
+ * fluxo real prefira `resolveCheckoutIdempotency`, que persiste o bundle
+ * chaveado pelo hash do draft para sobreviver a re-mounts.
  */
 export function createCheckoutIdempotency(): CheckoutIdempotency {
   return { keyByMode: { individual: randomUuid(), table: randomUuid() } };
@@ -87,6 +101,140 @@ export function idempotencyKeyForMode(
   billingMode: 'individual' | 'table',
 ): string {
   return bundle.keyByMode[billingMode];
+}
+
+/**
+ * Campos de um item de draft que DEFINEM o pedido enviado — o que o backend
+ * insere. Mudança em qualquer um => é outro pedido => idem-key nova. `name`,
+ * `priceCents` e `draftId` NÃO entram: o preço vem do backend e o draftId é um
+ * id de UI volátil (muda a cada add), não faz parte do conteúdo enviado.
+ */
+export interface DraftFingerprintItem {
+  menuItemId: string;
+  quantity: number;
+  commandMode: 'individual' | 'table';
+  note?: string;
+  size?: string;
+  preferences?: string[];
+}
+
+/**
+ * Hash estável e determinístico do conteúdo do draft. Duas montagens com o
+ * MESMO carrinho produzem o MESMO hash (→ mesma idem-key persistida); qualquer
+ * mudança de conteúdo (item, quantidade, nota, preferência, tamanho, modo)
+ * muda o hash. A ordem dos itens é normalizada (sort) pra que reordenar o mesmo
+ * carrinho não vire um "pedido diferente".
+ *
+ * djb2 (32-bit) — não é criptográfico. Uma colisão aqui significaria reusar uma
+ * idem-key entre dois drafts DIFERENTES da mesma sessão (o backend dedupa só
+ * por key, não por conteúdo), mas o espaço 2^32 + o namespacing por sessão + a
+ * janela curta de TTL (5min) tornam isso praticamente impossível para um
+ * carrinho humano.
+ */
+export function draftFingerprint(items: DraftFingerprintItem[]): string {
+  const canonical = items
+    .map((it) => {
+      const prefs = (it.preferences ?? [])
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .sort()
+        .join(',');
+      return [
+        it.menuItemId,
+        String(it.quantity),
+        it.commandMode,
+        (it.note ?? '').trim(),
+        (it.size ?? '').trim(),
+        prefs,
+      ].join('|');
+    })
+    .sort()
+    .join('\n');
+
+  let hash = 5381;
+  for (let i = 0; i < canonical.length; i++) {
+    hash = (hash * 33) ^ canonical.charCodeAt(i);
+  }
+  // >>> 0 → unsigned; base36 mantém a chave curta.
+  return (hash >>> 0).toString(36);
+}
+
+const CHECKOUT_IDEM_STORAGE_PREFIX = 'checkout-idem:';
+
+function checkoutIdemStorageKey(draftHash: string): string {
+  return `${CHECKOUT_IDEM_STORAGE_PREFIX}${draftHash}`;
+}
+
+function safeSessionStorage(): Storage | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function isValidBundle(value: unknown): value is CheckoutIdempotency {
+  if (!value || typeof value !== 'object') return false;
+  const byMode = (value as { keyByMode?: unknown }).keyByMode;
+  if (!byMode || typeof byMode !== 'object') return false;
+  const { individual, table } = byMode as Record<string, unknown>;
+  return typeof individual === 'string' && typeof table === 'string';
+}
+
+/**
+ * Resolve o bundle de idempotência de UMA tentativa de checkout, persistido em
+ * `sessionStorage` chaveado pelo HASH do draft. É o ponto único que faz a
+ * idem-key SOBREVIVER a re-mounts (reabrir /revisar depois de sair da
+ * /confirmando) e a retries pós-erro:
+ *
+ *  - Mesmo draft (mesmo hash) → devolve o bundle já persistido (mesmas keys) →
+ *    o backend dedupa o 2º POST em vez de criar um 2º pedido.
+ *  - Draft diferente → hash diferente → não acha bundle → cria e persiste um
+ *    novo (pedido legítimo distinto não é dedupado contra o anterior).
+ *
+ * Sem sessionStorage (SSR / modo restrito) cai num bundle efêmero — degrada pro
+ * comportamento anterior (proteção só dentro da montagem), sem quebrar.
+ */
+export function resolveCheckoutIdempotency(draftHash: string): CheckoutIdempotency {
+  const storage = safeSessionStorage();
+  const key = checkoutIdemStorageKey(draftHash);
+  if (storage) {
+    try {
+      const raw = storage.getItem(key);
+      if (raw) {
+        const parsed: unknown = JSON.parse(raw);
+        if (isValidBundle(parsed)) return parsed;
+      }
+    } catch {
+      /* corrompido / indisponível → recria abaixo */
+    }
+  }
+  const bundle = createCheckoutIdempotency();
+  if (storage) {
+    try {
+      storage.setItem(key, JSON.stringify(bundle));
+    } catch {
+      /* quota / modo privado → segue com o bundle efêmero */
+    }
+  }
+  return bundle;
+}
+
+/**
+ * Descarta o bundle persistido de uma tentativa de checkout. Chamado no SUCESSO
+ * do envio: a próxima montagem com o mesmo conteúdo geraria uma key nova (e o
+ * draft também é limpo — reforço (b)), então um pedido legítimo idêntico depois
+ * NÃO é dedupado contra o que já foi pra cozinha.
+ */
+export function clearCheckoutIdempotency(draftHash: string): void {
+  const storage = safeSessionStorage();
+  if (!storage) return;
+  try {
+    storage.removeItem(checkoutIdemStorageKey(draftHash));
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Formato do item consumido pelo POST /orders. */
