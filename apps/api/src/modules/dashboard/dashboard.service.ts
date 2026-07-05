@@ -377,10 +377,14 @@ export class DashboardService {
   }
 
   private async loadRevenueChart(days: number) {
+    // Janela FECHADA em N datas terminando HOJE: days=1 = só hoje. O `- ($1 - 1)`
+    // (não `- $1`) corrige o off-by-one que devolvia N+1 datas — a soma da
+    // "Receita" com days=1 tinha que bater com o "Faturamento" só-hoje do
+    // overview (`created_at >= CURRENT_DATE`), e days=7 mostra 7 barras, não 8.
     const rows = (await this.tenantConn.query(
       `SELECT DATE(created_at) as date, COALESCE(SUM(total_cents), 0) as revenue, COUNT(*) as orders
        FROM orders
-       WHERE created_at >= CURRENT_DATE - $1::int AND status != 'cancelled'
+       WHERE created_at >= CURRENT_DATE - ($1 - 1)::int AND status != 'cancelled'
        GROUP BY DATE(created_at)
        ORDER BY date ASC`,
       [days],
