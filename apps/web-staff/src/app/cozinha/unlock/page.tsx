@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { toInternalPath } from '../../../lib/safe-internal-path';
 
 /**
  * Pagina de PIN pras TVs Cozinha+Bar. Form simples:
@@ -16,12 +17,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 function TvUnlockContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // Open-redirect guard: `next` vem do query param. Só aceita PATH interno
-  // (começa com '/' mas não '//' protocol-relative, sem esquema). Um
-  // `next=https://evil.com` ou `//evil.com` cairia no default, não redireciona
-  // pra fora após o PIN.
+  // Open-redirect guard POR CONSTRUÇÃO: `next` vem do query param. `toInternalPath`
+  // só devolve o destino se ele resolver na MESMA origin — `//evil.com`, o bypass
+  // por backslash `/\evil.com`, `http(s)://…` e `javascript:` caem no default e
+  // não redirecionam pra fora após o PIN. Não é denylist de padrões.
   const rawNext = searchParams.get('next') || '';
-  const next = /^\/(?!\/)/.test(rawNext) ? rawNext : '/cozinha/tv';
+  const next = toInternalPath(rawNext) ?? '/cozinha/tv';
 
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);

@@ -218,7 +218,10 @@ export default function CozinhaKDS() {
         transports: ['websocket'],
         reconnection: true,
         auth: {
-          staffKey: process.env.NEXT_PUBLIC_STAFF_API_KEY || undefined,
+          // P1-F: NÃO reintroduzir NEXT_PUBLIC_STAFF_API_KEY aqui. Qualquer
+          // NEXT_PUBLIC_* é inlinado no bundle do browser → a x-staff-key
+          // vazaria. Auth do cook é server-side (PIN da TV + sessão), sem key
+          // per-staff no cliente.
           staffId,
           tenantSlug: TENANT_SLUG,
           staffRole: 'cook',

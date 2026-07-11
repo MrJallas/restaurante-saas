@@ -6,6 +6,7 @@ import { CpfInput } from '../../components/welcome/CpfInput';
 import { PillButton } from '../../components/ui/PillButton';
 import { useSession } from '../../hooks/useSession';
 import { cleanCpf, validateCpf } from '../../lib/cpf';
+import { toInternalPath } from '../../lib/safe-internal-path';
 import { identifyCustomer, createLateArrivalRequest } from '../../lib/api/customer-host';
 import type { CustomerIdentifyResponse } from '@restaurant/shared-types';
 
@@ -217,7 +218,9 @@ export function ScreenCustomerIdentifyBeforeJoin({
       <div className="relative grid h-[100dvh] min-h-dvh w-full place-items-center px-[22px] py-8">
         <div className="w-full max-w-[420px]">
           <span className="block font-mono text-[10px] uppercase tracking-[1.5px] text-faint">
-            Acabou de escanear · alguém já está nesta mesa
+            {isLateArrival
+              ? 'Acabou de escanear · alguém já está nesta mesa'
+              : 'Só um instante · confirme quem é você'}
           </span>
 
           <h1 className="mt-[14px] text-[26px] font-bold leading-[1.15] tracking-[-0.024em] text-ink text-pretty">
@@ -225,13 +228,17 @@ export function ScreenCustomerIdentifyBeforeJoin({
           </h1>
 
           <p className="mt-[12px] max-w-[320px] text-[15px] font-medium leading-[1.5] tracking-[-0.005em] text-mute text-pretty">
-            {hostName ? (
-              <>
-                <b className="font-semibold text-ink">{hostName}</b> (host da mesa) vai ver seu nome
-                pra decidir se você pode entrar.
-              </>
+            {isLateArrival ? (
+              hostName ? (
+                <>
+                  <b className="font-semibold text-ink">{hostName}</b> (host da mesa) vai ver seu
+                  nome pra decidir se você pode entrar.
+                </>
+              ) : (
+                <>O host da mesa vai ver seu nome pra decidir se você pode entrar.</>
+              )
             ) : (
-              <>O host da mesa vai ver seu nome pra decidir se você pode entrar.</>
+              <>Confirme seu nome e CPF pra acessar seu perfil e histórico.</>
             )}
           </p>
 
@@ -259,7 +266,9 @@ export function ScreenCustomerIdentifyBeforeJoin({
           </div>
 
           <p className="mt-[14px] font-mono text-[10px] font-bold uppercase leading-[1.5] tracking-[0.8px] text-faint text-pretty">
-            Só pra mesa saber quem é · CPF nos ajuda a te reconhecer na próxima visita
+            {isLateArrival
+              ? 'Só pra mesa saber quem é · CPF nos ajuda a te reconhecer na próxima visita'
+              : 'Confirmação rápida · CPF nos ajuda a te reconhecer na próxima visita'}
           </p>
 
           {error && (
@@ -336,10 +345,13 @@ function resolveGateDestination(input: {
 }): string {
   const raw = (input.next ?? input.redirectTo ?? '').trim();
   if (!raw) return `/${input.slug}`;
-  // Path absoluto interno → usa como está. Bloqueia `//host` e `http(s)://`
-  // (open-redirect) caindo no fallback slug-relativo.
-  if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
-  // Segmento relativo → prefixa o slug, removendo barra inicial redundante.
+  // Path absoluto → só se resolver na MESMA origin. Fecha open-redirect POR
+  // CONSTRUÇÃO (via toInternalPath): `//host`, `/\host`, `\/host`, `http(s)://`
+  // — a classe inteira — caem no fallback slug home. Não é denylist de padrões.
+  if (raw.startsWith('/')) {
+    return toInternalPath(raw) ?? `/${input.slug}`;
+  }
+  // Segmento relativo → prefixa o slug (sempre same-origin por construção).
   return `/${input.slug}/${raw.replace(/^\/+/, '')}`;
 }
 
