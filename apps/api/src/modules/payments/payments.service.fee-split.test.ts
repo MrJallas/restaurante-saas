@@ -92,6 +92,7 @@ function fakePaymentsDb(opts: {
 function fakeRedis(): RedisService {
   return {
     setNX: async () => true,
+    compareAndDelete: async () => true,
     del: async () => 1,
     get: async () => null,
   } as unknown as RedisService;
@@ -119,9 +120,14 @@ describe('requestPayment — taxa de serviço server-side', () => {
     expect(res.amountCents).toBe(9_000);
   });
 
-  it('individual com visitId explícito também cobra com taxa', async () => {
-    const { service } = makeService({ individualSubtotal: 5_000 });
-    const res = await service.requestPayment(SESSION, VISIT, 'individual', 'pix', {});
+  it('individual ignora visitId do body, deriva a visita do caller e cobra com taxa', async () => {
+    const { service } = makeService({
+      individualSubtotal: 5_000,
+      visitForCustomer: { [CUSTOMER]: VISIT },
+    });
+    const res = await service.requestPayment(SESSION, VISIT, 'individual', 'pix', {
+      callerCustomerId: CUSTOMER,
+    });
     expect(res.amountCents).toBe(5_500);
   });
 });
@@ -228,8 +234,11 @@ describe('requestPayment — desconto de promoção (feature 2026-07-05)', () =>
       individualSubtotal: 5_000,
       serviceFeePct: '10.00',
       promotions: PROMO_20,
+      visitForCustomer: { [CUSTOMER]: VISIT },
     });
-    const res = await service.requestPayment(SESSION, VISIT, 'individual', 'pix', {});
+    const res = await service.requestPayment(SESSION, VISIT, 'individual', 'pix', {
+      callerCustomerId: CUSTOMER,
+    });
     // 5.000 − 20% (1.000) = 4.000; taxa 10% = 400; cobra 4.400.
     expect(res.discountCents).toBe(1_000);
     expect(res.amountCents).toBe(4_400);
@@ -283,5 +292,28 @@ describe('requestPayment — desconto de promoção (feature 2026-07-05)', () =>
     // Guard de soma: 5.280 + 3.520 = 8.800 = total descontado da mesa.
     const sum = split.allocations.reduce((s, x) => s + x.amountCents, 0);
     expect(sum).toBe(8_800);
+  });
+
+  it('computeSplit by_item reconcilia a taxa per-capita com o total canônico', async () => {
+    const { service } = makeService({
+      tableItems: [
+        { subtotal_cents: 7_890, customer_id: CUSTOMER },
+        { subtotal_cents: 1_890, customer_id: OTHER },
+        { subtotal_cents: 790, customer_id: null },
+      ],
+      participants: [CUSTOMER, OTHER],
+      serviceFeePct: '10.00',
+    });
+
+    const split = await service.computeSplit(SESSION, 'by_item', []);
+
+    expect(split.totalCents).toBe(11_627);
+    expect(split.allocations).toEqual([
+      { customerId: CUSTOMER, amountCents: 9_113 },
+      { customerId: OTHER, amountCents: 2_514 },
+    ]);
+    expect(split.allocations.reduce((sum, item) => sum + item.amountCents, 0)).toBe(
+      split.totalCents,
+    );
   });
 });

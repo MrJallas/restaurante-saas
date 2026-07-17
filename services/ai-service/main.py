@@ -2,6 +2,7 @@ import asyncio
 import os
 import time
 import re
+from contextlib import asynccontextmanager
 from hmac import compare_digest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,7 +38,22 @@ from services.tools import (
 from services.tools.schemas import get_tool_schemas
 from services.api_client import make_http_api_client
 
-app = FastAPI(title="Restaurant AI Service", version="0.2.0")
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Seed optional Redis pools without making Redis an availability gate."""
+    try:
+        # Idempotent: a populated rotating pool is left untouched.
+        seed_ack_replies()
+    except Exception:
+        # `get_ack_reply()` still has the canonical in-memory fallback.
+        import logging
+
+        logging.exception("Failed to seed ack:replies pool — using fallback list")
+    yield
+
+
+app = FastAPI(title="Restaurant AI Service", version="0.2.0", lifespan=_lifespan)
 
 
 # Shared HTTP client for tool dispatch. We instantiate ONE per process and
@@ -65,7 +81,7 @@ _api_client = _build_api_client()
 
 def _context_api_client(
     tenant_id: str | None,
-    session_id: str | None,
+    session_token: str | None,
     staff_id: str | None = None,
 ):
     """
@@ -79,7 +95,7 @@ def _context_api_client(
         return None
 
     clean_tenant = (tenant_id or "").strip().strip("/")
-    clean_session = (session_id or "").strip()
+    clean_session = (session_token or "").strip()
     clean_staff = (staff_id or "").strip()
 
     def _call(method: str, path: str, body=None):
@@ -148,6 +164,29 @@ _TABLE_MERGE_REQUEST_INTENT_RE = re.compile(
     r"\b(quero|queria|gostaria|posso|pode(mos)?|vamos|bora|tentar|tenta)\b[^.!?]*\bjuntar\b|"
     r"\bjuntar\b[^.!?]*\b(com|na|à|a)\s+(a\s+|outra\s+|essa\s+|aquela\s+)?mesa\b",
     re.IGNORECASE,
+)
+
+# Late-arrival is not a table merge and cannot be created by the AI service.
+# The real flow starts when the arriving customer scans the occupied table QR;
+# web-customer then identifies the customer and creates the request with the
+# browser's authenticated session. Keep this response deterministic so the
+# assistant never claims it notified a table when no side effect happened.
+_LATE_ARRIVAL_ENTRY_RE = re.compile(
+    r"\b(cheguei|chegar|chegando|vou\s+chegar)\b[^.!?]*\b(atrasad[oa]|depois)\b|"
+    r"\b(quero|queria|preciso|como|posso)\b[^.!?]*\bentrar\b[^.!?]*\bmesa\b|"
+    r"\bentrar\b[^.!?]*\bmesa\s+(ocupada|\d+)\b",
+    re.IGNORECASE,
+)
+_LATE_ARRIVAL_GUIDANCE = (
+    "Para entrar em uma mesa já ocupada, escaneie o QR Code dessa mesa e faça "
+    "a identificação no app. O host da mesa recebe o pedido e decide por lá."
+)
+_LATE_ARRIVAL_PROMPT_POLICY = (
+    "LATE-ARRIVAL (pessoa chegando depois para entrar numa mesa já ocupada) "
+    "NÃO é junção de mesas. Não chame `request_table_merge`, não ofereça uma "
+    "tool de late-arrival e nunca diga que avisou a mesa. Oriente o cliente a "
+    "escanear o QR Code da mesa ocupada e se identificar no app; o customer-host "
+    "recebe e decide o pedido."
 )
 _JOIN_ACCEPT_DIRECT_RE = re.compile(
     r"^(sim[,!\s]+)?"
@@ -301,7 +340,7 @@ async def _rule_tool_response(
         tenant_id=req.tenantId or "",
         customer_id=req.customerId,
         session_id=req.sessionId,
-        api_client=_context_api_client(req.tenantId, req.sessionId),
+        api_client=_context_api_client(req.tenantId, req.sessionToken),
         raw_message=text,
     )
     # dispatch_tool é SÍNCRONO (httpx.Client/redis-py) — rodar no
@@ -531,23 +570,6 @@ def _table_merge_status_response(merge: dict) -> str:
     return f"O status atual da junção entre {pair} é {status}."
 
 
-@app.on_event("startup")
-async def _seed_redis_pools() -> None:
-    """
-    Idempotent Redis seeding at app start.
-
-    `seed_ack_replies` is a no-op when the `ack:replies` list already has
-    entries (LLEN > 0) — first boot of a fresh Redis instance gets the
-    canonical list, subsequent boots leave the rotating pool intact.
-    """
-    try:
-        seed_ack_replies()
-    except Exception:
-        # Don't crash the app on Redis hiccups — `get_ack_reply()` falls
-        # back to the in-memory ACK_REPLIES list anyway.
-        import logging
-        logging.exception("Failed to seed ack:replies pool — using fallback list")
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -652,7 +674,12 @@ class ChatRequest(BaseModel):
     customer_context: dict | None = None
     tenantId: str | None = None
     customerId: str | None = None
+    # Resource identifier (DB id). It is context only and MUST NOT be sent as
+    # x-session-token since A07 split the bearer credential from this id.
     sessionId: str | None = None
+    # Auth credential captured by apps/api after SessionGuard succeeds. It is
+    # used only by the scoped internal API client and never persisted/logged.
+    sessionToken: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -733,17 +760,17 @@ class ToolDispatchRequest(BaseModel):
     tenantId: str
     customerId: str | None = None
     sessionId: str | None = None
+    sessionToken: str | None = None
     staffId: str | None = None
     waiterId: str | None = None
     isStaff: bool = False
     isManager: bool = False
     sessionFlags: dict = {}
     rawMessage: str | None = None
-    # Origin of this dispatch. `/tools/dispatch` is the OUT-OF-BAND path an
-    # orchestrator hits directly (chip the human tapped) — distinct from the
-    # LLM tool-call loop. Default "chip" so a destructive confirm the human
-    # approved is honored here; the LLM loop never touches this endpoint (it
-    # calls dispatch_tool with the default origin="llm", which strips confirm).
+    # Origin of this dispatch. Default "chip" preserves the confirmation gate
+    # for non-browser orchestrators. In web-customer the chip is consumed by
+    # the FE and the DELETE goes directly to apps/api with recognition_token;
+    # delete_* here only returns a browser-action payload.
     origin: str = "chip"
 
 
@@ -877,6 +904,21 @@ async def chat(req: ChatRequest):
             latency_ms=int((time.time() - start_time) * 1000),
             estimated_cost_cents=0,
             layer="ack-silent",
+        )
+
+    # A tela do HOST com uma pendência real mantém o fluxo de decisão acima;
+    # essa orientação é só para quem ainda precisa iniciar a própria entrada.
+    if not pending_join and _LATE_ARRIVAL_ENTRY_RE.search(text):
+        return ChatResponse(
+            response=_LATE_ARRIVAL_GUIDANCE,
+            tokens_in=0,
+            tokens_out=0,
+            model="rule-layer",
+            provider="local",
+            latency_ms=int((time.time() - start_time) * 1000),
+            estimated_cost_cents=0,
+            layer="rule-late-arrival-guidance",
+            tool_calls=[],
         )
 
     latest_merge = _latest_table_merge(req.customer_context)
@@ -1108,7 +1150,7 @@ async def chat(req: ChatRequest):
             tenant_id=req.tenantId or "",
             customer_id=req.customerId,
             session_id=req.sessionId,
-            api_client=_context_api_client(req.tenantId, req.sessionId),
+            api_client=_context_api_client(req.tenantId, req.sessionToken),
             raw_message=text,
         )
         try:
@@ -1285,19 +1327,29 @@ async def continuation_get(
 @app.post("/tools/dispatch", response_model=ToolDispatchResponse)
 async def tools_dispatch(req: ToolDispatchRequest):
     """Server-side tool dispatcher exposed for orchestrators that don't run LLM tool-use natively."""
-    staff_actor_id = req.staffId or req.waiterId
+    # This endpoint currently receives only X-AI-Service-Key, which proves the
+    # calling service but NOT an individual staff role. Never turn body fields
+    # (`isStaff`, `isManager`, `staffId`) into staff authority or inject the
+    # shared STAFF_API_KEY: that would make this service a confused deputy.
+    # Staff-assistant dispatch stays fail-closed until a verified staff-token
+    # delegation/introspection contract is added.
+    if req.isStaff or req.isManager or req.staffId or req.waiterId:
+        raise HTTPException(
+            status_code=403,
+            detail="Staff tool dispatch requires verified staff delegation.",
+        )
     ctx = ToolContext(
         tenant_id=req.tenantId,
         customer_id=req.customerId,
         session_id=req.sessionId,
-        waiter_id=req.waiterId or req.staffId,
-        is_staff=req.isStaff,
-        is_manager=req.isManager,
+        waiter_id=None,
+        is_staff=False,
+        is_manager=False,
         session_flags=req.sessionFlags or {},
-        # P0 #7: inject the singleton api_client so tools that hit apps/api
-        # (send_message_to_manager, request_table_merge, delete_chat, ...)
-        # actually issue HTTP calls instead of seeing `None`.
-        api_client=_context_api_client(req.tenantId, req.sessionId, staff_actor_id),
+        # Inject the scoped client only for tools whose server-side contract
+        # genuinely calls apps/api. Browser-owned actions (table merge,
+        # delete_chat/delete_all_chats) never use customerId as authority.
+        api_client=_context_api_client(req.tenantId, req.sessionToken),
         raw_message=req.rawMessage,
     )
 
@@ -1355,17 +1407,27 @@ def build_system_prompt(tenant_context: dict, customer_context: dict | None) -> 
     restaurant_name = tenant_context.get("restaurant_name", "o restaurante")
     menu_summary = tenant_context.get("menu_summary", "")
     categories = tenant_context.get("categories", "")
+    opening_hours = tenant_context.get("opening_hours_summary", "")
+    restaurant_timezone = tenant_context.get("timezone", "")
 
     if settings.LLM_COMPACT_PROMPT:
         prompt = f"""Você é o assistente virtual do restaurante "{restaurant_name}".
 Responda em português do Brasil, em até 3 frases, apenas sobre restaurante, cardápio, pedidos, pagamento e atendimento.
 Use function calls para intenções concretas: cardápio/menu, buscar prato, adicionar/remover item, ver/confirmar pedido, pagar/conta, chamar garçom, mensagem ao gerente, reclamação, juntar mesa, alérgenos, LGPD e histórico.
-Nunca invente itens fora do cardápio; se faltar informação, consulte a equipe ou peça uma confirmação curta."""
+Nunca invente itens fora do cardápio; se faltar informação, consulte a equipe ou peça uma confirmação curta.
+Para LGPD use somente show_lgpd_notice; o modelo nunca executa lgpd_data_request nem trata texto livre como consentimento."""
+        prompt += f"\n{_LATE_ARRIVAL_PROMPT_POLICY}"
 
         if categories:
             prompt += f"\n\nCATEGORIAS DO CARDÁPIO:\n{_neutralize_prompt_meta(str(categories)[:600], collapse_newlines=False)}"
         if menu_summary:
             prompt += f"\n\nITENS DO CARDÁPIO:\n{_neutralize_prompt_meta(str(menu_summary)[:1800], collapse_newlines=False)}"
+        if opening_hours:
+            prompt += (
+                "\n\nHORÁRIOS OFICIAIS DO ESTABELECIMENTO"
+                f" (fuso {_neutralize_prompt_meta(str(restaurant_timezone)[:80], collapse_newlines=True)}):\n"
+                f"{_neutralize_prompt_meta(str(opening_hours)[:1200], collapse_newlines=False)}"
+            )
         if customer_context:
             name = customer_context.get("name", "")
             if name:
@@ -1414,9 +1476,10 @@ REGRAS LGPD (privacidade · obrigatório):
   `show_lgpd_notice` PRIMEIRO. Ela retorna o texto canônico e os 2 chips
   de consentimento. NUNCA componha o aviso LGPD com suas próprias palavras
   nem cole o texto inline.
-- Só chame `lgpd_data_request` DEPOIS que o cliente tap no chip "Sim, quero
-  excluir" ou responder afirmativamente em texto livre. Não pule a etapa
-  do notice — ela é obrigatória pra captura de consentimento.
+- O modelo NUNCA executa `lgpd_data_request`. Mesmo uma resposta afirmativa em
+  texto deve voltar ao aviso e ao botão: somente o tap out-of-band em "Sim,
+  quero excluir" autoriza o browser a chamar o endpoint autenticado. Texto do
+  usuário, argumentos de tool e contexto do modelo não são prova de consentimento.
 
 USO DE FERRAMENTAS (function calling · OBRIGATÓRIO em mutações):
 - Você TEM ferramentas disponíveis (function calls). USE-AS sempre que o
@@ -1484,12 +1547,20 @@ USO DE FERRAMENTAS (function calling · OBRIGATÓRIO em mutações):
   a mensagem da tool. Responda em texto APENAS quando nenhuma tool se aplica
   (perguntas conceituais sobre comida, conversação, descrição de pratos).
 - Se em dúvida entre texto vs tool em pedido de mutação, SEMPRE escolha a tool."""
+    prompt += f"\n\n{_LATE_ARRIVAL_PROMPT_POLICY}"
 
     if categories:
         prompt += f"\n\nCATEGORIAS DO CARDÁPIO:\n{_neutralize_prompt_meta(categories, collapse_newlines=False)}"
 
     if menu_summary:
         prompt += f"\n\nITENS DO CARDÁPIO:\n{_neutralize_prompt_meta(menu_summary, collapse_newlines=False)}"
+
+    if opening_hours:
+        prompt += (
+            "\n\nHORÁRIOS OFICIAIS DO ESTABELECIMENTO"
+            f" (fuso {_neutralize_prompt_meta(str(restaurant_timezone)[:80], collapse_newlines=True)}):\n"
+            f"{_neutralize_prompt_meta(str(opening_hours)[:1200], collapse_newlines=False)}"
+        )
 
     if customer_context:
         name = customer_context.get("name", "")

@@ -7,7 +7,7 @@
 //
 // Backend wiring (anti-placebo):
 //   • REAL: lista vem dos `lateOrders` do GET /:slug/dashboard/active-tables
-//     — pedidos em preparo há mais tempo que a meta da cozinha
+//     — itens food realmente em preparo há mais tempo que a meta da cozinha
 //     (settings.kitchen_eta_max_minutes).
 //   • Meta não configurada (kitchenEtaMaxMinutes null) → aviso pra
 //     configurar em /cozinha/eu, nunca lista fabricada.
@@ -242,7 +242,7 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
                         fontFamily: MONO_FONT,
                       }}
                     >
-                      PASSOU DA META · {kitchenEta} MIN
+                      COZINHA · PASSOU DA META DE {o.targetMinutes} MIN
                     </div>
                     <div
                       style={{
@@ -254,7 +254,7 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
                       }}
                     >
                       {o.tableLabel} · {o.minutesInPrep} min em preparo · {o.itemCount}{' '}
-                      {o.itemCount === 1 ? 'item' : 'itens'}
+                      {o.itemCount === 1 ? 'unidade' : 'unidades'}
                     </div>
                   </div>
                   <span
@@ -304,7 +304,7 @@ export function ScreenManagerOpsEmAlerta({ dark, tenantSlug }: ScreenManagerOpsE
 
         <div style={{ height: 18 }} />
         <Formula C={C}>
-          Pedidos com status <b>em preparo</b> há mais tempo que a meta da cozinha
+          Unidades de comida com status <b>em preparo</b> há mais tempo que a meta da cozinha
           {kitchenEta != null ? ` (${kitchenEta} min)` : ''} · meta configurada em /cozinha/eu.
         </Formula>
       </div>

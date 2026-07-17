@@ -6,13 +6,10 @@
 // (variant `sobrecarga`). Hero "N" sobrecarregados + lista expansível
 // das zonas de cada um + 3 ActionPills + Fórmula.
 //
-// Backend wiring (2026-07-04 — zone-assignments):
-//   • REAL: GET /:slug/staff/zone-assignments → por garçom atribuído
-//     HOJE, carga = soma das mesas ocupadas das zonas dele / total de
-//     mesas dessas zonas. Sobrecarregado = ocupação ≥ 80%.
-//   • Sem garçom atribuído a zonas → empty-state apontando pra tela
-//     Equipe (anti-placebo: nada de lista inventada; o mock "Caleb
-//     Souza + mesas fake" saiu junto com o selo DEMO).
+// Backend wiring (2026-07-11 — waiterWorkload):
+//   • REAL: GET /:slug/dashboard/team-kpis.waiterWorkload.
+//   • Cada sessão ativa já chega atribuída uma única vez entre candidatos por
+//     zona/turno/pausa; esta tela não volta a multiplicar ocupação por zona.
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -28,7 +25,8 @@ import {
   MContactStaffSheet,
   type ManagerStaffTarget,
 } from '../../components/manager';
-import { zoneAssignmentsApi } from '../../lib/api/manager';
+import { teamKpisApi } from '../../lib/api/manager';
+import { projectManagerWorkload, type ManagerWorkloadRow } from '../../lib/manager-waiter-workload';
 
 export interface ScreenManagerStaffSobrecargaProps {
   dark?: boolean;
@@ -36,23 +34,7 @@ export interface ScreenManagerStaffSobrecargaProps {
 }
 
 const ROLE_PALETTE = ['#4F6BFF', '#E37D2F', '#7A4FBE', '#1E8C5A', '#C43A3A', '#0B7A8B'];
-const OVERLOAD_RATIO = 0.8; // 80%+ das mesas das zonas dele ocupadas = sobrecarga
-
-interface ZoneLoad {
-  zoneName: string;
-  occupied: number;
-  total: number;
-}
-
-interface WaiterLoad {
-  id: string;
-  name: string;
-  color: string;
-  occupied: number;
-  total: number;
-  zones: ZoneLoad[];
-  over: boolean;
-}
+type WaiterLoad = ManagerWorkloadRow & { color: string };
 
 export function ScreenManagerStaffSobrecarga({
   dark,
@@ -66,6 +48,7 @@ export function ScreenManagerStaffSobrecarga({
   const equipeHref = backHref;
 
   const [assigned, setAssigned] = useState<WaiterLoad[] | null>(null);
+  const [unassignedSessions, setUnassignedSessions] = useState(0);
   const [loadError, setLoadError] = useState(false);
   const [contactTarget, setContactTarget] = useState<ManagerStaffTarget | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -73,40 +56,15 @@ export function ScreenManagerStaffSobrecarga({
 
   const load = useCallback(async () => {
     try {
-      const { zones } = await zoneAssignmentsApi(tenantSlug).list();
-      const byStaff = new Map<
-        string,
-        { name: string; occupied: number; total: number; zones: ZoneLoad[] }
-      >();
-      for (const z of zones) {
-        for (const w of z.waiters) {
-          const cur = byStaff.get(w.staffId) ?? {
-            name: w.name,
-            occupied: 0,
-            total: 0,
-            zones: [],
-          };
-          cur.occupied += z.occupiedTables;
-          cur.total += z.totalTables;
-          cur.zones.push({
-            zoneName: z.zoneName,
-            occupied: z.occupiedTables,
-            total: z.totalTables,
-          });
-          byStaff.set(w.staffId, cur);
-        }
-      }
+      const { waiterWorkload } = await teamKpisApi(tenantSlug).get();
+      const projection = projectManagerWorkload(waiterWorkload);
       setAssigned(
-        Array.from(byStaff.entries()).map(([id, w], i) => ({
-          id,
-          name: w.name,
-          color: ROLE_PALETTE[i % ROLE_PALETTE.length],
-          occupied: w.occupied,
-          total: w.total,
-          zones: w.zones,
-          over: w.total > 0 && w.occupied / w.total >= OVERLOAD_RATIO,
+        projection.rows.map((waiter) => ({
+          ...waiter,
+          color: ROLE_PALETTE[waiter.colorIndex % ROLE_PALETTE.length],
         })),
       );
+      setUnassignedSessions(projection.unassignedSessions);
       setLoadError(false);
       // Horário do fetch real — não relógio decorativo.
       setUpdatedAt(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
@@ -120,10 +78,11 @@ export function ScreenManagerStaffSobrecarga({
     void load();
   }, [load]);
 
-  const overloaded = (assigned ?? []).filter((w) => w.over);
+  const overloaded = (assigned ?? []).filter((waiter) => waiter.overloaded);
   const count = overloaded.length;
   const hasAssignments = (assigned ?? []).length > 0;
   const firstOverloaded = overloaded[0];
+  const heroCount = unassignedSessions > 0 ? unassignedSessions : count;
 
   return (
     <div
@@ -169,13 +128,13 @@ export function ScreenManagerStaffSobrecarga({
               fontSize: 36,
               fontWeight: 800,
               letterSpacing: -1,
-              color: count > 0 ? '#A12626' : C.ink,
+              color: count > 0 || unassignedSessions > 0 ? '#A12626' : C.ink,
               marginTop: 6,
               fontVariantNumeric: 'tabular-nums',
               lineHeight: 1.05,
             }}
           >
-            {hasAssignments ? count : '—'}
+            {hasAssignments || unassignedSessions > 0 ? heroCount : '—'}
           </div>
           <div
             style={{
@@ -192,20 +151,24 @@ export function ScreenManagerStaffSobrecarga({
               ? 'ERRO AO CARREGAR'
               : assigned === null
                 ? 'CARREGANDO'
-                : !hasAssignments
-                  ? 'SEM ATRIBUIÇÕES HOJE'
-                  : count > 0
-                    ? '↓ REALOCAR MESAS'
-                    : 'TUDO CERTO'}
+                : unassignedSessions > 0
+                  ? 'MESAS SEM GARÇOM ELEGÍVEL'
+                  : !hasAssignments
+                    ? 'SEM GARÇONS EM TURNO'
+                    : count > 0
+                      ? '↓ REDISTRIBUIR CARGA'
+                      : 'TUDO CERTO'}
           </div>
           <div
             style={{ fontSize: 14, color: C.mute, fontWeight: 500, marginTop: 10, lineHeight: 1.5 }}
           >
-            {hasAssignments && count > 0
-              ? `${count} ${count === 1 ? 'garçom' : 'garçons'} com 80% ou mais das mesas das zonas atribuídas ocupadas.`
-              : hasAssignments
-                ? 'Nenhum garçom com 80% ou mais das mesas das zonas atribuídas ocupadas.'
-                : 'Sobrecarga = garçom com 80% ou mais das mesas das zonas atribuídas a ele ocupadas agora.'}
+            {unassignedSessions > 0
+              ? `${unassignedSessions} ${unassignedSessions === 1 ? 'mesa ativa está' : 'mesas ativas estão'} sem garçom elegível. Revise turno, pausa e zonas.`
+              : hasAssignments && count > 0
+                ? `${count} ${count === 1 ? 'garçom está' : 'garçons estão'} com carga materialmente acima do restante da equipe.`
+                : hasAssignments
+                  ? 'Nenhum desequilíbrio material entre os garçons em turno.'
+                  : 'A carga aparece quando há garçons em turno e sessões ativas distribuídas pelo monitor.'}
           </div>
         </div>
 
@@ -226,7 +189,7 @@ export function ScreenManagerStaffSobrecarga({
                 gap: 10,
               }}
             >
-              <span style={{ flex: 1 }}>Não deu pra carregar as atribuições de zona.</span>
+              <span style={{ flex: 1 }}>Não deu pra carregar a carga da equipe.</span>
               <button
                 type="button"
                 onClick={() => void load()}
@@ -268,10 +231,10 @@ export function ScreenManagerStaffSobrecarga({
                   fontFamily: MONO_FONT,
                 }}
               >
-                Nenhum garçom atribuído a zonas hoje
+                Nenhum garçom em turno agora
               </div>
               <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 500, marginTop: 6 }}>
-                Atribua na tela Equipe (seção Zonas de hoje) pra monitorar sobrecarga real.
+                Revise os turnos e as zonas de hoje na tela Equipe para monitorar a carga real.
               </div>
               <button
                 type="button"
@@ -301,11 +264,11 @@ export function ScreenManagerStaffSobrecarga({
             <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               {overloaded.map((p) => (
                 <PersonRowExpandable
-                  key={p.id}
+                  key={p.staffId}
                   C={C}
                   person={p}
-                  open={openId === p.id}
-                  onToggle={() => setOpenId(openId === p.id ? null : p.id)}
+                  open={openId === p.staffId}
+                  onToggle={() => setOpenId(openId === p.staffId ? null : p.staffId)}
                 />
               ))}
             </div>
@@ -326,10 +289,10 @@ export function ScreenManagerStaffSobrecarga({
                 onClick={() => {
                   if (!firstOverloaded) return;
                   setContactTarget({
-                    staffId: firstOverloaded.id,
+                    staffId: firstOverloaded.staffId,
                     name: firstOverloaded.name,
                     color: firstOverloaded.color,
-                    contextHint: `${firstOverloaded.occupied}/${firstOverloaded.total} mesas ocupadas nas zonas dele`,
+                    contextHint: `${firstOverloaded.tables} mesas · carga ${firstOverloaded.loadScore}`,
                   });
                 }}
               >
@@ -365,8 +328,9 @@ export function ScreenManagerStaffSobrecarga({
 
         <div style={{ height: 18 }} />
         <Formula C={C}>
-          Garçom atribuído a zonas hoje (tela Equipe · Zonas de hoje) cuja soma de mesas ocupadas
-          agora nas zonas dele atinge <b>80% ou mais</b> do total de mesas dessas zonas.
+          Cada sessão ativa é atribuída <b>uma única vez</b> entre os garçons elegíveis por zona,
+          turno e pausa. A carga combina mesas, pessoas, pedidos, atrasos, chamados e entregas; o
+          alerta aponta somente um desequilíbrio material calculado pelo backend.
         </Formula>
       </div>
 
@@ -469,7 +433,7 @@ function PersonRowExpandable({
               marginTop: 2,
             }}
           >
-            {person.occupied}/{person.total} MESAS OCUPADAS · 80%+ DE OCUPAÇÃO
+            {person.tables} {person.tables === 1 ? 'MESA' : 'MESAS'} · CARGA {person.loadScore}
           </div>
         </div>
         <span
@@ -495,9 +459,9 @@ function PersonRowExpandable({
             gap: 6,
           }}
         >
-          {person.zones.map((z) => (
+          {person.zoneRows.map((zone) => (
             <span
-              key={z.zoneName}
+              key={zone.zoneName}
               style={{
                 padding: '5px 9px',
                 borderRadius: 7,
@@ -510,7 +474,8 @@ function PersonRowExpandable({
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
-              {z.zoneName} · {z.occupied}/{z.total}
+              {zone.zoneName} · {zone.tables} {zone.tables === 1 ? 'mesa' : 'mesas'} · {zone.people}{' '}
+              pessoas · {zone.activeOrders} pedidos
             </span>
           ))}
         </div>

@@ -12,6 +12,7 @@ import {
   Max,
   ArrayMaxSize,
   MaxLength,
+  IsUUID,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { SessionGuard, SessionData } from '../../common/guards/session.guard';
@@ -22,13 +23,14 @@ import { PaymentsService, SplitAllocation } from './payments.service';
 class SplitAllocationDto implements SplitAllocation {
   @IsString()
   @IsNotEmpty()
+  @IsUUID()
   customerId!: string;
 
   // 10 milhoes de centavos = R$ 100.000 — teto absurdo pra qualquer
   // mesa real. Sem isso o validador `Math.abs(sum - totalCents) > N`
   // podia ser falsificado por overflow de floating-point.
   @IsInt()
-  @Min(0)
+  @Min(1)
   @Max(10_000_000)
   amountCents!: number;
 
@@ -55,6 +57,7 @@ class RequestPaymentDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(50)
   @ValidateNested({ each: true })
   @Type(() => SplitAllocationDto)
   allocations?: SplitAllocationDto[];
@@ -129,13 +132,14 @@ export class PaymentsController {
 
   /**
    * Customer-initiated confirm. A04-PAY-01: rodando sob SessionGuard,
-   * QUALQUER cliente da mesa pode chamar isso — e NAO existe webhook de PSP
-   * no codigo. Por isso o service NAO marca como pago aqui: sem a flag de
+   * participantes compartilham apenas pagamentos da conta da MESA; pagamento
+   * individual/split exige o dono da visita via recognition token. Como NAO
+   * existe webhook de PSP no codigo, o service NAO marca como pago aqui: sem a flag de
    * mock (PAYMENTS_ALLOW_CLIENT_CONFIRM), o confirm apenas registra
    * 'awaiting_settlement' (aguardando compensacao) — nunca 'confirmed'/
    * paid_at. O status pago de verdade so deve vir de um webhook de PSP
    * autenticado ou de confirmacao manual de staff/manager. O service ainda
-   * valida (a) ownership por table_session_id e (b) expires_at < now.
+   * valida (a) mesa, (b) ownership da visita quando privada e (c) expiracao.
    */
   @Post(':paymentId/confirm')
   @UseGuards(SessionGuard)
@@ -143,8 +147,19 @@ export class PaymentsController {
     @Param('paymentId') paymentId: string,
     @Body() dto: ConfirmPaymentDto,
     @Session() session: SessionData,
+    @Req() req: Request,
   ) {
-    return this.paymentsService.confirmPayment(paymentId, session.sessionId, dto.pspTransactionId);
+    // A identidade vem da credencial httpOnly/header de reconhecimento, nunca
+    // do body. `null` e deliberadamente repassado: pagamentos individual/split
+    // exigem dono reconhecido; somente a conta compartilhada da mesa aceita um
+    // participante ainda anonimo.
+    const callerCustomerId = await this.callerResolver.tryGetCustomerId(req);
+    return this.paymentsService.confirmPayment(
+      paymentId,
+      session.sessionId,
+      dto.pspTransactionId,
+      callerCustomerId,
+    );
   }
 
   /**
@@ -152,8 +167,13 @@ export class PaymentsController {
    */
   @Patch(':paymentId/cancel')
   @UseGuards(SessionGuard)
-  async cancelPayment(@Param('paymentId') paymentId: string, @Session() session: SessionData) {
-    return this.paymentsService.cancelPayment(paymentId, session.sessionId);
+  async cancelPayment(
+    @Param('paymentId') paymentId: string,
+    @Session() session: SessionData,
+    @Req() req: Request,
+  ) {
+    const callerCustomerId = await this.callerResolver.tryGetCustomerId(req);
+    return this.paymentsService.cancelPayment(paymentId, session.sessionId, callerCustomerId);
   }
 
   /**
@@ -177,8 +197,18 @@ export class PaymentsController {
    */
   @Post('bill/split/notify')
   @UseGuards(SessionGuard)
-  async notifySplit(@Body() dto: NotifySplitDto, @Session() session: SessionData) {
-    return this.paymentsService.notifySplit(session.sessionId, dto.mode, dto.allocations);
+  async notifySplit(
+    @Body() dto: NotifySplitDto,
+    @Session() session: SessionData,
+    @Req() req: Request,
+  ) {
+    const callerCustomerId = await this.callerResolver.tryGetCustomerId(req);
+    return this.paymentsService.notifySplit(
+      session.sessionId,
+      dto.mode,
+      dto.allocations,
+      callerCustomerId,
+    );
   }
 
   @Get()

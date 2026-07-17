@@ -10,6 +10,8 @@ import { useRouter } from 'next/navigation';
 import { useG, G_FONT, MONO_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitives';
+import { OperationalErrorBanner } from '../../components/OperationalErrorBanner';
+import { canMutateWaiterCall, waiterCallTypeFromReason } from '../../lib/waiter-call-state';
 import {
   acknowledgeCall,
   resolveCall,
@@ -91,24 +93,28 @@ export function ScreenWaiterCallDetail({
   dark = false,
   callId,
   tenantSlug,
-  callType = 'chamou-garcom',
-  tableNumber = 18,
 }: ScreenWaiterCallDetailProps) {
   const C = useG(dark);
   const router = useRouter();
-  const copy = VISUAL_BY_TYPE[callType];
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [acked, setAcked] = useState(false);
   const [resolved, setResolved] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [detail, setDetail] = useState<WaiterCallStaffDetail | null>(null);
-  const [detailFailed, setDetailFailed] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailLoading, setDetailLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
   const showToast = (m: string) => {
     setToastMsg(m);
     setTimeout(() => setToastMsg(null), 2800);
   };
   useEffect(() => {
     let stop = false;
+    setDetailLoading(true);
+    setDetailError(null);
+    setDetail(null);
+    setAcked(false);
+    setResolved(false);
     getCallStaffDetail(tenantSlug, callId)
       .then((d) => {
         if (stop) return;
@@ -118,26 +124,35 @@ export function ScreenWaiterCallDetail({
         if (d.status === 'acknowledged' || d.status === 'resolved') setAcked(true);
         if (d.status === 'resolved') setResolved(true);
       })
-      .catch(() => {
-        // Anti-placebo: sem dado real a tela mostra "—", nunca um número
-        // inventado — e o garçom fica sabendo que não carregou.
+      .catch((error) => {
+        console.error('[waiter-call-detail] detail load failed', error);
         if (!stop) {
-          setDetailFailed(true);
-          setToastMsg('Não consegui carregar os dados do chamado.');
+          setDetailError('Não foi possível carregar os dados do chamado.');
         }
+      })
+      .finally(() => {
+        if (!stop) setDetailLoading(false);
       });
     return () => {
       stop = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantSlug, callId]);
+  }, [tenantSlug, callId, reloadKey]);
 
-  const isBill = callType === 'pediu-conta';
+  const visualType = detail ? waiterCallTypeFromReason(detail.reason) : null;
+  const copy = visualType
+    ? VISUAL_BY_TYPE[visualType]
+    : {
+        title: detailLoading ? 'Carregando chamado' : 'Chamado indisponível',
+        primary: 'A caminho',
+        tint: '#59636E',
+        priority: 'low' as const,
+      };
+  const isBill = visualType === 'pediu-conta';
   const bigText = detail
     ? isBill
       ? fmtCents(detail.bill.totalCents)
       : elapsedLabel(detail.createdAt)
-    : detailFailed
+    : detailError
       ? '—'
       : '…';
   const reasonLabel = detail ? (REASON_LABEL[detail.reason] ?? detail.reason) : null;
@@ -145,16 +160,26 @@ export function ScreenWaiterCallDetail({
     ? isBill
       ? `Cliente pediu a conta pelo cardápio digital. Total já inclui a taxa de serviço (${String(detail.bill.serviceFeePct).replace('.', ',')}%).`
       : `Motivo: ${reasonLabel}. Chamado aberto ${elapsedLabel(detail.createdAt)}.`
-    : detailFailed
-      ? 'Não consegui carregar os detalhes — confirme com a mesa.'
+    : detailError
+      ? 'Não consegui carregar os detalhes — tente novamente antes de atender.'
       : 'Carregando detalhes do chamado…';
-  const tableLine = detail ? detail.tableLabel : `Mesa ${tableNumber}`;
+  const tableLine = detail
+    ? detail.tableLabel
+    : detailLoading
+      ? 'Confirmando mesa…'
+      : 'Mesa não confirmada';
+  const mutationAllowed = canMutateWaiterCall({
+    hasDetail: detail !== null,
+    loadFailed: detailError !== null,
+    submitting,
+    resolved,
+  });
 
   // Estágio 1: "A caminho" (acknowledge). NÃO navega mais de volta na hora —
   // o garçom precisa poder concluir o chamado ('resolved') depois de atender,
   // senão o chamado morre em 'acknowledged' e a sheet do cliente trava (P1).
   const ack = async () => {
-    if (acked || submitting) return;
+    if (!detail || detailError || acked || submitting) return;
     setSubmitting(true);
     try {
       await acknowledgeCall(tenantSlug, callId);
@@ -171,7 +196,7 @@ export function ScreenWaiterCallDetail({
   // Estágio 2: "Atendido" (resolve). Move o chamado pra 'resolved' (terminal)
   // e o backend emite `waiter:resolved` — a sheet do cliente destrava.
   const resolve = async () => {
-    if (resolved || submitting) return;
+    if (!detail || detailError || resolved || submitting) return;
     setSubmitting(true);
     try {
       await resolveCall(tenantSlug, callId);
@@ -192,11 +217,15 @@ export function ScreenWaiterCallDetail({
     ? acked
       ? 'Concluindo…'
       : 'Registrando…'
-    : resolved
-      ? 'Concluído'
-      : acked
-        ? 'Atendido'
-        : copy.primary;
+    : detailLoading
+      ? 'Carregando…'
+      : detailError
+        ? 'Indisponível'
+        : resolved
+          ? 'Concluído'
+          : acked
+            ? 'Atendido'
+            : copy.primary;
   const onPrimary = acked ? resolve : ack;
 
   return (
@@ -215,6 +244,14 @@ export function ScreenWaiterCallDetail({
         left={<GIconBtn dark={dark} icon={Icon.back(20)} onClick={() => router.back()} />}
         title="Chamado"
       />
+
+      {detailError && (
+        <OperationalErrorBanner
+          dark={dark}
+          message={detailError}
+          onRetry={() => setReloadKey((value) => value + 1)}
+        />
+      )}
 
       <div style={{ flex: 1, overflow: 'auto' }}>
         {/* Hero */}
@@ -295,7 +332,7 @@ export function ScreenWaiterCallDetail({
         </div>
 
         {/* Lembrete (só pra pediu-conta) */}
-        {copy.reminder && (
+        {detail && copy.reminder && (
           <div
             style={{
               margin: '14px 16px 0',
@@ -422,13 +459,7 @@ export function ScreenWaiterCallDetail({
           Voltar
         </GButton>
         <div style={{ flex: 1 }}>
-          <GButton
-            kind="primary"
-            dark={dark}
-            full
-            onClick={onPrimary}
-            disabled={resolved || submitting}
-          >
+          <GButton kind="primary" dark={dark} full onClick={onPrimary} disabled={!mutationAllowed}>
             {primaryLabel}
           </GButton>
         </div>

@@ -54,13 +54,7 @@ const LEAN_ROW = {
 };
 
 /** Campos de staff que NUNCA podem vazar pro customer. */
-const STAFF_PII_FIELDS = [
-  'waiterName',
-  'startedByName',
-  'startedBy',
-  'endedBy',
-  'reason',
-] as const;
+const STAFF_PII_FIELDS = ['waiterName', 'startedByName', 'startedBy', 'endedBy', 'reason'] as const;
 
 describe('GET /:slug/zone-pauses · IDOR-READ (session vs staff projection)', () => {
   const list = jest.fn();

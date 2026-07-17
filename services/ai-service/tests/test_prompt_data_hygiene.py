@@ -98,7 +98,24 @@ def test_legit_customer_name_survives():
         assert f"CLIENTE: {n}" in prompt
 
 
-def test_legit_item_names_survive():
+def test_official_opening_hours_reach_the_model_prompt():
+    prompt = _build(tenant={
+        "restaurant_name": "Cantina",
+        "menu_summary": "",
+        "categories": "",
+        "timezone": "America/Sao_Paulo",
+        "opening_hours_summary": "Segunda: fechado; Sexta: 18:00–01:00",
+    })
+    assert "HORÁRIOS OFICIAIS DO ESTABELECIMENTO" in prompt
+    assert "Sexta: 18:00–01:00" in prompt
+    assert "America/Sao_Paulo" in prompt
+
+
+def test_legit_item_names_survive(monkeypatch):
+    # A lista de últimos itens pertence ao prompt completo. O valor de ambiente
+    # usado pelo container local não pode alterar a semântica deste teste
+    # unitário nem fazê-lo depender da ordem de coleta do pytest.
+    monkeypatch.setattr(main.settings, "LLM_COMPACT_PROMPT", False)
     customer = {
         "name": "Ana",
         "last_items": [{"name": "Pizza Margherita"}, {"name": "Suco de Laranja"}],

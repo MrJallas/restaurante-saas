@@ -2,6 +2,7 @@
 
 import { useParams } from 'next/navigation';
 import { ScreenCustomerChatThread } from '../../../../screens/feedback-and-history/ScreenCustomerChatThread';
+import { normalizeChatThreadIdParam } from '../../../../lib/chat-thread-id';
 
 /**
  * Route: `/{slug}/chat-history/{threadId}`
@@ -12,7 +13,7 @@ import { ScreenCustomerChatThread } from '../../../../screens/feedback-and-histo
 export default function ChatHistoryThreadPage() {
   const params = useParams();
   const slug = String(params.slug ?? '');
-  const threadId = String(params.threadId ?? '');
+  const threadId = normalizeChatThreadIdParam(params.threadId);
   if (!slug || !threadId) return null;
   return <ScreenCustomerChatThread slug={slug} threadId={threadId} />;
 }

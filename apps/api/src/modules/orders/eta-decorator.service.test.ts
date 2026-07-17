@@ -20,7 +20,7 @@ interface FakeConnOpts {
   // settings.kitchen_eta_* — undefined => coluna ausente/NULL (fallback default)
   etaBase?: { min: number | null; max: number | null };
   // ids na ordem canônica que o snapshot da fila devolve
-  snapshot?: string[];
+  snapshot?: Array<string | { id: string; station: 'kitchen' | 'bar'; workload?: number }>;
   // força o SELECT de kitchen_eta a lançar (tenant pré-056)
   throwOnEtaBase?: boolean;
   // força o snapshot da fila a lançar (degrada pra ETA sem fila)
@@ -37,7 +37,11 @@ function makeService(opts: FakeConnOpts = {}): EtaDecoratorService {
     }
     if (s.includes('FROM orders o') && s.includes('JOIN table_sessions ts')) {
       if (opts.throwOnSnapshot) throw new Error('snapshot da fila falhou');
-      return (opts.snapshot ?? []).map((id) => ({ id }));
+      return (opts.snapshot ?? []).map((entry) =>
+        typeof entry === 'string'
+          ? { id: entry, station: 'kitchen', workload: 1 }
+          : { workload: 1, ...entry },
+      );
     }
     throw new Error(`fake eta conn: SQL não roteado: ${s}`);
   };
@@ -78,6 +82,40 @@ describe('EtaDecoratorService — comportamento congelado', () => {
     const svc = makeService({ snapshot: ['o0', 'o1', 'o2', 'o3'] });
     const [row] = await svc.decorateWithEta([{ id: 'o3', status: 'received' }]);
     expect(row.queueAhead).toBe(3);
+    expect(row.etaMin).toBe(18);
+    expect(row.etaMax).toBe(30);
+  });
+
+  it('separa cozinha e bar: bebidas não aumentam ETA de um pedido de comida', async () => {
+    const svc = makeService({
+      snapshot: [
+        { id: 'drink-1', station: 'bar' },
+        { id: 'drink-2', station: 'bar' },
+        { id: 'food-1', station: 'kitchen' },
+        { id: 'target', station: 'kitchen' },
+      ],
+    });
+    const [row] = await svc.decorateWithEta([
+      { id: 'target', status: 'received', items: [{ kind: 'food', quantity: 1 }] },
+    ]);
+
+    expect(row.queueAhead).toBe(1);
+    expect(row.etaMin).toBe(14);
+    expect(row.etaMax).toBe(23);
+  });
+
+  it('usa quantidade como trabalho sem chamar cada item de pedido na UI', async () => {
+    const svc = makeService({
+      snapshot: [
+        { id: 'large-food', station: 'kitchen', workload: 4 },
+        { id: 'target', station: 'kitchen', workload: 1 },
+      ],
+    });
+    const [row] = await svc.decorateWithEta([
+      { id: 'target', status: 'received', items: [{ kind: 'food', quantity: 1 }] },
+    ]);
+
+    expect(row.queueAhead).toBe(1);
     expect(row.etaMin).toBe(18);
     expect(row.etaMax).toBe(30);
   });

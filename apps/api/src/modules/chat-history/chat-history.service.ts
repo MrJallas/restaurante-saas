@@ -44,6 +44,7 @@ interface MessageDoc {
   messageId: string;
   threadId: string;
   customerId: string;
+  tenantId: string;
   role: string;
   content: string;
   toolCalls?: unknown[];
@@ -55,6 +56,10 @@ interface MessageDoc {
 
 function dayKey(value: Date): string {
   return value.toISOString().slice(0, 10);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function isLegacyDayBucketThread(thread: ThreadDoc, tenantId: string, customerId: string): boolean {
@@ -166,7 +171,7 @@ export class ChatHistoryService {
       // Upsert thread — incrementa messageCount em 2 (user + assistant).
       const previewSource = ctx.userMessage.slice(0, 80);
       const upsertResult = await db.collection<ThreadDoc>(THREADS_COLLECTION).updateOne(
-        { threadId },
+        { threadId, tenantId: ctx.tenantId, customerId: ctx.customerId },
         {
           $setOnInsert: {
             threadId,
@@ -186,7 +191,7 @@ export class ChatHistoryService {
       // não fazer count em todo turno. Erros aqui são best-effort — log e
       // continua (não falhar o append por causa do cleanup).
       if (upsertResult.upsertedId) {
-        this.pruneOldestThreads(db, ctx.customerId).catch((err) => {
+        this.pruneOldestThreads(db, ctx.tenantId, ctx.customerId).catch((err) => {
           this.logger.warn(
             `FIFO 80 prune falhou pra customer ${ctx.customerId}: ${(err as Error).message}`,
           );
@@ -199,6 +204,7 @@ export class ChatHistoryService {
           messageId: randomUUID(),
           threadId,
           customerId: ctx.customerId,
+          tenantId: ctx.tenantId,
           role: 'user',
           content: ctx.userMessage,
           createdAt: now,
@@ -208,6 +214,7 @@ export class ChatHistoryService {
           messageId: randomUUID(),
           threadId,
           customerId: ctx.customerId,
+          tenantId: ctx.tenantId,
           role: 'assistant',
           content: ctx.assistantResponse,
           toolCalls: ctx.toolCalls ?? undefined,
@@ -232,21 +239,12 @@ export class ChatHistoryService {
       .collection<ThreadDoc>(THREADS_COLLECTION)
       .find({
         customerId,
+        tenantId,
         deletedByUser: { $ne: true },
       })
       .sort({ lastMessageAt: -1 })
       .limit(100)
       .toArray();
-
-    const legacyThreadIds = threads.filter((t) => t.tenantId !== tenantId).map((t) => t.threadId);
-    if (legacyThreadIds.length > 0) {
-      await db
-        .collection<ThreadDoc>(THREADS_COLLECTION)
-        .updateMany({ threadId: { $in: legacyThreadIds }, customerId }, { $set: { tenantId } });
-      this.logger.warn(
-        `Normalized ${legacyThreadIds.length} legacy chat thread tenantId(s) for customer ${customerId}`,
-      );
-    }
 
     const modernDays = new Set(
       threads
@@ -268,11 +266,17 @@ export class ChatHistoryService {
     }));
   }
 
-  async listMessages(threadId: string) {
+  async listMessages(threadId: string, customerId: string, tenantId: string) {
     const db = this.requireDb();
     const msgs = await db
       .collection<MessageDoc>(MESSAGES_COLLECTION)
-      .find({ threadId })
+      .find({
+        threadId,
+        customerId,
+        // MessageDoc legado não tinha tenantId; o threadId já foi validado
+        // contra um ThreadDoc `{tenantId, customerId}` antes desta leitura.
+        $or: [{ tenantId }, { tenantId: { $exists: false } }],
+      })
       .sort({ createdAt: 1 })
       .toArray();
     return msgs.map((m) => ({
@@ -293,29 +297,40 @@ export class ChatHistoryService {
    * Agora valida que `thread.customerId === customerId`. 404 sem vazar
    * existência (não distingue "thread não existe" de "thread não é sua").
    */
-  async listMessagesForCustomer(threadId: string, customerId: string) {
+  async listMessagesForCustomer(threadId: string, customerId: string, tenantId: string) {
     const db = this.requireDb();
-    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
-    if (!thread || thread.customerId !== customerId) {
+    const thread = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .findOne({ threadId, customerId, tenantId });
+    if (!thread) {
       throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
-    return this.listMessages(threadId);
+    return this.listMessages(threadId, customerId, tenantId);
   }
 
   /**
    * Single thread delete · cascades messages. Soft-marks the thread doc with
    * `deletedByUser=true` for audit trail and removes message docs.
    */
-  async deleteThread(threadId: string, customerId: string) {
+  async deleteThread(threadId: string, customerId: string, tenantId: string) {
     const db = this.requireDb();
-    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
-    if (!thread || thread.customerId !== customerId) {
+    const thread = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .findOne({ threadId, customerId, tenantId });
+    if (!thread) {
       throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
-    const messages = await db.collection<MessageDoc>(MESSAGES_COLLECTION).deleteMany({ threadId });
+    const messages = await db.collection<MessageDoc>(MESSAGES_COLLECTION).deleteMany({
+      threadId,
+      customerId,
+      $or: [{ tenantId }, { tenantId: { $exists: false } }],
+    });
     await db
       .collection<ThreadDoc>(THREADS_COLLECTION)
-      .updateOne({ threadId }, { $set: { deletedByUser: true, deletedAt: new Date() } });
+      .updateOne(
+        { threadId, customerId, tenantId },
+        { $set: { deletedByUser: true, deletedAt: new Date() } },
+      );
     return {
       deletedAt: new Date().toISOString(),
       messagesDeleted: messages.deletedCount ?? 0,
@@ -323,10 +338,14 @@ export class ChatHistoryService {
   }
 
   /**
-   * Bulk delete · alias used by LGPD erasure path. Removes all message docs
-   * for the customer and soft-marks every thread.
+   * Bulk delete usado pelo fluxo LGPD. Faz hard-delete e confirma por leitura
+   * residual antes de permitir que a request seja marcada fulfilled.
+   *
+   * Mensagens novas têm tenantId explícito. Para docs legados sem tenantId,
+   * aceitamos somente o prefixo determinístico `tenant:customer:` do threadId;
+   * isso apaga o legado correto sem alcançar outro tenant com o mesmo UUID.
    */
-  async deleteAllForCustomer(customerId: string) {
+  async deleteAllForCustomer(customerId: string, tenantId: string) {
     const db = this.mongo.tryDb();
     if (!db) {
       // Mongo offline — for the LGPD path we still want to record the request;
@@ -334,18 +353,34 @@ export class ChatHistoryService {
       this.logger.warn(
         `LGPD erasure for customer ${customerId} — Mongo offline, no chat data deleted`,
       );
-      return { deletedCount: 0, mongoAvailable: false };
+      return {
+        deletedCount: 0,
+        threadsDeleted: 0,
+        messagesRemaining: null,
+        threadsRemaining: null,
+        mongoAvailable: false,
+        confirmed: false,
+      };
     }
-    const messages = await db
-      .collection<MessageDoc>(MESSAGES_COLLECTION)
-      .deleteMany({ customerId });
-    const threadsRes = await db
-      .collection<ThreadDoc>(THREADS_COLLECTION)
-      .updateMany({ customerId }, { $set: { deletedByUser: true, deletedAt: new Date() } });
+    const legacyPrefix = new RegExp(`^${escapeRegExp(tenantId)}:${escapeRegExp(customerId)}:`);
+    const messageFilter = {
+      customerId,
+      $or: [{ tenantId }, { threadId: { $regex: legacyPrefix } }],
+    };
+    const threadFilter = { tenantId, customerId };
+    const messages = await db.collection<MessageDoc>(MESSAGES_COLLECTION).deleteMany(messageFilter);
+    const threadsRes = await db.collection<ThreadDoc>(THREADS_COLLECTION).deleteMany(threadFilter);
+    const [messagesRemaining, threadsRemaining] = await Promise.all([
+      db.collection<MessageDoc>(MESSAGES_COLLECTION).countDocuments(messageFilter),
+      db.collection<ThreadDoc>(THREADS_COLLECTION).countDocuments(threadFilter),
+    ]);
     return {
       deletedCount: messages.deletedCount ?? 0,
-      threadsMarked: threadsRes.modifiedCount ?? 0,
+      threadsDeleted: threadsRes.deletedCount ?? 0,
+      messagesRemaining,
+      threadsRemaining,
       mongoAvailable: true,
+      confirmed: messagesRemaining === 0 && threadsRemaining === 0,
     };
   }
 
@@ -362,8 +397,8 @@ export class ChatHistoryService {
    * Best-effort: erros aqui são caught pelo caller (appendTurn) e logados,
    * não interrompem a persistência do turno.
    */
-  private async pruneOldestThreads(db: Db, customerId: string): Promise<void> {
-    const filter = { customerId, deletedByUser: { $ne: true } };
+  private async pruneOldestThreads(db: Db, tenantId: string, customerId: string): Promise<void> {
+    const filter = { tenantId, customerId, deletedByUser: { $ne: true } };
     const count = await db.collection<ThreadDoc>(THREADS_COLLECTION).countDocuments(filter);
     if (count <= FIFO_MAX_THREADS_PER_CUSTOMER) return;
 
@@ -380,10 +415,14 @@ export class ChatHistoryService {
 
     // Cascade nas mensagens primeiro (se threads sair antes, perdemos o
     // link e mensagens ficam órfãs até o TTL de 30d expirar).
+    await db.collection<MessageDoc>(MESSAGES_COLLECTION).deleteMany({
+      tenantId,
+      customerId,
+      threadId: { $in: threadIds },
+    });
     await db
-      .collection<MessageDoc>(MESSAGES_COLLECTION)
-      .deleteMany({ threadId: { $in: threadIds } });
-    await db.collection<ThreadDoc>(THREADS_COLLECTION).deleteMany({ threadId: { $in: threadIds } });
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .deleteMany({ tenantId, customerId, threadId: { $in: threadIds } });
 
     this.logger.warn(
       `FIFO 80 · dropped ${threadIds.length} oldest thread(s) for customer ${customerId} (count=${count}, cap=${FIFO_MAX_THREADS_PER_CUSTOMER})`,

@@ -14,6 +14,7 @@ import type { EventsGateway } from '../websocket/events.gateway';
 
 const CALL = 'dddd4444-0000-4000-8000-000000000004';
 const SESSION = 'eeee5555-0000-4000-8000-000000000005';
+const STAFF = 'ffff5555-0000-4000-8000-000000000006';
 
 function fakeDb(opts: { call?: boolean; sessionSubtotal?: number; serviceFeePct?: string }) {
   const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
@@ -39,6 +40,7 @@ function fakeDb(opts: { call?: boolean; sessionSubtotal?: number; serviceFeePct?
           table_session_id: SESSION,
           table_label: 'Mesa 12',
           table_code: 'M12',
+          acknowledged_by: null,
         },
       ];
     }
@@ -63,7 +65,7 @@ function makeService(opts: Parameters<typeof fakeDb>[0]) {
 describe('WaiterCallsService.getCallStaffDetail — detalhe real pro garçom', () => {
   it('devolve mesa real + conta real da sessão com taxa (o valor da maquininha)', async () => {
     const service = makeService({ call: true, sessionSubtotal: 55_600 });
-    const detail = await service.getCallStaffDetail(CALL);
+    const detail = await service.getCallStaffDetail(CALL, STAFF);
     expect(detail.tableLabel).toBe('Mesa 12');
     expect(detail.reason).toBe('ask_bill');
     expect(detail.bill.subtotalCents).toBe(55_600);
@@ -73,6 +75,6 @@ describe('WaiterCallsService.getCallStaffDetail — detalhe real pro garçom', (
 
   it('chamado inexistente → 404', async () => {
     const service = makeService({ call: false });
-    await expect(service.getCallStaffDetail(CALL)).rejects.toThrow(NotFoundException);
+    await expect(service.getCallStaffDetail(CALL, STAFF)).rejects.toThrow(NotFoundException);
   });
 });

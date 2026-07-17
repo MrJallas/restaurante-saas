@@ -14,6 +14,7 @@ import type { Request } from 'express';
 import { IsString, MaxLength, MinLength } from 'class-validator';
 import { SessionGuard } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { Tenant } from '../../common/decorators/tenant.decorator';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { CustomersService } from '../customers/customers.service';
@@ -85,16 +86,24 @@ export class CustomerStaffMessagesController {
 
   @Get('threads/:threadId/messages')
   @UseGuards(SessionGuard)
-  async getMessages(@Param('threadId') threadId: string, @Req() req: Request) {
+  async getMessages(
+    @Param('threadId') threadId: string,
+    @Req() req: Request,
+    @Tenant() tenantId: string,
+  ) {
     const customerId = await this.resolveCallerCustomerId(req);
-    return this.service.getThreadMessages(threadId, customerId);
+    return this.service.getThreadMessages(threadId, customerId, tenantId);
   }
 
   @Post('threads/:threadId/read')
   @UseGuards(SessionGuard)
-  async markRead(@Param('threadId') threadId: string, @Req() req: Request) {
+  async markRead(
+    @Param('threadId') threadId: string,
+    @Req() req: Request,
+    @Tenant() tenantId: string,
+  ) {
     const customerId = await this.resolveCallerCustomerId(req);
-    return this.service.markRead(threadId, customerId);
+    return this.service.markRead(threadId, customerId, tenantId);
   }
 
   /**
@@ -118,7 +127,7 @@ export class CustomerStaffMessagesController {
 
     // Ownership lookup: the thread doc carries tableSessionId. Looking it
     // up here (instead of trusting the body) keeps the IDOR surface tight.
-    const messages = await this.service.getThreadMessages(threadId, customerId);
+    const messages = await this.service.getThreadMessages(threadId, customerId, tenantId);
     // `getThreadMessages` 404s if the thread doesn't belong to this
     // customer; if it succeeds the thread exists & is owned. We then need
     // the thread's tableSessionId — re-fetch via listThreads (cheap with
@@ -140,17 +149,21 @@ export class CustomerStaffMessagesController {
 
   @Delete('threads/:threadId')
   @UseGuards(SessionGuard)
-  async deleteThread(@Param('threadId') threadId: string, @Req() req: Request) {
+  async deleteThread(
+    @Param('threadId') threadId: string,
+    @Req() req: Request,
+    @Tenant() tenantId: string,
+  ) {
     const customerId = await this.resolveCallerCustomerId(req);
-    return this.service.deleteThread(threadId, customerId);
+    return this.service.deleteThread(threadId, customerId, tenantId);
   }
 
   /** Bulk delete — wipes every thread for this customer. */
   @Delete()
   @UseGuards(SessionGuard)
-  async deleteAll(@Req() req: Request) {
+  async deleteAll(@Req() req: Request, @Tenant() tenantId: string) {
     const customerId = await this.resolveCallerCustomerId(req);
-    return this.service.deleteAll(customerId);
+    return this.service.deleteAll(customerId, tenantId);
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -163,25 +176,25 @@ export class CustomerStaffMessagesController {
   // ───────────────────────────────────────────────────────────────────────
 
   @Get('staff/threads')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async listStaffThreads(@Tenant() tenantId: string) {
     return this.service.listInboundForTenant(tenantId);
   }
 
   @Get('staff/threads/:threadId/messages')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async getStaffThreadMessages(@Param('threadId') threadId: string, @Tenant() tenantId: string) {
     return this.service.getThreadMessagesForStaff(threadId, tenantId);
   }
 
   @Post('staff/threads/:threadId/read')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async markStaffRead(@Param('threadId') threadId: string, @Tenant() tenantId: string) {
     return this.service.markReadByStaff(threadId, tenantId);
   }
 
   @Post('staff/threads/:threadId/messages')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async staffReply(
     @Param('threadId') threadId: string,
     @Body() dto: CustomerSendMessageDto,

@@ -138,7 +138,7 @@ export function ScreenCustomerChatThread({ slug, threadId }: ScreenCustomerChatT
     if (!session.customerId) return;
     setDeleting(true);
     try {
-      await deleteThread(slug, threadId, session.customerId);
+      await deleteThread(slug, threadId);
       router.replace(`/${slug}/chat-history`);
     } catch (err) {
       const message =
@@ -350,6 +350,7 @@ function ChatHistoryMessage({ msg }: { msg: ChatMessageDto }) {
               key={`${tc.name}-${i}`}
               name={tc.name}
               category={categorizeToolName(tc.name)}
+              completed
             />
           ))}
         </div>

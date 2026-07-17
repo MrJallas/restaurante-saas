@@ -36,8 +36,6 @@ import {
   staffFetch,
   waitFor,
 } from '../helpers/physical-qr';
-import { QR_TEST_TABLES } from '../helpers/qr';
-
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(130_000);
 

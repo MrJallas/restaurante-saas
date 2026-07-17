@@ -1,5 +1,7 @@
 import {
   issueStaffSessionToken,
+  listStaffSessions,
+  revokeStaffSessionById,
   revokeStaffSessions,
   verifyStaffSessionToken,
 } from './staff-session-token';
@@ -49,6 +51,15 @@ class FakeRedis {
   }
   async smembers(key: string): Promise<string[]> {
     return [...(this.sets.get(key) ?? [])];
+  }
+  async srem(key: string, ...members: string[]): Promise<number> {
+    const set = this.sets.get(key);
+    if (!set) return 0;
+    let removed = 0;
+    for (const member of members) {
+      if (set.delete(member)) removed += 1;
+    }
+    return removed;
   }
   async expire(): Promise<void> {
     // TTL irrelevante pro teste em memória.
@@ -109,6 +120,70 @@ describe('staff-session-token — índice reverso + revogação', () => {
       slug: 'acme',
     });
     expect(revoked).toBe(0);
+  });
+
+  it('lista as sessões reais e identifica a sessão corrente sem expor token/hash', async () => {
+    const redis = new FakeRedis();
+    const current = await issueStaffSessionToken(asRedis(redis), {
+      ...STAFF,
+      ip: '10.0.0.10',
+      userAgent: 'iPhone Safari',
+    });
+    await issueStaffSessionToken(asRedis(redis), {
+      ...STAFF,
+      ip: '10.0.0.11',
+      userAgent: 'Mac Safari',
+    });
+
+    const sessions = await listStaffSessions(asRedis(redis), {
+      staffId: STAFF.staffId,
+      slug: STAFF.slug,
+      currentToken: current.token,
+    });
+
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0]).toMatchObject({
+      current: true,
+      ip: '10.0.0.10',
+      userAgent: 'iPhone Safari',
+    });
+    expect(sessions.every((session) => !session.id.includes('staff-session:v1:'))).toBe(true);
+    expect(sessions.every((session) => session.id !== current.token)).toBe(true);
+  });
+
+  it('revoga só a sessão selecionada e recusa encerrar a corrente por este endpoint', async () => {
+    const redis = new FakeRedis();
+    const current = await issueStaffSessionToken(asRedis(redis), STAFF);
+    const other = await issueStaffSessionToken(asRedis(redis), STAFF);
+    const before = await listStaffSessions(asRedis(redis), {
+      staffId: STAFF.staffId,
+      slug: STAFF.slug,
+      currentToken: current.token,
+    });
+    const currentView = before.find((session) => session.current)!;
+    const otherView = before.find((session) => !session.current)!;
+
+    await expect(
+      revokeStaffSessionById(asRedis(redis), {
+        staffId: STAFF.staffId,
+        slug: STAFF.slug,
+        sessionId: currentView.id,
+        currentToken: current.token,
+      }),
+    ).resolves.toBe('current');
+
+    await expect(
+      revokeStaffSessionById(asRedis(redis), {
+        staffId: STAFF.staffId,
+        slug: STAFF.slug,
+        sessionId: otherView.id,
+        currentToken: current.token,
+      }),
+    ).resolves.toBe('revoked');
+
+    expect(await verifyStaffSessionToken(asRedis(redis), current.token, STAFF.slug)).not.toBeNull();
+    expect(await verifyStaffSessionToken(asRedis(redis), other.token, STAFF.slug)).toBeNull();
+    expect(await redis.smembers(INDEX_KEY)).toHaveLength(1);
   });
 
   it('issue tolera redis legado sem suporte a sets (fake get/set/del-only)', async () => {

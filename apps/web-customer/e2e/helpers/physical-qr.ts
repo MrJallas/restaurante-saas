@@ -41,7 +41,14 @@ export interface ApiResponse<T = unknown> {
 
 export interface SessionInitResult {
   status: number;
-  body: { sessionId?: string; tableCode?: string; tableLabel?: string; message?: string };
+  body: {
+    sessionId?: string;
+    /** Segredo opaco de autenticação; nunca confundir com o UUID sessionId. */
+    token?: string;
+    tableCode?: string;
+    tableLabel?: string;
+    message?: string;
+  };
   setCookie: string | null;
 }
 
@@ -60,6 +67,7 @@ export interface StaffRow {
   id: string;
   name: string;
   role: string;
+  cpf: string;
 }
 
 export interface ScanRequestRow {
@@ -305,7 +313,7 @@ export async function initSession(
 
 export async function welcomeCustomer(input: {
   slug?: string;
-  sessionId: string;
+  sessionToken: string;
   name: string;
   cpf: string;
   location?: Record<string, unknown>;
@@ -314,7 +322,7 @@ export async function welcomeCustomer(input: {
 }): Promise<WelcomeResult> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
-    'x-session-token': input.sessionId,
+    'x-session-token': input.sessionToken,
     'x-forwarded-for': syntheticIp(input.ipSuffix ?? ++welcomeIpCounter),
   };
   if (input.recognitionCookie) {
@@ -360,8 +368,9 @@ export async function scanAndWelcome(input: {
   const session = await initSession(qr);
   expect(session.status).toBe(201);
   if (!session.body.sessionId) throw new Error('session/init did not return sessionId');
+  if (!session.body.token) throw new Error('session/init did not return opaque auth token');
   const welcome = await welcomeCustomer({
-    sessionId: session.body.sessionId,
+    sessionToken: session.body.token,
     name: input.name,
     cpf: input.cpf,
     location: input.location,
@@ -391,25 +400,62 @@ export function extractCookie(setCookie: string | null, name: string): string | 
 }
 
 export async function staffByRole(
-  role: 'manager' | 'waiter' | 'host' = 'manager',
+  role: 'owner' | 'manager' | 'host' | 'waiter' | 'cook' | 'bartender' | 'cashier' = 'manager',
+  slug = DEFAULT_SLUG,
 ): Promise<StaffRow> {
+  if (!/^[a-z0-9_]+$/i.test(slug)) throw new Error(`Invalid tenant schema: ${slug}`);
   const preferred = psqlJson<StaffRow>(
-    `SELECT id, name, role
-       FROM restaurant_dev.staff
-      WHERE is_active = true AND role = ${sqlLiteral(role)}
-      ORDER BY created_at ASC
+    `SELECT id, name, role, cpf
+       FROM ${slug}.staff
+      WHERE is_active = true
+        AND cpf IS NOT NULL
+        AND role = ${sqlLiteral(role)}
+      ORDER BY CASE WHEN cpf LIKE '9000000000%' THEN 0 ELSE 1 END, created_at ASC
       LIMIT 1`,
   )[0];
   if (preferred) return preferred;
   const fallback = psqlJson<StaffRow>(
-    `SELECT id, name, role
-       FROM restaurant_dev.staff
-      WHERE is_active = true
+    `SELECT id, name, role, cpf
+       FROM ${slug}.staff
+      WHERE is_active = true AND cpf IS NOT NULL
       ORDER BY CASE WHEN role = 'manager' THEN 0 WHEN role = 'waiter' THEN 1 ELSE 2 END, created_at ASC
       LIMIT 1`,
   )[0];
-  if (!fallback) throw new Error('No active staff found');
+  if (!fallback) throw new Error(`No active staff with login CPF found in ${slug}`);
   return fallback;
+}
+
+const staffSessionTokens = new Map<string, Promise<string>>();
+
+async function loginStaff(staff: StaffRow, slug: string): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}/${slug}/staff-auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ cpf: staff.cpf, pin: process.env.E2E_STAFF_PIN ?? '1234' }),
+  });
+  const body = (await response.json().catch(() => ({}))) as {
+    staffToken?: string;
+    message?: string;
+    message_user?: string;
+  };
+  if (!response.ok || !body.staffToken) {
+    throw new Error(
+      `Real staff login failed for ${slug}/${staff.role}: ${response.status} ${JSON.stringify(body)}`,
+    );
+  }
+  return body.staffToken;
+}
+
+async function staffSessionToken(staff: StaffRow, slug: string): Promise<string> {
+  const key = `${slug}:${staff.id}`;
+  const cached = staffSessionTokens.get(key);
+  if (cached) return cached;
+  const pending = loginStaff(staff, slug).catch((error) => {
+    staffSessionTokens.delete(key);
+    throw error;
+  });
+  staffSessionTokens.set(key, pending);
+  return pending;
 }
 
 export async function staffFetch<T>(
@@ -417,14 +463,14 @@ export async function staffFetch<T>(
   options: RequestInit & { staff?: StaffRow } = {},
 ): Promise<ApiResponse<T>> {
   const { staff: explicitStaff, headers: optionHeaders, ...requestOptions } = options;
-  const staff = explicitStaff ?? (await staffByRole('manager'));
+  const slug = path.split('/').filter(Boolean)[0] ?? DEFAULT_SLUG;
+  const staff = explicitStaff ?? (await staffByRole('manager', slug));
+  const token = await staffSessionToken(staff, slug);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...requestOptions,
     headers: {
       'content-type': 'application/json',
-      'x-staff-key': STAFF_API_KEY,
-      'x-staff-id': staff.id,
-      'x-staff-role': staff.role,
+      'x-staff-token': token,
       ...((optionHeaders as Record<string, string> | undefined) ?? {}),
     },
   });
@@ -682,15 +728,17 @@ export async function connectStaffSocket(input: {
 }): Promise<{ socket: Socket; seen: Array<{ event: string; payload: unknown }> }> {
   const seen: Array<{ event: string; payload: unknown }> = [];
   const wsUrl = process.env.E2E_WS_BASE_URL ?? 'http://localhost:3001';
+  const token = await staffSessionToken(input.staff, DEFAULT_SLUG);
   const socket = io(wsUrl, {
     path: '/socket.io/',
     transports: ['websocket'],
     reconnection: false,
+    extraHeaders: {
+      cookie: `staff_token=${token}`,
+      'x-tenant-slug': DEFAULT_SLUG,
+    },
     auth: {
-      staffKey: STAFF_API_KEY,
-      staffId: input.staff.id,
       tenantSlug: DEFAULT_SLUG,
-      staffRole: input.role,
       role: input.role,
     },
   });
@@ -774,6 +822,22 @@ export async function ensureOtherTenant(): Promise<void> {
       SET label = EXCLUDED.label,
           qr_hmac_secret = EXCLUDED.qr_hmac_secret,
           qr_public_token = EXCLUDED.qr_public_token,
+          is_active = true,
+          updated_at = now();
+
+    INSERT INTO ${OTHER_SLUG}.staff
+      (name, role, pin_hash, is_active, cpf)
+    VALUES (
+      'Gerente E2E Tenant B',
+      'manager',
+      '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4',
+      true,
+      '91000000001'
+    )
+    ON CONFLICT (cpf) DO UPDATE
+      SET name = EXCLUDED.name,
+          role = EXCLUDED.role,
+          pin_hash = EXCLUDED.pin_hash,
           is_active = true,
           updated_at = now();
   `);

@@ -50,7 +50,10 @@ interface ChatMessage {
 interface ChatContextMeta {
   tenantId?: string;
   customerId?: string | null;
+  /** Resource id used for context and persistence; never authenticates. */
   sessionId?: string;
+  /** A07 bearer credential forwarded only to the trusted AI tool bridge. */
+  sessionToken?: string;
 }
 
 @Injectable()
@@ -115,6 +118,7 @@ export class AiServiceClient {
         tenantId: meta.tenantId,
         customerId: meta.customerId,
         sessionId: meta.sessionId,
+        sessionToken: meta.sessionToken,
       }),
       signal: AbortSignal.timeout(this.timeout),
     });

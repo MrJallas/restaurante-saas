@@ -27,6 +27,7 @@ interface TopItem {
   price_cents: number;
   total_orders: number;
   category_name: string;
+  revenue_cents: number;
 }
 
 type PeriodKey = 'today' | '7d' | '30d';
@@ -68,7 +69,7 @@ function FinanceiroInner() {
     Promise.all([
       staffGet<OverviewData>(`/${slug}/dashboard/overview`),
       staffGet<RevenuePoint[]>(`/${slug}/dashboard/revenue?days=${periodCfg.days}`),
-      staffGet<{ items: TopItem[] }>(`/${slug}/dashboard/top-items?limit=5`),
+      staffGet<{ items: TopItem[] }>(`/${slug}/dashboard/top-items?limit=5&days=${periodCfg.days}`),
     ])
       .then(([overviewRes, revenueRes, topRes]) => {
         if (cancelled) return;

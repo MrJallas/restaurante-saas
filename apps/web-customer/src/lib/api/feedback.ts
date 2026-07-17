@@ -1,4 +1,5 @@
 import { apiPost, apiGet } from '../api';
+import { announceCustomerErasureFulfilled } from '../customer-erasure';
 import type {
   ComplaintCreateDto,
   ComplaintProblemType,
@@ -81,16 +82,16 @@ export interface ComplaintRecord {
  * `problemType` is optional here because the FE composer hasn't yet picked
  * a chip on first render.
  */
-export type ComplaintComposeDto = Omit<ComplaintCreateDto, 'problemType'> & {
+export type ComplaintComposeDto = Omit<ComplaintCreateDto, 'problemType' | 'description'> & {
   orderId?: string;
   orderRatingId?: string;
   customerId?: string;
   visitId?: string;
   rating?: number;
-  /** Maps to the BE field `text`; `description` is the canonical name in the spec DTO. */
+  /** Maps directly to the BE controller field `text`. */
   text: string;
   attachedImageUrl?: string;
-  /** FE-only field: chip type the user picked. Forwarded as a prefix in `text`. */
+  /** Structured chip type persisted by the complaint backend. */
   problemType?: ComplaintProblemType;
 };
 
@@ -99,7 +100,7 @@ export type ComplaintComposeDto = Omit<ComplaintCreateDto, 'problemType'> & {
  * `description`). The shared-type `ComplaintCreateDto` calls it `description`
  * but the controller validates `text` — we send what the BE expects.
  */
-interface ComplaintCreateBody {
+export interface ComplaintCreateBody {
   orderId?: string;
   orderRatingId?: string;
   customerId?: string;
@@ -107,23 +108,24 @@ interface ComplaintCreateBody {
   rating?: number;
   text: string;
   attachedImageUrl?: string;
+  problemType?: ComplaintProblemType;
 }
 
-export function createComplaint(slug: string, body: ComplaintComposeDto): Promise<ComplaintRecord> {
-  // Combine the chip label + free text into the persisted `text`. The chip
-  // type is informational (the manager sees it) — at the BE we don't have a
-  // dedicated `problemType` column today, so we prefix it on the text.
-  const prefixed = body.problemType ? `[${body.problemType}] ${body.text}` : body.text;
-  const payload: ComplaintCreateBody = {
+export function buildComplaintCreateBody(body: ComplaintComposeDto): ComplaintCreateBody {
+  return {
     orderId: body.orderId,
     orderRatingId: body.orderRatingId,
     customerId: body.customerId,
     visitId: body.visitId,
     rating: body.rating,
-    text: prefixed,
+    text: body.text,
     attachedImageUrl: body.attachedImageUrl,
+    problemType: body.problemType,
   };
-  return apiPost<ComplaintRecord>(`/${slug}/complaints`, payload);
+}
+
+export function createComplaint(slug: string, body: ComplaintComposeDto): Promise<ComplaintRecord> {
+  return apiPost<ComplaintRecord>(`/${slug}/complaints`, buildComplaintCreateBody(body));
 }
 
 /**
@@ -204,7 +206,7 @@ export interface LgpdCreateBody {
  * Triggers the LGPD erasure path. For `kind='erasure'` the BE deletes the
  * customer's NoSQL chat data synchronously and returns the protocol number.
  */
-export function createLgpdRequest(
+export async function createLgpdRequest(
   slug: string,
   body: LgpdCreateBody,
 ): Promise<LgpdRequestProtocolDto> {
@@ -228,5 +230,9 @@ export function createLgpdRequest(
     customerEmail: body.customerEmail,
     notes: (body.notes ?? '') + auditNote || undefined,
   };
-  return apiPost<LgpdRequestProtocolDto>(`/${slug}/lgpd-requests`, payload);
+  const result = await apiPost<LgpdRequestProtocolDto>(`/${slug}/lgpd-requests`, payload);
+  if (body.kind === 'erasure' && result.status === 'fulfilled') {
+    announceCustomerErasureFulfilled(slug);
+  }
+  return result;
 }

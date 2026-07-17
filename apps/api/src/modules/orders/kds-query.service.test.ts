@@ -90,6 +90,11 @@ describe('KdsQueryService — characterization (extraído do orders.service)', (
     // Item pronto é escondido do feed da estação (a menos que o pedido inteiro
     // já esteja 'ready', quando o card completo reaparece pra chamar o garçom).
     expect(sql).toContain("(o.status = 'ready' OR oi.status <> 'ready')");
+    // O status do card é LOCAL: outra estação pode ter colocado o order
+    // agregado em in_progress sem que estes itens tenham começado.
+    expect(sql).toContain("BOOL_OR(oi.status = 'in_progress')");
+    expect(sql).toContain('o.status AS order_status');
+    expect(sql).toContain("'status', oi.status");
   });
 
   it("P2 (drink size): getActiveOrdersForKds expõe 'size' por item pra cozinha/bar preparar o tamanho certo", async () => {
@@ -107,12 +112,12 @@ describe('KdsQueryService — characterization (extraído do orders.service)', (
     expect(calls[0].sql).toContain("'size', oi.size");
   });
 
-  it("BUG P2 (KDS legado): getKitchenQueue exclui bebidas pelo kind (bebida não aparece no painel do cozinheiro)", async () => {
+  it('BUG P2 (KDS legado): getKitchenQueue exclui bebidas pelo kind (bebida não aparece no painel do cozinheiro)', async () => {
     // O /cozinha (KDS legado) NÃO separava por estação: a query juntava
-    // `menu_items mi` mas nunca filtrava `mi.kind`, então uma bebida
+    // `menu_items mi` mas não filtrava `mi.kind`, então uma bebida
     // (kind='drink') caía na fila da cozinha. Isso é o 3º ponto que flipa o
-    // status de um pedido MISTO (food+drink), agravando o status compartilhado
-    // cozinha↔bar. Espelha o predicado do getActiveOrdersForKds('kitchen'):
+    // status de um pedido MISTO (food+drink). Agora leitura e escrita usam a
+    // cozinha explicitamente. Espelha o predicado do getActiveOrdersForKds:
     // cozinha = tudo que NÃO é bebida pelo flag autoritativo (migration 016).
     const { calls, conn } = fakeConn([]);
     await new KdsQueryService(conn).getKitchenQueue();
@@ -120,6 +125,10 @@ describe('KdsQueryService — characterization (extraído do orders.service)', (
     expect(sql).toContain("mi.kind <> 'drink'");
     // Roteamento pelo FLAG, nunca pelo nome da categoria.
     expect(sql.toLowerCase()).not.toContain("'bebidas'");
+    // Também usa o status local e some quando os itens da cozinha terminam;
+    // o status agregado de um bar ativo não pode adiantar o botão da cozinha.
+    expect(sql).toContain("BOOL_OR(oi.status = 'in_progress')");
+    expect(sql).toContain("(o.status = 'ready' OR oi.status <> 'ready')");
   });
 
   it('getKitchenQueue devolve o resultado da query direto (passthrough)', async () => {

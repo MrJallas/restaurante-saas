@@ -85,6 +85,12 @@ export interface AppendOutboundInput {
   content: string;
 }
 
+export interface ConfirmedStaffHistoryErasure extends StaffMessageHistoryDeleteResponse {
+  confirmed: boolean;
+  messagesRemaining: number | null;
+  threadsRemaining: number | null;
+}
+
 @Injectable()
 export class CustomerStaffMessagesService {
   private readonly logger = new Logger(CustomerStaffMessagesService.name);
@@ -123,7 +129,7 @@ export class CustomerStaffMessagesService {
         .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
       await db
         .collection<ThreadDoc>(THREADS_COLLECTION)
-        .createIndex({ customerId: 1, lastMessageAt: -1 });
+        .createIndex({ tenantId: 1, customerId: 1, lastMessageAt: -1 });
       // FASE 3 (auditoria): a inbox do STAFF filtra por tenantId — sem este
       // índice era COLLSCAN cross-tenant a cada abertura da inbox.
       await db
@@ -169,7 +175,7 @@ export class CustomerStaffMessagesService {
       const staffRoleLabel = input.staffRoleLabel ?? 'gerente';
 
       await db.collection<ThreadDoc>(THREADS_COLLECTION).updateOne(
-        { threadId },
+        { threadId, tenantId: input.tenantId, customerId: input.customerId },
         {
           $setOnInsert: {
             threadId,
@@ -241,7 +247,7 @@ export class CustomerStaffMessagesService {
     const preview = input.content.slice(0, 80);
 
     await db.collection<ThreadDoc>(THREADS_COLLECTION).updateOne(
-      { threadId },
+      { threadId, tenantId: input.tenantId, customerId: input.customerId },
       {
         $setOnInsert: {
           threadId,
@@ -367,8 +373,10 @@ export class CustomerStaffMessagesService {
     const db = this.requireDb();
     await this.ensureIndexes();
 
-    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
-    if (!thread || thread.tenantId !== tenantId) {
+    const thread = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .findOne({ threadId, tenantId });
+    if (!thread) {
       throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
 
@@ -401,7 +409,7 @@ export class CustomerStaffMessagesService {
 
     await db.collection<MessageDoc>(MESSAGES_COLLECTION).insertOne(doc);
     await db.collection<ThreadDoc>(THREADS_COLLECTION).updateOne(
-      { threadId },
+      { threadId, tenantId, customerId: thread.customerId },
       {
         $set: {
           lastMessageAt: now,
@@ -566,13 +574,15 @@ export class CustomerStaffMessagesService {
     tenantId: string,
   ): Promise<StaffMessageHistoryMessageDto[]> {
     const db = this.requireDb();
-    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
-    if (!thread || thread.tenantId !== tenantId) {
+    const thread = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .findOne({ threadId, tenantId });
+    if (!thread) {
       throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
     const msgs = await db
       .collection<MessageDoc>(MESSAGES_COLLECTION)
-      .find({ threadId })
+      .find({ threadId, tenantId, customerId: thread.customerId })
       .sort({ createdAt: 1 })
       .toArray();
     return msgs.map((m) => ({
@@ -597,13 +607,17 @@ export class CustomerStaffMessagesService {
     tenantId: string,
   ): Promise<StaffMessageHistoryReadResponse> {
     const db = this.requireDb();
-    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
-    if (!thread || thread.tenantId !== tenantId) {
+    const thread = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .findOne({ threadId, tenantId });
+    if (!thread) {
       throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
     const res = await db.collection<MessageDoc>(MESSAGES_COLLECTION).updateMany(
       {
         threadId,
+        tenantId,
+        customerId: thread.customerId,
         fromRole: 'customer',
         $or: [{ readAt: null }, { readAt: { $exists: false } }],
       },
@@ -625,15 +639,18 @@ export class CustomerStaffMessagesService {
   async getThreadMessages(
     threadId: string,
     customerId: string,
+    tenantId: string,
   ): Promise<StaffMessageHistoryMessageDto[]> {
     const db = this.requireDb();
-    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
-    if (!thread || thread.customerId !== customerId) {
+    const thread = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .findOne({ threadId, customerId, tenantId });
+    if (!thread) {
       throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
     const msgs = await db
       .collection<MessageDoc>(MESSAGES_COLLECTION)
-      .find({ threadId })
+      .find({ threadId, customerId, tenantId })
       .sort({ createdAt: 1 })
       .toArray();
     return msgs.map((m) => ({
@@ -653,16 +670,22 @@ export class CustomerStaffMessagesService {
    * the inverse `fromRole: 'customer'` rows untouched (those become read
    * receipts for the future staff inbox).
    */
-  async markRead(threadId: string, customerId: string): Promise<StaffMessageHistoryReadResponse> {
+  async markRead(
+    threadId: string,
+    customerId: string,
+    tenantId: string,
+  ): Promise<StaffMessageHistoryReadResponse> {
     const db = this.requireDb();
-    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
-    if (!thread || thread.customerId !== customerId) {
+    const thread = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .findOne({ threadId, customerId, tenantId });
+    if (!thread) {
       throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
     const res = await db
       .collection<MessageDoc>(MESSAGES_COLLECTION)
       .updateMany(
-        { threadId, fromRole: 'staff', readAt: { $in: [null, undefined] } },
+        { threadId, customerId, tenantId, fromRole: 'staff', readAt: { $in: [null, undefined] } },
         { $set: { readAt: new Date() } },
       );
     return {
@@ -680,17 +703,25 @@ export class CustomerStaffMessagesService {
   async deleteThread(
     threadId: string,
     customerId: string,
+    tenantId: string,
   ): Promise<StaffMessageHistoryThreadDeleteResponse> {
     const db = this.requireDb();
-    const thread = await db.collection<ThreadDoc>(THREADS_COLLECTION).findOne({ threadId });
-    if (!thread || thread.customerId !== customerId) {
+    const thread = await db
+      .collection<ThreadDoc>(THREADS_COLLECTION)
+      .findOne({ threadId, customerId, tenantId });
+    if (!thread) {
       throw new HttpException('Conversa não encontrada.', HttpStatus.NOT_FOUND);
     }
-    const messages = await db.collection<MessageDoc>(MESSAGES_COLLECTION).deleteMany({ threadId });
+    const messages = await db
+      .collection<MessageDoc>(MESSAGES_COLLECTION)
+      .deleteMany({ threadId, customerId, tenantId });
     const now = new Date();
     await db
       .collection<ThreadDoc>(THREADS_COLLECTION)
-      .updateOne({ threadId }, { $set: { deletedByUser: true, deletedAt: now } });
+      .updateOne(
+        { threadId, customerId, tenantId },
+        { $set: { deletedByUser: true, deletedAt: now } },
+      );
     return {
       deletedAt: now.toISOString(),
       messagesDeleted: messages.deletedCount ?? 0,
@@ -698,25 +729,37 @@ export class CustomerStaffMessagesService {
   }
 
   /**
-   * Bulk delete · LGPD-style erasure alias. Soft-fails when Mongo is offline
-   * so the LGPD path can still record the request elsewhere.
+   * Bulk LGPD delete. Hard-deletes both collections in the tenant partition
+   * and verifies there are no residual docs before reporting confirmed.
    */
-  async deleteAll(customerId: string): Promise<StaffMessageHistoryDeleteResponse> {
+  async deleteAll(customerId: string, tenantId: string): Promise<ConfirmedStaffHistoryErasure> {
     const db = this.mongo.tryDb();
     if (!db) {
       this.logger.warn(`Bulk delete staff history for customer ${customerId} — Mongo offline`);
-      return { deletedCount: 0, threadsMarked: 0, mongoAvailable: false };
+      return {
+        deletedCount: 0,
+        threadsMarked: 0,
+        mongoAvailable: false,
+        confirmed: false,
+        messagesRemaining: null,
+        threadsRemaining: null,
+      };
     }
-    const messages = await db
-      .collection<MessageDoc>(MESSAGES_COLLECTION)
-      .deleteMany({ customerId });
-    const threadsRes = await db
-      .collection<ThreadDoc>(THREADS_COLLECTION)
-      .updateMany({ customerId }, { $set: { deletedByUser: true, deletedAt: new Date() } });
+    const filter = { tenantId, customerId };
+    const messages = await db.collection<MessageDoc>(MESSAGES_COLLECTION).deleteMany(filter);
+    const threadsRes = await db.collection<ThreadDoc>(THREADS_COLLECTION).deleteMany(filter);
+    const [messagesRemaining, threadsRemaining] = await Promise.all([
+      db.collection<MessageDoc>(MESSAGES_COLLECTION).countDocuments(filter),
+      db.collection<ThreadDoc>(THREADS_COLLECTION).countDocuments(filter),
+    ]);
     return {
       deletedCount: messages.deletedCount ?? 0,
-      threadsMarked: threadsRes.modifiedCount ?? 0,
+      // Campo legado preservado no DTO; agora representa threads removidas.
+      threadsMarked: threadsRes.deletedCount ?? 0,
       mongoAvailable: true,
+      confirmed: messagesRemaining === 0 && threadsRemaining === 0,
+      messagesRemaining,
+      threadsRemaining,
     };
   }
 

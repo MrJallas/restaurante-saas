@@ -8,7 +8,7 @@
 //
 // Backend wiring (anti-placebo):
 //   • REAL: alimentado pelos `lateOrders` do GET /:slug/dashboard/
-//     active-tables — pedidos em preparo acima da meta da cozinha.
+//     active-tables — itens de cozinha realmente em preparo acima da meta.
 //   • Meta não configurada → aviso pra configurar em /cozinha/eu.
 
 import { useEffect, useState } from 'react';
@@ -76,8 +76,8 @@ export function ScreenManagerOpsAtencao({ dark, tenantSlug }: ScreenManagerOpsAt
     ? []
     : lateOrders.map((o) => ({
         id: o.orderId,
-        msg: `${o.tableLabel} · pedido em preparo há ${o.minutesInPrep} min`,
-        sub: `${o.itemCount} ${o.itemCount === 1 ? 'item' : 'itens'} · meta ${kitchenEta} min`,
+        msg: `${o.tableLabel} · cozinha em preparo há ${o.minutesInPrep} min`,
+        sub: `${o.itemCount} ${o.itemCount === 1 ? 'unidade' : 'unidades'} · meta da cozinha ${o.targetMinutes} min`,
         ts: `${o.minutesInPrep} min`,
         actions: ['Ver fila da cozinha', 'Ver operações'],
       }));
@@ -226,7 +226,7 @@ export function ScreenManagerOpsAtencao({ dark, tenantSlug }: ScreenManagerOpsAt
 
         <div style={{ height: 18 }} />
         <Formula C={C}>
-          Pedidos com status <b>em preparo</b> há mais tempo que a meta da cozinha
+          Unidades de comida com status <b>em preparo</b> há mais tempo que a meta da cozinha
           {kitchenEta != null ? ` (${kitchenEta} min)` : ''} · meta configurada em /cozinha/eu.
         </Formula>
       </div>

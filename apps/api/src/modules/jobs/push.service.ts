@@ -1,14 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+export interface PushDeliveryResult {
+  delivered: boolean;
+  reason?: 'provider_not_configured' | 'provider_rejected' | 'transport_error';
+}
+
 /**
- * Stub PushService — exists so the cron jobs (and B1's services later) can
- * inject a stable interface today. The real implementation will plug in
- * APNs/FCM via `services/notifications` in a later phase. Until then, every
- * call is logged and counted so the recurring jobs can mark `push_sent_at`
- * idempotently.
- *
- * TODO(B2 Gate 2): swap with real provider once the notifications service
- * lands. Keep the method shape stable so callers don't have to change.
+ * Stable push boundary. No APNs/FCM provider exists in this repository yet,
+ * so the adapter must report an honest non-delivery. Callers may retry, but
+ * must never mark a notification as sent merely because this method returned.
  */
 @Injectable()
 export class PushService {
@@ -18,10 +18,10 @@ export class PushService {
     tenantSlug: string;
     customerId: string | null;
     orderId: string;
-  }): Promise<{ delivered: boolean }> {
-    this.logger.log(
-      `[stub] order-rating push tenant=${params.tenantSlug} order=${params.orderId} customer=${params.customerId ?? 'null'}`,
+  }): Promise<PushDeliveryResult> {
+    this.logger.warn(
+      `Push não enviado (provider não configurado) tenant=${params.tenantSlug} order=${params.orderId} customer=${params.customerId ?? 'null'}`,
     );
-    return { delivered: true };
+    return { delivered: false, reason: 'provider_not_configured' };
   }
 }

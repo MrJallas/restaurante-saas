@@ -1,10 +1,18 @@
-import { Injectable, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
 import { BillingService, BillTotals } from '../billing/billing.service';
 import { EventsGateway } from '../websocket/events.gateway';
+import { reconcileSplitAllocations } from './split-allocation-reconciliation';
 
 /**
  * ⚠️ Pix é STUB de demonstração (decisão de produto Caleb 2026-07-04) — ver
@@ -18,6 +26,7 @@ import { EventsGateway } from '../websocket/events.gateway';
 const PIX_EXPIRY_SECONDS = 600;
 
 const VALID_SPLIT_MODES = new Set(['equal', 'by_item', 'custom']);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * A04-PAY-01 (auto-confirm / refeicao gratis): o endpoint de confirm roda
@@ -38,7 +47,11 @@ const VALID_SPLIT_MODES = new Set(['equal', 'by_item', 'custom']);
  * produção a flag fica desligada e o caminho de auto-confirm não existe.
  */
 function clientConfirmMarksPaid(): boolean {
-  return process.env.PAYMENTS_ALLOW_CLIENT_CONFIRM === 'true';
+  const productionLike =
+    process.env.NODE_ENV === 'production' ||
+    ['staging', 'production'].includes((process.env.APP_ENV ?? '').toLowerCase()) ||
+    ['preview', 'staging', 'production'].includes((process.env.VERCEL_ENV ?? '').toLowerCase());
+  return !productionLike && process.env.PAYMENTS_ALLOW_CLIENT_CONFIRM === 'true';
 }
 
 export interface SplitAllocation {
@@ -54,6 +67,39 @@ export interface RequestPaymentOptions {
   callerCustomerId?: string | null;
 }
 
+type PendingScope = 'table' | 'individual' | 'split';
+
+interface PersistedPaymentRow {
+  id: string;
+  status: string;
+  amount_cents: number | string;
+  method: string;
+  pix_qr_code: string | null;
+  pix_copy_paste: string | null;
+  expires_at: string | Date | null;
+  split_mode: string | null;
+  split_allocations: SplitAllocation[] | string | null;
+  created_at: string | Date;
+}
+
+export interface PaymentRequestResponse {
+  paymentId: string;
+  status: string;
+  amountCents: number;
+  subtotalCents: number;
+  discountCents: number;
+  discountLabel: string | null;
+  serviceFeeCents: number;
+  serviceFeePct: number;
+  method: string;
+  pixQrCode: string | null;
+  pixCopyPaste: string | null;
+  expiresAt: string | Date | null;
+  splitMode?: string;
+  splitAllocations?: SplitAllocation[];
+  createdAt: string | Date;
+}
+
 /**
  * Treat 'paid' as an alias for 'confirmed' on read so legacy rows created
  * before the shared-types normalization still return correctly to clients
@@ -65,6 +111,8 @@ function normalizeStatus(raw: string): string {
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     private readonly tenantConn: TenantConnectionProvider,
     private readonly redis: RedisService,
@@ -73,6 +121,147 @@ export class PaymentsService {
     // param novo opcional não quebra os construtores posicionais dos testes.
     @Optional() private readonly eventsGateway?: EventsGateway,
   ) {}
+
+  /**
+   * Retorna um pending ativo apenas dentro da cerca financeira pedida.
+   *
+   * Os três escopos são deliberadamente diferentes apesar de poderem usar o
+   * mesmo visit_id:
+   *   - table: visit_id IS NULL;
+   *   - individual: visit_id = caller e split_mode IS NULL;
+   *   - split: visit_id = caller e split_mode IS NOT NULL.
+   *
+   * Isso permite recuperar com segurança um POST cujo INSERT confirmou mas a
+   * resposta se perdeu, sem fazer um pending da comanda bloquear o rateio (ou
+   * vice-versa). O visit_id nunca vem confiado do body: requestPayment o
+   * resolve pelo recognition token antes de chegar aqui.
+   */
+  private async findActivePendingPayment(
+    tableSessionId: string,
+    effectiveVisitId: string | null,
+    scope: PendingScope,
+  ): Promise<PersistedPaymentRow | null> {
+    let scopeClause: string;
+    let params: unknown[];
+    if (scope === 'table') {
+      scopeClause = 'AND visit_id IS NULL';
+      params = [tableSessionId];
+    } else if (scope === 'split') {
+      scopeClause = 'AND visit_id = $2 AND split_mode IS NOT NULL';
+      params = [tableSessionId, effectiveVisitId];
+    } else {
+      scopeClause = 'AND visit_id = $2 AND split_mode IS NULL';
+      params = [tableSessionId, effectiveVisitId];
+    }
+
+    // Mantemos id/expires_at como as duas primeiras colunas porque vários
+    // adaptadores e testes antigos tratam esta consulta como o lazy-expiry do
+    // dedup. Os demais dados são carregados por id só quando há algo a recuperar.
+    const candidates = (await this.tenantConn.query(
+      `SELECT id, expires_at FROM payments
+       WHERE table_session_id = $1 AND status = 'pending'
+         ${scopeClause}
+       ORDER BY created_at DESC`,
+      params,
+    )) as Array<{ id: string; expires_at: string | Date | null }>;
+
+    const activeIds: string[] = [];
+    for (const row of candidates) {
+      if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) {
+        await this.tenantConn.query(
+          `UPDATE payments SET status = 'expired', updated_at = now() WHERE id = $1`,
+          [row.id],
+        );
+      } else {
+        activeIds.push(row.id);
+      }
+    }
+    if (!activeIds.length) return null;
+
+    // Dados legados podem conter mais de um pending no mesmo escopo. Nunca
+    // criamos outro; recuperamos o mais recente e registramos o desvio para
+    // saneamento operacional.
+    if (activeIds.length > 1) {
+      this.logger.warn(
+        `Foram encontrados ${activeIds.length} pagamentos pending no mesmo escopo; recuperando o mais recente.`,
+      );
+    }
+    const rows = (await this.tenantConn.query(
+      `SELECT id, status, amount_cents, method, pix_qr_code, pix_copy_paste,
+              expires_at, split_mode, split_allocations, created_at
+         FROM payments
+        WHERE id = $1 AND table_session_id = $2 AND status = 'pending'
+        LIMIT 1`,
+      [activeIds[0], tableSessionId],
+    )) as PersistedPaymentRow[];
+    return rows[0] ?? null;
+  }
+
+  /** Recalcula apenas o breakdown de exibição; o valor/QR vêm da row persistida. */
+  private async totalsForRecoveredPayment(
+    tableSessionId: string,
+    effectiveVisitId: string | null,
+    scope: PendingScope,
+  ): Promise<BillTotals> {
+    const isTableBill = scope === 'table' || scope === 'split';
+    const rows = (await this.tenantConn.query(
+      `SELECT COALESCE(SUM(total_cents), 0) as total
+         FROM orders
+        WHERE table_session_id = $1
+          ${isTableBill ? "AND billing_mode = 'table'" : "AND visit_id = $2 AND billing_mode = 'individual'"}
+          AND status NOT IN ('cancelled', 'pending_confirmation')`,
+      isTableBill ? [tableSessionId] : [tableSessionId, effectiveVisitId],
+    )) as Array<{ total: number | string }>;
+    return this.billing.computeTotals(Number(rows[0]?.total ?? 0));
+  }
+
+  private normalizePersistedAllocations(
+    value: PersistedPaymentRow['split_allocations'],
+  ): SplitAllocation[] | undefined {
+    if (!value) return undefined;
+    if (Array.isArray(value)) return value;
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return Array.isArray(parsed) ? (parsed as SplitAllocation[]) : undefined;
+    } catch {
+      this.logger.warn('split_allocations persistido não contém JSON válido.');
+      return undefined;
+    }
+  }
+
+  private paymentResponse(
+    payment: PersistedPaymentRow,
+    totals: BillTotals,
+  ): PaymentRequestResponse {
+    return {
+      paymentId: payment.id,
+      status: normalizeStatus(payment.status),
+      amountCents: Number(payment.amount_cents),
+      subtotalCents: totals.subtotalCents,
+      discountCents: totals.discountCents,
+      discountLabel: totals.discountLabel,
+      serviceFeeCents: totals.serviceFeeCents,
+      serviceFeePct: totals.serviceFeePct,
+      method: payment.method,
+      pixQrCode: payment.pix_qr_code,
+      pixCopyPaste: payment.pix_copy_paste,
+      expiresAt: payment.expires_at,
+      splitMode: payment.split_mode ?? undefined,
+      splitAllocations: this.normalizePersistedAllocations(payment.split_allocations),
+      createdAt: payment.created_at,
+    };
+  }
+
+  private async recoverActivePendingPayment(
+    tableSessionId: string,
+    effectiveVisitId: string | null,
+    scope: PendingScope,
+  ): Promise<PaymentRequestResponse | null> {
+    const payment = await this.findActivePendingPayment(tableSessionId, effectiveVisitId, scope);
+    if (!payment) return null;
+    const totals = await this.totalsForRecoveredPayment(tableSessionId, effectiveVisitId, scope);
+    return this.paymentResponse(payment, totals);
+  }
 
   /**
    * P1-A (re-scan 2026-07-04): soma dos pagamentos JÁ liquidados ou em voo
@@ -127,9 +316,7 @@ export class PaymentsService {
       scopeClause = 'AND visit_id = $2 AND split_mode IS NULL';
     }
     const params =
-      scope === 'table' || scope === 'table_bill'
-        ? [tableSessionId]
-        : [tableSessionId, visitId];
+      scope === 'table' || scope === 'table_bill' ? [tableSessionId] : [tableSessionId, visitId];
     const rows = (await this.tenantConn.query(
       `SELECT COALESCE(SUM(amount_cents), 0) as paid
          FROM payments
@@ -194,7 +381,12 @@ export class PaymentsService {
     // uma dívida separada. O FE não manda visitId — derivamos do cliente
     // RECONHECIDO (cookie). Feito aqui pra que o lockScope tenha o visitId real.
     // (Writes table-bill usam ':tablebill' e nem dependem disto.)
-    if (mode === 'individual' && !effectiveVisitId && callerCustomerId) {
+    if (mode === 'individual' && !callerCustomerId) {
+      throw new ForbiddenException(
+        'Não foi possível identificar sua comanda. Escaneie o QR da mesa novamente.',
+      );
+    }
+    if (mode === 'individual' && callerCustomerId) {
       const vrows = (await this.tenantConn.query(
         `SELECT id FROM visits
          WHERE table_session_id = $1 AND customer_id = $2
@@ -202,6 +394,11 @@ export class PaymentsService {
         [tableSessionId, callerCustomerId],
       )) as { id: string }[];
       effectiveVisitId = vrows[0]?.id ?? null;
+    }
+    if (mode === 'individual' && !effectiveVisitId) {
+      throw new BadRequestException(
+        'Não foi possível identificar sua comanda. Escaneie o QR da mesa novamente.',
+      );
     }
 
     // Round 11 (B-NEW-42): SETNX lock por scope ENVOLVENDO o read-then-INSERT
@@ -223,13 +420,41 @@ export class PaymentsService {
     // separada e mantém o lock per-visit. O lock é adquirido AQUI (antes das
     // leituras de saldo), não depois, pra que o sumSettled/clamp de cada
     // caminho leia o estado JÁ com o INSERT do caminho anterior visível.
+    if (options.splitMode !== undefined && !VALID_SPLIT_MODES.has(options.splitMode)) {
+      throw new BadRequestException(`splitMode invalido: ${options.splitMode}.`);
+    }
+    if (mode === 'table' && options.splitMode !== undefined) {
+      throw new BadRequestException(
+        'splitMode só pode ser usado ao pagar a parte individual de uma divisão.',
+      );
+    }
     const splitModeRequested =
       typeof options.splitMode === 'string' && VALID_SPLIT_MODES.has(options.splitMode);
+    const pendingScope: PendingScope =
+      mode === 'table' ? 'table' : splitModeRequested ? 'split' : 'individual';
     const isTableBillWrite = mode === 'table' || (mode === 'individual' && splitModeRequested);
     const lockScope = isTableBillWrite ? 'tablebill' : (effectiveVisitId ?? 'table');
     const lockKey = `payment_lock:${tableSessionId}:${lockScope}`;
-    const gotLock = await this.redis.setNX(lockKey, JSON.stringify({ ts: Date.now() }), 30);
+    // Valor único por aquisição: a liberação no finally só pode remover ESTE
+    // lease. Se o TTL vencer e outro request readquirir a mesma chave, o owner
+    // antigo vira no-op em vez de apagar o lock sucessor.
+    const lockOwner = randomUUID();
+    const gotLock = await this.redis.setNX(lockKey, lockOwner, 30);
     if (!gotLock) {
+      // Se o INSERT do owner anterior já confirmou mas o cleanup/resposta se
+      // perdeu, o lock ainda pode existir. Recuperar a row pending é seguro
+      // porque a cerca usa a sessão e a visita resolvida server-side.
+      try {
+        const recovered = await this.recoverActivePendingPayment(
+          tableSessionId,
+          effectiveVisitId,
+          pendingScope,
+        );
+        if (recovered) return recovered;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'erro desconhecido';
+        this.logger.warn(`Não foi possível recuperar pagamento pending durante retry: ${reason}`);
+      }
       throw new BadRequestException('Pagamento sendo processado. Aguarde alguns segundos.');
     }
 
@@ -242,11 +467,21 @@ export class PaymentsService {
         options,
         effectiveVisitId,
         callerCustomerId,
+        pendingScope,
       });
     } finally {
       // Libera o lock independente do desfecho — request bem-sucedida gravou o
-      // INSERT (auto-commit) que o próximo lock holder já enxerga via DB.
-      await this.redis.del(lockKey);
+      // INSERT (auto-commit) que o próximo lock holder já enxerga via DB. O
+      // compare-and-delete evita que um owner atrasado apague um lease novo.
+      try {
+        await this.redis.compareAndDelete(lockKey, lockOwner);
+      } catch (error) {
+        // O INSERT no PostgreSQL já pode ter confirmado. Cleanup Redis é
+        // best-effort: nunca convertemos uma cobrança persistida em 500 e
+        // nunca mascaramos o erro original do bloco try.
+        const reason = error instanceof Error ? error.message : 'erro desconhecido';
+        this.logger.warn(`Falha ao liberar lock de pagamento (cleanup best-effort): ${reason}`);
+      }
     }
   }
 
@@ -264,11 +499,22 @@ export class PaymentsService {
     options: RequestPaymentOptions;
     effectiveVisitId: string | null;
     callerCustomerId: string | null;
+    pendingScope: PendingScope;
   }) {
-    const { tableSessionId, mode, method, options, callerCustomerId } = input;
+    const { tableSessionId, mode, method, options, callerCustomerId, pendingScope } = input;
     // effectiveVisitId já vem resolvido de requestPayment (a busca de visita
     // roda antes do lock, pra o lock per-visit da comanda ter a chave certa).
     const effectiveVisitId = input.effectiveVisitId;
+    // Rechecagem DENTRO do lock fecha a janela entre uma tentativa anterior
+    // confirmar o INSERT e esta adquirir o lease. Também torna o POST
+    // idempotente para perda de resposta/retry.
+    const recovered = await this.recoverActivePendingPayment(
+      tableSessionId,
+      effectiveVisitId,
+      pendingScope,
+    );
+    if (recovered) return recovered;
+
     let amountCents: number;
     let billTotals: BillTotals;
 
@@ -425,26 +671,9 @@ export class PaymentsService {
       splitAllocations = options.allocations ?? null;
     }
 
-    // Reject duplicate pending payments for the same scope. If one exists
-    // and has already expired, mark it expired so the user can retry.
-    const existing = (await this.tenantConn.query(
-      `SELECT id, expires_at FROM payments
-       WHERE table_session_id = $1 AND status = 'pending'
-         ${effectiveVisitId ? 'AND visit_id = $2' : 'AND visit_id IS NULL'}`,
-      effectiveVisitId ? [tableSessionId, effectiveVisitId] : [tableSessionId],
-    )) as { id: string; expires_at: string | null }[];
-
-    for (const row of existing) {
-      if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) {
-        await this.tenantConn.query(
-          `UPDATE payments SET status = 'expired', updated_at = now() WHERE id = $1`,
-          [row.id],
-        );
-      } else {
-        throw new BadRequestException('Ja existe um pagamento pendente.');
-      }
-    }
-    // Continue após dedup limpo (dentro do lock adquirido em requestPayment).
+    // O dedup/recovery já rodou no início deste método, dentro do lock e com
+    // a cerca exata table/individual/split. Daqui até o INSERT nenhum outro
+    // writer do mesmo escopo pode entrar.
     return await this.continueRequestPayment({
       tableSessionId,
       visitId: effectiveVisitId,
@@ -504,50 +733,53 @@ export class PaymentsService {
         splitMode,
         splitAllocations ? JSON.stringify(splitAllocations) : null,
       ],
-    )) as Array<{
-      id: string;
-      status: string;
-      amount_cents: number;
-      method: string;
-      pix_qr_code: string | null;
-      pix_copy_paste: string | null;
-      expires_at: string | null;
-      split_mode: string | null;
-      split_allocations: SplitAllocation[] | null;
-      created_at: string;
-    }>;
+    )) as PersistedPaymentRow[];
 
-    const p = rows[0];
-    return {
-      paymentId: p.id,
-      status: normalizeStatus(p.status),
-      amountCents: p.amount_cents,
-      subtotalCents: input.totals.subtotalCents,
-      discountCents: input.totals.discountCents,
-      discountLabel: input.totals.discountLabel,
-      serviceFeeCents: input.totals.serviceFeeCents,
-      serviceFeePct: input.totals.serviceFeePct,
-      method: p.method,
-      pixQrCode: p.pix_qr_code,
-      pixCopyPaste: p.pix_copy_paste,
-      expiresAt: p.expires_at,
-      splitMode: p.split_mode ?? undefined,
-      splitAllocations: p.split_allocations ?? undefined,
-      createdAt: p.created_at,
-    };
+    return this.paymentResponse(rows[0], input.totals);
+  }
+
+  /**
+   * Protege a fronteira intra-mesa sem quebrar a colaboracao da conta comum.
+   *
+   * `visit_id IS NULL` e o pagamento integral da MESA: qualquer participante
+   * que possui a session da mesa pode confirmar/cancelar, como no produto
+   * atual. Pagamentos com `visit_id` (comanda individual OU parte de split)
+   * pertencem ao customer daquela visita e exigem a mesma identidade derivada
+   * do recognition token.
+   *
+   * `undefined` e reservado a callers internos confiaveis (webhook/staff/teste
+   * de service); controllers customer sempre enviam `string | null`, portanto
+   * um browser sem reconhecimento nao consegue acionar o bypass interno.
+   */
+  private assertPaymentCallerOwnership(
+    payment: { visit_id: string | null; owner_customer_id: string | null },
+    callerCustomerId: string | null | undefined,
+  ): void {
+    if (callerCustomerId === undefined || payment.visit_id === null) return;
+    if (!callerCustomerId || payment.owner_customer_id !== callerCustomerId) {
+      throw new ForbiddenException('Este pagamento pertence a outra comanda desta mesa.');
+    }
   }
 
   /**
    * PSP-confirmed (or manual) success transition. The customer app polls
    * GET /:id and redirects to the feedback screen when it sees 'confirmed'.
    */
-  async confirmPayment(paymentId: string, tableSessionId: string, pspTransactionId?: string) {
+  async confirmPayment(
+    paymentId: string,
+    tableSessionId: string,
+    pspTransactionId?: string,
+    callerCustomerId?: string | null,
+  ) {
     // M3 (timeline): amount_cents/method/split_mode/visit_id são lidos só
     // pra montar o payload do WS payment.confirmed — nenhuma validação nova.
     const rows = (await this.tenantConn.query(
-      `SELECT id, status, table_session_id, expires_at,
-              amount_cents, method, split_mode, visit_id
-       FROM payments WHERE id = $1`,
+      `SELECT p.id, p.status, p.table_session_id, p.expires_at,
+              p.amount_cents, p.method, p.split_mode, p.visit_id,
+              v.customer_id AS owner_customer_id
+       FROM payments p
+       LEFT JOIN visits v ON v.id = p.visit_id
+       WHERE p.id = $1`,
       [paymentId],
     )) as {
       id: string;
@@ -558,6 +790,7 @@ export class PaymentsService {
       method: string | null;
       split_mode: string | null;
       visit_id: string | null;
+      owner_customer_id: string | null;
     }[];
 
     if (!rows.length) {
@@ -571,6 +804,7 @@ export class PaymentsService {
     if (payment.table_session_id !== tableSessionId) {
       throw new NotFoundException('Pagamento nao encontrado.');
     }
+    this.assertPaymentCallerOwnership(payment, callerCustomerId);
 
     if (payment.status === 'confirmed' || payment.status === 'paid') {
       return { paymentId, status: 'confirmed' };
@@ -646,11 +880,21 @@ export class PaymentsService {
     return { paymentId, status: 'confirmed' };
   }
 
-  async cancelPayment(paymentId: string, tableSessionId: string) {
+  async cancelPayment(paymentId: string, tableSessionId: string, callerCustomerId?: string | null) {
     const rows = (await this.tenantConn.query(
-      `SELECT id, status, table_session_id FROM payments WHERE id = $1`,
+      `SELECT p.id, p.status, p.table_session_id, p.visit_id,
+              v.customer_id AS owner_customer_id
+       FROM payments p
+       LEFT JOIN visits v ON v.id = p.visit_id
+       WHERE p.id = $1`,
       [paymentId],
-    )) as { id: string; status: string; table_session_id: string }[];
+    )) as Array<{
+      id: string;
+      status: string;
+      table_session_id: string;
+      visit_id: string | null;
+      owner_customer_id: string | null;
+    }>;
 
     if (!rows.length) {
       throw new NotFoundException('Pagamento nao encontrado.');
@@ -659,6 +903,7 @@ export class PaymentsService {
     if (payment.table_session_id !== tableSessionId) {
       throw new NotFoundException('Pagamento nao encontrado.');
     }
+    this.assertPaymentCallerOwnership(payment, callerCustomerId);
     if (payment.status === 'cancelled') {
       return { paymentId, status: 'cancelled' };
     }
@@ -809,7 +1054,9 @@ export class PaymentsService {
         ORDER BY joined_at ASC`,
       [tableSessionId],
     )) as Array<{ customer_id: string }>;
-    const participantIds = partRows.map((r) => r.customer_id);
+    // A tabela deveria garantir unicidade, mas a fronteira financeira não
+    // depende disso: um participante aprovado conta exatamente uma vez.
+    const participantIds = [...new Set(partRows.map((r) => r.customer_id))];
     if (!participantIds.length) {
       throw new BadRequestException('Nenhum participante aprovado na sessão pra dividir.');
     }
@@ -909,19 +1156,73 @@ export class PaymentsService {
           `Soma das partes (${byItemSum}) diferente do total da mesa com taxa (${totals.totalCents}).`,
         );
       }
+      // Dentro da tolerância, o drift ainda precisa ser FECHADO. Sem esta
+      // reconciliação, o resumo podia exibir 11.628 centavos para uma conta de
+      // 11.627 e o pay-path cobrava 1 centavo a menos do último pagador via
+      // `tableRemaining`. A ordem de pagamento então decidia quem absorvia o
+      // arredondamento. Agora a ordem canônica de joined_at resolve o delta
+      // antes de exibir, persistir ou cobrar qualquer parte.
+      allocations = reconcileSplitAllocations(allocations, totals.totalCents);
     } else {
-      // custom — soma deve bater com o total da mesa COM taxa (tolerância
-      // de arredondamento de 1 centavo por participante).
+      // Custom é uma partição exata da conta entre o conjunto canônico de
+      // participantes aprovados. Como os valores já chegam em centavos
+      // inteiros, não existe arredondamento a tolerar: cada participante deve
+      // aparecer uma única vez, ninguém de fora pode entrar e a soma fecha
+      // exatamente o total. Isso bloqueia o exploit "caller = 1 centavo +
+      // segunda allocation duplicada" que antes preservava a soma e fazia o
+      // find(caller) selecionar só a primeira ocorrência.
       if (!customAllocations?.length) {
         throw new BadRequestException('Para split customizado, envie as allocations.');
       }
-      const sum = customAllocations.reduce((s, a) => s + a.amountCents, 0);
-      if (Math.abs(sum - totals.totalCents) > participantIds.length) {
+
+      if (customAllocations.length !== participantIds.length) {
+        throw new BadRequestException(
+          'O split customizado deve conter exatamente uma allocation por participante aprovado.',
+        );
+      }
+
+      const approved = new Set(participantIds);
+      const byCustomer = new Map<string, SplitAllocation>();
+      for (const allocation of customAllocations) {
+        if (!allocation || typeof allocation.customerId !== 'string') {
+          throw new BadRequestException('Allocation customizada inválida.');
+        }
+        if (!UUID_PATTERN.test(allocation.customerId)) {
+          throw new BadRequestException('customerId de allocation deve ser um UUID válido.');
+        }
+        if (!approved.has(allocation.customerId)) {
+          throw new BadRequestException(
+            'Todas as allocations devem pertencer a participantes aprovados da sessão.',
+          );
+        }
+        if (byCustomer.has(allocation.customerId)) {
+          throw new BadRequestException(
+            'Cada participante aprovado deve possuir exatamente uma allocation.',
+          );
+        }
+        if (!Number.isSafeInteger(allocation.amountCents) || allocation.amountCents <= 0) {
+          throw new BadRequestException(
+            'Sua parte e cada allocation devem ser valores inteiros positivos em centavos.',
+          );
+        }
+        byCustomer.set(allocation.customerId, { ...allocation });
+      }
+
+      const missingParticipant = participantIds.find((customerId) => !byCustomer.has(customerId));
+      if (missingParticipant) {
+        throw new BadRequestException(
+          'O split customizado deve conter exatamente o conjunto de participantes aprovados.',
+        );
+      }
+
+      const sum = [...byCustomer.values()].reduce((total, item) => total + item.amountCents, 0);
+      if (sum !== totals.totalCents) {
         throw new BadRequestException(
           `Soma das alocacoes (${sum}) diferente do total com taxa (${totals.totalCents}).`,
         );
       }
-      allocations = customAllocations;
+      // Ordem canônica do servidor (joined_at), sem reutilizar o array do body.
+      allocations = participantIds.map((customerId) => byCustomer.get(customerId)!);
     }
 
     return {
@@ -936,22 +1237,56 @@ export class PaymentsService {
     };
   }
 
-  /**
-   * Stub for SP1 "Enviar resumo" — notify staff/room of the split layout
-   * without creating a payment. Persists nothing yet; kitchen dashboards can
-   * layer on top later. Safe no-op for now so the frontend's CTA works.
-   */
-  async notifySplit(tableSessionId: string, mode: string, allocations: SplitAllocation[]) {
+  /** Persiste e emite o resumo da divisão sem criar/cobrar pagamento. */
+  async notifySplit(
+    tableSessionId: string,
+    mode: string,
+    allocations: SplitAllocation[],
+    callerCustomerId: string | null,
+  ) {
     if (!VALID_SPLIT_MODES.has(mode)) {
       throw new BadRequestException(`splitMode invalido: ${mode}.`);
     }
-    // Placeholder for a future `bill_split_notifications` table / socket emit.
-    return {
-      ok: true,
+    if (!callerCustomerId) {
+      throw new ForbiddenException('Identificação obrigatória para enviar o resumo da divisão.');
+    }
+
+    // Recalcula no servidor: o resumo persistido é a divisão canônica, não um
+    // payload arbitrário do browser. Custom mantém as allocations enviadas,
+    // mas passa pela validação de soma/participantes do computeSplit.
+    const canonical = await this.computeSplit(
       tableSessionId,
       mode,
-      allocations,
-      notifiedAt: new Date().toISOString(),
+      [],
+      mode === 'custom' ? allocations : undefined,
+    );
+    const rows = unwrapRows<{ id: string; created_at: string | Date }>(
+      await this.tenantConn.query(
+        `INSERT INTO bill_split_notifications
+           (table_session_id, created_by_customer_id, mode, allocations)
+         VALUES ($1, $2, $3, $4::jsonb)
+         RETURNING id, created_at`,
+        [tableSessionId, callerCustomerId, mode, JSON.stringify(canonical.allocations)],
+      ),
+    );
+    const createdAt = new Date(rows[0].created_at).toISOString();
+    const payload = {
+      notificationId: rows[0].id,
+      tableSessionId,
+      createdByCustomerId: callerCustomerId,
+      mode,
+      allocations: canonical.allocations,
+      totalCents: canonical.totalCents,
+      createdAt,
+    };
+    const slug = this.tenantConn.getTenantSlug() ?? '';
+    this.eventsGateway?.emitToSession(tableSessionId, 'bill.split_notified', payload);
+    this.eventsGateway?.emitToTenant(slug, 'bill.split_notified', payload);
+    return {
+      ok: true,
+      ...payload,
+      persisted: true,
+      deliveredToSession: Boolean(this.eventsGateway),
     };
   }
 }

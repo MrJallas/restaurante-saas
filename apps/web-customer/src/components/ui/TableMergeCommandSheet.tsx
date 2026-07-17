@@ -55,7 +55,7 @@ export function TableMergeCommandSheet({ open, onChoose, onClose }: TableMergeCo
           type="button"
           onClick={onClose}
           aria-label="Fechar"
-          className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full border border-border-soft bg-bg text-ink hover:bg-surface"
+          className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full border border-border-soft bg-bg text-ink hover:bg-surface"
         >
           ×
         </button>

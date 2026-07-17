@@ -10,7 +10,13 @@ import { useRouter } from 'next/navigation';
 import { useG, G_FONT, MONO_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GIconBtn, GBottomNav } from '../../components/waiter/Primitives';
+import { OperationalErrorBanner } from '../../components/OperationalErrorBanner';
 import { readStaffSession } from '../../lib/api';
+import {
+  isAuthoritativeEmpty,
+  retainRowsOnFailure,
+  type OperationalLoadState,
+} from '../../lib/operational-error';
 import {
   deliveryTimestamp,
   isDeliveryClaimedBy,
@@ -85,40 +91,17 @@ function urgencyFromCreatedAt(value: string): Urgency {
 }
 
 /**
- * O payload de /waiter-calls/pending traz `assigned_waiter_name` (nome de quem
- * aceitou o chamado) — o backend faz SELECT dessa coluna, mas ela não está no
- * type `WaiterCallSummary`. Leitura widened aqui, sem mexer no contrato.
- */
-type WaiterCallRowWithAssignee = WaiterCallSummary & {
-  assigned_waiter_name?: string | null;
-};
-
-function normalizeName(value?: string | null): string {
-  return (value ?? '').trim().toLowerCase();
-}
-
-/**
  * Ownership do chamado por IDENTIDADE — espelha os predicados canônicos das
  * entregas (isDeliveryForWaiter/isDeliveryClaimedBy em lib/api/waiter).
  *
- * Bug P2 (re-scan 2026-07-05): `mapCall` nunca setava `mine`, então a aba
- * "Minhas mesas" ignorava chamados — só entregas apareciam. Como o payload
- * expõe `assigned_waiter_name` (quem aceitou) e NÃO o UUID `acknowledged_by`,
- * a única chave de identidade no FE é o NOME do garçom logado. Um chamado é
- * meu quando EU o aceitei: assigned_waiter_name == meu nome. Chamado 'pending'
- * (assignee null) é de ninguém; sem identidade (staffName vazio) nunca
- * reivindica — igual a `staffId null` só contar broadcast nas entregas.
+ * O backend devolve `acknowledged_by`; nome é só apresentação e pode colidir.
+ * Pending ainda não tem dono.
  */
-export function isCallMine(
-  row: WaiterCallRowWithAssignee,
-  staffName: string | null | undefined,
-): boolean {
-  const me = normalizeName(staffName);
-  if (!me) return false;
-  return normalizeName(row.assigned_waiter_name) === me;
+export function isCallMine(row: WaiterCallSummary, staffId: string | null | undefined): boolean {
+  return Boolean(staffId && row.status === 'acknowledged' && row.acknowledged_by === staffId);
 }
 
-export function mapCall(row: WaiterCallRowWithAssignee, staffName: string | null): CallRow {
+export function mapCall(row: WaiterCallSummary, staffId: string | null): CallRow {
   const base = row.note || REASON_LABEL[row.reason || 'other'] || 'Sem motivo informado';
   // P1 (re-scan 2026-07-05): a lista agora inclui chamados 'acknowledged'
   // (o garçom tocou "A caminho" mas ainda não concluiu). Distingue-os
@@ -133,7 +116,7 @@ export function mapCall(row: WaiterCallRowWithAssignee, staffName: string | null
     ts: relativeTime(row.created_at),
     urgency: urgencyFromCreatedAt(row.created_at),
     // Alimenta o filtro "Minhas mesas" — antes só entregas setavam mine.
-    mine: isCallMine(row, staffName),
+    mine: isCallMine(row, staffId),
   };
 }
 
@@ -182,36 +165,61 @@ export function ScreenWaiterCalls({
   const [calls, setCalls] = useState<CallRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [callsState, setCallsState] = useState<OperationalLoadState>('loading');
+  const [deliveriesState, setDeliveriesState] = useState<OperationalLoadState>('loading');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     const session = readStaffSession();
     const staffId = session?.staffId ?? null;
-    // Chamados não expõem acknowledged_by (UUID) no payload — só
-    // assigned_waiter_name. O ownership de "Minhas mesas" pros chamados casa
-    // por nome do garçom logado (ver isCallMine).
-    const staffName = session?.staffName ?? null;
     const load = async (showLoading = false) => {
       if (showLoading) setLoading(true);
-      try {
-        const [rows, deliveries] = await Promise.all([
-          listPendingCalls(tenantSlug),
-          // Entregas pendentes (handoff TV cozinha/bar) entram como
-          // 'pronto-cozinha' — antes a aba "Pronto" era código morto.
-          listPendingDeliveries(tenantSlug).catch(() => [] as PendingDelivery[]),
-        ]);
-        if (cancelled) return;
-        setCalls([
-          ...deliveries.map((d) => mapDelivery(d, staffId)),
-          ...rows.map((r) => mapCall(r, staffName)),
-        ]);
-        setErrorMsg(null);
-      } catch (error) {
-        console.error('[waiter-calls] list failed', error);
-        if (!cancelled) setErrorMsg('Não foi possível carregar os chamados.');
-      } finally {
-        if (!cancelled) setLoading(false);
+      const [callsResult, deliveriesResult] = await Promise.allSettled([
+        listPendingCalls(tenantSlug),
+        // Entregas pendentes (handoff TV cozinha/bar) entram como
+        // 'pronto-cozinha' — antes a aba "Pronto" era código morto.
+        listPendingDeliveries(tenantSlug),
+      ]);
+      if (cancelled) return;
+
+      setCalls((previous) => {
+        const previousCalls = previous.filter((row) => !row.deliveryOrderId);
+        const previousDeliveries = previous.filter((row) => row.deliveryOrderId);
+        const nextCalls = retainRowsOnFailure(
+          previousCalls,
+          callsResult.status === 'fulfilled'
+            ? {
+                status: 'fulfilled',
+                value: callsResult.value.map((row) => mapCall(row, staffId)),
+              }
+            : callsResult,
+        );
+        const nextDeliveries = retainRowsOnFailure(
+          previousDeliveries,
+          deliveriesResult.status === 'fulfilled'
+            ? {
+                status: 'fulfilled',
+                value: deliveriesResult.value.map((row) => mapDelivery(row, staffId)),
+              }
+            : deliveriesResult,
+        );
+        return [...nextDeliveries, ...nextCalls];
+      });
+
+      setCallsState(callsResult.status === 'fulfilled' ? 'ready' : 'error');
+      setDeliveriesState(deliveriesResult.status === 'fulfilled' ? 'ready' : 'error');
+      const failed: string[] = [];
+      if (callsResult.status === 'rejected') {
+        console.error('[waiter-calls] calls list failed', callsResult.reason);
+        failed.push('os chamados das mesas');
       }
+      if (deliveriesResult.status === 'rejected') {
+        console.error('[waiter-calls] deliveries list failed', deliveriesResult.reason);
+        failed.push('as entregas prontas');
+      }
+      setErrorMsg(failed.length > 0 ? `Não foi possível atualizar ${failed.join(' e ')}.` : null);
+      setLoading(false);
     };
 
     load(true);
@@ -220,7 +228,7 @@ export function ScreenWaiterCalls({
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [tenantSlug]);
+  }, [tenantSlug, reloadKey]);
 
   const filtered = calls.filter((c) => {
     if (filter === 'urgentes') return c.urgency === 'high';
@@ -248,6 +256,12 @@ export function ScreenWaiterCalls({
     { id: 'pronto', lbl: 'Pronto', count: calls.filter((c) => c.type === 'pronto-cozinha').length },
     { id: 'minhas', lbl: 'Minhas mesas', count: calls.filter((c) => c.mine).length },
   ];
+  const filteredIsAuthoritativelyEmpty =
+    filter === 'pronto'
+      ? isAuthoritativeEmpty(deliveriesState, filtered.length)
+      : callsState === 'ready' &&
+        deliveriesState === 'ready' &&
+        isAuthoritativeEmpty('ready', filtered.length);
 
   return (
     <div
@@ -279,6 +293,15 @@ export function ScreenWaiterCalls({
           />
         }
       />
+
+      {errorMsg && (
+        <OperationalErrorBanner
+          dark={dark}
+          message={errorMsg}
+          hasStaleData={calls.length > 0}
+          onRetry={() => setReloadKey((value) => value + 1)}
+        />
+      )}
 
       <div
         data-hide-scrollbar
@@ -328,20 +351,7 @@ export function ScreenWaiterCalls({
           >
             Carregando chamados...
           </div>
-        ) : errorMsg ? (
-          <div
-            style={{
-              padding: 32,
-              border: `1px dashed ${C.borderSoft}`,
-              borderRadius: 12,
-              textAlign: 'center',
-              color: C.faint,
-              fontSize: 13,
-            }}
-          >
-            {errorMsg}
-          </div>
-        ) : filtered.length === 0 ? (
+        ) : filteredIsAuthoritativelyEmpty ? (
           <div
             style={{
               padding: 32,
@@ -354,7 +364,7 @@ export function ScreenWaiterCalls({
           >
             Sem chamados nessa categoria.
           </div>
-        ) : (
+        ) : filtered.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {filtered.map((c) => {
               const cp = COPY[c.type];
@@ -436,7 +446,7 @@ export function ScreenWaiterCalls({
               );
             })}
           </div>
-        )}
+        ) : null}
       </div>
 
       <GBottomNav

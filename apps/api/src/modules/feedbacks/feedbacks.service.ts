@@ -24,12 +24,18 @@ export class FeedbacksService {
    * rejeita o segundo com 23505 e traduzimos pra BadRequest amigável.
    */
   async submitFeedback(input: SubmitFeedbackInput, tableSessionId: string) {
+    if (!input.customerId) {
+      throw new ForbiddenException('Identificação obrigatória para avaliar esta visita.');
+    }
     // Round 5 (P0-X7-1): IDOR — antes qualquer sessão postava feedback com
     // o visitId de OUTRA sessão (só sabendo o UUID). Agora exige que a visit
     // pertença à sessão de mesa do caller (vem do SessionGuard); senão 403.
     const visitOwner = (await this.tenantConn.query(
-      `SELECT v.id FROM visits v WHERE v.id = $1 AND v.table_session_id = $2`,
-      [input.visitId, tableSessionId],
+      `SELECT v.id FROM visits v
+        WHERE v.id = $1
+          AND v.table_session_id = $2
+          AND v.customer_id = $3`,
+      [input.visitId, tableSessionId, input.customerId],
     )) as { id: string }[];
     if (!visitOwner.length) {
       throw new ForbiddenException('Visit nao pertence a esta sessao.');
@@ -74,14 +80,22 @@ export class FeedbacksService {
    * a visit não pertence à sessão de mesa atual, retorna null (não vaza
    * existência).
    */
-  async getFeedbackByVisit(visitId: string, tableSessionId: string) {
+  async getFeedbackByVisit(
+    visitId: string,
+    tableSessionId: string,
+    callerCustomerId: string | null,
+  ) {
+    if (!callerCustomerId) {
+      throw new ForbiddenException('Identificação obrigatória para consultar esta avaliação.');
+    }
     const rows = (await this.tenantConn.query(
       `SELECT f.*
          FROM feedbacks f
          JOIN visits v ON v.id = f.visit_id
         WHERE f.visit_id = $1
-          AND v.table_session_id = $2`,
-      [visitId, tableSessionId],
+          AND v.table_session_id = $2
+          AND v.customer_id = $3`,
+      [visitId, tableSessionId, callerCustomerId],
     )) as unknown[];
 
     return rows[0] || null;

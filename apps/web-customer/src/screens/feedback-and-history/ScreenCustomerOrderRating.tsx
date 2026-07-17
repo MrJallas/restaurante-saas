@@ -173,7 +173,11 @@ export function ScreenCustomerOrderRating({ slug, orderId }: ScreenCustomerOrder
           <div className="mb-3 text-[10px] font-semibold uppercase tracking-[1.5px] text-mute">
             Toque numa estrela
           </div>
-          <div className="flex justify-center gap-3">
+          <div
+            className="flex justify-center gap-3"
+            role="group"
+            aria-label="Avaliação em estrelas"
+          >
             {stars.map((n) => {
               const filled = (hover || rating) >= n;
               return (
@@ -181,10 +185,11 @@ export function ScreenCustomerOrderRating({ slug, orderId }: ScreenCustomerOrder
                   key={n}
                   type="button"
                   aria-label={`${n} ${n === 1 ? 'estrela' : 'estrelas'}`}
+                  aria-pressed={rating === n}
                   onMouseEnter={() => setHover(n)}
                   onMouseLeave={() => setHover(0)}
                   onClick={() => setRating(n)}
-                  className="transition-transform duration-100 active:scale-95"
+                  className="flex min-h-11 min-w-11 items-center justify-center transition-transform duration-100 active:scale-95"
                 >
                   <svg width="36" height="36" viewBox="0 0 32 32" aria-hidden>
                     <path
@@ -224,7 +229,7 @@ export function ScreenCustomerOrderRating({ slug, orderId }: ScreenCustomerOrder
             id="rating-comment"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="Quer deixar um comentário pra Renata?"
+            placeholder="Quer deixar um comentário para a equipe?"
             maxLength={2000}
             rows={4}
             className="w-full resize-none rounded-[14px] border border-border-soft bg-surface px-4 py-3.5 text-[15px] leading-[1.45] text-ink outline-none placeholder:text-faint focus-within:border-ink/40"

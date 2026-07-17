@@ -38,6 +38,44 @@ interface ToolCallIndicatorProps {
    * renderiza só os dots (modo silent).
    */
   label?: string;
+  /** Resposta já voltou do backend: troca animação de execução por confirmação estática. */
+  completed?: boolean;
+}
+
+type ToolCallPhase = 'running' | 'completed';
+
+const TOOL_CALL_LABELS: Record<string, Record<ToolCallPhase, string>> = {
+  recommend_dish: { running: 'Buscando sugestões', completed: 'Sugestões encontradas' },
+  view_menu: { running: 'Abrindo cardápio', completed: 'Cardápio consultado' },
+  search_dish: { running: 'Buscando no cardápio', completed: 'Busca concluída' },
+  check_allergens: { running: 'Checando ingredientes', completed: 'Ingredientes conferidos' },
+  compare_dishes: { running: 'Comparando opções', completed: 'Comparação concluída' },
+  add_to_order: { running: 'Adicionando ao pedido', completed: 'Pedido atualizado' },
+  view_order: { running: 'Consultando pedido', completed: 'Pedido consultado' },
+  confirm_order: { running: 'Confirmando pedido', completed: 'Pedido confirmado' },
+  place_order: { running: 'Enviando pedido', completed: 'Pedido enviado' },
+  change_order: { running: 'Atualizando pedido', completed: 'Pedido atualizado' },
+  remove_from_cart: { running: 'Removendo item', completed: 'Item removido' },
+  cancel_order: { running: 'Cancelando pedido', completed: 'Pedido cancelado' },
+  call_waiter: { running: 'Chamando a equipe', completed: 'Equipe avisada' },
+  send_complaint: { running: 'Enviando relato', completed: 'Relato enviado' },
+  send_message_to_manager: { running: 'Avisando a gerência', completed: 'Gerência avisada' },
+  request_bill: { running: 'Pedindo a conta', completed: 'Conta solicitada' },
+  open_payment_screen: { running: 'Abrindo pagamento', completed: 'Pagamento aberto' },
+  split_bill: { running: 'Preparando divisão', completed: 'Divisão preparada' },
+  pay_individual: { running: 'Preparando pagamento', completed: 'Pagamento preparado' },
+  pay_full: { running: 'Preparando pagamento', completed: 'Pagamento preparado' },
+  request_table_merge: { running: 'Pedindo junção de mesas', completed: 'Solicitação enviada' },
+  lgpd_data_request: { running: 'Registrando solicitação', completed: 'Solicitação registrada' },
+};
+
+/** Nunca expõe nomes internos/underscores quando uma tool nova chega ao cliente. */
+export function toolCallStatusLabel(name: string | undefined, phase: ToolCallPhase): string | null {
+  if (!name?.trim()) return null;
+  return (
+    TOOL_CALL_LABELS[name.trim().toLowerCase()]?.[phase] ??
+    (phase === 'running' ? 'Consultando informações' : 'Consulta concluída')
+  );
 }
 
 /**
@@ -57,6 +95,7 @@ export const ToolCallIndicator = memo(function ToolCallIndicator({
   category = 'info',
   name,
   label,
+  completed = false,
 }: ToolCallIndicatorProps) {
   const reducedMotion = useReducedMotion();
   // 8 categorias canônicas → 5 buckets visuais. Adicionar categoria nova é
@@ -71,27 +110,44 @@ export const ToolCallIndicator = memo(function ToolCallIndicator({
     destructive: 'text-warning',
     lgpd: 'text-warning',
   };
-  const display = label ?? name;
+  const phase: ToolCallPhase = completed ? 'completed' : 'running';
+  const display = label ?? toolCallStatusLabel(name, phase);
 
   return (
     <div
       role="status"
       aria-live="polite"
-      aria-label={display ? `Executando ${display}` : 'Executando ferramenta'}
+      aria-label={
+        completed
+          ? display
+            ? `Concluído: ${display}`
+            : 'Ação concluída'
+          : display
+            ? `Executando: ${display}`
+            : 'Executando ferramenta'
+      }
       data-testid={name ? `tool-indicator-${name}` : 'tool-indicator'}
       className={`inline-flex items-center gap-2 py-1 ${bucketColor[category]}`}
     >
-      <span className="inline-flex gap-[3px]" aria-hidden>
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            className={`block h-[3px] w-[3px] rounded-full bg-current ${
-              reducedMotion ? 'opacity-60' : animationClass.dotPulse
-            }`}
-            style={reducedMotion ? undefined : { animationDelay: `${i * DOT_PULSE_STAGGER_MS}ms` }}
-          />
-        ))}
-      </span>
+      {completed ? (
+        <span aria-hidden className="text-[11px] font-bold leading-none">
+          ✓
+        </span>
+      ) : (
+        <span className="inline-flex gap-[3px]" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className={`block h-[3px] w-[3px] rounded-full bg-current ${
+                reducedMotion ? 'opacity-60' : animationClass.dotPulse
+              }`}
+              style={
+                reducedMotion ? undefined : { animationDelay: `${i * DOT_PULSE_STAGGER_MS}ms` }
+              }
+            />
+          ))}
+        </span>
+      )}
       {display && (
         <span className="font-mono text-[10px] font-medium uppercase tracking-[1.5px]">
           {display}

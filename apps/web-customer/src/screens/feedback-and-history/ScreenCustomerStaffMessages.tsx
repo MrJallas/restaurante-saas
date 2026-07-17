@@ -9,6 +9,7 @@ import { useRequireCustomerId } from '../../hooks/useRequireCustomerId';
 import { AppShell } from '../../components/layout/AppShell';
 import { PillButton } from '../../components/ui/PillButton';
 import { BottomSheet } from '../../components/ui/BottomSheet';
+import { shouldShowEmptyListState } from '../../lib/async-list-state';
 import type {
   StaffMessageHistoryThreadDto,
   StaffMessageHistoryRoleLabel,
@@ -175,12 +176,15 @@ export function ScreenCustomerStaffMessages({ slug }: ScreenCustomerStaffMessage
         </p>
 
         {error && (
-          <div className="mb-4 rounded-[12px] border border-danger bg-[#fdf2f2] px-3.5 py-2.5 text-[13px] text-[#7a1f1f]">
+          <div
+            role="alert"
+            className="mb-4 rounded-[12px] border border-danger bg-[#fdf2f2] px-3.5 py-2.5 text-[13px] text-[#7a1f1f]"
+          >
             {error}
           </div>
         )}
 
-        {!loading && threads.length === 0 && (
+        {shouldShowEmptyListState(loading, error, threads.length) && (
           <div className="rounded-[14px] border border-border-soft bg-surface px-4 py-10 text-center">
             <div className="mb-2 text-[15px] font-medium text-ink">
               Nenhuma mensagem por aqui ainda

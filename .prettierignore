@@ -18,7 +18,12 @@ yarn.lock
 # Evidências/artefatos de QA — não é código (inclui dumps JSON-lines do idb/
 # simulador que o prettier nem consegue parsear). Não formatar/checar.
 qa-reports
+.playwright-cli
+output
 
 # Caches de teste Python (ai-service) — gerados pelo pytest.
 .pytest_cache
 __pycache__
+
+# Gerado automaticamente pelo Next.js em dev/build.
+**/next-env.d.ts

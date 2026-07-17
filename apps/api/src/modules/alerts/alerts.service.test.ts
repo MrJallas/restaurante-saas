@@ -204,8 +204,8 @@ describe('AlertsService.create — dedup host_assist_table por sessão (P1 retry
     expect(new Set([e1.id, e2.id, q1.id]).size).toBe(3);
     expect(db.getEmittedCount()).toBe(3);
     // Nenhum INSERT de outro kind carregou sessão.
-    expect(db.getInserts().every((i) => i.kind === 'host_assist_table' || i.sessionId === null)).toBe(
-      true,
-    );
+    expect(
+      db.getInserts().every((i) => i.kind === 'host_assist_table' || i.sessionId === null),
+    ).toBe(true);
   });
 });

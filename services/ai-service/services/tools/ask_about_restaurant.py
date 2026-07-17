@@ -34,7 +34,7 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         silent=True,  # FE doesn't bubble — LLM follows up with the answer
         chips=_followup_chips(),
         action_payload={
-            "status": "not_implemented",
+            "status": "context_available",
             "tool": "ask_about_restaurant",
             "topic": topic or None,
         },

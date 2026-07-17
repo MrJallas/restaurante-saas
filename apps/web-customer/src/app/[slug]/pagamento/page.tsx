@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { apiGet, apiPost } from '../../../lib/api';
+import { ApiRequestError, apiGet, apiPost } from '../../../lib/api';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
@@ -59,7 +59,7 @@ export default function PagamentoPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { push } = useNav();
-  const { tableLabel, visitId } = useSession();
+  const { hydrated, tableLabel, visitId } = useSession();
   const slug = params.slug as string;
 
   useEffect(() => {
@@ -73,15 +73,18 @@ export default function PagamentoPage() {
   const [mode, setMode] = useState<'table' | 'individual'>('table');
   const [method, setMethod] = useState<Method>('pix');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const requestedMode = searchParams.get('mode') === 'individual' ? 'individual' : 'table';
+  const feedbackRequiresPayment = searchParams.get('reason') === 'payment_not_confirmed';
 
   useEffect(() => {
     setMode(requestedMode);
   }, [requestedMode]);
 
   useEffect(() => {
-    if (!slug) return;
+    if (!slug || !hydrated) return;
     let stop = false;
     const load = async () => {
       try {
@@ -93,9 +96,16 @@ export default function PagamentoPage() {
         ]);
         if (stop) return;
         setTableBill(tRes);
+        setLoadError(null);
         if (iRes) setIndividualBill(iRes);
-      } catch {
-        /* ignore */
+      } catch (error) {
+        if (!stop) {
+          setLoadError(
+            error instanceof ApiRequestError && error.statusCode === 401
+              ? 'Sua sessão expirou. Escaneie o QR da mesa novamente.'
+              : 'Não consegui carregar a conta. Verifique a conexão e tente de novo.',
+          );
+        }
       } finally {
         if (!stop) setLoading(false);
       }
@@ -104,7 +114,7 @@ export default function PagamentoPage() {
     return () => {
       stop = true;
     };
-  }, [slug, visitId]);
+  }, [hydrated, slug, visitId, retryNonce]);
 
   const bill = mode === 'table' ? tableBill : individualBill;
 
@@ -182,6 +192,36 @@ export default function PagamentoPage() {
     );
   }
 
+  if (loadError && !tableBill) {
+    return (
+      <AppShell
+        slug={slug}
+        restaurantName=""
+        tableLabel={tableLabel || ''}
+        activeHref={`/${slug}/pagamento`}
+      >
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+          <h1 className="text-[20px] font-semibold tracking-[-0.02em] text-ink">
+            Não consegui abrir a conta
+          </h1>
+          <p role="alert" className="max-w-[290px] text-[13px] leading-[1.5] text-mute">
+            {loadError}
+          </p>
+          <PillButton
+            variant="filled"
+            onClick={() => {
+              setLoading(true);
+              setRetryNonce((value) => value + 1);
+            }}
+          >
+            Tentar novamente
+          </PillButton>
+          <PillButton onClick={() => push(`/${slug}`)}>Voltar</PillButton>
+        </div>
+      </AppShell>
+    );
+  }
+
   if (!bill || bill.totalCents <= 0) {
     return (
       <AppShell
@@ -225,15 +265,28 @@ export default function PagamentoPage() {
           <div className="mt-1 text-[12px] text-mute">
             {tableLabel || 'Mesa'} · {totalItemCount} {totalItemCount === 1 ? 'item' : 'itens'}
           </div>
+          {feedbackRequiresPayment && (
+            <div
+              role="alert"
+              className="mt-3 rounded-[12px] border border-border-soft bg-surface px-3.5 py-2.5 text-[12px] leading-[1.45] text-mute"
+            >
+              A avaliação pós-pagamento só fica disponível depois que um pagamento é confirmado.
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto px-[22px] pb-5 pt-1">
           {individualBill && (
-            <div className="mb-4 flex gap-2 rounded-full border border-border-soft p-1">
+            <div
+              className="mb-4 flex gap-2 rounded-full border border-border-soft p-1"
+              role="group"
+              aria-label="Conta para pagamento"
+            >
               <button
                 type="button"
                 onClick={() => setMode('table')}
-                className={`flex-1 rounded-full py-2 text-[12px] font-medium transition-colors ${
+                aria-pressed={mode === 'table'}
+                className={`min-h-11 flex-1 rounded-full py-2 text-[12px] font-medium transition-colors ${
                   mode === 'table' ? 'bg-ink text-white' : 'text-mute'
                 }`}
               >
@@ -242,7 +295,8 @@ export default function PagamentoPage() {
               <button
                 type="button"
                 onClick={() => setMode('individual')}
-                className={`flex-1 rounded-full py-2 text-[12px] font-medium transition-colors ${
+                aria-pressed={mode === 'individual'}
+                className={`min-h-11 flex-1 rounded-full py-2 text-[12px] font-medium transition-colors ${
                   mode === 'individual' ? 'bg-ink text-white' : 'text-mute'
                 }`}
               >
@@ -281,7 +335,7 @@ export default function PagamentoPage() {
             <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-[1px] text-mute">
               Forma de pagamento
             </div>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2" role="group" aria-label="Forma de pagamento">
               {METHODS.map((m) => {
                 const selected = method === m.key;
                 return (
@@ -289,6 +343,7 @@ export default function PagamentoPage() {
                     key={m.key}
                     type="button"
                     onClick={() => setMethod(m.key)}
+                    aria-pressed={selected}
                     className={`flex items-center gap-3.5 rounded-[14px] border-[1.3px] bg-bg px-4 py-3.5 text-left transition-colors ${
                       selected ? 'border-ink' : 'border-border-soft'
                     }`}
@@ -313,7 +368,7 @@ export default function PagamentoPage() {
           <button
             type="button"
             onClick={() => push(`/${slug}/pagamento/dividir`)}
-            className="mt-4 w-full rounded-full border-[1.2px] border-dashed border-border-soft px-4 py-3 text-[13px] text-mute"
+            className="mt-4 min-h-11 w-full rounded-full border-[1.2px] border-dashed border-border-soft px-4 py-3 text-[13px] text-mute"
           >
             Dividir conta com outras pessoas
           </button>

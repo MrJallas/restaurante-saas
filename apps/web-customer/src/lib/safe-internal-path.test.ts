@@ -1,4 +1,4 @@
-import { toInternalPath } from './safe-internal-path';
+import { toInternalPath, toTenantInternalPath } from './safe-internal-path';
 
 /**
  * Open-redirect fechado POR CONSTRUÇÃO (não por denylist). O bug original: a
@@ -38,5 +38,29 @@ describe('toInternalPath', () => {
     expect(toInternalPath(null)).toBeNull();
     expect(toInternalPath(undefined)).toBeNull();
     expect(toInternalPath('   ')).toBeNull();
+  });
+});
+
+describe('toTenantInternalPath', () => {
+  it('aceita somente paths internos do mesmo slug', () => {
+    expect(toTenantInternalPath('/bistro/waiting-approval?x=1', 'bistro')).toBe(
+      '/bistro/waiting-approval?x=1',
+    );
+    expect(toTenantInternalPath('/bistro', 'bistro')).toBe('/bistro');
+    expect(toTenantInternalPath('/outro/waiting-approval', 'bistro')).toBeNull();
+    expect(toTenantInternalPath('/bistro-mal/waiting-approval', 'bistro')).toBeNull();
+  });
+
+  it.each([
+    '//evil.test/waiting-approval',
+    '/\\evil.test/waiting-approval',
+    'javascript:alert(document.domain)//waiting-approval',
+    'https://evil.test/bistro/waiting-approval',
+  ])('rejeita destino adversarial %s', (candidate) => {
+    expect(toTenantInternalPath(candidate, 'bistro')).toBeNull();
+  });
+
+  it('rejeita slug malformado', () => {
+    expect(toTenantInternalPath('/ok/home', '../ok')).toBeNull();
   });
 });

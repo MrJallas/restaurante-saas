@@ -243,7 +243,9 @@ describe('OrderDeliveryService — characterization (extraído do orders.service
     const { conn } = fakeConn([
       {
         match: (s) => s.includes('t.label AS table_label FROM') && !s.includes('table_code'),
-        rows: [{ id: ORDER, status: 'in_transit', table_session_id: 'sess-1', table_label: 'Mesa 7' }],
+        rows: [
+          { id: ORDER, status: 'in_transit', table_session_id: 'sess-1', table_label: 'Mesa 7' },
+        ],
       },
       {
         match: (s) => s.startsWith('SELECT id, status, claimed_by FROM order_deliveries'),

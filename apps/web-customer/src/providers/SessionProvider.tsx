@@ -1,6 +1,11 @@
 'use client';
 
 import { createContext, useCallback, useEffect, useMemo, useState, ReactNode } from 'react';
+import { logoutCustomer } from '../lib/api/customer-auth';
+import {
+  CUSTOMER_ERASURE_FULFILLED_EVENT,
+  type CustomerErasureFulfilledDetail,
+} from '../lib/customer-erasure';
 
 // Bundle mantido no sessionStorage para sobreviver a refresh/hard-reload da
 // mesma aba. Sem isso, o SessionContext fica null apos F5 e o MenuDrawer (que
@@ -14,16 +19,16 @@ interface SessionBundle {
   tableLabel: string;
   slug: string;
   // Customer fields opcionais — preenchidos apos welcome/recognize.
-  // Antes nao eram salvos: hard reload ou navegacao back perdia
-  // customerId/customerName e o /home era chamado sem customerId,
-  // resultando em hero "visitante, bem-vindo!" no lugar do nome real.
+  // Antes não eram salvos: hard reload/back perdia estado individual usado
+  // pela UI. O backend nunca confia nesses ids para PII; /home resolve a
+  // pessoa exclusivamente pelo recognition_token httpOnly.
   customerId?: string;
   visitId?: string;
   customerName?: string;
   isReturning?: boolean;
 }
 
-function readBundle(): SessionBundle | null {
+export function readBundle(): SessionBundle | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = window.sessionStorage.getItem(SESSION_BUNDLE_KEY);
@@ -68,6 +73,39 @@ function clearBundle(): void {
   }
 }
 
+/**
+ * Remove tudo que pode reidratar identidade ou consumo da sessão nesta aba.
+ * O reload neutro após LGPD zera também os estados React dos demais providers.
+ */
+const LOCAL_CUSTOMER_CACHE_PREFIXES = ['commandMode:', 'draft:'];
+const TAB_CUSTOMER_CACHE_PREFIXES = [
+  'complaint:cache:',
+  'late-arrival:',
+  'table-merge:',
+  'table-merge-command-choice:',
+];
+
+export function clearPersistedCustomerSession(_sessionId?: string | null): void {
+  if (typeof window === 'undefined') return;
+  clearBundle();
+  try {
+    window.sessionStorage.removeItem('session_token');
+    window.sessionStorage.removeItem('continuation:kind-hint');
+    for (const key of Object.keys(window.sessionStorage)) {
+      if (TAB_CUSTOMER_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+        window.sessionStorage.removeItem(key);
+      }
+    }
+    for (const key of Object.keys(window.localStorage)) {
+      if (LOCAL_CUSTOMER_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+        window.localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    /* storage bloqueado — estado em memória ainda será limpo */
+  }
+}
+
 export interface TableParticipant {
   customerId: string;
   name: string;
@@ -82,6 +120,8 @@ export interface TableParticipant {
 export type CommandMode = 'individual' | 'table' | null;
 
 export interface SessionContextValue {
+  /** true depois de consultar sessionStorage no client (com ou sem bundle). */
+  hydrated: boolean;
   sessionId: string | null;
   tableCode: string | null;
   tableLabel: string | null;
@@ -118,6 +158,7 @@ export interface SessionContextValue {
 }
 
 export const SessionContext = createContext<SessionContextValue>({
+  hydrated: false,
   sessionId: null,
   tableCode: null,
   tableLabel: null,
@@ -138,6 +179,7 @@ export const SessionContext = createContext<SessionContextValue>({
 });
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+  const [hydrated, setHydrated] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [tableCode, setTableCode] = useState<string | null>(null);
   const [tableLabel, setTableLabel] = useState<string | null>(null);
@@ -169,12 +211,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // Rehidrata do sessionStorage no primeiro mount para sobreviver a F5/hard
   // reload — sem isso o MenuDrawer somia depois de um refresh em /cardapio
   // (ou qualquer rota que nao seja /mesa) porque ele depende de `sessionId`.
-  // Tambem rehidrata customer fields (customerId/visitId/customerName) — sem
-  // isso o /home era chamado sem customerId apos qualquer navegacao saindo
-  // de /mesa, e o backend devolvia "visitante, bem-vindo!" no hero.
+  // Também reidrata customer fields (customerId/visitId/customerName) para a
+  // UI local. Eles não são enviados como autoridade; endpoints individuais
+  // resolvem recognition_token no backend.
   useEffect(() => {
     const bundle = readBundle();
-    if (!bundle) return;
+    if (!bundle) {
+      setHydrated(true);
+      return;
+    }
     setSessionId((current) => current ?? bundle.sessionId);
     setTableCode((current) => current ?? bundle.tableCode);
     setTableLabel((current) => current ?? bundle.tableLabel);
@@ -191,6 +236,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (typeof bundle.isReturning === 'boolean') {
       setIsReturning((current) => current || (bundle.isReturning ?? false));
     }
+    setHydrated(true);
   }, []);
 
   const setCustomer = useCallback(
@@ -241,16 +287,35 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setIsReturning(false);
     setParticipantsState([]);
     setCommandModeState(null);
-    clearBundle();
-    // Tambem limpa o session_token armazenado em sessionStorage
-    // (lib/storage.ts) pra que a proxima request POST /session/init
-    // nao mande header de mesa antiga.
-    try {
-      window.sessionStorage.removeItem('session_token');
-    } catch {
-      /* ignore */
-    }
+    clearPersistedCustomerSession();
   }, []);
+
+  useEffect(() => {
+    let handling = false;
+    const handleErasureFulfilled = (event: Event) => {
+      if (handling) return;
+      handling = true;
+      const detail = (event as CustomEvent<CustomerErasureFulfilledDetail>).detail;
+      const targetSlug = detail?.slug || readBundle()?.slug || slug;
+
+      // Privacidade primeiro: nenhum await mantém PII reidratável na aba.
+      clearSession();
+      void (async () => {
+        try {
+          if (targetSlug) await logoutCustomer(targetSlug);
+        } catch {
+          // O backend já rotacionou a credencial na erasure. Limpar o estado
+          // local e sair continua correto mesmo se a expiração do cookie falhar.
+        } finally {
+          window.location.replace('/');
+        }
+      })();
+    };
+    window.addEventListener(CUSTOMER_ERASURE_FULFILLED_EVENT, handleErasureFulfilled);
+    return () => {
+      window.removeEventListener(CUSTOMER_ERASURE_FULFILLED_EVENT, handleErasureFulfilled);
+    };
+  }, [clearSession, slug]);
 
   const setCommandMode = useCallback(
     (mode: CommandMode, remember?: boolean) => {
@@ -285,6 +350,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<SessionContextValue>(
     () => ({
+      hydrated,
       sessionId,
       tableCode,
       tableLabel,
@@ -304,6 +370,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       clearSession,
     }),
     [
+      hydrated,
       sessionId,
       tableCode,
       tableLabel,

@@ -1,21 +1,30 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ScreenManagerProfile } from '../../../screens/manager/ScreenManagerProfile';
-import { readStaffSession } from '../../../lib/api';
+import { readStaffSession, type StaffSession } from '../../../lib/api';
 import { useStaffTheme } from '../../../lib/theme';
 
 function ManagerProfileInner() {
   const params = useSearchParams();
   const { dark } = useStaffTheme();
-  const name = params.get('name') ?? readStaffSession()?.staffName ?? undefined;
+  const [session, setSession] = useState<StaffSession | null>(null);
+  useEffect(() => setSession(readStaffSession()), []);
+  const name = params.get('name') ?? session?.staffName ?? undefined;
   const slug =
     params.get('slug') ||
     process.env.NEXT_PUBLIC_DEFAULT_TENANT ||
     process.env.NEXT_PUBLIC_TENANT_SLUG ||
     'restaurant_dev';
-  return <ScreenManagerProfile managerName={name} tenantSlug={slug} dark={dark} />;
+  return (
+    <ScreenManagerProfile
+      managerName={name}
+      tenantSlug={slug}
+      dark={dark}
+      role={session?.staffRole === 'owner' ? 'owner' : 'manager'}
+    />
+  );
 }
 
 export default function ManagerProfilePage() {

@@ -3,10 +3,9 @@
  * comportamento das reservas do host ANTES de mover os métodos pra fora do
  * host.service. Fixa:
  *  - listReservations: shape mapeado (mapReservationRow) + ordem preservada
- *    da query (scheduled_at ASC), when derivado de scheduled_at no fuso do
- *    servidor via getHours/getMinutes.
+ *    da query (scheduled_at ASC), when projetado no timezone do restaurante.
  *  - createReservation: parsing de when='HH:MM' → hoje às HH:MM no fuso do
- *    servidor (CONGELADO — comportamento timezone-sensível, fake timers);
+ *    restaurante via PostgreSQL/settings.timezone;
  *    fallback ISO 8601; when inválido estoura 400; lookup de table por
  *    número; params echoados no INSERT.
  *  - updateReservation: transições de status setam status/arrived_at/
@@ -34,6 +33,7 @@ interface FakeReservationRow {
   party: number;
   phone: string | null;
   scheduled_at: string;
+  local_time: string;
   table_id: string | null;
   table_number: number | null;
   status: string;
@@ -49,6 +49,7 @@ function row(over: Partial<FakeReservationRow> = {}): FakeReservationRow {
     party: 4,
     phone: '11999990000',
     scheduled_at: '2026-07-04T19:30:00.000Z',
+    local_time: '19:30',
     table_id: null,
     table_number: null,
     status: 'awaited',
@@ -66,6 +67,7 @@ function fakeDb(
     inserted?: FakeReservationRow;
     existing?: { id: string } | null;
     refreshed?: FakeReservationRow;
+    localScheduledAt?: string;
   } = {},
 ) {
   const calls: Array<{ sql: string; params: unknown[] }> = [];
@@ -78,12 +80,16 @@ function fakeDb(
       return opts.tableLookup === undefined ? [] : opts.tableLookup ? [opts.tableLookup] : [];
     }
     // listReservations
-    if (s.startsWith('SELECT r.id, r.name, r.party, r.phone, r.scheduled_at, r.table_id,')) {
+    if (s.startsWith('SELECT r.id, r.name, r.party, r.phone, r.scheduled_at,')) {
       // este prefixo cobre a query de refresh do updateReservation também
       if (s.includes('WHERE r.id = $1')) {
         return opts.refreshed ? [opts.refreshed] : [];
       }
       return opts.list ?? [];
+    }
+    // Conversão HH:MM civil do restaurante -> instante real.
+    if (s.startsWith('SELECT ((') && s.endsWith('AS scheduled_at')) {
+      return [{ scheduled_at: opts.localScheduledAt ?? '2026-07-04T22:30:00.000Z' }];
     }
     // createReservation INSERT (flat Row[] no pg)
     if (s.startsWith('INSERT INTO reservations')) {
@@ -102,9 +108,9 @@ function fakeDb(
   return { calls, conn: { query } as unknown as TenantConnectionProvider };
 }
 
-const noopRedis = { del: async () => undefined } as unknown as import(
-  '../../infra/redis/redis.service'
-).RedisService;
+const noopRedis = {
+  del: async () => undefined,
+} as unknown as import('../../infra/redis/redis.service').RedisService;
 
 function makeService(conn: TenantConnectionProvider) {
   return new HostService(
@@ -118,11 +124,12 @@ function makeService(conn: TenantConnectionProvider) {
 
 describe('Host reservations — characterization', () => {
   describe('listReservations', () => {
-    it('preserva a ordem da query e mapeia cada row pro DTO (when derivado no fuso do servidor)', async () => {
+    it('preserva a ordem e mapeia when no timezone configurado do restaurante', async () => {
       const first = row({
         id: 'r1',
         name: 'Ana',
         scheduled_at: '2026-07-04T19:30:00.000Z',
+        local_time: '16:30',
         table_id: TABLE_ID,
         table_number: 12,
         note: 'janela',
@@ -133,6 +140,7 @@ describe('Host reservations — characterization', () => {
         party: 2,
         phone: null,
         scheduled_at: '2026-07-04T20:45:00.000Z',
+        local_time: '17:45',
         status: 'arrived',
       });
       const { calls, conn } = fakeDb({ list: [first, second] });
@@ -140,14 +148,11 @@ describe('Host reservations — characterization', () => {
 
       const select = calls.find((c) => c.sql.startsWith('SELECT r.id, r.name, r.party'))!;
       expect(select.sql).toContain('FROM reservations r');
-      expect(select.sql).toContain('WHERE r.scheduled_at::date = CURRENT_DATE');
+      expect(select.sql).toContain('AT TIME ZONE');
+      expect(select.sql).toContain('JOIN pg_timezone_names');
+      expect(select.sql).not.toMatch(/\bCURRENT_DATE\b/i);
       expect(select.sql).toContain("OR r.status IN ('awaited', 'arrived')");
       expect(select.sql).toContain('ORDER BY r.scheduled_at ASC');
-
-      const d1 = new Date(first.scheduled_at);
-      const when1 = `${String(d1.getHours()).padStart(2, '0')}:${String(d1.getMinutes()).padStart(2, '0')}`;
-      const d2 = new Date(second.scheduled_at);
-      const when2 = `${String(d2.getHours()).padStart(2, '0')}:${String(d2.getMinutes()).padStart(2, '0')}`;
 
       expect(list).toHaveLength(2);
       expect(list[0]).toEqual({
@@ -155,7 +160,7 @@ describe('Host reservations — characterization', () => {
         name: 'Ana',
         party: 4,
         phone: '11999990000',
-        when: when1,
+        when: '16:30',
         table: 12,
         status: 'awaited',
         note: 'janela',
@@ -163,25 +168,15 @@ describe('Host reservations — characterization', () => {
       // phone null → undefined no DTO; table null → table_number null.
       expect(list[1].phone).toBeUndefined();
       expect(list[1].table).toBeNull();
-      expect(list[1].when).toBe(when2);
+      expect(list[1].when).toBe('17:45');
       expect(list[1].status).toBe('arrived');
     });
   });
 
   describe('createReservation', () => {
-    afterEach(() => jest.useRealTimers());
-
-    it("when='HH:MM' vira hoje às HH:MM no fuso do servidor (comportamento congelado)", async () => {
-      // Fake timers fixam "hoje" pra tornar a asserção determinística. O
-      // parsing usa setHours(hh, mm, 0, 0) sobre new Date() e serializa em
-      // toISOString() — sensível ao fuso do runner, então derivamos o ISO
-      // esperado do MESMO cálculo em vez de hardcodar.
-      jest.useFakeTimers().setSystemTime(new Date('2026-07-04T12:00:00.000Z'));
-      const expected = new Date();
-      expected.setHours(19, 30, 0, 0);
-      const expectedIso = expected.toISOString();
-
-      const { calls, conn } = fakeDb();
+    it("when='HH:MM' usa hoje e o timezone de settings, não o fuso do Node", async () => {
+      const expectedIso = '2026-07-04T22:30:00.000Z';
+      const { calls, conn } = fakeDb({ localScheduledAt: expectedIso });
       const dto = await makeService(conn).createReservation({
         name: 'Carla',
         party: 3,
@@ -189,6 +184,13 @@ describe('Host reservations — characterization', () => {
         when: '19:30',
         note: 'aniversário',
       });
+
+      const localClock = calls.find(
+        (c) => c.sql.startsWith('SELECT ((') && c.sql.endsWith('AS scheduled_at'),
+      )!;
+      expect(localClock.params).toEqual(['19:30']);
+      expect(localClock.sql).toContain('JOIN pg_timezone_names');
+      expect(localClock.sql).toContain("'America/Sao_Paulo'");
 
       const insert = calls.find((c) => c.sql.startsWith('INSERT INTO reservations'))!;
       expect(insert.params[0]).toBe('Carla');
@@ -198,11 +200,8 @@ describe('Host reservations — characterization', () => {
       expect(insert.params[4]).toBeNull(); // sem table
       expect(insert.params[5]).toBe('aniversário');
 
-      // O eco do INSERT usa scheduled_at = params[3]; when derivado dele.
-      const d = new Date(expectedIso);
-      expect(dto.when).toBe(
-        `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
-      );
+      // O RETURNING projeta o horário local; o fake devolve o mesmo contrato.
+      expect(dto.when).toBe('19:30');
       expect(dto.name).toBe('Ana'); // eco default do fake (não faz parte do congelamento de parsing)
     });
 
@@ -219,6 +218,14 @@ describe('Host reservations — characterization', () => {
       await expect(
         makeService(conn).createReservation({ name: 'X', party: 2, when: 'não-é-data' }),
       ).rejects.toBeInstanceOf(HttpException);
+    });
+
+    it('HH:MM fora do relógio civil estoura 400 antes de consultar o banco', async () => {
+      const { calls, conn } = fakeDb();
+      await expect(
+        makeService(conn).createReservation({ name: 'X', party: 2, when: '25:99' }),
+      ).rejects.toBeInstanceOf(HttpException);
+      expect(calls).toHaveLength(0);
     });
 
     it('table informada resolve o id via findTableByNumber e vai no INSERT', async () => {

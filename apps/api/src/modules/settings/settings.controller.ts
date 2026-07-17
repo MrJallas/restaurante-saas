@@ -2,8 +2,10 @@ import { Body, Controller, Get, Patch, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { IsInt, Max, Min } from 'class-validator';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { OwnerOnlyGuard } from '../../common/guards/owner-only.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { SettingsService } from './settings.service';
+import { UpdateOwnerEstablishmentSettingsDto } from './owner-establishment-settings.dto';
 
 class UpdateKitchenEtaDto {
   @IsInt() @Min(1) @Max(120) minMinutes!: number;
@@ -20,6 +22,26 @@ export class SettingsController {
   @Get('public')
   async getPublicSettings() {
     return this.settingsService.getPublicSettings();
+  }
+
+  /**
+   * Leitura e mutação exclusivas do dono. A tela nem aparece para gerente e
+   * o backend repete o gate nos dois verbos, impedindo acesso por URL direta.
+   */
+  @Get('establishment')
+  @UseGuards(StaffOnlyGuard, OwnerOnlyGuard)
+  async getEstablishmentSettings() {
+    return this.settingsService.getOwnerEstablishmentSettings();
+  }
+
+  @Patch('establishment')
+  @UseGuards(StaffOnlyGuard, OwnerOnlyGuard)
+  async updateEstablishmentSettings(
+    @Body() dto: UpdateOwnerEstablishmentSettingsDto,
+    @Req() req: Request,
+  ) {
+    const ownerId = await this.callerResolver.requireActiveStaffId(req);
+    return this.settingsService.updateOwnerEstablishmentSettings(ownerId, dto);
   }
 
   /**

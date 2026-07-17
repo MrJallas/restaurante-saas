@@ -122,18 +122,10 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     this.emitter.bindServer(server);
   }
 
-  /**
-   * Round 16 (B-NEW-55): extrai IP do handshake. Atrás de proxy/CDN
-   * `x-forwarded-for` é a fonte real (mesmo pattern de
-   * customers.controller.identifyClientKey).
-   */
+  /** IP não-forjável do peer TCP. Headers de proxy só podem ser usados após
+   * `trust proxy` explícito; hoje o gateway é exposto diretamente em :3001. */
   private handshakeIp(client: AuthedSocket): string {
-    const xff = client.handshake.headers['x-forwarded-for'];
-    const xffStr = Array.isArray(xff) ? xff[0] : xff;
-    return ((xffStr as string | undefined) ?? client.handshake.address ?? 'unknown')
-      .toString()
-      .split(',')[0]
-      .trim();
+    return (client.handshake.address ?? 'unknown').toString().trim();
   }
 
   /**
@@ -173,7 +165,20 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       }
       const cacheKey = `recognition_customer:${schemaName}:${token}`;
       const cached = await this.redis.get(cacheKey);
-      if (cached) return cached;
+      if (cached) {
+        // Cache é só uma dica de desempenho, nunca a autoridade de um bearer.
+        // Logout/LGPD rotacionam o token no PostgreSQL; revalidar o par impede
+        // que uma chave Redis antiga aceite o token revogado até o TTL.
+        const verified = (await this.dataSource.query(
+          `SELECT id FROM "${schemaName}".customers
+            WHERE id = $1 AND recognition_token = $2
+            LIMIT 1`,
+          [cached, token],
+        )) as Array<{ id: string }>;
+        if (verified[0]?.id === cached) return cached;
+        await this.redis.del(cacheKey);
+        return null;
+      }
       const rows = (await this.dataSource.query(
         `SELECT id FROM "${schemaName}".customers WHERE recognition_token = $1 LIMIT 1`,
         [token],
@@ -276,11 +281,11 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     // chave SEM TTL quando o EXPIRE falhava = lockout pra sempre;
     // (c) handshake autenticado devolve a cota lá embaixo (refund) — 30+
     // devices reconectando pós-deploy não podem travar a mesa.
-    const tenantHint =
-      (client.handshake.headers['x-tenant-slug'] as string) ??
-      (client.handshake.auth?.tenantSlug as string) ??
-      'shared';
-    const handshakeKey = `ws:handshake:${tenantHint}:${ip}`;
+    // Tenant e X-Forwarded-For são dados controlados antes da autenticação;
+    // incluí-los na chave permitia trocar o hint a cada tentativa e zerar o
+    // limite. Handshake válido devolve a cota, então devices legítimos atrás
+    // do mesmo NAT não se bloqueiam mutuamente.
+    const handshakeKey = `ws:handshake:${ip}`;
     const attempts = await this.redis.incrWithExpiry(handshakeKey, 60);
     if (attempts > 30) {
       this.logger.warn(`WS handshake rate-limit hit: ${ip}`);
@@ -301,7 +306,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       const tenantHintForToken =
         (client.handshake.headers['x-tenant-slug'] as string) ??
         (client.handshake.auth?.tenantSlug as string) ??
-        tenantHint;
+        '';
       const payload = await verifyStaffSessionToken(
         this.redis,
         staffCookieToken,
@@ -323,7 +328,11 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
         client.data.staffRole = payload.role;
         client.data.staffTenantSlug = payload.slug;
         client.join(`staff:${payload.staffId}`);
-        client.join(`tenant:${payload.slug}`);
+        // A room genérica contém auditoria/PII gerencial. Só manager/owner entra;
+        // demais papéis usam rooms operacionais tipadas via join:tenant.
+        if (payload.role === 'manager' || payload.role === 'owner') {
+          client.join(`tenant:${payload.slug}`);
+        }
         this.logger.log(`Staff WS connected via session token: ${client.id}`);
         await this.redis.decr(handshakeKey);
         return;
@@ -390,7 +399,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
         if (staffRole) client.data.staffRole = staffRole;
         client.data.staffTenantSlug = tenantSlug;
         client.join(`staff:${staffId}`);
-        client.join(`tenant:${tenantSlug}`);
+        if (staffRole === 'manager') client.join(`tenant:${tenantSlug}`);
         this.logger.log(`Staff client connected: ${client.id}`);
         this.logger.log(`Client ${client.id} auto-joined staff room ${staffId}`);
         // Handshake autenticado devolve a cota — só falha consome.
@@ -421,11 +430,11 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
             client,
             session.schemaName,
           );
-          if (recognizedCustomerId) {
-            client.data.customerId = recognizedCustomerId;
-          } else if (session.customerId) {
-            client.data.customerId = session.customerId;
-          }
+          // O payload da sessão é compartilhado pela mesa e guarda, no
+          // máximo, o último cliente que fez welcome. Nunca serve como prova
+          // de identidade individual. Sem cookie reconhecido a conexão pode
+          // observar apenas a room da própria sessão, não customer:<id>.
+          if (recognizedCustomerId) client.data.customerId = recognizedCustomerId;
           this.logger.log(`Session client connected: ${client.id}`);
           // Handshake autenticado devolve a cota — só falha consome.
           await this.redis.decr(handshakeKey);
@@ -441,6 +450,27 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
 
   handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
+  }
+
+  /** Revogação imediata de devices já conectados após desligamento/role/PIN. */
+  disconnectStaff(staffId: string): void {
+    if (!this.server || !staffId) return;
+    this.server.in(`staff:${staffId}`).disconnectSockets(true);
+  }
+
+  /**
+   * Revoga somente sockets customer autenticados pelo recognition token.
+   * Não usa `customer:<id>.disconnectSockets()`: staff legítimo também pode
+   * estar nessa room ao atender a pessoa e não deve cair no logout dela.
+   */
+  disconnectCustomer(customerId: string): void {
+    if (!this.server || !customerId) return;
+    for (const socket of this.server.sockets.sockets.values()) {
+      const data = (socket as AuthedSocket).data;
+      if (data.authType === 'session' && data.customerId === customerId) {
+        socket.disconnect(true);
+      }
+    }
   }
 
   /**
@@ -486,9 +516,22 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       return;
     }
 
+    const allowedRoomRole =
+      client.data.staffRole === 'cook'
+        ? 'kitchen'
+        : client.data.staffRole === 'owner'
+          ? 'manager'
+          : client.data.staffRole;
+    if (!allowedRoomRole || data.role !== allowedRoomRole) {
+      client.emit('error', { message: 'Staff role mismatch' });
+      return;
+    }
+
     const room = `tenant:${data.slug}:${data.role}`;
     client.join(room);
-    client.join(`tenant:${data.slug}`);
+    if (client.data.staffRole === 'manager' || client.data.staffRole === 'owner') {
+      client.join(`tenant:${data.slug}`);
+    }
     client.data.tenantSlug = data.slug;
     this.logger.log(`Client ${client.id} joined room ${room}`);
   }
@@ -578,6 +621,10 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   ) {
     await client.data.authReady;
     if (client.data.authType === 'staff') {
+      if (client.data.staffRole !== 'manager' && client.data.staffRole !== 'owner') {
+        client.emit('error', { message: 'Manager role required for customer rooms.' });
+        return;
+      }
       // Round 15 (P1-NEW-1 round14): staff só entra em customer room
       // se o customer pertence ao tenant carimbado no handshake. Antes
       // staff de tenant A com UUID alheio (vazado em logs / Mongo dump
@@ -668,6 +715,10 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     }
     if (client.data.staffId !== data.managerId) {
       client.emit('error', { message: 'Manager id mismatch' });
+      return;
+    }
+    if (client.data.staffRole !== 'manager' && client.data.staffRole !== 'owner') {
+      client.emit('error', { message: 'Manager role required' });
       return;
     }
     client.join(`manager:${data.managerId}`);

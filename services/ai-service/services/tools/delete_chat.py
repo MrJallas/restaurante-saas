@@ -1,10 +1,11 @@
 """
-Delete the current chat thread (LGPD individual delete).
+Request deletion of one chat thread (LGPD individual delete).
 
 Per `chat-history-lgpd.md` — the customer can delete a single chat thread
 via the chat history screen OR via this tool when they ask in conversation.
-Hits `DELETE /customer/chats/:threadId`; the backend marks the thread as
-`deletedByUser=true` and TTL removes within 60s.
+The destructive confirmation chip is consumed by web-customer, which calls
+the canonical endpoint with the browser's httpOnly recognition_token cookie.
+The AI service must never authorize that request with a body/query customerId.
 """
 
 from typing import Any
@@ -25,27 +26,14 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             silent=True,
         )
 
-    if ctx.api_client:
-        try:
-            # Path canonicalised against `apps/api/.../chat-history.controller.ts`:
-            # @Controller(':slug/chat-history') · @Delete('threads/:threadId').
-            # Was hitting `DELETE /customer/chats/{thread_id}` which 404's.
-            # Backend reads customerId from the query string for ownership check.
-            ctx.api_client(
-                "DELETE",
-                f"/{ctx.tenant_id}/chat-history/threads/{thread_id}?customerId={ctx.customer_id}",
-                None,
-            )
-        except Exception as e:
-            return ToolResult(error={"code": "api_error", "message": str(e)})
-
-    # Round 4 §C-NEW-3 — após apagar 1 thread, próximas ações típicas.
+    # Defense in depth: even for origin="chip", this process has no browser
+    # recognition cookie and therefore does not execute the DELETE. The FE
+    # already owns the confirmed action and renders the success/error bubble.
     return ToolResult(
-        message="Conversa apagada. Não tem volta.",
-        chips=[
-            {"id": "view_history", "label": "Ver histórico", "action": "send", "payload": "ver histórico de conversas"},
-            {"id": "delete_all", "label": "Apagar todas", "action": "send", "payload": "apagar todas as minhas conversas"},
-            {"id": "back_to_chat", "label": "Voltar ao chat", "action": "navigate", "payload": "assistente"},
-        ],
-        action_payload={"deletedThreadId": thread_id},
+        silent=True,
+        action_payload={
+            "action": "delete_chat_in_browser",
+            "threadId": thread_id,
+            "requiresRecognitionCookie": True,
+        },
     )

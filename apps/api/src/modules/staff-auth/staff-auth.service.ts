@@ -1,4 +1,10 @@
-import { HttpException, HttpStatus, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { RedisService } from '../../infra/redis/redis.service';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
@@ -9,8 +15,10 @@ import {
   revokeStaffSessions,
   verifyStaffSessionToken,
 } from '../../common/auth/staff-session-token';
+import { invalidateCachedStaffRole } from '../../common/guards/staff-role-cache';
+import { EventsGateway } from '../websocket/events.gateway';
 
-type StaffRole = 'manager' | 'host' | 'waiter' | 'cook' | 'bartender' | 'cashier';
+type StaffRole = 'owner' | 'manager' | 'host' | 'waiter' | 'cook' | 'bartender' | 'cashier';
 
 interface StaffAuthRow {
   id: string;
@@ -65,9 +73,29 @@ export class StaffAuthService {
   constructor(
     private readonly tenantConn: TenantConnectionProvider,
     private readonly redis: RedisService,
+    @Optional() private readonly events?: EventsGateway,
   ) {}
 
-  async login(input: { cpf: string; pin: string }, ip: string) {
+  private async revokeSecuritySessions(staffId: string): Promise<void> {
+    try {
+      await revokeStaffSessions(this.redis, {
+        staffId,
+        slug: this.tenantSlug(),
+      });
+    } finally {
+      // Redis revoga HTTP; sockets já autenticados precisam ser expulsos
+      // explicitamente porque o gateway valida o token somente no handshake.
+      invalidateCachedStaffRole(this.tenantConn, staffId);
+      this.events?.disconnectStaff(staffId);
+    }
+  }
+
+  async login(
+    input: { cpf: string; pin: string },
+    request: string | { ip: string; userAgent?: string },
+  ) {
+    const ip = typeof request === 'string' ? request : request.ip;
+    const userAgent = typeof request === 'string' ? undefined : request.userAgent;
     const cpf = this.normalizeCpf(input.cpf);
     if (!cpf || !/^\d{4,6}$/.test(input.pin)) {
       throw this.authFailure();
@@ -138,6 +166,8 @@ export class StaffAuthService {
       role: staff!.role,
       slug: this.tenantSlug(),
       mustChangePin,
+      ip,
+      userAgent,
     });
 
     return {
@@ -243,14 +273,13 @@ export class StaffAuthService {
 
     // Revoga TODAS as sessões (inclusive a corrente) e emite uma nova pra
     // este portador — o proxy troca o cookie e o app segue logado.
-    await revokeStaffSessions(this.redis, {
-      staffId: payload.staffId,
-      slug: this.tenantSlug(),
-    });
+    await this.revokeSecuritySessions(payload.staffId);
     const session = await issueStaffSessionToken(this.redis, {
       staffId: updated[0].id,
       role: updated[0].role,
       slug: this.tenantSlug(),
+      ip: payload.ip,
+      userAgent: payload.userAgent,
     });
 
     return {
@@ -283,10 +312,7 @@ export class StaffAuthService {
   async logout(token: string | undefined) {
     const payload = await verifyStaffSessionToken(this.redis, token, this.tenantSlug());
     if (payload) {
-      await revokeStaffSessions(this.redis, {
-        staffId: payload.staffId,
-        slug: this.tenantSlug(),
-      });
+      await this.revokeSecuritySessions(payload.staffId);
     }
     return { message_user: 'Sessão encerrada.', code: 'LOGGED_OUT' };
   }
@@ -302,6 +328,23 @@ export class StaffAuthService {
       throw this.staffNotFound();
     }
 
+    const target = unwrapRows<{ role: StaffRole }>(
+      await this.tenantConn.query(
+        `SELECT role FROM staff WHERE id = $1 AND is_active = true LIMIT 1`,
+        [targetStaffId],
+      ),
+    );
+    if (!target.length) {
+      throw this.staffNotFound();
+    }
+    if (target[0].role === 'owner') {
+      throw this.structuredError(
+        HttpStatus.FORBIDDEN,
+        'A conta do dono é protegida e não aceita reset administrativo de PIN.',
+        'OWNER_PROTECTED',
+      );
+    }
+
     const tempPin = String(randomInt(100000, 1000000));
 
     const updated = unwrapRows<{ id: string; name: string }>(
@@ -310,6 +353,7 @@ export class StaffAuthService {
             SET pin_hash = $1, must_change_pin = true, updated_at = now()
           WHERE id = $2
             AND is_active = true
+            AND role <> 'owner'
           RETURNING id, name`,
         [hashPin(tempPin), targetStaffId],
       ),
@@ -319,10 +363,7 @@ export class StaffAuthService {
       throw this.staffNotFound();
     }
 
-    await revokeStaffSessions(this.redis, {
-      staffId: targetStaffId,
-      slug: this.tenantSlug(),
-    });
+    await this.revokeSecuritySessions(targetStaffId);
 
     return {
       message_user: 'PIN temporário gerado. Informe ao funcionário — não será exibido de novo.',
@@ -472,6 +513,10 @@ export class StaffAuthService {
       );
     }
 
+    // Recuperação de credencial é um evento de comprometimento presumido:
+    // toda sessão HTTP e todo socket antigo deve morrer imediatamente.
+    await this.revokeSecuritySessions(payload.staffId);
+
     return {
       message_user: 'PIN atualizado.',
       code: 'PIN_RESET',
@@ -579,10 +624,12 @@ export class StaffAuthService {
   }
 
   private nextPathForRole(role: StaffRole): string {
-    if (role === 'manager') return '/manager';
+    if (role === 'owner' || role === 'manager') return '/manager';
     if (role === 'host') return '/host';
     if (role === 'waiter') return '/waiter';
     if (role === 'cook') return '/cozinha';
+    if (role === 'bartender') return '/bar';
+    if (role === 'cashier') return '/cashier';
     return '/dashboard';
   }
 

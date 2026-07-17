@@ -106,6 +106,7 @@ describe('DashboardService.getActiveTables — mesas com conta e alerta reais', 
           {
             order_id: 'o1',
             table_label: 'Mesa 12',
+            table_number: '12',
             minutes_in_prep: '21.4',
             item_count: '2',
           },
@@ -122,7 +123,15 @@ describe('DashboardService.getActiveTables — mesas com conta e alerta reais', 
       people: 3,
       subtotalCents: 5060,
     });
-    expect(res.lateOrders[0].minutesInPrep).toBe(21);
+    expect(res.lateOrders[0]).toEqual({
+      orderId: 'o1',
+      tableLabel: 'Mesa 12',
+      tableNumber: 12,
+      station: 'kitchen',
+      minutesInPrep: 21,
+      itemCount: 2,
+      targetMinutes: 16,
+    });
     expect(res.kitchenEtaMaxMinutes).toBe(16);
   });
 

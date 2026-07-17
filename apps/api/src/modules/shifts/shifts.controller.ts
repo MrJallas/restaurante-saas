@@ -101,7 +101,7 @@ export class ShiftsController {
 
   @Get()
   async list(@Query() q: DateQuery) {
-    const date = q.date ?? new Date().toISOString().slice(0, 10);
+    const date = q.date ?? (await this.service.getRestaurantLocalDate());
     return this.service.listForDate(date);
   }
 

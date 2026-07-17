@@ -63,10 +63,7 @@ function makeService(insert: {
   };
   const conn = { query } as unknown as TenantConnectionProvider;
   const eventsGateway = {
-    emitWaiterCall: (
-      slug: string,
-      callData: { callId: string; reason?: string },
-    ) => {
+    emitWaiterCall: (slug: string, callData: { callId: string; reason?: string }) => {
       calls.push({ slug, reason: callData.reason, callId: callData.callId });
     },
   } as unknown as EventsGateway;

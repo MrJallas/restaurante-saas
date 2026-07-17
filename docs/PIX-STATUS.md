@@ -17,14 +17,14 @@ como está hoje (mostra o QR de demonstração) e o registro fica honesto: é de
 
 ## O que existe hoje (o encanamento, sem o cano de dinheiro)
 
-| Camada | Estado |
-| --- | --- |
-| Tabela `payments` + máquina de estados (`pending → awaiting_settlement → confirmed`) | ✅ real |
+| Camada                                                                                         | Estado                                                                                                                           |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Tabela `payments` + máquina de estados (`pending → awaiting_settlement → confirmed`)           | ✅ real                                                                                                                          |
 | Tela `apps/web-customer/src/app/[slug]/pagamento/pix/page.tsx` (QR + copia-e-cola + countdown) | ⚠️ **demo** — `pixCopyPaste` é string gerada localmente, **não** um BR Code emitido por banco; o app de banco real **não** honra |
-| `POST /:slug/payments/:id/confirm` | ⚠️ em prod grava só `awaiting_settlement` (nunca `confirmed`/`paid_at`) — ver `payments.service.ts` A04-PAY-01 |
-| `pspTransactionId` no `/confirm` | ⚠️ campo livre que o cliente manda; **não** validado contra ninguém |
-| Webhook de PSP | ❌ **não existe** |
-| Integração com PSP (Efí/Mercado Pago/Asaas/banco) | ❌ **não existe** (0 SDK/http no repo) |
+| `POST /:slug/payments/:id/confirm`                                                             | ⚠️ em prod grava só `awaiting_settlement` (nunca `confirmed`/`paid_at`) — ver `payments.service.ts` A04-PAY-01                   |
+| `pspTransactionId` no `/confirm`                                                               | ⚠️ campo livre que o cliente manda; **não** validado contra ninguém                                                              |
+| Webhook de PSP                                                                                 | ❌ **não existe**                                                                                                                |
+| Integração com PSP (Efí/Mercado Pago/Asaas/banco)                                              | ❌ **não existe** (0 SDK/http no repo)                                                                                           |
 
 A flag `PAYMENTS_ALLOW_CLIENT_CONFIRM` só liga auto-confirm em **dev/e2e/mock**.
 Em produção fica **off** — de propósito, senão o cliente marcaria o próprio Pix

@@ -15,6 +15,7 @@ import { RedisThrottleGuard } from '../../common/guards/redis-throttle.guard';
 import { OrderRatingsModule } from '../order-ratings/order-ratings.module';
 import { CallerResolverModule } from '../../common/services/caller-resolver.module';
 import { BillingModule } from '../billing/billing.module';
+import { KitchenOrManagerGuard } from '../../common/guards/kitchen-or-manager.guard';
 
 @Module({
   // forwardRef pra evitar ciclo se algum dia o order-ratings precisar do
@@ -38,6 +39,7 @@ import { BillingModule } from '../billing/billing.module';
     CustomerBillQueryService,
     StaffOrSessionGuard,
     ManagerOnlyGuard,
+    KitchenOrManagerGuard,
     RedisThrottleGuard,
   ],
   exports: [OrdersService],

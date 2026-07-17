@@ -26,6 +26,7 @@ import { apiGet, apiPost } from '../../lib/api';
 import { useSession } from '../../hooks/useSession';
 import { useSheetDrag } from '../../hooks/useSheetDrag';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 import {
   ScreenCustomerWaiterCallWaiting,
   type ActiveWaiterCall,
@@ -159,6 +160,7 @@ export function CallWaiterSheet({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [checkingActive, setCheckingActive] = useState(false);
   const [activeCall, setActiveCall] = useState<ActiveWaiterCall | null>(null);
+  const dialogRef = useDialogFocus<HTMLDivElement>(open, onClose);
 
   const sheetHeightFn = useCallback(() => {
     if (typeof window === 'undefined') return 520;
@@ -216,15 +218,13 @@ export function CallWaiterSheet({
   // race condition quando 2 sheets abriam em sequência).
   useBodyScrollLock(open);
 
-  // Esc fecha
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  const setDialogSheetRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      sheetRef(node);
+      dialogRef.current = node;
+    },
+    [dialogRef, sheetRef],
+  );
 
   const handleConfirm = async () => {
     if (submitting || !selected) return;
@@ -266,26 +266,20 @@ export function CallWaiterSheet({
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-[60]"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Chamar garçom"
-      data-testid="call-waiter-sheet"
-    >
+    <div className="fixed inset-0 z-[60]" data-testid="call-waiter-sheet">
       {/* Backdrop · ink/32 + tap fecha */}
-      <button
-        type="button"
-        aria-label="Fechar"
-        onClick={onClose}
-        className="absolute inset-0 z-0 bg-black/[0.32]"
-      />
+      <div aria-hidden="true" onClick={onClose} className="absolute inset-0 z-0 bg-black/[0.32]" />
 
       {/* Sheet — pointer handlers vêm do hook via `{...bind}` (vaul pattern,
           React JSX em vez de native addEventListener — iOS Safari < 26.2
           não honra preventDefault em pointer events de forma consistente). */}
       <div
-        ref={sheetRef}
+        ref={setDialogSheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Chamar garçom"
+        tabIndex={-1}
+        data-dialog-initial-focus
         className="absolute inset-x-0 bottom-0 z-10 flex max-h-[78dvh] flex-col select-none rounded-t-[22px] border-[1.5px] border-b-0 border-ink bg-bg px-[22px] pb-safe pt-3 shadow-[0_-8px_32px_rgba(0,0,0,0.10)] animate-slide-up-overlay [-webkit-user-select:none] [-webkit-touch-callout:none]"
         style={{
           transform: dragY ? `translateY(${dragY}px)` : undefined,
@@ -334,7 +328,12 @@ export function CallWaiterSheet({
               Escolha o motivo. Vou avisar e te dar o tempo estimado.
             </p>
 
-            <div data-scroll-area="true" className="flex flex-col gap-2.5 overflow-y-auto pb-1">
+            <div
+              data-scroll-area="true"
+              className="flex flex-col gap-2.5 overflow-y-auto pb-1"
+              role="group"
+              aria-label="Motivo do chamado"
+            >
               {REASONS.map((r) => {
                 const sel = selected === r.key;
                 return (
@@ -384,7 +383,7 @@ export function CallWaiterSheet({
             <button
               type="button"
               onClick={onClose}
-              className="mt-1.5 w-full p-2.5 text-[12px] text-mute underline underline-offset-[3px]"
+              className="mt-1.5 min-h-11 w-full p-2.5 text-[12px] text-mute underline underline-offset-[3px]"
             >
               Cancelar
             </button>

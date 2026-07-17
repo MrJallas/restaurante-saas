@@ -1151,12 +1151,17 @@ Cobertura de chips agora é **transversal** — toda tool customer-side
 de mutação retorna `chips` non-empty. Tools adicionadas em round 4:
 `add_to_order` (canon "Ver pedido · Pedir mais · Pedir conta"),
 `change_order`, `remove_from_cart`, `cancel_order`, `confirm_order`,
-`request_table_merge`, `late_arrival_request`, `send_message_to_manager`,
+`request_table_merge`, `send_message_to_manager`,
 `ask_about_restaurant` (chips de follow-up "Como chego aí · Tem
 estacionamento · Vocês têm wifi"), `view_chat_history`, `view_courtesy`,
 `delete_chat`, `delete_all_chats`, `lgpd_data_request`, `compare_dishes`,
 `check_allergens`, `explain_dish`, `recommend_dish` (path no-items),
 `search_dish` (path no-results).
+
+> Atualização 2026-07-11: `late_arrival_request` deixou de ser tool. O fluxo
+> canônico começa no QR da mesa ocupada, passa pela identificação do
+> web-customer e usa `POST /:slug/late-arrival-requests`; o AI service apenas
+> orienta esse caminho e não alega ter avisado a mesa.
 
 **Acceptance round 4 §C-NEW-3**: rodar 10 mutações distintas
 sequencialmente — ≥ 9/10 com `assistant_messages.contextual_chips IS NOT NULL`.
@@ -1173,7 +1178,6 @@ Tabela de chips canon esperados:
 | `confirm_order`                 | Acompanhar pedido · Pedir mais · Pedir conta        |
 | `request_table_merge` (success) | Ver cardápio · Chamar garçom · Ver pedido           |
 | `request_table_merge` (429)     | Chamar garçom · Ver cardápio                        |
-| `late_arrival_request`          | Ver cardápio · Cancelar                             |
 | `send_message_to_manager`       | Ver cardápio · Ver pedido · Chamar garçom           |
 | `ask_about_restaurant`          | Como chego aí · Tem estacionamento · Vocês têm wifi |
 | `view_chat_history`             | Apagar todas · Pedido LGPD · Voltar ao chat         |

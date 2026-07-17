@@ -1,34 +1,41 @@
-import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  Optional,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import {
+  listStaffSessions,
+  revokeStaffSessionById,
+  verifyStaffSessionToken,
+} from '../../common/auth/staff-session-token';
 import { MongoService } from '../../infra/mongo/mongo.service';
+import { RedisService } from '../../infra/redis/redis.service';
+import {
+  RESTAURANT_LOCAL_DAY_START_SQL,
+  restaurantLocalDateOfSql,
+} from '../../common/utils/restaurant-local-time';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
-import { hashPin, verifyPin } from '../staff/staff-pin.util';
+import { EventsGateway } from '../websocket/events.gateway';
 
 const PREFS_COLLECTION = 'manager_preferences';
-const SESSIONS_COLLECTION = 'manager_sessions';
 
 interface ManagerPreferencesDoc {
   tenantSlug: string;
   staffId: string;
-  notifications: Record<string, boolean>;
   theme: 'light' | 'dark' | 'auto';
-  twoFactorEnabled: boolean;
   updatedAt: Date;
 }
-
-const DEFAULT_NOTIFICATIONS: Record<string, boolean> = {
-  'turn.alerts': true,
-  'turn.push': true,
-  'turn.sound': true,
-  'turn.lockScreen': false,
-  'critical.complaints': true,
-};
 
 @Injectable()
 export class ManagerAccountService {
   constructor(
     private readonly mongo: MongoService,
     private readonly tenantConn: TenantConnectionProvider,
+    private readonly redis: RedisService,
+    @Optional() private readonly events?: EventsGateway,
   ) {}
 
   private dbOrThrow() {
@@ -50,9 +57,7 @@ export class ManagerAccountService {
       staffId,
     });
     return {
-      notifications: { ...DEFAULT_NOTIFICATIONS, ...(doc?.notifications ?? {}) },
       theme: doc?.theme ?? 'light',
-      twoFactorEnabled: doc?.twoFactorEnabled ?? false,
       updatedAt: doc?.updatedAt?.toISOString() ?? null,
     };
   }
@@ -66,112 +71,90 @@ export class ManagerAccountService {
       twoFactorEnabled?: boolean;
     },
   ) {
+    if (patch.notifications !== undefined || patch.twoFactorEnabled !== undefined) {
+      throw new BadRequestException({
+        message_user:
+          'Preferências de notificação e autenticação em 2 fatores ainda não estão disponíveis.',
+        code: 'FEATURE_NOT_AVAILABLE',
+      });
+    }
     const db = this.dbOrThrow();
     await this.ensurePreferenceIndexes();
     const current = await this.getPreferences(slug, staffId);
     const next: ManagerPreferencesDoc = {
       tenantSlug: slug,
       staffId,
-      notifications: {
-        ...current.notifications,
-        ...(patch.notifications ?? {}),
-      },
       theme: patch.theme ?? current.theme,
-      twoFactorEnabled: patch.twoFactorEnabled ?? current.twoFactorEnabled,
       updatedAt: new Date(),
     };
     await db
       .collection<ManagerPreferencesDoc>(PREFS_COLLECTION)
       .updateOne({ tenantSlug: slug, staffId }, { $set: next }, { upsert: true });
     return {
-      notifications: next.notifications,
       theme: next.theme,
-      twoFactorEnabled: next.twoFactorEnabled,
       updatedAt: next.updatedAt.toISOString(),
     };
   }
 
-  async changePin(staffId: string, input: { currentPin: string; nextPin: string }) {
-    if (!/^\d{4,6}$/.test(input.currentPin) || !/^\d{4,6}$/.test(input.nextPin)) {
-      throw new BadRequestException({
-        message_user: 'O PIN precisa ter 4 a 6 dígitos.',
-        code: 'INVALID_PIN',
-      });
-    }
-    const rows = (await this.tenantConn.query(
-      `SELECT pin_hash FROM staff WHERE id = $1 AND is_active = true LIMIT 1`,
-      [staffId],
-    )) as Array<{ pin_hash: string }>;
-    const currentHash = rows[0]?.pin_hash;
-    // OWASP A02: verifyPin detecta bcrypt novo vs SHA-256 legado; o sucesso já
-    // regrava o nextPin como bcrypt logo abaixo, então a troca também migra.
-    if (!currentHash || !verifyPin(input.currentPin, currentHash)) {
-      throw new BadRequestException({
-        message_user: 'PIN atual não confere.',
-        code: 'PIN_MISMATCH',
-      });
-    }
-    await this.tenantConn.query(
-      `UPDATE staff SET pin_hash = $1, updated_at = now() WHERE id = $2`,
-      [hashPin(input.nextPin), staffId],
-    );
-    return {
-      message_user: 'PIN atualizado.',
-      code: 'PIN_CHANGED',
-    };
-  }
-
-  async listSessions(staffId: string, req: { headers: Record<string, unknown>; ip?: string }) {
-    const db = this.dbOrThrow();
-    await this.ensureSessionIndexes();
-    const currentSession = {
-      sessionId: `current:${staffId}`,
+  async listSessions(slug: string, staffId: string, token: string | undefined) {
+    await this.requireCurrentStaffToken(slug, staffId, token);
+    const sessions = await listStaffSessions(this.redis, {
+      slug,
       staffId,
-      label: 'Este dispositivo',
-      ip: req.ip ?? 'local',
-      userAgent: String(req.headers['user-agent'] ?? 'Navegador'),
-      current: true,
-      lastSeenAt: new Date(),
-    };
-    await db
-      .collection(SESSIONS_COLLECTION)
-      .updateOne(
-        { sessionId: currentSession.sessionId, staffId },
-        { $set: currentSession },
-        { upsert: true },
-      );
-    const docs = await db
-      .collection(SESSIONS_COLLECTION)
-      .find({ staffId, revokedAt: { $exists: false } })
-      .sort({ lastSeenAt: -1 })
-      .limit(20)
-      .toArray();
+      currentToken: token!,
+    });
     return {
-      sessions: docs.map((doc) => ({
-        id: String(doc.sessionId),
-        label: String(doc.label ?? 'Dispositivo'),
-        ip: String(doc.ip ?? 'local'),
-        userAgent: String(doc.userAgent ?? ''),
-        current: doc.sessionId === currentSession.sessionId,
-        lastSeenAt:
-          doc.lastSeenAt instanceof Date ? doc.lastSeenAt.toISOString() : new Date().toISOString(),
+      sessions: sessions.map((session) => ({
+        id: session.id,
+        label: session.current ? 'Este dispositivo' : 'Outra sessão',
+        ip: session.ip,
+        userAgent: session.userAgent,
+        current: session.current,
+        lastSeenAt: session.issuedAt,
+        expiresAt: session.expiresAt,
       })),
     };
   }
 
-  async revokeSession(staffId: string, sessionId: string) {
-    if (sessionId === `current:${staffId}`) {
+  async revokeSession(slug: string, staffId: string, sessionId: string, token: string | undefined) {
+    await this.requireCurrentStaffToken(slug, staffId, token);
+    const result = await revokeStaffSessionById(this.redis, {
+      slug,
+      staffId,
+      sessionId,
+      currentToken: token!,
+    });
+    if (result === 'current') {
       throw new BadRequestException({
         message_user: 'Use Sair do app para encerrar esta sessão.',
         code: 'CURRENT_SESSION',
       });
     }
-    const db = this.dbOrThrow();
-    await this.ensureSessionIndexes();
-    await db
-      .collection(SESSIONS_COLLECTION)
-      .updateOne({ staffId, sessionId }, { $set: { revokedAt: new Date() } });
+    if (result === 'not_found') {
+      throw new NotFoundException({
+        message_user: 'Sessão não encontrada ou já encerrada.',
+        code: 'SESSION_NOT_FOUND',
+      });
+    }
+    // A revogação Redis bloqueia HTTP, mas o gateway só valida no handshake.
+    // Desconectar todas as conexões do staff é conservador; a sessão corrente
+    // válida reconecta, enquanto a sessão revogada falha ao autenticar.
+    this.events?.disconnectStaff(staffId);
     return { ok: true };
+  }
+
+  private async requireCurrentStaffToken(
+    slug: string,
+    staffId: string,
+    token: string | undefined,
+  ): Promise<void> {
+    const payload = await verifyStaffSessionToken(this.redis, token, slug);
+    if (!payload || payload.staffId !== staffId) {
+      throw new UnauthorizedException({
+        message_user: 'Sessão de equipe inválida. Faça login novamente.',
+        code: 'AUTH_INVALID',
+      });
+    }
   }
 
   async endShift(slug: string, staffId: string) {
@@ -181,18 +164,18 @@ export class ManagerAccountService {
         `SELECT COUNT(*)::int AS orders,
                 COALESCE(SUM(total_cents), 0)::int AS sales_cents
            FROM orders
-          WHERE created_at >= CURRENT_DATE
+          WHERE created_at >= ${RESTAURANT_LOCAL_DAY_START_SQL}
             AND status != 'cancelled'`,
       ),
       this.tenantConn.query(
         `SELECT COUNT(*)::int AS tables_served
            FROM table_sessions
-          WHERE closed_at >= CURRENT_DATE`,
+          WHERE closed_at >= ${RESTAURANT_LOCAL_DAY_START_SQL}`,
       ),
       this.tenantConn.query(
         `SELECT COUNT(*)::int AS critical_alerts
            FROM complaints
-          WHERE submitted_at >= CURRENT_DATE
+          WHERE submitted_at >= ${RESTAURANT_LOCAL_DAY_START_SQL}
             AND closed_at IS NULL`,
       ),
       this.tenantConn.query(
@@ -213,9 +196,6 @@ export class ManagerAccountService {
     const criticalAlerts =
       (alertRows as Array<{ critical_alerts: number }>)[0]?.critical_alerts ?? 0;
     const waitersOnShift = (waiterRows as Array<{ name: string }>).map((w) => w.name);
-    const now = new Date();
-    const startedAt = new Date(now);
-    startedAt.setHours(0, 0, 0, 0);
     const orders = Number(sales.orders ?? 0);
     const salesCents = Number(sales.sales_cents ?? 0);
     // FASE 3 (decisão Caleb 2026-07-04): shift log é dado FINANCEIRO —
@@ -225,13 +205,12 @@ export class ManagerAccountService {
          (staff_id, staff_name, shift_label, started_at, ended_at,
           sales_cents, orders, tables_served, critical_alerts,
           avg_ticket_cents, waiters_on_shift)
-       VALUES ($1, $2, 'Turno atual', $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+       VALUES ($1, $2, 'Turno atual', ${RESTAURANT_LOCAL_DAY_START_SQL}, now(),
+               $3, $4, $5, $6, $7, $8::jsonb)
        RETURNING *`,
       [
         staffId,
         staffName,
-        startedAt.toISOString(),
-        now.toISOString(),
         salesCents,
         orders,
         Number(tables ?? 0),
@@ -256,9 +235,7 @@ export class ManagerAccountService {
     }
     if (filters.date && /^\d{4}-\d{2}-\d{2}$/.test(filters.date)) {
       params.push(filters.date);
-      conditions.push(
-        `ended_at >= $${params.length}::date AND ended_at < $${params.length}::date + interval '1 day'`,
-      );
+      conditions.push(`${restaurantLocalDateOfSql('ended_at')} = $${params.length}::date`);
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const rows = (await this.tenantConn.query(
@@ -293,12 +270,5 @@ export class ManagerAccountService {
     await db
       .collection<ManagerPreferencesDoc>(PREFS_COLLECTION)
       .createIndex({ tenantSlug: 1, staffId: 1 }, { unique: true });
-  }
-
-  private async ensureSessionIndexes() {
-    const db = this.dbOrThrow();
-    await db
-      .collection(SESSIONS_COLLECTION)
-      .createIndex({ staffId: 1, sessionId: 1 }, { unique: true });
   }
 }

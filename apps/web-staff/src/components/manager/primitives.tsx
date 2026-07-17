@@ -53,8 +53,8 @@ export function GIconBtn({
         all: 'unset',
         cursor: 'pointer',
         boxSizing: 'border-box',
-        width: 32,
-        height: 32,
+        width: 44,
+        height: 44,
         borderRadius: 10,
         background: C.bg,
         border: `1px solid ${C.borderSoft}`,
@@ -138,6 +138,7 @@ export function GButton({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 6,
+        minHeight: 44,
       }}
     >
       {children}
@@ -173,7 +174,7 @@ export function MTopBar({
         fontFamily: G_FONT,
       }}
     >
-      {left ?? <div style={{ width: 32 }} />}
+      {left ?? <div style={{ width: 44 }} />}
       <h1
         style={{
           flex: 1,
@@ -186,7 +187,7 @@ export function MTopBar({
       >
         {title}
       </h1>
-      {right ?? <div style={{ width: 32 }} />}
+      {right ?? <div style={{ width: 44 }} />}
     </div>
   );
 }
@@ -226,6 +227,7 @@ export function MTab({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 6,
+        minHeight: 44,
       }}
     >
       {children}
@@ -643,6 +645,7 @@ export function MBottomNav({
               alignItems: 'center',
               gap: 3,
               padding: '6px 2px',
+              minHeight: 44,
               position: 'relative',
               color: isActive ? C.ink : C.faint,
             }}

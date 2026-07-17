@@ -136,16 +136,22 @@ describe('EventsGateway — rate-limit do handshake', () => {
     expect(bloqueado.disconnect).toHaveBeenCalled();
   });
 
-  it('a cota é escopada por tenant: estourar o tenant A não bloqueia o tenant B no mesmo IP', async () => {
+  it('tenantHint e X-Forwarded-For forjados não criam buckets novos', async () => {
     const { svc } = fakeRedis();
     const gateway = makeGateway(svc);
     for (let i = 0; i < 31; i++) {
-      const socket = fakeSocket({ auth: { tenantSlug: 'tenant_a' } });
+      const socket = fakeSocket({
+        headers: { 'x-forwarded-for': `203.0.113.${i}` },
+        auth: { tenantSlug: `tenant_${i}` },
+      });
       await gateway.handleConnection(socket as never);
     }
-    const outroTenant = fakeSocket({ auth: { tenantSlug: 'tenant_b' } });
-    await gateway.handleConnection(outroTenant as never);
-    expect(wasRateLimited(outroTenant)).toBe(false);
+    const bloqueado = fakeSocket({
+      headers: { 'x-forwarded-for': '198.51.100.250' },
+      auth: { tenantSlug: 'tenant_novo' },
+    });
+    await gateway.handleConnection(bloqueado as never);
+    expect(wasRateLimited(bloqueado)).toBe(true);
   });
 
   it('contador usa o helper atômico (incrWithExpiry), nunca INCR+EXPIRE separados', async () => {

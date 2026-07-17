@@ -110,6 +110,7 @@ INSERT INTO tables (
 -- === Staff (PIN 1234 everywhere = sha256) ===
 -- sha256('1234') = 03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4
 INSERT INTO staff (name, role, pin_hash, is_active, cpf, phone, email) VALUES
+  ('Dona Demo',         'owner',   '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true, '90000000000', '+5511990000000', 'dona.demo@example.test'),
   ('Ana Garcom',       'waiter',  '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true, NULL, NULL, NULL),
   ('Bruno Garcom',     'waiter',  '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true, NULL, NULL, NULL),
   ('Carlos Cozinha',   'cook',    '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', true, NULL, NULL, NULL),

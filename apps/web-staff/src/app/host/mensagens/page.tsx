@@ -9,12 +9,21 @@
 import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenStaffMessages } from '../../../screens/waiter/ScreenStaffMessages';
+import { defaultTenantSlug, readStaffSession, type StaffSession } from '../../../lib/api';
 
 function HostMessagesPageInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const tenantSlug = params.get('tenant') ?? '';
-  const userId = params.get('hostId') ?? '';
+  const [session, setSession] = React.useState<StaffSession | null | undefined>(undefined);
+  const tenantSlug = params.get('tenant') ?? defaultTenantSlug();
+  const hostIdParam = params.get('hostId');
+  const userId = hostIdParam ?? session?.staffId ?? '';
+
+  React.useEffect(() => {
+    setSession(readStaffSession());
+  }, []);
+
+  if (!hostIdParam && session === undefined) return null;
 
   return (
     <ScreenStaffMessages

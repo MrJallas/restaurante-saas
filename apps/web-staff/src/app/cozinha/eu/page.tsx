@@ -14,7 +14,14 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
-import { staffDelete, staffGet, staffPatch, staffPost } from '../../../lib/api';
+import {
+  performStaffLogout,
+  readStaffSession,
+  staffDelete,
+  staffGet,
+  staffPatch,
+  staffPost,
+} from '../../../lib/api';
 
 interface KitchenOrder {
   id: string;
@@ -80,6 +87,7 @@ function CookProfileInner() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [canManageKitchen, setCanManageKitchen] = useState(false);
   // Tempo de preparo base da ETA do cliente (decisão Caleb 2026-06-10 Q9):
   // o líder configura aqui; o backend ajusta dinamicamente com a fila.
   const [etaMin, setEtaMin] = useState('');
@@ -88,6 +96,10 @@ function CookProfileInner() {
     min: null,
     max: null,
   });
+
+  useEffect(() => {
+    setCanManageKitchen(readStaffSession()?.staffRole === 'manager');
+  }, []);
 
   useEffect(() => {
     try {
@@ -108,7 +120,9 @@ function CookProfileInner() {
       const [queueRes, staffRes, shiftRes, etaRes] = await Promise.allSettled([
         staffGet<{ orders: KitchenOrder[] }>(`/${tenantSlug}/kitchen/queue`),
         staffGet<{ staff: StaffMember[] }>(`/${tenantSlug}/staff?activeOnly=true`),
-        staffGet<Shift[]>(`/${tenantSlug}/shifts?date=${workDate}`),
+        canManageKitchen
+          ? staffGet<Shift[]>(`/${tenantSlug}/shifts?date=${workDate}`)
+          : Promise.resolve([] as Shift[]),
         staffGet<{ kitchenEtaMinMinutes: number | null; kitchenEtaMaxMinutes: number | null }>(
           `/${tenantSlug}/settings/kitchen-eta`,
         ),
@@ -135,7 +149,7 @@ function CookProfileInner() {
     } finally {
       setLoading(false);
     }
-  }, [tenantSlug, workDate]);
+  }, [canManageKitchen, tenantSlug, workDate]);
 
   useEffect(() => {
     load();
@@ -252,16 +266,9 @@ function CookProfileInner() {
     }
   };
 
-  const handleLogout = () => {
-    try {
-      window.sessionStorage.clear();
-      window.localStorage.removeItem('staffId');
-      window.localStorage.removeItem('staffRole');
-      window.localStorage.removeItem('staffName');
-    } catch {
-      /* ignore */
-    }
-    router.push('/');
+  const handleLogout = async () => {
+    await performStaffLogout(tenantSlug);
+    router.replace('/');
   };
 
   const page = dark ? 'bg-gray-950 text-white' : 'bg-zinc-50 text-zinc-950';
@@ -285,7 +292,7 @@ function CookProfileInner() {
           </button>
           <h1 className="min-w-0 truncate text-2xl font-bold">
             <ChefHat className="mr-2 inline h-7 w-7 text-orange-400" />
-            Cozinha — Gestão
+            {canManageKitchen ? 'Cozinha — Gestão' : 'Cozinha — Meu perfil'}
           </h1>
         </div>
         <div className="flex items-center gap-2">
@@ -312,114 +319,116 @@ function CookProfileInner() {
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <section className={`rounded-xl border p-4 ${panel}`}>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className={`text-xs font-black uppercase tracking-wide ${muted}`}>
-                Turno da cozinha
+      <div className={canManageKitchen ? 'grid gap-4 xl:grid-cols-[1.2fr_0.8fr]' : 'space-y-4'}>
+        {canManageKitchen && (
+          <section className={`rounded-xl border p-4 ${panel}`}>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className={`text-xs font-black uppercase tracking-wide ${muted}`}>
+                  Turno da cozinha
+                </div>
+                <div className="mt-1 text-lg font-extrabold">Equipe e escala</div>
               </div>
-              <div className="mt-1 text-lg font-extrabold">Equipe e escala</div>
+              <input
+                type="date"
+                value={workDate}
+                onChange={(e) => setWorkDate(e.target.value)}
+                className={`rounded-lg border px-3 py-2 text-sm font-bold ${input}`}
+              />
             </div>
-            <input
-              type="date"
-              value={workDate}
-              onChange={(e) => setWorkDate(e.target.value)}
-              className={`rounded-lg border px-3 py-2 text-sm font-bold ${input}`}
-            />
-          </div>
 
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-            <select
-              value={selectedStaffId}
-              onChange={(e) => setSelectedStaffId(e.target.value)}
-              className={`rounded-lg border px-3 py-2 text-sm font-semibold ${input}`}
-            >
-              <option value="">Pessoa da cozinha</option>
-              {kitchenStaff.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {person.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={selectedShiftId}
-              onChange={(e) => setSelectedShiftId(e.target.value)}
-              className={`rounded-lg border px-3 py-2 text-sm font-semibold ${input}`}
-            >
-              <option value="">Turno</option>
+            <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+              <select
+                value={selectedStaffId}
+                onChange={(e) => setSelectedStaffId(e.target.value)}
+                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${input}`}
+              >
+                <option value="">Pessoa da cozinha</option>
+                {kitchenStaff.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={selectedShiftId}
+                onChange={(e) => setSelectedShiftId(e.target.value)}
+                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${input}`}
+              >
+                <option value="">Turno</option>
+                {shifts.map((shift) => (
+                  <option key={shift.id} value={shift.id}>
+                    {shift.label} · {shift.range_label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={addToShift}
+                disabled={busy || !selectedStaffId || !selectedShiftId}
+                className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-black text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Escalar
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
               {shifts.map((shift) => (
-                <option key={shift.id} value={shift.id}>
-                  {shift.label} · {shift.range_label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={addToShift}
-              disabled={busy || !selectedStaffId || !selectedShiftId}
-              className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-black text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Escalar
-            </button>
-          </div>
-
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            {shifts.map((shift) => (
-              <div key={shift.id} className={`rounded-xl border p-3 ${panel}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-black">{shift.label}</div>
-                    <div
-                      className={`mt-0.5 flex items-center gap-1 text-xs font-semibold ${muted}`}
-                    >
-                      <Clock className="h-3 w-3" />
-                      {shift.range_label}
-                    </div>
-                  </div>
-                  <CalendarDays className="h-4 w-4 text-orange-400" />
-                </div>
-                <div className="mt-3 space-y-2">
-                  {shift.members.length === 0 && (
-                    <div
-                      className={`rounded-lg border border-dashed px-3 py-4 text-center text-xs ${muted}`}
-                    >
-                      Sem escala
-                    </div>
-                  )}
-                  {shift.members.map((member) => (
-                    <div
-                      key={member.assignment_id}
-                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
-                        dark ? 'border-white/10 bg-black/20' : 'border-zinc-100 bg-zinc-50'
-                      }`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-bold">{member.staff_name}</div>
-                        <div className={`text-xs ${muted}`}>{member.staff_role}</div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeAssignment(member.assignment_id)}
-                        disabled={busy}
-                        className="rounded-md p-1 text-red-400 hover:bg-red-500/10"
-                        aria-label="Remover do turno"
+                <div key={shift.id} className={`rounded-xl border p-3 ${panel}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-black">{shift.label}</div>
+                      <div
+                        className={`mt-0.5 flex items-center gap-1 text-xs font-semibold ${muted}`}
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                        <Clock className="h-3 w-3" />
+                        {shift.range_label}
+                      </div>
                     </div>
-                  ))}
+                    <CalendarDays className="h-4 w-4 text-orange-400" />
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {shift.members.length === 0 && (
+                      <div
+                        className={`rounded-lg border border-dashed px-3 py-4 text-center text-xs ${muted}`}
+                      >
+                        Sem escala
+                      </div>
+                    )}
+                    {shift.members.map((member) => (
+                      <div
+                        key={member.assignment_id}
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
+                          dark ? 'border-white/10 bg-black/20' : 'border-zinc-100 bg-zinc-50'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-bold">{member.staff_name}</div>
+                          <div className={`text-xs ${muted}`}>{member.staff_role}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeAssignment(member.assignment_id)}
+                          disabled={busy}
+                          className="rounded-md p-1 text-red-400 hover:bg-red-500/10"
+                          aria-label="Remover do turno"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-
-          {shifts.length === 0 && !loading && (
-            <div className="mt-4 rounded-lg border border-yellow-400/30 bg-yellow-500/10 px-3 py-2 text-sm font-semibold text-yellow-500">
-              Escalas exigem login de gerente ou chefe com permissão de escala.
+              ))}
             </div>
-          )}
-        </section>
+
+            {shifts.length === 0 && !loading && (
+              <div className="mt-4 rounded-lg border border-yellow-400/30 bg-yellow-500/10 px-3 py-2 text-sm font-semibold text-yellow-500">
+                Escalas exigem login de gerente ou chefe com permissão de escala.
+              </div>
+            )}
+          </section>
+        )}
 
         <aside className="space-y-4">
           <section className={`rounded-xl border p-4 ${panel}`}>
@@ -493,35 +502,37 @@ function CookProfileInner() {
             </div>
           </section>
 
-          <section className={`rounded-xl border p-4 ${panel}`}>
-            <div className={`mb-3 text-xs font-black uppercase tracking-wide ${muted}`}>
-              Adicionar assistente/cozinheiro
-            </div>
-            <div className="space-y-2">
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Nome"
-                className={`w-full rounded-lg border px-3 py-2 text-sm font-semibold ${input}`}
-              />
-              <input
-                value={newPin}
-                onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="PIN"
-                inputMode="numeric"
-                className={`w-full rounded-lg border px-3 py-2 text-sm font-semibold ${input}`}
-              />
-              <button
-                type="button"
-                onClick={addKitchenAssistant}
-                disabled={busy}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-black text-white hover:bg-orange-600 disabled:cursor-wait disabled:opacity-70"
-              >
-                <Plus className="h-4 w-4" />
-                Adicionar
-              </button>
-            </div>
-          </section>
+          {canManageKitchen && (
+            <section className={`rounded-xl border p-4 ${panel}`}>
+              <div className={`mb-3 text-xs font-black uppercase tracking-wide ${muted}`}>
+                Adicionar assistente/cozinheiro
+              </div>
+              <div className="space-y-2">
+                <input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Nome"
+                  className={`w-full rounded-lg border px-3 py-2 text-sm font-semibold ${input}`}
+                />
+                <input
+                  value={newPin}
+                  onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="PIN"
+                  inputMode="numeric"
+                  className={`w-full rounded-lg border px-3 py-2 text-sm font-semibold ${input}`}
+                />
+                <button
+                  type="button"
+                  onClick={addKitchenAssistant}
+                  disabled={busy}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-black text-white hover:bg-orange-600 disabled:cursor-wait disabled:opacity-70"
+                >
+                  <Plus className="h-4 w-4" />
+                  Adicionar
+                </button>
+              </div>
+            </section>
+          )}
         </aside>
       </div>
 
@@ -567,7 +578,7 @@ function CookProfileInner() {
 
       <button
         type="button"
-        onClick={handleLogout}
+        onClick={() => void handleLogout()}
         className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-400 transition-colors hover:bg-red-500/20"
       >
         <LogOut className="h-4 w-4" />

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import { RedisService } from '../../infra/redis/redis.service';
 
 /**
@@ -25,6 +25,11 @@ export interface StaffSessionPayload {
   role: string;
   slug: string;
   exp: number;
+  /** Identificador público revogável; nunca contém o token nem seu hash. */
+  sessionId?: string;
+  issuedAt?: number;
+  ip?: string;
+  userAgent?: string;
   /**
    * Enforcement server-side de troca de PIN forçada (P2 hardening). Setado
    * `true` no login quando o staff tem `must_change_pin` (PIN temporário
@@ -63,7 +68,8 @@ function sessionIndexKey(slug: string, staffId: string): string {
  * jest) só implementam get/set/del — o issue não pode explodir neles. A
  * REVOGAÇÃO, essa sim, exige um redis com sets.
  */
-type SessionSetRedis = Pick<RedisService, 'sadd' | 'smembers' | 'expire' | 'del'>;
+type SessionSetRedis = Pick<RedisService, 'sadd' | 'smembers' | 'expire' | 'del'> &
+  Partial<Pick<RedisService, 'srem'>>;
 
 function supportsSets(redis: RedisService): redis is RedisService & SessionSetRedis {
   const candidate = redis as Partial<SessionSetRedis>;
@@ -78,15 +84,27 @@ function supportsSets(redis: RedisService): redis is RedisService & SessionSetRe
  */
 export async function issueStaffSessionToken(
   redis: RedisService,
-  input: { staffId: string; role: string; slug: string; mustChangePin?: boolean },
+  input: {
+    staffId: string;
+    role: string;
+    slug: string;
+    mustChangePin?: boolean;
+    ip?: string;
+    userAgent?: string;
+  },
 ): Promise<{ token: string; expiresIn: number }> {
   const token = randomBytes(32).toString('base64url');
+  const issuedAt = Date.now();
   const exp = Date.now() + STAFF_SESSION_TTL_SECONDS * 1000;
   const payload: StaffSessionPayload = {
     staffId: input.staffId,
     role: input.role,
     slug: input.slug,
     exp,
+    sessionId: randomUUID(),
+    issuedAt,
+    ...(input.ip ? { ip: input.ip.slice(0, 128) } : {}),
+    ...(input.userAgent ? { userAgent: input.userAgent.slice(0, 512) } : {}),
     // Só embarca a flag quando true — token normal fica idêntico ao anterior.
     ...(input.mustChangePin ? { mustChangePin: true } : {}),
   };
@@ -118,6 +136,103 @@ export async function revokeStaffSessions(
   }
   await redis.del(indexKey);
   return sessionKeys.length;
+}
+
+export interface StaffSessionView {
+  id: string;
+  ip: string;
+  userAgent: string;
+  current: boolean;
+  issuedAt: string;
+  expiresAt: string;
+}
+
+function parseIndexedSession(raw: string | null): StaffSessionPayload | null {
+  if (!raw) return null;
+  try {
+    const payload = JSON.parse(raw) as StaffSessionPayload;
+    if (
+      !payload ||
+      typeof payload.staffId !== 'string' ||
+      typeof payload.role !== 'string' ||
+      typeof payload.slug !== 'string' ||
+      typeof payload.exp !== 'number'
+    ) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function publicSessionId(payload: StaffSessionPayload, sessionKey: string): string {
+  return payload.sessionId ?? sessionKey.replace(/^staff-session:v1:/, 'legacy-');
+}
+
+/** Lista somente sessões Redis reais, confinadas ao tenant e ao staff autenticado. */
+export async function listStaffSessions(
+  redis: RedisService,
+  input: { staffId: string; slug: string; currentToken: string },
+): Promise<StaffSessionView[]> {
+  const currentKey = redisKey(input.currentToken);
+  const indexKey = sessionIndexKey(input.slug, input.staffId);
+  const sessionKeys = await redis.smembers(indexKey);
+  const sessions: StaffSessionView[] = [];
+
+  for (const sessionKey of sessionKeys) {
+    const payload = parseIndexedSession(await redis.get(sessionKey));
+    const invalid =
+      !payload ||
+      payload.exp <= Date.now() ||
+      payload.staffId !== input.staffId ||
+      payload.slug !== input.slug;
+    if (invalid) {
+      await redis.del(sessionKey);
+      if (typeof (redis as Partial<RedisService>).srem === 'function') {
+        await redis.srem(indexKey, sessionKey);
+      }
+      continue;
+    }
+    sessions.push({
+      id: publicSessionId(payload, sessionKey),
+      ip: payload.ip ?? 'não informado',
+      userAgent: payload.userAgent ?? 'Dispositivo não identificado',
+      current: sessionKey === currentKey,
+      issuedAt: new Date(
+        payload.issuedAt ?? payload.exp - STAFF_SESSION_TTL_SECONDS * 1000,
+      ).toISOString(),
+      expiresAt: new Date(payload.exp).toISOString(),
+    });
+  }
+
+  return sessions.sort((a, b) => {
+    if (a.current !== b.current) return a.current ? -1 : 1;
+    return b.issuedAt.localeCompare(a.issuedAt);
+  });
+}
+
+/** Revoga uma sessão Redis específica sem expor ou aceitar o token bruto. */
+export async function revokeStaffSessionById(
+  redis: RedisService,
+  input: { staffId: string; slug: string; sessionId: string; currentToken: string },
+): Promise<'revoked' | 'current' | 'not_found'> {
+  const currentKey = redisKey(input.currentToken);
+  const indexKey = sessionIndexKey(input.slug, input.staffId);
+  const sessionKeys = await redis.smembers(indexKey);
+
+  for (const sessionKey of sessionKeys) {
+    const payload = parseIndexedSession(await redis.get(sessionKey));
+    if (!payload || payload.staffId !== input.staffId || payload.slug !== input.slug) continue;
+    if (publicSessionId(payload, sessionKey) !== input.sessionId) continue;
+    if (sessionKey === currentKey) return 'current';
+    await redis.del(sessionKey);
+    if (typeof (redis as Partial<RedisService>).srem === 'function') {
+      await redis.srem(indexKey, sessionKey);
+    }
+    return 'revoked';
+  }
+  return 'not_found';
 }
 
 function slugsMatch(a: string, b: string): boolean {

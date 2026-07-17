@@ -83,7 +83,7 @@ export function HomeCourtesyNotice({
           data-testid="home-courtesy-accept"
           disabled={!!busyStatus}
           onClick={() => onRespond(courtesy.id, 'aceita')}
-          className="flex min-h-[34px] items-center justify-center gap-1.5 rounded-[11px] border-[1.2px] border-ink bg-ink px-2.5 text-[12px] font-semibold text-bg disabled:opacity-45"
+          className="flex min-h-11 items-center justify-center gap-1.5 rounded-[11px] border-[1.2px] border-ink bg-ink px-2.5 text-[12px] font-semibold text-bg disabled:opacity-45"
         >
           <Check size={14} strokeWidth={2.2} />
           {busyStatus === 'aceita' ? 'Aceitando' : 'Aceitar'}
@@ -93,7 +93,7 @@ export function HomeCourtesyNotice({
           data-testid="home-courtesy-reject"
           disabled={!!busyStatus}
           onClick={() => onRespond(courtesy.id, 'recusada')}
-          className="flex min-h-[34px] items-center justify-center gap-1.5 rounded-[11px] border-[1.2px] border-ink/35 bg-bg px-2.5 text-[12px] font-semibold text-ink disabled:opacity-45"
+          className="flex min-h-11 items-center justify-center gap-1.5 rounded-[11px] border-[1.2px] border-ink/35 bg-bg px-2.5 text-[12px] font-semibold text-ink disabled:opacity-45"
         >
           <X size={14} strokeWidth={2.2} />
           {busyStatus === 'recusada' ? 'Recusando' : 'Recusar'}

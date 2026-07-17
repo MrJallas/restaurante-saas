@@ -1,15 +1,15 @@
 'use client';
 
-// ScreenHostLateArrival — visão da recepcionista pra um pedido de chegada
-// tardia (per docs/features/customer-host-model.md). Aprovar / rejeitar.
-// Cascata host → manager → waiter (60s).
+// ScreenHostLateArrival — acompanhamento passivo da recepção para um pedido
+// de chegada tardia. A decisão pertence exclusivamente ao customer-host da
+// mesa; staff não recebe um CTA de aprovação que o backend corretamente nega.
 
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitives';
-import { approveLateArrival, getLateArrival, rejectLateArrival } from '../../lib/api/host';
+import { getLateArrival } from '../../lib/api/host';
 import { useStaffTheme } from '../../lib/theme';
 import type { LateArrivalRequestDto } from '@restaurant/shared-types';
 
@@ -39,7 +39,6 @@ export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
   const { dark } = useStaffTheme();
   const C = useG(dark);
   const [request, setRequest] = useState<LateArrivalRequestDto | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
@@ -61,23 +60,6 @@ export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
     const tid = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(tid);
   }, []);
-
-  async function handle(action: 'approve' | 'reject') {
-    setSubmitting(true);
-    setError(null);
-    try {
-      if (action === 'approve') {
-        await approveLateArrival(tenantSlug, requestId);
-      } else {
-        await rejectLateArrival(tenantSlug, requestId);
-      }
-      onResolved?.();
-    } catch (e: unknown) {
-      setError((e as Error)?.message ?? 'Erro ao responder');
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   const expiresAt = request?.expiresAt;
   const expired = expiresAt ? new Date(expiresAt).getTime() <= now : false;
@@ -118,7 +100,7 @@ export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
               opacity: 0.85,
             }}
           >
-            CASCATA · HOST · {expired ? 'EXPIRADO' : fmtDeadline(expiresAt)}
+            ACOMPANHAMENTO · {expired ? 'EXPIRADO' : fmtDeadline(expiresAt)}
           </div>
           <div style={{ fontSize: 30, fontWeight: 800, marginTop: 8, letterSpacing: -0.6 }}>
             {request ? `Mesa ${request.tableNumber}` : '—'}
@@ -152,7 +134,7 @@ export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
               lineHeight: 1.5,
             }}
           >
-            {request?.visitContext ?? 'Sem contexto adicional. Aprove com cuidado.'}
+            {request?.visitContext ?? 'Sem contexto adicional.'}
           </div>
 
           <div
@@ -167,9 +149,10 @@ export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
               lineHeight: 1.5,
             }}
           >
-            <b>Como funciona</b>
-            <br />O cliente-host original não respondeu em 60s. A recepção é a primeira no fallback.
-            Se você não responder em mais 60s, o pedido vai pro gerente.
+            <b>Apenas acompanhamento</b>
+            <br />O anfitrião da mesa aprova ou rejeita a entrada pelo próprio app. A recepção
+            recebe esta informação para acompanhar a ocupação e ajudar presencialmente se
+            necessário.
           </div>
 
           {error && (
@@ -200,25 +183,9 @@ export const ScreenHostLateArrival: React.FC<ScreenHostLateArrivalProps> = ({
           gap: 10,
         }}
       >
-        <GButton
-          kind="secondary"
-          dark={dark}
-          onClick={() => handle('reject')}
-          disabled={submitting || expired}
-        >
-          Rejeitar
+        <GButton kind="secondary" full dark={dark} onClick={onResolved ?? onBack}>
+          Voltar ao salão
         </GButton>
-        <div style={{ flex: 1 }}>
-          <GButton
-            kind="success"
-            full
-            dark={dark}
-            onClick={() => handle('approve')}
-            disabled={submitting || expired}
-          >
-            {submitting ? 'Enviando...' : 'Aprovar entrada'}
-          </GButton>
-        </div>
       </div>
     </div>
   );

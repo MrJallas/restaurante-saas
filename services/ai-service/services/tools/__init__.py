@@ -87,7 +87,6 @@ from .rate_visit import call as _rate_visit
 # Legacy customer tools (NOT in F2 canonical list but still in use)
 # ─────────────────────────────────────────────────────────────
 from .request_check import call as _request_check
-from .late_arrival_request import call as _late_arrival_request
 from .change_order import call as _change_order
 from .cancel_order import call as _cancel_order
 from .remove_from_cart import call as _remove_from_cart
@@ -220,9 +219,13 @@ TOOLS: dict[str, ToolMeta] = {
     ),
     "lgpd_data_request": ToolMeta(
         name="lgpd_data_request", call=_lgpd_data_request,
-        # silent dispatch — returns canonical confirmation as bubble text;
-        # FE doesn't render a "tool was used" indicator.
+        # Silent handoff: never reports fulfillment. The FE owns the
+        # authenticated POST and renders its real protocol response.
         silent=True, requires_text=False, router=False, audience="customer",
+        # Formal erasure is irreversible. A model-originated call is always
+        # downgraded to the canonical notice below; only an out-of-band browser
+        # confirmation may reach this handoff, which itself never executes HTTP.
+        destructive=True,
     ),
     "show_lgpd_notice": ToolMeta(
         name="show_lgpd_notice", call=_show_lgpd_notice,
@@ -253,10 +256,6 @@ TOOLS: dict[str, ToolMeta] = {
     # ──────────────────────────────────────────────
     "request_check": ToolMeta(
         name="request_check", call=_request_check,
-        silent=False, requires_text=False, router=False, audience="customer",
-    ),
-    "late_arrival_request": ToolMeta(
-        name="late_arrival_request", call=_late_arrival_request,
         silent=False, requires_text=False, router=False, audience="customer",
     ),
     "change_order": ToolMeta(
@@ -386,8 +385,10 @@ def _destructive_confirm_prompt(name: str, args: dict[str, Any]) -> ToolResult:
 
     Mirrors the existing two-step consent pattern (show_lgpd_notice →
     lgpd_data_request): return a bubble + a binary chip pair, where the
-    confirm chip re-emits the SAME tool with `confirm=true` (preserving the
-    original args, e.g. threadId) and the cancel chip dismisses.
+    confirm chip carries the SAME tool with `confirm=true` (preserving the
+    original args, e.g. threadId). web-customer consumes that object directly
+    and executes the DELETE with its recognition_token cookie; the AI service
+    never turns customerId context into HTTP authorization.
     """
     # Preserve the caller's args (e.g. delete_chat's threadId) and stamp
     # confirm=true so the re-emission actually runs.
@@ -441,12 +442,11 @@ class ToolValidationError(Exception):
         self.chip_label = chip_label
 
 
-# The ONLY dispatch origin whose `confirm` is trusted. Confirmation of a
-# destructive action must be an OUT-OF-BAND human signal (a chip the customer
-# physically tapped, dispatched via the trusted `/tools/dispatch` path) —
-# NEVER a token the LLM emitted in its tool-call stream. Any other origin
-# (default "llm", the tool-call loop in main.py) gets `confirm` stripped
-# before the tool ever sees it.
+# The ONLY dispatch origin whose `confirm` is trusted. In the product path,
+# web-customer consumes the chip itself and calls apps/api with the browser
+# cookie. `/tools/dispatch` may still validate an out-of-band chip for other
+# orchestrators, but delete_* only returns a browser-action payload; it never
+# performs the authenticated DELETE. Any LLM origin still gets confirm stripped.
 _TRUSTED_CONFIRM_ORIGIN = "chip"
 
 
@@ -467,9 +467,8 @@ def dispatch_tool(
         A hallucinating/jailbroken model emitting {"confirm": true} therefore
         re-hits the gate and gets a confirmation chip instead of a delete.
       - "chip" (`_TRUSTED_CONFIRM_ORIGIN`): an out-of-band dispatch the human
-        triggered by tapping the confirm chip (via the trusted `/tools/dispatch`
-        endpoint, authenticated with X-AI-Service-Key). Only here is `confirm`
-        honored, so the destructive action actually runs.
+        triggered by tapping the confirm chip. Only here is `confirm` honored;
+        delete_* then delegates execution to the browser cookie boundary.
 
     The default is the SECURE one: any caller that forgets to pass `origin`
     cannot confirm a destructive action. `additionalProperties:False` in
@@ -482,6 +481,35 @@ def dispatch_tool(
     meta = TOOLS.get(name)
     if meta is None:
         raise ToolNotFoundError(f"unknown tool: {name}")
+
+    # Confused-deputy barrier: the LLM/tool name never grants a role. Customer
+    # chat runs with is_staff=False, so a hallucinated or prompt-injected staff
+    # tool is rejected before any HTTP side effect. Staff tools require a
+    # cryptographically verified staff context supplied by a trusted caller;
+    # booleans in model arguments are irrelevant.
+    if meta.audience in {"staff", "manager"} and not ctx.is_staff:
+        return ToolResult(
+            error={
+                "code": "staff_auth_required",
+                "message": "Esta ação exige uma sessão autenticada da equipe.",
+            }
+        )
+    if meta.audience == "manager" and not ctx.is_manager:
+        return ToolResult(
+            error={
+                "code": "manager_auth_required",
+                "message": "Esta ação exige uma sessão autenticada de gerente.",
+            }
+        )
+
+    # A model can hallucinate this tool or be prompt-injected into emitting it.
+    # Do not even return the generic destructive-confirm payload: route the
+    # turn back to the canonical legal notice. The actual erasure lives solely
+    # behind web-customer's authenticated, out-of-band confirmation button.
+    if name == "lgpd_data_request" and origin != _TRUSTED_CONFIRM_ORIGIN:
+        if not ctx.customer_id:
+            return meta.call(args or {}, ctx)
+        return _show_lgpd_notice({}, ctx)
 
     # Server-side invariant: strip any `confirm` the LLM may have forged. The
     # model's token-stream can NEVER confirm a destructive action — only the

@@ -5,6 +5,7 @@ import {
   issueStaffSessionToken,
   verifyStaffSessionToken,
 } from '../../common/auth/staff-session-token';
+import type { EventsGateway } from '../websocket/events.gateway';
 
 /**
  * P1-E (re-scan) — POST /:slug/staff-auth/logout.
@@ -56,8 +57,9 @@ function makeService(redis: FakeRedis) {
     getTenantSlug: () => 'acme',
     query: async () => [],
   } as unknown as TenantConnectionProvider;
-  const service = new StaffAuthService(tenantConn, redis as unknown as RedisService);
-  return { service };
+  const events = { disconnectStaff: jest.fn() } as unknown as EventsGateway;
+  const service = new StaffAuthService(tenantConn, redis as unknown as RedisService, events);
+  return { service, events };
 }
 
 async function issueFor(redis: FakeRedis, staffId = STAFF_ID, role = 'waiter') {
@@ -71,7 +73,7 @@ async function issueFor(redis: FakeRedis, staffId = STAFF_ID, role = 'waiter') {
 describe('StaffAuthService.logout', () => {
   it('com token válido revoga TODAS as sessões do staff (verify falha depois)', async () => {
     const redis = new FakeRedis();
-    const { service } = makeService(redis);
+    const { service, events } = makeService(redis);
 
     const current = await issueFor(redis);
     const otherDevice = await issueFor(redis);
@@ -86,6 +88,7 @@ describe('StaffAuthService.logout', () => {
     expect(
       await verifyStaffSessionToken(redis as unknown as RedisService, otherDevice.token, 'acme'),
     ).toBeNull();
+    expect(events.disconnectStaff).toHaveBeenCalledWith(STAFF_ID);
   });
 
   it('sem token → 200 idempotente (logout é sempre seguro)', async () => {

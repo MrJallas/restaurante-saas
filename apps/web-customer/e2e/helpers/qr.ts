@@ -38,17 +38,15 @@ export async function liberateQrTestTable({
   slug = 'restaurant_dev',
   tableCode = 'QRTEST91',
   apiBaseUrl = process.env.E2E_API_BASE_URL ?? 'http://localhost:3001/api',
-  staffKey = process.env.E2E_STAFF_API_KEY ?? 'dev-staff-api-key-change-in-prod',
-}: BuildMesaUrlOptions & { staffKey?: string } = {}): Promise<void> {
+}: BuildMesaUrlOptions = {}): Promise<void> {
   const api = apiBaseUrl.replace(/\/$/, '');
-  const staffId = await resolveHostOrManagerStaffId(api, slug);
+  const staffToken = await loginHost(api, slug);
   const tableNumber = QR_TEST_TABLES[tableCode].tableNumber;
   const response = await fetch(`${api}/${slug}/host/tables/${tableNumber}/liberate`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-staff-key': staffKey,
-      'x-staff-id': staffId,
+      'x-staff-token': staffToken,
     },
     body: JSON.stringify({
       mode: 'auto',
@@ -63,19 +61,18 @@ export async function liberateQrTestTable({
   }
 }
 
-async function resolveHostOrManagerStaffId(apiBaseUrl: string, slug: string): Promise<string> {
-  const response = await fetch(`${apiBaseUrl}/${slug}/staff?activeOnly=true`);
-  if (!response.ok) {
-    throw new Error(`Failed to list staff: ${response.status} ${await response.text()}`);
+async function loginHost(apiBaseUrl: string, slug: string): Promise<string> {
+  const response = await fetch(`${apiBaseUrl}/${slug}/staff-auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      cpf: process.env.E2E_HOST_CPF ?? '90000000002',
+      pin: process.env.E2E_STAFF_PIN ?? '1234',
+    }),
+  });
+  const payload = (await response.json().catch(() => ({}))) as { staffToken?: string };
+  if (!response.ok || !payload.staffToken) {
+    throw new Error(`Failed to authenticate host: ${response.status} ${JSON.stringify(payload)}`);
   }
-  const payload = (await response.json()) as {
-    staff?: Array<{ id: string; role: string }>;
-  };
-  const staff =
-    payload.staff?.find((s) => s.role === 'host') ??
-    payload.staff?.find((s) => s.role === 'manager');
-  if (!staff) {
-    throw new Error('No active host or manager staff found for QR pre-release.');
-  }
-  return staff.id;
+  return payload.staffToken;
 }

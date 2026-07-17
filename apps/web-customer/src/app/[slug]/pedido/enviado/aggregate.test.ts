@@ -1,4 +1,9 @@
-import { parseEnviadoOrderIds, aggregateOrders, type EnviadoOrder } from './aggregate';
+import {
+  parseEnviadoOrderIds,
+  aggregateOrders,
+  loadEnviadoOrders,
+  type EnviadoOrder,
+} from './aggregate';
 
 /** Helper: agrega e afirma que não é null (carrinho com pedidos). */
 function agg(orders: EnviadoOrder[]): EnviadoOrder {
@@ -86,5 +91,54 @@ describe('aggregateOrders (bug: tela Enviado do carrinho misto refletia só o 1�
     const result = agg([orderA, noEta]);
     expect(result.etaMinutesMin).toBe(10);
     expect(result.etaMinutesMax).toBe(15);
+  });
+});
+
+describe('loadEnviadoOrders (gate honesto da tela de sucesso)', () => {
+  const order: EnviadoOrder = {
+    id: 'a',
+    status: 'received',
+    totalCents: 3000,
+    items: [{ id: 'i1', name: 'Burger', quantity: 1, priceCents: 3000 }],
+  };
+
+  it('requires at least one order id', async () => {
+    await expect(loadEnviadoOrders([], jest.fn())).rejects.toMatchObject({
+      code: 'missing_order_ids',
+    });
+  });
+
+  it('returns success data only after every GET is valid', async () => {
+    const orderB = { ...order, id: 'b', totalCents: 1200 };
+    const load = jest.fn(async (id: string) => (id === 'a' ? order : orderB));
+
+    await expect(loadEnviadoOrders(['a', 'b'], load)).resolves.toMatchObject({
+      id: 'a,b',
+      totalCents: 4200,
+    });
+  });
+
+  it('rejects the whole success state when one GET fails', async () => {
+    await expect(
+      loadEnviadoOrders(['a', 'b'], async (id) => {
+        if (id === 'b') throw new Error('offline');
+        return order;
+      }),
+    ).rejects.toThrow('offline');
+  });
+
+  it('rejects malformed or mismatched order responses', async () => {
+    await expect(
+      loadEnviadoOrders(['a'], async () => ({ id: 'other', status: 'received' })),
+    ).rejects.toMatchObject({ code: 'invalid_order_response' });
+  });
+
+  it('does not call a pending or cancelled order successfully sent', async () => {
+    await expect(
+      loadEnviadoOrders(['a'], async () => ({ ...order, status: 'pending_confirmation' })),
+    ).rejects.toMatchObject({ code: 'order_not_sent' });
+    await expect(
+      loadEnviadoOrders(['a'], async () => ({ ...order, status: 'cancelled' })),
+    ).rejects.toMatchObject({ code: 'order_not_sent' });
   });
 });

@@ -7,10 +7,8 @@ canonical routes were validated against the corresponding NestJS controllers:
 
   - request_table_merge → browser-session action payload
     (apps/api/src/modules/table-merge/table-merge.controller.ts is protected by SessionGuard)
-  - delete_chat         → DELETE /:slug/chat-history/threads/:threadId
-    (apps/api/src/modules/chat-history/chat-history.controller.ts L49)
-  - delete_all_chats    → DELETE /:slug/chat-history?customerId=…
-    (apps/api/src/modules/chat-history/chat-history.controller.ts L60)
+  - delete_chat/delete_all_chats → browser action payload only. The customer
+    FE executes the canonical DELETE with its recognition_token cookie.
   - send_message_to_manager → NO direct HTTP call (round 22)
     A persistência roda server-side em apps/api `AssistantService`, que
     chama `CustomerStaffMessagesService.appendOutbound()` depois da
@@ -88,11 +86,11 @@ def test_join_request_decision_tools_do_not_call_api(tool_name: str, decision: s
 
 
 # ─────────────────────────────────────────────────────────────
-# delete_chat → DELETE /:slug/chat-history/threads/:threadId
+# delete_chat → FE action; never HTTP from the AI service
 # ─────────────────────────────────────────────────────────────
 
 
-def test_delete_chat_hits_canonical_route():
+def test_delete_chat_delegates_to_browser_cookie_boundary():
     api = RecordingApiClient(default=None)
     ctx = ToolContext(tenant_id="my-rest", customer_id="cust-1", api_client=api)
     # `delete_chat` is destructive → the dispatcher only honors `confirm` from
@@ -102,18 +100,21 @@ def test_delete_chat_hits_canonical_route():
         "delete_chat", {"threadId": "thread-xyz", "confirm": True}, ctx, origin="chip"
     )
     assert result.error is None
-    assert len(api.calls) == 1
-    method, path, _ = api.calls[0]
-    assert method == "DELETE"
-    assert path == "/my-rest/chat-history/threads/thread-xyz?customerId=cust-1"
+    assert api.calls == []
+    assert result.silent is True
+    assert result.action_payload == {
+        "action": "delete_chat_in_browser",
+        "threadId": "thread-xyz",
+        "requiresRecognitionCookie": True,
+    }
 
 
 # ─────────────────────────────────────────────────────────────
-# delete_all_chats → DELETE /:slug/chat-history?customerId=…
+# delete_all_chats → FE action; never query customerId authorization
 # ─────────────────────────────────────────────────────────────
 
 
-def test_delete_all_chats_hits_canonical_route():
+def test_delete_all_chats_delegates_to_browser_cookie_boundary():
     api = RecordingApiClient(default={"deletedCount": 3})
     ctx = ToolContext(tenant_id="my-rest", customer_id="cust-1", api_client=api)
     # Destructive → gated behind out-of-band confirm (see test_tools_registry.py).
@@ -121,19 +122,20 @@ def test_delete_all_chats_hits_canonical_route():
     # pelo humano — o token-stream do LLM (origin default) nunca confirma.
     result = dispatch_tool("delete_all_chats", {"confirm": True}, ctx, origin="chip")
     assert result.error is None
-    assert len(api.calls) == 1
-    method, path, _ = api.calls[0]
-    assert method == "DELETE"
-    assert path == "/my-rest/chat-history?customerId=cust-1"
-    assert "3 conversa" in (result.message or "")
+    assert api.calls == []
+    assert result.silent is True
+    assert result.action_payload == {
+        "action": "delete_all_chats_in_browser",
+        "requiresRecognitionCookie": True,
+    }
 
 
 # ─────────────────────────────────────────────────────────────
-# lgpd_data_request → POST /:slug/lgpd-requests
+# lgpd_data_request → browser handoff only
 # ─────────────────────────────────────────────────────────────
 
 
-def test_lgpd_data_request_hits_canonical_route():
+def test_lgpd_data_request_does_not_call_backend_from_llm():
     api = RecordingApiClient(default={"protocolNumber": "LGPD-2026-05-15-0001"})
     ctx = ToolContext(
         tenant_id="my-rest",
@@ -141,25 +143,27 @@ def test_lgpd_data_request_hits_canonical_route():
         api_client=api,
         raw_message="quero excluir meus dados",
     )
-    result = dispatch_tool("lgpd_data_request", {"type": "erasure"}, ctx)
+    result = dispatch_tool("lgpd_data_request", {"type": "erasure"}, ctx, origin="llm")
     assert result.error is None
-    assert len(api.calls) == 1
-    method, path, body = api.calls[0]
-    assert method == "POST"
-    assert path == "/my-rest/lgpd-requests"
-    assert body["kind"] == "erasure"
-    assert body["originalMessage"] == "quero excluir meus dados"
-    assert result.action_payload["lgpdErasure"]["backendDispatched"] is True
+    assert api.calls == []
+    assert result.action_payload == {"messageType": "lgpd_notice"}
 
 
-def test_lgpd_data_request_keeps_confirmation_when_api_fails():
+def test_lgpd_data_request_chip_returns_browser_action_without_http():
     api = RecordingApiClient(
         raise_on_call=ApiClientError("unauthorized", status_code=401),
     )
     ctx = ToolContext(tenant_id="my-rest", customer_id="cust-1", api_client=api)
-    result = dispatch_tool("lgpd_data_request", {"type": "erasure"}, ctx)
+    result = dispatch_tool(
+        "lgpd_data_request",
+        {"type": "erasure", "confirm": True},
+        ctx,
+        origin="chip",
+    )
     assert result.error is None
-    assert result.action_payload["lgpdErasure"]["backendDispatched"] is False
+    assert api.calls == []
+    assert result.action_payload["action"] == "lgpd_request_in_browser"
+    assert result.action_payload["status"] == "not_executed"
 
 
 # ─────────────────────────────────────────────────────────────

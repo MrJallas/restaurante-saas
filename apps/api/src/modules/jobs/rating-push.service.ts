@@ -131,11 +131,24 @@ export class RatingPushService {
       }
 
       try {
-        await this.push.sendOrderRatingPush({
+        const delivery = await this.push.sendOrderRatingPush({
           tenantSlug: slug,
           customerId: row.customer_id,
           orderId: row.order_id,
         });
+        if (!delivery.delivered) {
+          // Não transforma "adapter existe" em "push entregue". Libera a
+          // reserva para uma futura execução quando houver provider real.
+          try {
+            await this.redis.del(dedupKey);
+          } catch {
+            /* TTL da reserva ainda limita o estado degradado. */
+          }
+          this.logger.warn(
+            `[${slug}] rating push não entregue order=${row.order_id} reason=${delivery.reason}`,
+          );
+          continue;
+        }
         this.memDedup.add(row.id);
         // Bound the in-memory dedup set.
         if (this.memDedup.size > 10_000) {

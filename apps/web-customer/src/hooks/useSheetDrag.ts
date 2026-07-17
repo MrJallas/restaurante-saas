@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { prefersReducedMotion } from '../lib/animations';
 
 /**
  * Drag-to-dismiss hook pra bottom sheets, baseado no pattern do `vaul`
@@ -145,6 +146,10 @@ export function useSheetDrag({
   const scheduleDismiss = useCallback(
     (dismissTarget: number) => {
       cancelScheduledDismiss();
+      if (prefersReducedMotion()) {
+        onDismissRef.current();
+        return;
+      }
       dismissInProgressRef.current = true;
 
       closeFrameRef.current = window.requestAnimationFrame(() => {

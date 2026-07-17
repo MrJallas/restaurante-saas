@@ -157,7 +157,25 @@ export function ScreenWaiterQuickOrder({
         }
         title={mode === 'review' ? 'Revisar pedido' : 'Pedido direto'}
         sub={title}
-        right={<GIconBtn dark={dark} icon={Icon.fork(20)} ariaLabel="Pedido direto" />}
+        right={
+          <span
+            aria-hidden="true"
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              border: `1.2px solid ${C.borderSoft}`,
+              color: C.ink,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: C.bg,
+              boxSizing: 'border-box',
+            }}
+          >
+            {Icon.fork(20)}
+          </span>
+        }
       />
 
       {mode === 'pick' ? (

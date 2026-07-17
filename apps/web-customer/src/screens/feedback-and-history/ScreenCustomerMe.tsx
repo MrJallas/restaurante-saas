@@ -17,6 +17,8 @@ import { useSession } from '../../hooks/useSession';
 import { ApiRequestError } from '../../lib/api';
 import { deleteAllThreads as deleteAllAiThreads } from '../../lib/api/chat-history';
 import { deleteAllThreads as deleteAllStaffThreads } from '../../lib/api/staff-messages';
+import { logoutCustomer } from '../../lib/api/customer-auth';
+import { useDraftOrder } from '../../providers/DraftOrderProvider';
 import { AppShell } from '../../components/layout/AppShell';
 import { BottomSheet } from '../../components/ui/BottomSheet';
 import { PillButton } from '../../components/ui/PillButton';
@@ -43,7 +45,10 @@ function getInitials(name: string | null | undefined): string {
  * não havia nada). Agora o empty-state só aparece quando de fato não havia nada
  * (count 0); tendo apagado, confirmamos QUANTAS e de qual escopo.
  */
-export function describeDeletionResult(scope: 'staff' | 'ai' | 'all', deletedCount: number): string {
+export function describeDeletionResult(
+  scope: 'staff' | 'ai' | 'all',
+  deletedCount: number,
+): string {
   if (deletedCount <= 0) {
     return scope === 'staff'
       ? 'Nenhuma mensagem com a equipe por aqui ainda.'
@@ -58,24 +63,36 @@ export function describeDeletionResult(scope: 'staff' | 'ai' | 'all', deletedCou
 
 export function ScreenCustomerMe({ slug, restaurantName = '' }: ScreenCustomerMeProps) {
   const session = useSession();
+  const { clear: clearDraft } = useDraftOrder();
   const router = useRouter();
   const [privacySheetOpen, setPrivacySheetOpen] = useState(false);
   const [deleteScope, setDeleteScope] = useState<'staff' | 'ai' | 'all'>('staff');
   const [deleting, setDeleting] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [exitBusy, setExitBusy] = useState<'switch' | 'leave' | null>(null);
+  const [exitError, setExitError] = useState<string | null>(null);
 
-  const handleTrocarPerfil = () => {
-    router.push(`/${slug}`);
-  };
-
-  const handleLogout = () => {
+  const finishExit = async (kind: 'switch' | 'leave') => {
+    if (exitBusy) return;
+    setExitBusy(kind);
+    setExitError(null);
     try {
-      window.sessionStorage.clear();
-    } catch {
-      /* ignore */
+      await logoutCustomer(slug);
+      clearDraft();
+      session.clearSession();
+      // Sem autenticação forte multi-perfil ainda não é seguro conservar a
+      // mesa para outro CPF. Ambos os caminhos terminam no estado honesto de
+      // reentrada por QR; o backend já revogou a credencial anterior.
+      router.replace(kind === 'switch' ? `/${slug}` : '/');
+    } catch (error) {
+      setExitError(
+        error instanceof Error
+          ? error.message
+          : 'Não consegui encerrar o perfil com segurança. Tente de novo.',
+      );
+      setExitBusy(null);
     }
-    router.push('/');
   };
 
   const handleDeleteConversations = async () => {
@@ -93,7 +110,7 @@ export function ScreenCustomerMe({ slug, restaurantName = '' }: ScreenCustomerMe
         deletedCount += res.deletedCount;
       }
       if (deleteScope === 'ai' || deleteScope === 'all') {
-        const res = await deleteAllAiThreads(slug, session.customerId);
+        const res = await deleteAllAiThreads(slug);
         deletedCount += res.deletedCount;
       }
       setDeleteMessage(describeDeletionResult(deleteScope, deletedCount));
@@ -107,6 +124,25 @@ export function ScreenCustomerMe({ slug, restaurantName = '' }: ScreenCustomerMe
       setDeleting(false);
     }
   };
+
+  if (!session.hydrated) {
+    return (
+      <AppShell
+        slug={slug}
+        restaurantName={restaurantName}
+        tableLabel=""
+        activeHref={`/${slug}/eu`}
+      >
+        <div
+          className="flex flex-1 items-center justify-center"
+          role="status"
+          aria-label="Carregando perfil"
+        >
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-ink border-t-transparent" />
+        </div>
+      </AppShell>
+    );
+  }
 
   // Guard: sem identificação, manda pra /identify em vez de tela vazia
   // (resolve o bug P0 #13 do relatório E2E pro entry "Eu").
@@ -252,18 +288,25 @@ export function ScreenCustomerMe({ slug, restaurantName = '' }: ScreenCustomerMe
         <div className="mt-6 flex flex-col gap-2">
           <button
             type="button"
-            onClick={handleTrocarPerfil}
+            onClick={() => void finishExit('switch')}
+            disabled={exitBusy !== null}
             className="rounded-[12px] border border-border-soft bg-bg px-4 py-3 text-[14px] font-medium text-ink active:bg-surface"
           >
-            Trocar perfil
+            {exitBusy === 'switch' ? 'Encerrando perfil…' : 'Trocar perfil'}
           </button>
           <button
             type="button"
-            onClick={handleLogout}
+            onClick={() => void finishExit('leave')}
+            disabled={exitBusy !== null}
             className="rounded-[12px] border border-danger bg-bg px-4 py-3 text-[14px] font-semibold text-danger active:bg-[#fdf2f2]"
           >
-            Sair da mesa
+            {exitBusy === 'leave' ? 'Saindo…' : 'Sair da mesa'}
           </button>
+          {exitError && (
+            <p role="alert" className="text-center text-[12px] font-medium text-danger">
+              {exitError}
+            </p>
+          )}
         </div>
       </div>
 

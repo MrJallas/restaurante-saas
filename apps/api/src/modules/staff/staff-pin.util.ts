@@ -34,6 +34,11 @@ export function hashPin(pin: string): string {
   return bcrypt.hashSync(pin, BCRYPT_ROUNDS);
 }
 
+/** PIN temporário gerado no servidor e persistido apenas como bcrypt. */
+export function generateTemporaryPin(): string {
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+}
+
 /**
  * Hash SHA-256 legado (sem sal). NÃO usar pra gravar — existe só pra
  * reconhecer/verificar hashes antigos ainda no banco até o backfill lazy.

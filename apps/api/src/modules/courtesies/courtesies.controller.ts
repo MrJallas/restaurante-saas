@@ -112,21 +112,35 @@ export class CourtesiesController {
 
 @Controller(':slug/customer/courtesies')
 export class CustomerCourtesiesController {
-  constructor(private readonly service: CourtesiesService) {}
+  constructor(
+    private readonly service: CourtesiesService,
+    private readonly callerResolver: CallerResolverService,
+  ) {}
 
   @Get()
   @UseGuards(SessionGuard)
-  async list(@Session() session: SessionData): Promise<CustomerCourtesiesResponse> {
+  async list(
+    @Session() session: SessionData,
+    @Req() req: Request,
+  ): Promise<CustomerCourtesiesResponse> {
+    // Cortesia ativa pertence à mesa e pode ser vista antes do welcome. Sem
+    // cookie, porém, não atribui histórico a nenhuma pessoa.
+    const customerId = await this.callerResolver.tryGetCustomerId(req);
     return {
-      courtesies: await this.service.listForSession(session.sessionId, session.customerId),
+      courtesies: await this.service.listForSession(session.sessionId, customerId),
     };
   }
 
   @Get('history')
   @UseGuards(SessionGuard)
-  async history(@Session() session: SessionData): Promise<CustomerCourtesyHistoryResponse> {
+  async history(
+    @Session() session: SessionData,
+    @Req() req: Request,
+  ): Promise<CustomerCourtesyHistoryResponse> {
+    // Histórico cruza refeições/mesas e é PII individual: fail-closed.
+    const customerId = await this.callerResolver.requireCustomerId(req);
     return {
-      courtesies: await this.service.listHistoryForCustomer(session.customerId, session.sessionId),
+      courtesies: await this.service.listHistoryForCustomer(customerId, session.sessionId),
       retentionDays: 30,
     };
   }
@@ -139,13 +153,11 @@ export class CustomerCourtesiesController {
     @Param('id') id: string,
     @Body() dto: RespondCourtesyDto,
     @Session() session: SessionData,
+    @Req() req: Request,
   ): Promise<CustomerCourtesyDto> {
-    return this.service.respondForSession(
-      id,
-      dto.status,
-      session.sessionId,
-      slug,
-      session.customerId,
-    );
+    // A resposta é da mesa; recognition_token é opcional só para registrar o
+    // histórico individual correto. Ausente = sem atribuição, nunca fallback.
+    const customerId = await this.callerResolver.tryGetCustomerId(req);
+    return this.service.respondForSession(id, dto.status, session.sessionId, slug, customerId);
   }
 }

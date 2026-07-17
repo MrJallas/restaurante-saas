@@ -13,6 +13,7 @@ import { useRouter } from 'next/navigation';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GBadge, GBottomNav, GIconBtn } from '../../components/waiter/Primitives';
+import { OperationalErrorBanner } from '../../components/OperationalErrorBanner';
 import { useWaiterEvents } from '../../hooks/useWaiterEvents';
 import {
   isDeliveryClaimedBy,
@@ -26,6 +27,7 @@ import {
   type WaiterCallSummary,
 } from '../../lib/api/waiter';
 import type { ZonePauseDto, WsEvent } from '@restaurant/shared-types';
+import { operationalErrorCopy } from '../../lib/operational-error';
 
 interface ScreenHomeGridProps {
   tenantSlug: string;
@@ -103,6 +105,9 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
   const [calls, setCalls] = useState<WaiterCallSummary[]>([]);
   const [pauses, setPauses] = useState<ZonePauseDto[]>([]);
   const [deliveries, setDeliveries] = useState<PendingDelivery[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   const { on } = useWaiterEvents({ tenantSlug, waiterId });
 
@@ -112,10 +117,10 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
     async function load() {
       try {
         const [t, c, p, d] = await Promise.all([
-          listMyTables(tenantSlug).catch(() => []),
-          listPendingCalls(tenantSlug).catch(() => []),
-          listMyZonePauses(tenantSlug, waiterId).catch(() => []),
-          listPendingDeliveries(tenantSlug).catch(() => [] as PendingDelivery[]),
+          listMyTables(tenantSlug),
+          listPendingCalls(tenantSlug),
+          listMyZonePauses(tenantSlug, waiterId),
+          listPendingDeliveries(tenantSlug),
         ]);
         if (!alive) return;
         setTables(t);
@@ -131,8 +136,10 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
               isDeliveryClaimedBy(row, waiterId || null),
           ),
         );
-      } catch {
-        /* noop · screen renders empty */
+        setHasLoaded(true);
+        setLoadError(null);
+      } catch (error) {
+        if (alive) setLoadError(operationalErrorCopy(error, 'suas mesas e chamados'));
       }
     }
     load();
@@ -141,7 +148,7 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
       alive = false;
       clearInterval(tid);
     };
-  }, [tenantSlug, waiterId]);
+  }, [retryKey, tenantSlug, waiterId]);
 
   // WS hooks for banner toggling
   useEffect(() => {
@@ -218,7 +225,13 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
           </div>
         }
         title="Minhas mesas"
-        sub={`${tables.filter((t) => t.status !== 'livre').length} ABERTAS · ${tables.filter((t) => t.status === 'livre').length} LIVRES`}
+        sub={
+          !hasLoaded
+            ? loadError
+              ? 'DADOS INDISPONÍVEIS'
+              : 'CARREGANDO MESAS'
+            : `${tables.filter((t) => t.status !== 'livre').length} ABERTAS · ${tables.filter((t) => t.status === 'livre').length} LIVRES`
+        }
         right={
           <GIconBtn
             icon={Icon.bell(20)}
@@ -229,6 +242,15 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
           />
         }
       />
+
+      {loadError && (
+        <OperationalErrorBanner
+          message={loadError}
+          onRetry={() => setRetryKey((key) => key + 1)}
+          dark={dark}
+          hasStaleData={tables.length > 0 || calls.length > 0 || deliveries.length > 0}
+        />
+      )}
 
       {/* Zone-pause banner — per docs/features/zone-pause.md */}
       {activePause && (

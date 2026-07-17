@@ -29,6 +29,72 @@ export const ENVIADO_STATUS_INDEX: Record<string, number> = {
   delivered: 4,
 };
 
+const VERIFIED_SENT_STATUSES = new Set(Object.keys(ENVIADO_STATUS_INDEX));
+
+export class EnviadoOrdersLoadError extends Error {
+  constructor(readonly code: 'missing_order_ids' | 'invalid_order_response' | 'order_not_sent') {
+    super(code);
+    this.name = 'EnviadoOrdersLoadError';
+  }
+}
+
+function isEnviadoOrder(value: unknown): value is EnviadoOrder {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const order = value as Record<string, unknown>;
+  if (
+    typeof order.id !== 'string' ||
+    !order.id ||
+    typeof order.status !== 'string' ||
+    !order.status ||
+    typeof order.totalCents !== 'number' ||
+    !Number.isFinite(order.totalCents) ||
+    !Array.isArray(order.items)
+  ) {
+    return false;
+  }
+  return order.items.every((item) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return false;
+    const row = item as Record<string, unknown>;
+    return (
+      typeof row.id === 'string' &&
+      typeof row.name === 'string' &&
+      typeof row.quantity === 'number' &&
+      Number.isFinite(row.quantity) &&
+      typeof row.priceCents === 'number' &&
+      Number.isFinite(row.priceCents)
+    );
+  });
+}
+
+/**
+ * Load every order named by the route, validate the runtime payloads, and only
+ * then return the aggregate used by the success screen. Missing ids, one
+ * failed GET, or one malformed response must keep the UI out of success state.
+ */
+export async function loadEnviadoOrders(
+  orderIds: string[],
+  load: (orderId: string) => Promise<unknown>,
+): Promise<EnviadoOrder> {
+  const ids = [...new Set(orderIds.map((id) => id.trim()).filter(Boolean))];
+  if (ids.length === 0) throw new EnviadoOrdersLoadError('missing_order_ids');
+
+  const orders = await Promise.all(
+    ids.map(async (id) => {
+      const value = await load(id);
+      if (!isEnviadoOrder(value) || value.id !== id) {
+        throw new EnviadoOrdersLoadError('invalid_order_response');
+      }
+      if (!VERIFIED_SENT_STATUSES.has(value.status)) {
+        throw new EnviadoOrdersLoadError('order_not_sent');
+      }
+      return value;
+    }),
+  );
+  const aggregate = aggregateOrders(orders);
+  if (!aggregate) throw new EnviadoOrdersLoadError('invalid_order_response');
+  return aggregate;
+}
+
 /**
  * Lê os ids de pedido da query da rota /pedido/enviado. Aceita o novo
  * `orderIds=a,b` (carrinho misto — um order por billingMode) e cai no

@@ -1,14 +1,13 @@
 import { Module } from '@nestjs/common';
 import { RedisModule } from '../../infra/redis/redis.module';
-import { CustomersModule } from '../customers/customers.module';
+import { CallerResolverModule } from '../../common/services/caller-resolver.module';
 import { ChatHistoryController } from './chat-history.controller';
 import { ChatHistoryService } from './chat-history.service';
 
 @Module({
-  // Round 5 (B-NEW-9): CustomersModule importado pra resolver
-  // recognition_token cookie → customerId no controller (ownership
-  // check dos endpoints DELETE/list).
-  imports: [RedisModule, CustomersModule],
+  // Histórico é PII: CallerResolver centraliza recognition_token e mantém o
+  // controller fail-closed sem fallback na identidade compartilhada da mesa.
+  imports: [RedisModule, CallerResolverModule],
   controllers: [ChatHistoryController],
   providers: [ChatHistoryService],
   exports: [ChatHistoryService],

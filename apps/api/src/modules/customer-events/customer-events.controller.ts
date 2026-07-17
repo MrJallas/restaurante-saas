@@ -30,7 +30,10 @@ export class CustomerEventsController {
     @Session() session: SessionData,
     @Req() req: Request,
   ) {
-    const customerId = session.customerId ?? (await this.callerResolver.tryGetCustomerId(req));
+    // Telemetria de mesa aceita caller anônimo, mas identidade individual só
+    // vem de recognition_token. Nunca atribuir o evento ao último participante
+    // que sobrescreveu customerId no payload Redis compartilhado.
+    const customerId = await this.callerResolver.tryGetCustomerId(req);
     const event = await this.service.create({
       tableSessionId: session.sessionId,
       customerId,

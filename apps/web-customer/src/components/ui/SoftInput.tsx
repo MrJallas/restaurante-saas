@@ -105,7 +105,7 @@ export function SoftInput({
           onClick={onPlayClick}
           disabled={disabled}
           aria-label="Enviar áudio"
-          className="shrink-0 transition-transform duration-100 active:scale-95 focus:outline-none"
+          className="flex min-h-11 min-w-11 shrink-0 items-center justify-center transition-transform duration-100 active:scale-95 focus:outline-none"
         >
           <PlayIcon size={42} />
         </button>
@@ -149,7 +149,7 @@ export function SoftInput({
         type="submit"
         disabled={disabled || !(current ?? '').trim()}
         aria-label="Enviar"
-        className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-ink transition-transform duration-100 active:scale-95 disabled:text-faint disabled:opacity-50"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink transition-transform duration-100 active:scale-95 disabled:text-faint disabled:opacity-50"
       >
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
           <path

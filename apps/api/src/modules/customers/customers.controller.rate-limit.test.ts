@@ -24,7 +24,7 @@
  * irrelevante porque não entra mais na chave).
  */
 
-import { INestApplication } from '@nestjs/common';
+import { ExecutionContext, INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { CustomersController } from './customers.controller';
@@ -46,7 +46,7 @@ class FakeRedis {
   async get(key: string): Promise<string | null> {
     return this.store.get(key) ?? null;
   }
-  async set(key: string, value: string): Promise<void> {
+  async set(key: string, value: string, _ttlSeconds?: number): Promise<void> {
     this.store.set(key, value);
   }
   async del(key: string): Promise<void> {
@@ -65,6 +65,8 @@ class FakeRedis {
 }
 
 const VALID_CPF = '39053344705';
+const WELCOME_SESSION_A = '11111111-1111-4111-8111-111111111111';
+const WELCOME_SESSION_B = '22222222-2222-4222-8222-222222222222';
 
 function makeApp(redis: FakeRedis) {
   return async () => {
@@ -82,6 +84,17 @@ function makeApp(redis: FakeRedis) {
               customer: {},
               recognitionToken: 'tok-1',
             })),
+            welcome: jest.fn(async () => ({
+              customerId: 'cust-1',
+              name: 'Cliente Teste',
+              isReturning: false,
+              totalVisits: 1,
+              lastVisitSummary: null,
+              visitId: 'visit-1',
+              wasReclaim: false,
+              locationCheck: null,
+              recognitionToken: 'tok-welcome-1',
+            })),
           },
         },
         { provide: RedisService, useValue: redis },
@@ -92,7 +105,24 @@ function makeApp(redis: FakeRedis) {
       // VIP) só precisam entrar no grafo de DI pra compilar; SessionGuard real
       // depende de DataSource/Redis. /identify não usa nenhum deles.
       .overrideGuard(SessionGuard)
-      .useValue({ canActivate: () => true })
+      .useValue({
+        canActivate: (context: ExecutionContext) => {
+          const req = context.switchToHttp().getRequest<{
+            headers: Record<string, string | string[] | undefined>;
+            sessionData?: Record<string, unknown>;
+          }>();
+          const raw = req.headers['x-test-session-id'];
+          const sessionId = (Array.isArray(raw) ? raw[0] : raw) || WELCOME_SESSION_A;
+          req.sessionData = {
+            sessionId,
+            tableId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            tableCode: 'T01',
+            tableLabel: 'Mesa 01',
+            schemaName: 'restaurant_dev',
+          };
+          return true;
+        },
+      })
       .overrideGuard(StaffOnlyGuard)
       .useValue({ canActivate: () => true })
       .overrideGuard(ManagerOnlyGuard)
@@ -116,6 +146,17 @@ describe('POST /:slug/customer/identify — rate-limit por IP real (não XFF for
 
   afterEach(async () => {
     await app.close();
+  });
+
+  it('emite a credencial CPF-only somente em cookie HttpOnly, nunca no JSON', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/demo/customer/identify')
+      .send({ cpf: VALID_CPF })
+      .expect(201);
+
+    expect(String(response.headers['set-cookie'])).toContain('recognition_token=tok-1');
+    expect(String(response.headers['set-cookie']).toLowerCase()).toContain('httponly');
+    expect(response.body).not.toHaveProperty('recognitionToken');
   });
 
   it('conta requests do MESMO peer no MESMO bucket mesmo com X-Forwarded-For rotacionado, disparando 429', async () => {
@@ -146,5 +187,103 @@ describe('POST /:slug/customer/identify — rate-limit por IP real (não XFF for
     const attemptKeys = [...redis.seenKeys].filter((k) => k.endsWith(':attempts'));
     expect(attemptKeys).toHaveLength(1);
     expect(attemptKeys[0]).toMatch(/^customers:identify:/);
+  });
+});
+
+function welcomeRequest(
+  server: Parameters<typeof request>[0],
+  sessionId: string,
+  forgedXff: string,
+) {
+  return request(server)
+    .post('/demo/customer/welcome')
+    .set('X-Test-Session-Id', sessionId)
+    .set('X-Forwarded-For', forgedXff)
+    .send({ name: 'Cliente Teste', cpf: VALID_CPF });
+}
+
+describe('POST /:slug/customer/welcome — grupos reais por IP + sessão de mesa', () => {
+  const envKeys = [
+    'CUSTOMER_WELCOME_RATE_MAX',
+    'CUSTOMER_WELCOME_RATE_WINDOW_SECONDS',
+    'CUSTOMER_WELCOME_RATE_LOCK_SECONDS',
+  ] as const;
+  let app: INestApplication | undefined;
+  let redis: FakeRedis;
+  let previousEnv: Record<(typeof envKeys)[number], string | undefined>;
+
+  beforeEach(() => {
+    previousEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]])) as Record<
+      (typeof envKeys)[number],
+      string | undefined
+    >;
+    for (const key of envKeys) delete process.env[key];
+  });
+
+  afterEach(async () => {
+    if (app) await app.close();
+    app = undefined;
+    for (const key of envKeys) {
+      const value = previousEnv[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  async function boot(overrides: Partial<Record<(typeof envKeys)[number], string>> = {}) {
+    Object.assign(process.env, overrides);
+    redis = new FakeRedis();
+    app = await makeApp(redis)();
+    return app.getHttpServer();
+  }
+
+  it('welcome também mantém o bearer fora do body e em cookie HttpOnly', async () => {
+    const server = await boot();
+    const response = await welcomeRequest(server, WELCOME_SESSION_A, '203.0.113.10').expect(201);
+
+    expect(String(response.headers['set-cookie'])).toContain('recognition_token=tok-welcome-1');
+    expect(String(response.headers['set-cookie']).toLowerCase()).toContain('httponly');
+    expect(response.body).not.toHaveProperty('recognitionToken');
+  });
+
+  it('aceita até 30 welcomes legítimos da mesma mesa/rede e só bloqueia o 31º', async () => {
+    const server = await boot();
+
+    for (let i = 0; i < 30; i++) {
+      await welcomeRequest(server, WELCOME_SESSION_A, `203.0.113.${i}`).expect(201);
+    }
+    await welcomeRequest(server, WELCOME_SESSION_A, '203.0.113.250').expect(429);
+
+    const attemptKeys = [...redis.seenKeys].filter((key) => key.endsWith(':attempts'));
+    expect(attemptKeys).toHaveLength(1);
+    expect(attemptKeys[0]).toContain(`:${WELCOME_SESSION_A}:attempts`);
+  });
+
+  it('isola mesas diferentes atrás do mesmo Wi-Fi/NAT', async () => {
+    const server = await boot({ CUSTOMER_WELCOME_RATE_MAX: '2' });
+
+    await welcomeRequest(server, WELCOME_SESSION_A, '198.51.100.1').expect(201);
+    await welcomeRequest(server, WELCOME_SESSION_A, '198.51.100.2').expect(201);
+    await welcomeRequest(server, WELCOME_SESSION_A, '198.51.100.3').expect(429);
+
+    // Mesmo peer TCP, mas outra sessão de mesa: bucket independente.
+    await welcomeRequest(server, WELCOME_SESSION_B, '198.51.100.200').expect(201);
+
+    const attemptKeys = [...redis.seenKeys].filter((key) => key.endsWith(':attempts'));
+    expect(attemptKeys).toHaveLength(2);
+    expect(attemptKeys.some((key) => key.includes(WELCOME_SESSION_A))).toBe(true);
+    expect(attemptKeys.some((key) => key.includes(WELCOME_SESSION_B))).toBe(true);
+  });
+
+  it('respeita o limite configurado e continua ignorando X-Forwarded-For', async () => {
+    const server = await boot({ CUSTOMER_WELCOME_RATE_MAX: '3' });
+
+    for (let i = 0; i < 3; i++) {
+      await welcomeRequest(server, WELCOME_SESSION_A, `192.0.2.${i}`).expect(201);
+    }
+    await welcomeRequest(server, WELCOME_SESSION_A, '192.0.2.250').expect(429);
+
+    const attemptKeys = [...redis.seenKeys].filter((key) => key.endsWith(':attempts'));
+    expect(attemptKeys).toHaveLength(1);
   });
 });

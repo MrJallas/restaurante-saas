@@ -8,6 +8,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ZoneAssignmentsService } from './zone-assignments.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
+import { RESTAURANT_LOCAL_DATE_SQL } from '../../common/utils/restaurant-local-time';
 
 const SALAO = 'zone-salao';
 const VARANDA = 'zone-varanda';
@@ -16,14 +17,19 @@ const ANA = 'staff-ana';
 function fakeDb(opts: {
   rows?: Array<Record<string, unknown>>;
   staffActive?: boolean;
+  staffRole?: string;
   removedFound?: boolean;
 }) {
   const inserts: unknown[][] = [];
+  const sqlCalls: string[] = [];
   const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
     const s = sql.replace(/\s+/g, ' ').trim();
+    sqlCalls.push(s);
     if (s.startsWith('SELECT z.id AS zone_id')) return opts.rows ?? [];
     if (s.startsWith('SELECT id FROM staff')) {
-      return opts.staffActive === false ? [] : [{ id: params[0] }];
+      const role = opts.staffRole ?? 'waiter';
+      const roleMatchesSql = !s.includes("role = 'waiter'") || role === 'waiter';
+      return opts.staffActive === false || !roleMatchesSql ? [] : [{ id: params[0], role }];
     }
     if (s.startsWith('INSERT INTO waiter_zone_assignments')) {
       inserts.push(params);
@@ -34,7 +40,7 @@ function fakeDb(opts: {
     }
     throw new Error(`fake zona: SQL não roteado: ${s}`);
   };
-  return { inserts, conn: { query } as unknown as TenantConnectionProvider };
+  return { inserts, sqlCalls, conn: { query } as unknown as TenantConnectionProvider };
 }
 
 describe('ZoneAssignmentsService', () => {
@@ -92,6 +98,36 @@ describe('ZoneAssignmentsService', () => {
     await expect(new ZoneAssignmentsService(conn).assign(ANA, SALAO, 'm')).rejects.toThrow(
       BadRequestException,
     );
+  });
+
+  it('assign rejeita papel não-garçom e fixa o predicado role=waiter no banco', async () => {
+    const { conn, sqlCalls } = fakeDb({ staffRole: 'manager' });
+    await expect(new ZoneAssignmentsService(conn).assign(ANA, SALAO, 'm')).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(sqlCalls[0]).toContain("role = 'waiter'");
+    expect(sqlCalls.some((sql) => sql.startsWith('INSERT INTO waiter_zone_assignments'))).toBe(
+      false,
+    );
+  });
+
+  it('lista e grava atribuições pela data civil da timezone persistida em settings', async () => {
+    const { conn, sqlCalls } = fakeDb({ rows: [] });
+    const service = new ZoneAssignmentsService(conn);
+    await service.listToday();
+    await service.assign(ANA, SALAO, 'manager-1');
+
+    const localDateSql = RESTAURANT_LOCAL_DATE_SQL.replace(/\s+/g, ' ').trim();
+    const listSql = sqlCalls.find((sql) => sql.startsWith('SELECT z.id AS zone_id')) ?? '';
+    const insertSql =
+      sqlCalls.find((sql) => sql.startsWith('INSERT INTO waiter_zone_assignments')) ?? '';
+
+    expect(listSql).toContain(localDateSql);
+    expect(insertSql).toContain(localDateSql);
+    expect(listSql).toContain("s.role = 'waiter'");
+    expect(localDateSql).toContain('FROM settings cfg');
+    expect(localDateSql).toContain('pg_timezone_names');
+    expect(localDateSql).toContain('AT TIME ZONE');
   });
 
   it('remove marca removed_at; já removida → 404', async () => {

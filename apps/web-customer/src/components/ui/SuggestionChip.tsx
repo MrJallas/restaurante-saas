@@ -62,7 +62,7 @@ export const SuggestionChip = memo(function SuggestionChip({
       // saber que "expand" abre input. Ajuda usuários screen-reader a entender
       // que o tap NÃO envia direto — precisa input adicional.
       aria-label={requiresText ? `${chip.label} (abre campo de texto)` : chip.label}
-      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border-[1.2px] px-3.5 py-2 text-[13px] font-medium tracking-[-0.005em] transition-[colors,transform] duration-100 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 ${tone}`}
+      className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border-[1.2px] px-3.5 py-2 text-[13px] font-medium tracking-[-0.005em] transition-[colors,transform] duration-100 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 ${tone}`}
     >
       {chip.label}
       {requiresText && (

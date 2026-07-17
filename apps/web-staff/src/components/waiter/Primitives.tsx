@@ -152,7 +152,7 @@ export const GAppHeader: React.FC<AppHeaderProps> = ({ left, title, right, dark 
         background: C.bg,
       }}
     >
-      <div style={{ width: 40 }}>{left}</div>
+      <div style={{ width: 44 }}>{left}</div>
       <div style={{ flex: 1, textAlign: 'center' }}>
         <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: -0.3, color: C.ink }}>
           {title}
@@ -172,7 +172,7 @@ export const GAppHeader: React.FC<AppHeaderProps> = ({ left, title, right, dark 
           </div>
         )}
       </div>
-      <div style={{ width: 40, display: 'flex', justifyContent: 'flex-end' }}>{right}</div>
+      <div style={{ width: 44, display: 'flex', justifyContent: 'flex-end' }}>{right}</div>
     </div>
   );
 };
@@ -201,8 +201,8 @@ export const GIconBtn: React.FC<IconBtnProps> = ({
       style={{
         all: 'unset',
         cursor: onClick ? 'pointer' : 'default',
-        width: 40,
-        height: 40,
+        width: 44,
+        height: 44,
         borderRadius: 12,
         border: `1.2px solid ${C.borderSoft}`,
         color: C.ink,
@@ -304,6 +304,7 @@ export const GBottomNav: React.FC<BottomNavProps> = ({
               alignItems: 'center',
               gap: 3,
               padding: '6px 2px',
+              minHeight: 44,
               position: 'relative',
               color: isActive ? C.ink : C.faint,
             }}
@@ -418,6 +419,7 @@ export const HBottomNav: React.FC<HostBottomNavProps> = ({
               alignItems: 'center',
               gap: 3,
               padding: '6px 2px',
+              minHeight: 44,
               position: 'relative',
               color: isActive ? C.ink : C.faint,
             }}

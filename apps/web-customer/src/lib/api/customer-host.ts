@@ -4,7 +4,7 @@ import type {
   TableMergeRequestDto,
   MergeCooldownDto,
 } from '@restaurant/shared-types';
-import { apiPost, ApiRequestError } from '../api';
+import { apiGet, apiPost, ApiRequestError } from '../api';
 import { cleanCpf } from '../cpf';
 
 /**
@@ -66,12 +66,12 @@ function cooldownFromError(err: ApiRequestError): MergeCooldownDto {
  * `POST /:slug/customer/identify` — CPF lookup before late-arrival join.
  *
  * Backend handles both branches:
- *  - returning customer (CPF found) → `isReturning=true`, refreshed token
+ *  - returning customer (CPF found) → `isReturning=true`, cookie canônico
  *  - new customer (CPF not found) → creates record, issues token
  *
  * The recognition token is set as an httpOnly cookie by the server, so we
- * don't need to persist it client-side. We expose it in the response anyway
- * so the caller can show a "bem-vindo de volta" hint when names differ.
+ * don't need to persist it client-side. O backend não devolve o bearer no body;
+ * `isReturning` + `canonicalName` sustentam o "bem-vindo de volta".
  */
 export async function identifyCustomer(input: {
   cpf: string;
@@ -162,6 +162,15 @@ export async function cancelLateArrivalRequest(
   return apiPost<LateArrivalRequestDto>(`/${slug}/late-arrival-requests/${id}/cancel`, {});
 }
 
+/** Status autoritativo do próprio solicitante; sobrevive a reload/WS perdido. */
+export async function getLateArrivalRequestStatus(
+  id: string,
+  input: { slug?: string } = {},
+): Promise<LateArrivalRequestDto> {
+  const slug = input.slug ?? getSlugFromPath();
+  return apiGet<LateArrivalRequestDto>(`/${slug}/late-arrival-requests/${id}/status`);
+}
+
 // ─── Table merge ─────────────────────────────────────────────────────────────
 
 /**
@@ -236,6 +245,15 @@ export async function rejectTableMerge(
       reason: input.reason,
     },
   );
+}
+
+/** Status customer-scoped do merge, sem expor tokens das duas mesas. */
+export async function getTableMergeRequestStatus(
+  id: string,
+  input: { slug?: string } = {},
+): Promise<TableMergeRequestDto> {
+  const slug = input.slug ?? getSlugFromPath();
+  return apiGet<TableMergeRequestDto>(`/${slug}/table-merge-requests/${id}/status`);
 }
 
 /**

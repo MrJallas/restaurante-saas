@@ -220,18 +220,32 @@ export class HostService {
 
   async liberateTable(
     tableNumber: number,
-    body: { mode: HostLiberateMode; reason?: string; staffId?: string; partySize?: number },
+    body: {
+      mode: HostLiberateMode;
+      reason?: string;
+      staffId?: string;
+      partySize?: number;
+      reservationId?: string;
+      waitlistId?: string;
+    },
     slug: string,
   ) {
     if (!LIBERATE_MODES.includes(body.mode)) {
       throw new HttpException(`Modo desconhecido: ${body.mode}.`, HttpStatus.BAD_REQUEST);
     }
+    if (body.reservationId && body.waitlistId) {
+      throw new BadRequestException('Informe apenas reservationId ou waitlistId.');
+    }
+
+    if (body.reservationId || body.waitlistId) {
+      return this.liberateFromArrivalSource(tableNumber, body, slug);
+    }
 
     // Bug 1: o stepper "QUANTAS PESSOAS?" do ScreenHostTableLiberate escolhe
     // o tamanho do PRÓXIMO grupo que vai ocupar a mesa liberada. Esse valor
-    // precisa chegar e ser usado (não ser descartado no client). Validamos e
-    // devolvemos no payload pra confirmar o round-trip; persistência durável
-    // por release exigiria coluna nova em `table_qr_releases` (migration).
+    // precisa chegar e ser usado (não ser descartado no client). Validamos,
+    // persistimos na release e devolvemos no payload; ao consumir o QR esse
+    // valor vira `table_sessions.staff_party_override`.
     const partySize =
       body.partySize != null && Number.isInteger(body.partySize) && body.partySize >= 1
         ? body.partySize
@@ -292,10 +306,10 @@ export class HostService {
     const release = unwrapRows<{ id: string; expires_at: string }>(
       await this.tenantConn.query(
         `INSERT INTO table_qr_releases
-           (table_id, released_by_staff_id, reason, expires_at)
-         VALUES ($1, $2, $3, now() + interval '15 minutes')
+           (table_id, released_by_staff_id, reason, expires_at, party_size)
+         VALUES ($1, $2, $3, now() + interval '15 minutes', $4)
          RETURNING id, expires_at`,
-        [tableRow.id, body.staffId ?? null, body.reason ?? null],
+        [tableRow.id, body.staffId ?? null, body.reason ?? null, partySize],
       ),
     )[0];
 
@@ -321,6 +335,195 @@ export class HostService {
       releaseExpiresAt: release?.expires_at ?? null,
       mode: body.mode,
       partySize,
+    };
+  }
+
+  /**
+   * Confirma reserva/fila e cria a liberação QR na MESMA transação. Antes a
+   * UI marcava a origem como seated/arrived e só depois navegava para outro
+   * POST; abandonar ou falhar nesse intervalo deixava pessoas "sentadas" sem
+   * mesa. O lock da origem também impede dois operadores de sentarem o mesmo
+   * grupo simultaneamente.
+   */
+  private async liberateFromArrivalSource(
+    tableNumber: number,
+    body: {
+      mode: HostLiberateMode;
+      reason?: string;
+      staffId?: string;
+      partySize?: number;
+      reservationId?: string;
+      waitlistId?: string;
+    },
+    slug: string,
+  ) {
+    const tableRow = await this.findTableByNumber(tableNumber);
+    if (!tableRow) {
+      throw new NotFoundException(`Mesa ${tableNumber} nao encontrada.`);
+    }
+
+    const result = await this.tenantConn.transaction(async (tx) => {
+      const lockedTables = (await tx.query(
+        `SELECT id, capacity
+           FROM tables
+          WHERE id = $1
+          FOR UPDATE`,
+        [tableRow.id],
+      )) as Array<{ id: string; capacity: number }>;
+      const lockedTable = lockedTables[0];
+      if (!lockedTable) {
+        throw new NotFoundException(`Mesa ${tableNumber} nao encontrada.`);
+      }
+
+      let partySize: number;
+      if (body.reservationId) {
+        const rows = (await tx.query(
+          `SELECT id, party, status, table_id
+             FROM reservations
+            WHERE id = $1
+            FOR UPDATE`,
+          [body.reservationId],
+        )) as Array<{ id: string; party: number; status: string; table_id: string | null }>;
+        const reservation = rows[0];
+        if (!reservation) throw new NotFoundException('Reserva nao encontrada.');
+        if (reservation.status === 'cancelled' || reservation.status === 'no_show') {
+          throw new HttpException('Reserva nao esta disponivel para sentar.', HttpStatus.CONFLICT);
+        }
+        if (reservation.table_id && reservation.table_id !== lockedTable.id) {
+          throw new HttpException('Reserva ja foi vinculada a outra mesa.', HttpStatus.CONFLICT);
+        }
+        partySize = reservation.party;
+      } else {
+        const rows = (await tx.query(
+          `SELECT id, party, status, table_id
+             FROM waitlist_entries
+            WHERE id = $1
+            FOR UPDATE`,
+          [body.waitlistId],
+        )) as Array<{ id: string; party: number; status: string; table_id: string | null }>;
+        const entry = rows[0];
+        if (!entry) throw new NotFoundException('Entrada da fila nao encontrada.');
+        if (entry.status !== 'waiting') {
+          throw new HttpException('Entrada da fila ja foi resolvida.', HttpStatus.CONFLICT);
+        }
+        partySize = entry.party;
+      }
+
+      if (body.partySize != null && body.partySize !== partySize) {
+        throw new BadRequestException('O tamanho do grupo nao confere com a reserva ou fila.');
+      }
+      if (partySize > lockedTable.capacity) {
+        throw new HttpException(
+          `Mesa ${tableNumber} comporta ${lockedTable.capacity} pessoa(s), mas o grupo tem ${partySize}.`,
+          HttpStatus.CONFLICT,
+        );
+      }
+
+      const activeRows = (await tx.query(
+        `SELECT id
+           FROM table_sessions
+          WHERE table_id = $1 AND status = 'active'
+          ORDER BY created_at DESC
+          LIMIT 1
+          FOR UPDATE`,
+        [lockedTable.id],
+      )) as Array<{ id: string }>;
+      const activeSessionId = activeRows[0]?.id ?? null;
+      if (activeSessionId) {
+        const closedBy = body.mode === 'auto' ? 'system' : `staff:${body.mode}`;
+        await tx.query(
+          `UPDATE table_sessions
+              SET status = 'closed', closed_at = now(), closed_by = $2, updated_at = now()
+            WHERE id = $1 AND status = 'active'`,
+          [activeSessionId, closedBy],
+        );
+      } else if (body.mode !== 'auto') {
+        throw new HttpException('Sem sessao ativa pra liberar.', HttpStatus.CONFLICT);
+      }
+
+      if (body.reservationId) {
+        await tx.query(
+          `UPDATE reservations
+              SET status = 'arrived',
+                  arrived_at = COALESCE(arrived_at, now()),
+                  table_id = $2,
+                  updated_at = now()
+            WHERE id = $1`,
+          [body.reservationId, lockedTable.id],
+        );
+      } else {
+        await tx.query(
+          `UPDATE waitlist_entries
+              SET status = 'seated',
+                  seated_at = now(),
+                  table_id = $2,
+                  resolved_by_staff_id = $3,
+                  updated_at = now()
+            WHERE id = $1`,
+          [body.waitlistId, lockedTable.id, body.staffId ?? null],
+        );
+      }
+
+      // Só a release mais recente da mesa deve poder ser consumida.
+      await tx.query(
+        `UPDATE table_qr_releases
+            SET expires_at = now(), updated_at = now()
+          WHERE table_id = $1
+            AND consumed_at IS NULL
+            AND expires_at > now()`,
+        [lockedTable.id],
+      );
+
+      const releases = (await tx.query(
+        `INSERT INTO table_qr_releases
+           (table_id, released_by_staff_id, reason, expires_at, party_size,
+            reservation_id, waitlist_entry_id)
+         VALUES ($1, $2, $3, now() + interval '15 minutes', $4, $5, $6)
+         RETURNING id, expires_at`,
+        [
+          lockedTable.id,
+          body.staffId ?? null,
+          body.reason ?? null,
+          partySize,
+          body.reservationId ?? null,
+          body.waitlistId ?? null,
+        ],
+      )) as Array<{ id: string; expires_at: string }>;
+
+      return {
+        activeSessionId,
+        tableId: lockedTable.id,
+        partySize,
+        releaseId: releases[0]?.id ?? null,
+        releaseExpiresAt: releases[0]?.expires_at ?? null,
+      };
+    });
+
+    if (result.activeSessionId) {
+      await invalidateSessionAuthById(this.redis, result.activeSessionId).catch((err) => {
+        this.logger.warn(
+          `Falha ao invalidar chave Redis da sessão ${result.activeSessionId}: ${(err as Error).message}`,
+        );
+      });
+    }
+
+    this.events?.emitHostTableLiberated(slug, {
+      tableId: result.tableId,
+      tableNumber,
+      sessionId: result.activeSessionId ?? '',
+      mode: body.mode,
+      by: { staffId: body.staffId ?? null },
+      reason: body.reason ?? null,
+      liberatedAt: new Date().toISOString(),
+    });
+
+    return {
+      ok: true as const,
+      releaseId: result.releaseId,
+      releaseExpiresAt: result.releaseExpiresAt,
+      mode: body.mode,
+      partySize: result.partySize,
+      source: body.reservationId ? ('reservation' as const) : ('waitlist' as const),
     };
   }
 

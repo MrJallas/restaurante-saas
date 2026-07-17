@@ -3,7 +3,7 @@ import { createRateLimitState, evaluateRateLimit } from './rate-limit';
 
 /**
  * POST /api/tv-unlock — recebe { pin }, compara com TV_ACCESS_PIN, e
- * seta cookie `tv_pin` se bater. O middleware (../middleware.ts) usa
+ * seta cookie `tv_pin` se bater. O proxy do Next 16 (`src/proxy.ts`) usa
  * esse cookie pra liberar /cozinha/tv e /bar/tv.
  *
  * timing-safe compare protege contra side-channel de PIN curto.

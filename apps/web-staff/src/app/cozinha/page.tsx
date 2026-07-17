@@ -17,8 +17,15 @@ import {
   User,
   Volume2,
 } from 'lucide-react';
-import { io, type Socket } from 'socket.io-client';
 import { staffGet, staffPatch, staffPost } from '../../lib/api';
+import { OperationalErrorBanner } from '../../components/OperationalErrorBanner';
+import { operationalErrorCopy } from '../../lib/operational-error';
+import {
+  acquireStaffSocket,
+  readStaffId,
+  releaseStaffSocket,
+  resolveWsUrl,
+} from '../../lib/staffSocket';
 import { type StaffThemeMode, useStaffTheme } from '../../lib/theme';
 import { hasNewOrderIds } from './new-order-beep';
 
@@ -86,24 +93,6 @@ function nextNewOrderStatus(status: string): string {
   return 'in_progress';
 }
 
-function resolveWsUrl(): string {
-  const explicit = process.env.NEXT_PUBLIC_WS_URL;
-  if (explicit) return explicit;
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (apiUrl) return apiUrl.replace(/\/?api\/?$/, '');
-  return 'http://localhost:3001';
-}
-
-function readStaffId(): string | undefined {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    const stored = window.localStorage.getItem('staffId') || '';
-    return STAFF_ID_RE.test(stored) ? stored : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function TimerBadge({ createdAt, dark }: { createdAt: string; dark: boolean }) {
   const [elapsed, setElapsed] = useState('');
 
@@ -144,6 +133,7 @@ export default function CozinhaKDS() {
   const [busyRequestId, setBusyRequestId] = useState<string | null>(null);
   const [protectedSelection, setProtectedSelection] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Ids do último poll — o beep dispara por diff de CONJUNTO (id novo), não
   // por delta de contagem: um pedido saindo + outro entrando no mesmo poll
   // mantém a contagem constante mas ainda é pedido novo (bug P2). Mesmo
@@ -152,7 +142,8 @@ export default function CozinhaKDS() {
   const prevRequestIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    setStaffId(readStaffId());
+    const stored = readStaffId();
+    setStaffId(stored && STAFF_ID_RE.test(stored) ? stored : undefined);
   }, []);
 
   const showMessage = (text: string) => {
@@ -170,8 +161,10 @@ export default function CozinhaKDS() {
       if (soundEnabled && hasNew && prevRequestIdsRef.current.size > 0) playBeep(520);
       prevRequestIdsRef.current = nextIds;
       setPriorityRequests(requests);
-    } catch {
-      /* polling keeps trying */
+      return true;
+    } catch (error) {
+      setLoadError(operationalErrorCopy(error, 'as prioridades da cozinha'));
+      return false;
     }
   }, [soundEnabled]);
 
@@ -192,15 +185,18 @@ export default function CozinhaKDS() {
       }
       prevOrderIdsRef.current = nextIds;
       setOrders(activeOrders);
-    } catch {
-      /* silently fail; kiosk polling retries */
+      return true;
+    } catch (error) {
+      setLoadError(operationalErrorCopy(error, 'a fila da cozinha'));
+      return false;
     } finally {
       setLoading(false);
     }
   }, [soundEnabled]);
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadOrders(), loadPriorityRequests()]);
+    const [ordersOk, prioritiesOk] = await Promise.all([loadOrders(), loadPriorityRequests()]);
+    if (ordersOk && prioritiesOk) setLoadError(null);
   }, [loadOrders, loadPriorityRequests]);
 
   useEffect(() => {
@@ -211,25 +207,11 @@ export default function CozinhaKDS() {
 
   useEffect(() => {
     if (typeof window === 'undefined' || !staffId) return;
-    let socket: Socket | null = null;
-    try {
-      socket = io(resolveWsUrl(), {
-        path: '/socket.io/',
-        transports: ['websocket'],
-        reconnection: true,
-        auth: {
-          // P1-F: NÃO reintroduzir NEXT_PUBLIC_STAFF_API_KEY aqui. Qualquer
-          // NEXT_PUBLIC_* é inlinado no bundle do browser → a x-staff-key
-          // vazaria. Auth do cook é server-side (PIN da TV + sessão), sem key
-          // per-staff no cliente.
-          staffId,
-          tenantSlug: TENANT_SLUG,
-          staffRole: 'cook',
-        },
-      });
-    } catch {
-      return;
-    }
+    const wsUrl = resolveWsUrl();
+    if (!wsUrl) return;
+    const entry = acquireStaffSocket(wsUrl, TENANT_SLUG, staffId, 'cook');
+    if (!entry) return;
+    const { socket } = entry;
 
     const refresh = () => {
       refreshAll();
@@ -238,9 +220,6 @@ export default function CozinhaKDS() {
       if (soundEnabled) playBeep(520);
       refreshAll();
     };
-    socket.on('connect', () => {
-      socket?.emit('join:tenant', { slug: TENANT_SLUG, role: 'kitchen' });
-    });
     socket.on('order:new', refresh);
     socket.on('order:status', refresh);
     socket.on('order:handoff_called', refresh);
@@ -251,14 +230,14 @@ export default function CozinhaKDS() {
     // (sem beep) para o card sumir do painel de prioridade imediatamente.
     socket.on('kitchen:priority_cancel', refresh);
     return () => {
-      socket?.off('order:new', refresh);
-      socket?.off('order:status', refresh);
-      socket?.off('order:handoff_called', refresh);
-      socket?.off('kitchen:reorder', refresh);
-      socket?.off('kitchen:priority_request', priorityRefresh);
-      socket?.off('kitchen:priority_response', refresh);
-      socket?.off('kitchen:priority_cancel', refresh);
-      socket?.disconnect();
+      socket.off('order:new', refresh);
+      socket.off('order:status', refresh);
+      socket.off('order:handoff_called', refresh);
+      socket.off('kitchen:reorder', refresh);
+      socket.off('kitchen:priority_request', priorityRefresh);
+      socket.off('kitchen:priority_response', refresh);
+      socket.off('kitchen:priority_cancel', refresh);
+      releaseStaffSocket(wsUrl, TENANT_SLUG, staffId, 'cook');
     };
   }, [refreshAll, soundEnabled, staffId]);
 
@@ -268,6 +247,10 @@ export default function CozinhaKDS() {
       await staffPatch(`/${TENANT_SLUG}/orders/${orderId}/status`, {
         status: nextStatus,
         changedBy: 'cozinha',
+        // O KDS legado também é uma estação de cozinha. Sem este campo, o
+        // contrato de compatibilidade avança TODAS as estações do pedido;
+        // num pedido misto isso faria o cozinheiro concluir a bebida do bar.
+        station: 'kitchen',
       });
       await loadOrders();
     } catch (err) {
@@ -413,6 +396,15 @@ export default function CozinhaKDS() {
           </button>
         </div>
       </div>
+
+      {loadError && (
+        <OperationalErrorBanner
+          message={loadError}
+          onRetry={() => void refreshAll()}
+          dark={dark}
+          hasStaleData={orders.length > 0 || priorityRequests.length > 0}
+        />
+      )}
 
       {activePriorityRequest && (
         <PriorityRequestPanel

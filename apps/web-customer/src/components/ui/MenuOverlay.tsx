@@ -20,9 +20,11 @@
  * centraliza a lógica + scroll detection + threshold.
  */
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef, type SyntheticEvent } from 'react';
 import { useSheetDrag } from '../../hooks/useSheetDrag';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
+import { getDialogFocusableElements } from '../../lib/dialog-focus';
 
 interface MenuOverlayProps {
   open: boolean;
@@ -43,6 +45,10 @@ function isDrinkCategory(category?: string | null): boolean {
 }
 
 export function MenuOverlay({ open, onClose, slug, category }: MenuOverlayProps) {
+  const dialogRef = useDialogFocus<HTMLDivElement>(open, onClose);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const detachFrameKeydownRef = useRef<(() => void) | null>(null);
+  const onCloseRef = useRef(onClose);
   const sheetHeightFn = useCallback(() => {
     if (typeof window === 'undefined') return 720;
     // 88dvh é o canon V20 pra overlay "quase fullscreen" com backdrop visível.
@@ -62,15 +68,57 @@ export function MenuOverlay({ open, onClose, slug, category }: MenuOverlayProps)
   // Body scroll lock centralizado (round 21 §H fix).
   useBodyScrollLock(open);
 
-  // Esc fecha
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  const setDialogSheetRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      sheetRef(node);
+      dialogRef.current = node;
+    },
+    [dialogRef, sheetRef],
+  );
+
+  // Keyboard events inside an iframe do not bubble to the parent document.
+  // Bridge Escape and the Tab boundary so the modal remains closable/trapped.
+  const handleFrameLoad = useCallback((event: SyntheticEvent<HTMLIFrameElement>) => {
+    detachFrameKeydownRef.current?.();
+    try {
+      const frameDocument = event.currentTarget.contentDocument;
+      if (!frameDocument) return;
+      const onFrameKeyDown = (keyEvent: KeyboardEvent) => {
+        if (keyEvent.key === 'Escape') {
+          keyEvent.preventDefault();
+          onCloseRef.current();
+          return;
+        }
+        if (keyEvent.key !== 'Tab') return;
+        const focusable = frameDocument.body ? getDialogFocusableElements(frameDocument.body) : [];
+        const active = frameDocument.activeElement;
+        const atBoundary =
+          focusable.length === 0 ||
+          (!keyEvent.shiftKey && active === focusable[focusable.length - 1]) ||
+          (keyEvent.shiftKey && active === focusable[0]);
+        if (atBoundary) {
+          keyEvent.preventDefault();
+          closeButtonRef.current?.focus({ preventScroll: true });
+        }
+      };
+      frameDocument.addEventListener('keydown', onFrameKeyDown);
+      detachFrameKeydownRef.current = () =>
+        frameDocument.removeEventListener('keydown', onFrameKeyDown);
+    } catch {
+      // Same-origin is expected; fail safely if a deployment changes it.
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      detachFrameKeydownRef.current?.();
+      detachFrameKeydownRef.current = null;
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -84,26 +132,20 @@ export function MenuOverlay({ open, onClose, slug, category }: MenuOverlayProps)
   const embedSrc = `/${slug}/cardapio?${embedParams.toString()}`;
 
   return (
-    <div
-      className="fixed inset-0 z-[60]"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Cardápio"
-      data-testid="menu-overlay"
-    >
+    <div className="fixed inset-0 z-[60]" data-testid="menu-overlay">
       {/* Backdrop · ink/32 + tap fecha */}
-      <button
-        type="button"
-        aria-label="Fechar"
-        onClick={onClose}
-        className="absolute inset-0 z-0 bg-black/[0.32]"
-      />
+      <div aria-hidden="true" onClick={onClose} className="absolute inset-0 z-0 bg-black/[0.32]" />
 
       {/* Sheet — pointer handlers via {...bind} (vaul pattern). O drag
           handle lá no topo é onde o user pega — o iframe ocupa o resto e
           captura pointer events dentro dele (não sobem pro parent). */}
       <div
-        ref={sheetRef}
+        ref={setDialogSheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Cardápio"
+        tabIndex={-1}
+        data-dialog-initial-focus
         className="absolute inset-x-0 bottom-0 z-10 flex h-[88dvh] flex-col rounded-t-[22px] border-[1.5px] border-b-0 border-ink bg-bg pb-safe shadow-[0_-8px_32px_rgba(0,0,0,0.10)] animate-slide-up-overlay select-none [-webkit-user-select:none] [-webkit-touch-callout:none]"
         style={{
           transform: dragY ? `translateY(${dragY}px)` : undefined,
@@ -113,6 +155,15 @@ export function MenuOverlay({ open, onClose, slug, category }: MenuOverlayProps)
         onClick={(e) => e.stopPropagation()}
         {...bind}
       >
+        <button
+          ref={closeButtonRef}
+          type="button"
+          onClick={onClose}
+          aria-label="Fechar cardápio"
+          className="sr-only focus:not-sr-only focus:absolute focus:right-3 focus:top-3 focus:z-20 focus:flex focus:h-11 focus:w-11 focus:items-center focus:justify-center focus:rounded-full focus:border focus:border-ink focus:bg-bg focus:text-ink"
+        >
+          ×
+        </button>
         {/* Drag handle — h-12 (48px) pra grab generoso. `touch-action: none`
             via `touch-none` impede scroll competir. */}
         <div
@@ -127,6 +178,7 @@ export function MenuOverlay({ open, onClose, slug, category }: MenuOverlayProps)
         <iframe
           src={embedSrc}
           title="Cardápio"
+          onLoad={handleFrameLoad}
           className="min-h-0 w-full flex-1 border-0 bg-bg"
           sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
         />

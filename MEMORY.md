@@ -460,6 +460,11 @@ Decisoes confirmadas por Caleb em 2026-06-09:
 
 - Late-arrival = pessoa chega atrasada e precisa se juntar a uma mesa/sessao
   ja existente.
+- Late-arrival nunca nasce de tool do assistente: o tool legado
+  `late_arrival_request` foi removido porque chamava uma rota inexistente e o AI
+  service não possui a sessão autenticada do navegador. O fluxo canônico começa
+  ao escanear o QR da mesa ocupada, passa por identificação no web-customer e
+  cria `POST /:slug/late-arrival-requests`; o customer-host decide.
 - Table merge = juncao de mesas. Late-arrival e merge nao devem ir para staff
   como aprovacao ativa; staff recebe apenas mudancas de UI/notificacao passiva.
 - Ao aprovar merge, o mapa de mesas do staff deve mostrar visualmente as mesas
@@ -881,6 +886,10 @@ unless-stopped` + healthcheck de compose (visibilidade no docker ps).
   `/customer/welcome` exige `location` granted (senao 403); geofence em
   settings (lat/lng NULL = desligada).
 - Contratos novos/confirmados (backend):
+  - `POST /:slug/customer/welcome`: throttle por IP REAL do peer +
+    `tableSessionId`, default 30/15min e lock 15min, configurável por
+    `CUSTOMER_WELCOME_RATE_*`. Isso acomoda grupos no mesmo Wi-Fi/NAT sem abrir
+    bypass por XFF. `POST /customer/identify` continua separado em 5/IP/15min.
   - `GET /:slug/orders/_kds`: RedisThrottleGuard 200/60s por IP REAL do peer
     (ignora XFF/X-Real-IP), chave `throttle:orders_kds:<ip>`, fail-open.
   - `POST /orders/_sweep-auto-confirm`: StaffOnly (era StaffOrSession —
@@ -907,3 +916,123 @@ unless-stopped` + healthcheck de compose (visibilidade no docker ps).
   `scan_verification_requests.customer_id` é NOT NULL sem ON DELETE CASCADE
   (migration 049), então sair ANTES de customers — senão `DELETE customers`
   estoura 23503 e vaza row. Os cleanups round-5 já foram migrados pro helper.
+
+## Monitor real de carga dos garçons (2026-07-11)
+
+- `GET /:slug/dashboard/team-kpis` inclui `waiterWorkload`: projeção
+  determinística `zone_candidate_round_robin_v1` das sessões ativas entre
+  garçons elegíveis. Uma sessão aparece em exatamente um garçom; atribuir dois
+  garçons à mesma zona não duplica mais mesas, pessoas, pedidos ou chamados.
+- Elegibilidade preserva zona do dia, turno e pausa; o DTO expõe a origem do
+  fallback e os sinais crus por mesa (`people`, `activeOrders`, `lateOrders`,
+  `pendingWaiterCalls`, `pendingDeliveries`) além do score com pesos explícitos.
+  É read model, não ownership persistido de mesa.
+- Desequilíbrio material cria/atualiza o singleton
+  `manager_staff_workload_imbalance`. Advisory lock evita corrida, alertas
+  abertos são reutilizados e o cooldown de 15 minutos após dismiss/resolve/TTL
+  impede loop de recriação. O kind é deliberadamente manager-only no filtro
+  role-aware; garçons/host não recebem esse alerta.
+- `GET /:slug/dashboard/active-tables` agora inclui `tableNumber` também em
+  cada item de `lateOrders`, derivado de `tables.code` como nas mesas ativas.
+- O mapa de Operação normaliza `staff/tables-overview[].number` (BIGINT do PG,
+  serializado como string) antes de cruzar com `active-tables`/workload. Sem a
+  normalização a mesa perdia atraso, subtotal e avatar apesar dos três DTOs
+  estarem corretos.
+- A seção "Carga por garçom · em turno" filtra `onShift=true`. O drill-down
+  `/manager/equipe/sobrecarga` usa o mesmo snapshot canônico e marca somente o
+  `highestWaiterId`; não reutilizar a ocupação integral de `zone-assignments`,
+  que volta a duplicar as mesmas mesas em zonas compartilhadas. Rotas internas
+  vindas de alerts preservam/acrescentam `?slug=<tenant>`.
+- Gates da mudança: 145 suítes / 890 testes Jest da API, `nest build`,
+  `tsc --noEmit`, ESLint dos arquivos tocados e `git diff --check` verdes.
+
+## Atraso operacional por estação (2026-07-11)
+
+- `lateOrders` continua sendo um sinal exclusivamente da cozinha: o único SLA
+  persistido/configurável hoje é `settings.kitchen_eta_max_minutes`. Não existe
+  `bar_eta_*`; os 5 minutos do bar aparecem só no protótipo. Até o dono definir
+  esse produto, bebida/bar NÃO pode ser chamada de atrasada pelo dashboard.
+- A fonte de verdade do início é `order_items.prep_started_at` (migration 078),
+  gravada quando os itens daquela estação avançam `received → in_progress`.
+  Não usar `orders.updated_at` (reorder altera) nem o history agregado do pedido
+  (em misto só enxerga a primeira estação que começou).
+- O read model filtra `oi.status='in_progress'` + `mi.kind <> 'drink'`, agrupa
+  por pedido e soma `SUM(oi.quantity)` apenas das comidas ainda em preparo.
+  Quantidade representa carga exibida, mas não multiplica a meta porque não há
+  modelo persistido de capacidade/paralelismo que autorize esse cálculo.
+- Cada row expõe `station`, `targetMinutes`, `minutesInPrep` e `itemCount`; mapa
+  e drill-down usam o target da própria row. `waiterWorkload.lateOrders` repete
+  a mesma definição kitchen-only para não divergir do dashboard.
+
+## Auditoria integral /loop — contratos fechados em 2026-07-11
+
+- Identidade customer individual NUNCA vem de `SessionData.customerId`: esse
+  campo pertence à sessão compartilhada da mesa e pode representar o último
+  welcome. Histórico de chat e histórico de cortesias exigem
+  `recognition_token`; home sem cookie fica genérica/sem PII; eventos e
+  cortesias ativas sem cookie são anônimos/table-scoped. Exceção temporária
+  decidida por Caleb em 2026-07-11: `welcome`/`identify` aceitam CPF conhecido
+  como autenticação e emitem o token canônico em cookie HttpOnly. Portanto,
+  antes do CPF não há PII; depois dele há acesso integral ao perfil.
+- Aprovação é fail-closed. Cliente só entra na home quando o participante está
+  explicitamente `approved`; erro/ausência de status mostra retry. Recepção só
+  aprova QR físico depois que a request autoritativa carregou, não expirou e
+  continua atribuída ao host. Loading/erro/escalada mantêm os CTAs bloqueados.
+- Erasure LGPD só nasce do botão confirmado no browser autenticado. Tool-call
+  do modelo, mesmo com `confirm=true`, volta ao aviso canônico; o AI service não
+  chama o endpoint, não cria protocolo e não afirma exclusão. Migration 079 dá
+  lease + attempt token: `in_progress` stale é retomável e conclusão/retry usam
+  CAS. Fulfillment rotaciona bearer, invalida cache e desconecta sockets
+  customer depois de enfileirar o protocolo.
+- Preparo sempre avança `order_items`. `cook` e `bartender` inferem
+  `kitchen`/`bar`; manager/owner legado sem station sincroniza todas as
+  estações. KDS deriva status local dos itens, então uma estação nunca pula ou
+  conclui a outra. `/bar` é o KDS individual autenticado; `/bar/tv` continua o
+  display compartilhado protegido por PIN.
+- Falha de transporte nunca vira estado operacional tranquilo: home do
+  gerente, reservas/fila e chamados/entregas preservam snapshot, mostram erro
+  por fonte e bloqueiam mutação sem detalhe autoritativo. Não usar defaults de
+  mesa/tipo/pessoa para habilitar CTA.
+- `PAYMENTS_ALLOW_CLIENT_CONFIRM=true` só funciona em test/dev. `NODE_ENV`
+  production, `APP_ENV=staging|production` e `VERCEL_ENV` publicado ignoram a
+  flag; cliente permanece `awaiting_settlement` até PSP/staff real.
+- Python do ai-service usa `requirements.lock` no Docker e
+  `requirements-dev.lock` para testes. Regenerar com `uv pip compile ...
+--python-version 3.11`; produção não instala pytest. `pip-audit` deve rodar
+  contra o lock.
+
+## Fechamento da auditoria integral /loop (2026-07-11)
+
+- Relatório canônico: `qa-reports/loop-audit-2026-07-11/FINAL-REPORT.md`, com
+  matriz em `SCENARIO-MATRIX.md`, segurança em `SECURITY.md` e as duas rodadas
+  finais em `ROUND-{1,2}.md`. A auditoria técnica fechou em PASS/RQS 96, mas a
+  decisão posterior de aceitar CPF-only reclassifica o release como PARTIAL:
+  existe um risco alto conhecido de account takeover, aceito temporariamente.
+- Gates finais por rodada: API 152 suites/935 testes, web-customer 32/167,
+  web-staff 23/87 e AI 408; total 1.597. Prettier, `git diff --check`, Turbo
+  lint/build `--force` e a noite Playwright WebKit também passaram duas vezes.
+- O E2E encontrou um erro que fake SQL não via: reutilizar `$1` em
+  `order_items.status` (`varchar`) e no `CASE` (`text`) dava PostgreSQL 42P08.
+  `advanceStationItems` deve manter `$1::varchar` nos dois usos. O teste
+  mixed-station fixa esse contrato, e o E2E usa `cook` real para preparo e
+  `waiter` real para entrega.
+- `npm audit fix` sem `--force` removeu a cópia vulnerável/duplicada de Webpack.
+  Permanecem duas MODERATE da mesma advisory no PostCSS interno do
+  `next@16.2.10`; não usar o fix sugerido porque ele força downgrade para Next
+  9.3.3. `pip-audit` no lock Python ficou limpo.
+- Caixa autentica em `/cashier`, sem dados nem mutações financeiras, até Caleb
+  decidir o workflow. Pix segue demo sem PSP. Para customer, CPF sozinho basta
+  temporariamente em aparelho novo/cookies apagados. O backend reutiliza o
+  token canônico, nunca o devolve no body, mantém rate-limit e registra
+  `customer_cpf_only_login_accepted`; isso é contenção, não prova de posse.
+- Dívida futura de identidade: canal verificado + OTP curto/one-time ou
+  recuperação presencial por host/gerente; depois emitir credencial por
+  dispositivo, revogar tokens antigos e remover CPF-only. Até lá, quem souber o
+  CPF pode acessar histórico/PII e ações pessoais do perfil.
+- Serve-sim deste projeto usa somente `Romantico-*` na porta 3202. Não tocar em
+  porta 3200 ou simulador/dispositivo pertencente a outra task. Serve-sim e
+  WebKit não substituem gate em iPhone físico.
+- `restaurant-night-simulation.spec.ts` limpa QRTEST91/92 no `finally`, não só
+  no começo. O gate final deve terminar com zero sessões/liberações/scans,
+  pedidos e chamados operacionais ativos; não deixe a última rodada contaminar
+  o salão demo.

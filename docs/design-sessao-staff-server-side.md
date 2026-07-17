@@ -57,7 +57,9 @@ Client:
 
 ### Sub-fatia 4 — cleanup (semanas depois)
 
-- `STAFF_SESSION_REQUIRED=true` em prod (mata o fallback `x-staff-id`).
+- Em production/staging/preview o fallback `x-staff-id` é desativado por
+  construção; `STAFF_SESSION_REQUIRED=true` serve para antecipar o mesmo gate
+  no desenvolvimento local.
 - Remove `NEXT_PUBLIC_STAFF_API_KEY` do projeto inteiro.
 
 ## Por que 2+3 são gate do Caleb

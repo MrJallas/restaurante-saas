@@ -4,8 +4,8 @@ LGPD notice tool — surfaces the canonical legal notice + binary consent chips.
 Per `docs/features/chat-history-lgpd.md` (lines 53-117), the LLM **never**
 composes LGPD copy itself. When it detects an LGPD-related intent ("quero
 apagar meus dados", "quais meus direitos LGPD", etc.) it MUST call
-`show_lgpd_notice` first; only after the customer confirms (via chip tap
-or free-text affirmative reply) does the LLM call `lgpd_data_request`.
+`show_lgpd_notice`. Only the browser's out-of-band chip handler may call the
+authenticated LGPD endpoint; free text and LLM tool calls never authorize it.
 
 Tool signature: `show_lgpd_notice() -> dict`
 Returns the canonical text + 2 chips (consent capture · binary).
@@ -42,10 +42,9 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     """
     Surface the canonical LGPD notice with 2 binary consent chips.
 
-    Returns the same canonical payload regardless of args/ctx — the only
-    branching is in the *next* tool the LLM calls (lgpd_data_request OR
-    dismiss). FE renders the bubble normally + chips below; ToolCallIndicator
-    NOT shown (silent=False but tool is FE-cosmetic only).
+Returns the same canonical payload regardless of args/ctx. FE renders the
+bubble and owns both chip actions; the model does not execute the erasure.
+ToolCallIndicator is not shown (silent=False but tool is FE-cosmetic only).
     """
     return ToolResult(
         message=LGPD_NOTICE,

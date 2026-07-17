@@ -2,6 +2,10 @@ import { HttpException, HttpStatus, Injectable, Logger, Optional } from '@nestjs
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
+import {
+  RESTAURANT_LOCAL_DATE_SQL,
+  RESTAURANT_LOCAL_TIME_SQL,
+} from '../../common/utils/restaurant-local-time';
 
 @Injectable()
 export class StaffMessagesService {
@@ -319,20 +323,23 @@ export class StaffMessagesService {
           AND t.shift_id = sh.id
           AND t.closed_at IS NULL
           AND (
-            t.work_date < current_date - 1
+            t.work_date < ${RESTAURANT_LOCAL_DATE_SQL} - 1
             OR (
               -- Ontem: turno normal já acabou ontem; turno OVERNIGHT
               -- (start > end) atravessa a meia-noite e só fecha quando o
               -- relógio passa do fim (ex.: 23h–06h fecha às 06h de hoje).
-              -- Antes, t.work_date < current_date fechava a thread do
+              -- Antes, usar a data da conexão fechava a thread do
               -- grupo às 00h, NO MEIO do turno.
-              t.work_date = current_date - 1
-              AND (sh.time_start <= sh.time_end OR localtime >= sh.time_end)
+              t.work_date = ${RESTAURANT_LOCAL_DATE_SQL} - 1
+              AND (
+                sh.time_start <= sh.time_end
+                OR ${RESTAURANT_LOCAL_TIME_SQL} >= sh.time_end
+              )
             )
             OR (
-              t.work_date = current_date
+              t.work_date = ${RESTAURANT_LOCAL_DATE_SQL}
               AND sh.time_end > sh.time_start
-              AND localtime >= sh.time_end
+              AND ${RESTAURANT_LOCAL_TIME_SQL} >= sh.time_end
             )
           )`,
       [],
@@ -350,23 +357,26 @@ export class StaffMessagesService {
           AND a.removed_at IS NULL
           AND (
             (
-              a.work_date = current_date
+              a.work_date = ${RESTAURANT_LOCAL_DATE_SQL}
               AND (
-                (sh.time_start < sh.time_end AND localtime >= sh.time_start AND localtime < sh.time_end)
+                (sh.time_start < sh.time_end
+                  AND ${RESTAURANT_LOCAL_TIME_SQL} >= sh.time_start
+                  AND ${RESTAURANT_LOCAL_TIME_SQL} < sh.time_end)
                 -- Overnight (start > end) com assignment de HOJE: ativo só
-                -- no trecho PRÉ-meia-noite. O braço antigo (localtime <
-                -- time_end) ligava o turno de hoje à 01h, antes de começar.
-                OR (sh.time_start > sh.time_end AND localtime >= sh.time_start)
+                -- no trecho PRÉ-meia-noite. O braço antigo com a hora da
+                -- conexão ligava o turno de hoje à 01h, antes de começar.
+                OR (sh.time_start > sh.time_end
+                  AND ${RESTAURANT_LOCAL_TIME_SQL} >= sh.time_start)
                 OR (sh.time_start = sh.time_end)
               )
             )
             OR (
               -- Trecho PÓS-meia-noite do overnight: o assignment é de
-              -- ONTEM (a.work_date = current_date não casava e o garçom
+              -- ONTEM (comparar só com a data da conexão não casava e o garçom
               -- era recrutado no dia errado / caía da thread às 00h).
-              a.work_date = current_date - 1
+              a.work_date = ${RESTAURANT_LOCAL_DATE_SQL} - 1
               AND sh.time_start > sh.time_end
-              AND localtime < sh.time_end
+              AND ${RESTAURANT_LOCAL_TIME_SQL} < sh.time_end
             )
           )`,
       [staffId],

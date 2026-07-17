@@ -9,6 +9,8 @@ import {
   Req,
   UseGuards,
   NotFoundException,
+  ForbiddenException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   IsString,
@@ -34,6 +36,7 @@ import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { OrdersService } from './orders.service';
+import type { StaffAuthRequest } from '../../common/auth/staff-auth-request';
 
 class CreateOrderItemDto {
   @IsString()
@@ -168,14 +171,17 @@ class UpdateStatusDto {
 
   @IsOptional()
   @IsString()
+  // Compatibilidade de payload; o valor é ignorado pelo controller.
   changedBy?: string;
 
   /**
    * BUG P1 (pedido MISTO comida+bebida): a TV da cozinha/bar manda `station`
    * pra que o avanço de preparo (in_progress/ready) marque só os ITENS DAQUELA
    * estação, não o pedido inteiro — senão o bar marcar a bebida "Pronto" sumia
-   * a comida da cozinha. Ausente = comportamento antigo (avança o PEDIDO), pra
-   * clientes/callers que não são estação de KDS.
+   * a comida da cozinha. Para sessão individual de cook/bartender, a estação é
+   * inferida server-side quando o caller legado omite o campo. Manager/owner
+   * sem `station` mantêm a semântica legada de avançar TODAS as estações, mas
+   * o service também sincroniza `order_items` (nunca só `orders.status`).
    */
   @IsOptional()
   @IsIn(['kitchen', 'bar'])
@@ -286,10 +292,13 @@ export class OrdersController {
   @UseGuards(SessionGuard)
   async getBill(
     @Session() session: SessionData,
+    @Req() req: Request,
     @Query('mode') mode: 'table' | 'individual' = 'table',
     @Query('visitId') visitId?: string,
   ) {
-    return this.ordersService.getBill(session.sessionId, mode, visitId);
+    const callerCustomerId =
+      mode === 'individual' ? await this.callerResolver.tryGetCustomerId(req) : null;
+    return this.ordersService.getBill(session.sessionId, mode, visitId, callerCustomerId);
   }
 
   /**
@@ -356,8 +365,10 @@ export class OrdersController {
     @Param('orderId') orderId: string,
     @Param('slug') slug: string,
     @Session() session: SessionData,
+    @Req() req: Request,
   ) {
-    return this.ordersService.confirmOrder(orderId, session.sessionId, slug);
+    const callerCustomerId = await this.callerResolver.tryGetCustomerId(req);
+    return this.ordersService.confirmOrder(orderId, session.sessionId, slug, callerCustomerId);
   }
 
   /**
@@ -371,8 +382,10 @@ export class OrdersController {
     @Param('orderId') orderId: string,
     @Param('slug') slug: string,
     @Session() session: SessionData,
+    @Req() req: Request,
   ) {
-    return this.ordersService.cancelOrder(orderId, session.sessionId, slug);
+    const callerCustomerId = await this.callerResolver.tryGetCustomerId(req);
+    return this.ordersService.cancelOrder(orderId, session.sessionId, slug, callerCustomerId);
   }
 
   /**
@@ -380,7 +393,8 @@ export class OrdersController {
    * branch session vs staff — quando session, valida ownership de
    * `table_session_id` E restringe transição apenas pra `cancelled`
    * (customer não tem direito de marcar `delivered`/`ready`/etc).
-   * Staff continua livre.
+   * Staff segue uma matriz de papéis por transição; o autor é derivado da
+   * sessão. TV sem pessoa só avança preparo com principal de estação.
    *
    * Antes (round 3 fix): StaffOrSessionGuard só impedia callers anônimos.
    * Service.updateStatus não validava ownership quando session — customer
@@ -394,34 +408,90 @@ export class OrdersController {
     @Param('orderId') orderId: string,
     @Param('slug') slug: string,
     @Body() dto: UpdateStatusDto,
-    @Req() req: SessionRequest & { actorType?: 'staff' | 'session' },
+    @Req()
+    req: SessionRequest & StaffAuthRequest & { actorType?: 'staff' | 'session' },
   ) {
-    const actor = {
+    const actor: {
+      actorType: 'staff' | 'session';
+      sessionTableId: string | null;
+      staffId?: string | null;
+      staffRole?: string | null;
+      station?: 'kitchen' | 'bar' | null;
+    } = {
       actorType: req.actorType ?? ('staff' as const),
       sessionTableId: req.sessionData?.sessionId ?? null,
     };
 
-    // BUG P1 (pedido MISTO): quando a TV de uma estação avança o PREPARO
-    // (in_progress/ready) mandando `station`, marca só os ITENS daquela
-    // estação e reconcilia o pedido — o bar marcar a bebida "Pronto" não
-    // some a comida da cozinha. Só cobre os passos de preparo; delivered/
-    // cancelled seguem sendo transições do PEDIDO (updateStatus).
+    let canonicalChangedBy = 'customer';
+    if (actor.actorType === 'staff') {
+      if (req.staffAuth?.staffId) {
+        const identity = await this.callerResolver.requireActiveStaffIdentity(
+          req as unknown as Request,
+        );
+        actor.staffId = identity.staffId;
+        actor.staffRole = identity.role;
+        actor.station =
+          dto.station ??
+          (identity.role === 'cook' ? 'kitchen' : identity.role === 'bartender' ? 'bar' : null);
+        canonicalChangedBy = identity.staffId;
+
+        const preparationStatuses = new Set([
+          'received',
+          'confirmed',
+          'in_progress',
+          'preparing',
+          'ready',
+        ]);
+        const allowed =
+          identity.role === 'manager' ||
+          identity.role === 'owner' ||
+          (identity.role === 'waiter' && dto.status === 'delivered') ||
+          (identity.role === 'cook' &&
+            preparationStatuses.has(dto.status) &&
+            actor.station === 'kitchen') ||
+          (identity.role === 'bartender' &&
+            preparationStatuses.has(dto.status) &&
+            actor.station === 'bar');
+        if (!allowed) {
+          throw new ForbiddenException({
+            message_user: 'Seu perfil não pode executar esta transição do pedido.',
+            code: 'ORDER_STATUS_ROLE_FORBIDDEN',
+          });
+        }
+      } else {
+        // Chave server-side da TV representa uma estação, nunca uma pessoa.
+        if (!dto.station || (dto.status !== 'in_progress' && dto.status !== 'ready')) {
+          throw new UnauthorizedException({
+            message_user: 'Sessão individual da equipe obrigatória para esta transição.',
+            code: 'AUTH_TOKEN_REQUIRED',
+          });
+        }
+        actor.station = dto.station;
+        canonicalChangedBy = `station:${dto.station}`;
+      }
+    }
+
+    // BUG P1 (pedido MISTO): todo avanço de PREPARO passa pelo estado dos
+    // itens. Com estação explícita/inferida, marca só os itens daquela
+    // estação; sem estação (manager/owner legado), marca os itens de TODAS.
+    // Assim nenhum caller consegue deixar `orders.status` e
+    // `order_items.status` divergentes. delivered/cancelled continuam sendo
+    // transições exclusivas do PEDIDO (updateStatus).
     if (
-      dto.station &&
       actor.actorType === 'staff' &&
-      (dto.status === 'in_progress' || dto.status === 'ready')
+      (dto.status === 'in_progress' || dto.status === 'preparing' || dto.status === 'ready')
     ) {
       return this.ordersService.advanceStationItems(
         orderId,
-        dto.station,
+        actor.station ?? null,
         dto.status,
-        dto.changedBy || 'system',
+        canonicalChangedBy,
         slug,
         actor,
       );
     }
 
-    return this.ordersService.updateStatus(orderId, dto.status, dto.changedBy || 'system', slug, actor);
+    return this.ordersService.updateStatus(orderId, dto.status, canonicalChangedBy, slug, actor);
   }
 
   /**

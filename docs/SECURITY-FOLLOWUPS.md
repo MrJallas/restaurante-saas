@@ -1,10 +1,35 @@
 # Security follow-ups
 
 > Estado do hardening avaliado durante o fechamento do re-scan OWASP
-> (2026-07-05, branch `fix/framework-bugfixes`). §A/§B/§C TODOS fechados no
-> código; resta APENAS a observação operacional de prod do §A (`unsafe-eval` no
-> report-uri após o launch) — nada de código pendente. LLM01 re-fechado por
-> construção (o LLM nunca decide join), não por gate heurístico.
+> (2026-07-05, branch `fix/framework-bugfixes`). §A/§B/§C foram fechados, mas a
+> decisão de produto de 2026-07-11 reabriu conscientemente uma fronteira:
+> login de cliente somente por CPF. O risco abaixo é conhecido, reproduzível e
+> aceito temporariamente; não o classifique como segurança resolvida.
+
+## ⚠️ RISCO ALTO ACEITO — login de cliente somente por CPF
+
+Decisão explícita de Caleb em 2026-07-11: enquanto não existir recuperação
+forte, informar um CPF já cadastrado autentica aquele perfil mesmo em aparelho
+novo ou sem `recognition_token`. O backend reutiliza o token canônico e o emite
+somente em cookie HttpOnly; nunca no JSON.
+
+**Risco:** CPF é identificador, não segredo. Quem souber o CPF pode assumir o
+perfil, ler histórico/PII e executar ações pessoais permitidas ao cliente,
+inclusive solicitações LGPD. Classificação: account takeover/privacidade de
+alta severidade, aceita como dívida de produto. Rate-limit, cookie HttpOnly,
+isolamento por tenant e ownership downstream continuam, mas não provam posse.
+
+**Comportamento operacional:** múltiplos aparelhos compartilham o mesmo token.
+Logout em qualquer um rotaciona a credencial e desconecta todos. O evento
+`customer_cpf_only_login_accepted` registra reclaim com CPF mascarado, sem nome
+ou token.
+
+**Correção futura recomendada:** telefone/e-mail previamente verificado + OTP
+de uso único com hash/TTL/rate-limit e resposta anti-enumeração. Sem canal
+verificado, recuperação presencial por host/gerente com autorização e código
+temporário. Depois da prova de posse: emitir credencial por dispositivo,
+rotacionar/revogar tokens antigos, invalidar Redis/WS e remover o modo CPF-only
+por feature flag. Testar replay, brute force, enumeração e cross-tenant.
 
 ## ✅ FECHADO
 
@@ -42,6 +67,7 @@
 ## ⏳ RESTA
 
 ### §A. CSP enforce — FEITO (nonce-based); resta só a observação de prod
+
 CSP agora é ENFORCE com nonce per-request no `src/proxy.ts` dos 2 FE:
 `script-src 'self' 'nonce-X' 'strict-dynamic'` bloqueia `<script>` injetado sem o
 nonce. `style-src 'unsafe-inline'` mantido (React `style={{}}` + styled-jsx).
@@ -52,11 +78,13 @@ coleta e observar antes do launch. Se algo quebrar, re-permitir `'unsafe-eval'`
 no prod é o fallback documentado.
 
 ### §B. ~~nav-id staff~~ — RESOLVIDO pela separação token↔id (ver "✅ FECHADO")
+
 Antes o `table_sessions.id` era o `x-session-token`, então expô-lo pro staff
 (host/tables, session-timeline) permitia forjar a sessão do cliente. A opção B
 (HMAC, escolhida pelo dono) separou os dois: o id agora é inócuo. **Não é mais
 necessário** o refactor "navegar-por-número" — o staff pode continuar usando o id
 como chave de navegação/recurso, porque ele deixou de ser credencial. §B fechado.
+
 - Nota opcional (limpeza, NÃO segurança): as remoções defensivas do id no
   salon/adjacent e table-merge (feitas antes) poderiam ser revertidas já que o id
   é seguro — mas o cliente não precisa dele mesmo, então ficam (menos superfície).
@@ -64,6 +92,7 @@ como chave de navegação/recurso, porque ele deixou de ser credencial. §B fech
   dev). Rotacioná-lo desloga todo mundo (re-scan) — trocar em janela de baixa.
 
 ### §C. ~~LGPD erasure: 200-sem-protocolo~~ — FECHADO
+
 `lgpd_data_request.py` agora distingue os dois casos por `backend_called =
 bool(ctx.api_client)`: se o backend FOI chamado e não devolveu `protocolNumber`
 (200-malformado OU exceção), retorna `status='pending'` honesto — nunca minta
@@ -81,6 +110,7 @@ _Contexto: `MEMORY.md` → `project_rescan_megaloop_2026-07-04.md`;
 
 Scan multi-agente (8 dimensões, cada achado verificado adversarialmente). 13
 brutos → 2 P1 CONFIRMADOS (ambos meus desta sessão) + 6 P2. Fechados:
+
 - P1 **LLM01 não fechou de verdade**: o sanitizer não cobria a classe AFIRMATIVA
   (sim/pode/liberar/deixa) que o prompt usa como gatilho de accept → nome de
   joiner envenenado auto-admitia. Fix INICIAL: denylist estendida + gate na fala
@@ -93,7 +123,7 @@ brutos → 2 P1 CONFIRMADOS (ambos meus desta sessão) + 6 P2. Fechados:
   Nenhum depende de interpretar texto adjacente ao nome atacante-controlado, então
   não há corrida armamentista de sanitização a perder. O sanitizer vira
   defense-in-depth. Testes: `_llm_may_decide_join('accept_join_request', pending)
-  is False`; outros tools e sem-pending → True. Regexes `_HOST_AFFIRM_RE`/
+is False`; outros tools e sem-pending → True. Regexes `_HOST_AFFIRM_RE`/
   `_HOST_REJECT_RE` removidas.
 - P1 **CSP frame-ancestors 'none'** quebrava o iframe do cardápio (MenuOverlay) →
   'self'.
@@ -101,17 +131,18 @@ brutos → 2 P1 CONFIRMADOS (ambos meus desta sessão) + 6 P2. Fechados:
 - P2 ScreenHostProfile placebo '17:08' (mesmo do manager) → removido.
 - P2 open-redirect no /cozinha/unlock (next não validado) → só path interno.
 - P2 must_change_pin não checado no WS handshake de staff → rejeita+disconnect.
-Não-acionados: must_change_pin no StaffOrSessionGuard (path da x-staff-key
-COMPARTILHADA, sem identidade per-staff — non-issue); partySize-persist do host
-(decisão de produto, exige coluna nova).
-Estado: API 714/714, ai-service 387/387, tsc 0, boot 200, CSP+iframe+fontes ao vivo.
-LLM01 re-fechado por construção (hard-drop do LLM), não por gate heurístico.
+  Não-acionados: must_change_pin no StaffOrSessionGuard (path da x-staff-key
+  COMPARTILHADA, sem identidade per-staff — non-issue); partySize-persist do host
+  (decisão de produto, exige coluna nova).
+  Estado: API 714/714, ai-service 387/387, tsc 0, boot 200, CSP+iframe+fontes ao vivo.
+  LLM01 re-fechado por construção (hard-drop do LLM), não por gate heurístico.
 
 ## Re-scan verificação final (2026-07-05, rodada 2) — 4 brutos → 0 exploráveis
 
 Scan multi-agente (8 dimensões, cada achado com 2 refutadores céticos). 4 brutos:
 1 refutado direto, 3 sobreviventes — mas TODOS com veredito DIVIDIDO (1 refutador
 real, 1 falso-positivo). Verificados manualmente à mão:
+
 - ❌ **FALSO-POSITIVO — "LLM injection via customer.name (P1)"**: o nome vem de
   `SELECT name FROM customers WHERE id=$1` com o customerId do cookie autenticado
   (`buildCustomerContext`), ou seja é SEMPRE o nome do próprio cliente. Não é
@@ -126,7 +157,7 @@ real, 1 falso-positivo). Verificados manualmente à mão:
   ramos do prompt. Não era P1/P2 explorável: cardápio é admin-controlado e mutações
   via LLM já são gated (join dropado, destrutiva exige confirmação humana). Testes
   em `test_prompt_data_hygiene.py` (7, incl. não-corrupção de cardápio legítimo).
-Vetores confirmados SEGUROS pela refutação: authz/IDOR (host ownership validado
-server-side), sessão/token (HMAC), multi-tenant, frontend/CSP, pagamentos,
-request_table_merge (target_table_number é int computado por regex no backend).
-Estado: API 714/714, ai-service 396/396, tsc 0. Árvore limpa.
+  Vetores confirmados SEGUROS pela refutação: authz/IDOR (host ownership validado
+  server-side), sessão/token (HMAC), multi-tenant, frontend/CSP, pagamentos,
+  request_table_merge (target_table_number é int computado por regex no backend).
+  Estado: API 714/714, ai-service 396/396, tsc 0. Árvore limpa.

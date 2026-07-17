@@ -29,7 +29,7 @@ export function TopBar({ restaurantName, tableLabel, onBack, showHamburger = tru
             type="button"
             onClick={onBack}
             aria-label="Voltar"
-            className="flex h-9 w-9 items-center justify-center rounded-full border-[1.2px] border-ink"
+            className="flex h-11 w-11 items-center justify-center rounded-full border-[1.2px] border-ink"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
               <path
@@ -52,7 +52,7 @@ export function TopBar({ restaurantName, tableLabel, onBack, showHamburger = tru
           type="button"
           onClick={openDrawer}
           aria-label="Abrir menu"
-          className="flex h-9 w-9 items-center justify-center rounded-full border-[1.2px] border-ink"
+          className="flex h-11 w-11 items-center justify-center rounded-full border-[1.2px] border-ink"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
             <path

@@ -1,4 +1,5 @@
 import {
+  generateTemporaryPin,
   hashPin,
   verifyPin,
   isLegacyPinHash,
@@ -16,6 +17,12 @@ import {
  * do staff-auth.service.
  */
 describe('staff-pin.util — bcrypt migration', () => {
+  it('gera PIN temporário server-side sempre com seis dígitos', () => {
+    for (let i = 0; i < 100; i += 1) {
+      expect(generateTemporaryPin()).toMatch(/^\d{6}$/);
+    }
+  });
+
   it('hashPin gera bcrypt (60 chars, prefixo $2) e NÃO é determinístico (sal por-usuário)', () => {
     const a = hashPin('1234');
     const b = hashPin('1234');

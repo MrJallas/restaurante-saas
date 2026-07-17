@@ -10,7 +10,7 @@ const STAFF_ID_QUERY_KEYS = ['staffId', 'hostId', 'managerId', 'waiterId', 'cook
 
 const STAFF_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type StaffRole = 'manager' | 'host' | 'waiter' | 'cook' | 'bartender' | 'cashier';
+export type StaffRole = 'owner' | 'manager' | 'host' | 'waiter' | 'cook' | 'bartender' | 'cashier';
 
 export interface StaffSession {
   staffId: string;
@@ -184,7 +184,9 @@ export async function staffApi<T>(path: string, options: RequestInit = {}): Prom
     const body = await res.json().catch(() => ({}));
     const error = new Error(extractApiErrorMessage(body)) as Error & {
       code?: string;
+      status?: number;
     };
+    error.status = res.status;
     const code =
       body && typeof body === 'object'
         ? ((body as { code?: unknown; error_code?: unknown }).code ??
@@ -222,10 +224,12 @@ export function defaultTenantSlug(): string {
 }
 
 export function homeForStaffRole(role: StaffRole): string {
-  if (role === 'manager') return '/manager';
+  if (role === 'owner' || role === 'manager') return '/manager';
   if (role === 'host') return '/host';
   if (role === 'waiter') return '/waiter';
   if (role === 'cook') return '/cozinha';
+  if (role === 'bartender') return '/bar';
+  if (role === 'cashier') return '/cashier';
   return '/dashboard';
 }
 

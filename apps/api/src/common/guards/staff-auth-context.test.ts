@@ -7,7 +7,7 @@
  * No fallback legado (header, sem token) NÃO carimba.
  */
 
-import { resolveAuthenticatedStaff } from './staff-auth-context';
+import { resolveAuthenticatedStaff, staffSessionTokenRequired } from './staff-auth-context';
 import { issueStaffSessionToken, type StaffSessionPayload } from '../auth/staff-session-token';
 import type { RedisService } from '../../infra/redis/redis.service';
 import type { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
@@ -124,5 +124,22 @@ describe('resolveAuthenticatedStaff — carimbo req.staffAuth (gate #34)', () =>
 
     expect(resolved).toMatchObject({ error: 'pin_change_required' });
     expect(req.staffAuth).toBeUndefined();
+  });
+});
+
+describe('staffSessionTokenRequired', () => {
+  it('mantém o fallback legado apenas no desenvolvimento local', () => {
+    expect(staffSessionTokenRequired({ NODE_ENV: 'development' })).toBe(false);
+    expect(
+      staffSessionTokenRequired({ NODE_ENV: 'development', STAFF_SESSION_REQUIRED: 'true' }),
+    ).toBe(true);
+  });
+
+  it.each([
+    { NODE_ENV: 'production' },
+    { NODE_ENV: 'development', APP_ENV: 'staging' },
+    { NODE_ENV: 'development', VERCEL_ENV: 'preview' },
+  ])('é fail-closed em deploy mesmo sem flag: %o', (env) => {
+    expect(staffSessionTokenRequired(env)).toBe(true);
   });
 });

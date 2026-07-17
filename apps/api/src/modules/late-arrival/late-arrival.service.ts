@@ -469,6 +469,29 @@ export class LateArrivalService {
     return this.mapRow(rows[0]);
   }
 
+  /**
+   * Leitura customer-scoped usada pela waiting-approval. O requestId sozinho
+   * nunca autoriza leitura: a credencial de reconhecimento precisa ser do
+   * solicitante E o token de sessão precisa pertencer à mesa do pedido.
+   * Retornamos 404 para mismatch a fim de não transformar UUIDs em oráculo de
+   * enumeração entre clientes/mesas do mesmo tenant.
+   */
+  async getRequesterStatus(id: string, customerId: string, tableSessionId: string) {
+    const ownership = (await this.tenantConn.query(
+      `SELECT 1
+         FROM late_arrival_requests
+        WHERE id = $1
+          AND customer_id = $2
+          AND table_session_id = $3
+        LIMIT 1`,
+      [id, customerId, tableSessionId],
+    )) as Array<Record<string, unknown>>;
+    if (!ownership.length) {
+      throw new HttpException('Pedido de entrada nao encontrado.', HttpStatus.NOT_FOUND);
+    }
+    return this.getById(id);
+  }
+
   async list(filters: { status?: string; visitId?: string; tableSessionId?: string }) {
     const where: string[] = [];
     const params: unknown[] = [];

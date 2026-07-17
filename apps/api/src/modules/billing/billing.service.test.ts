@@ -176,8 +176,18 @@ describe('BillingService — desconto de promoção (feature)', () => {
   it('MELHOR promoção vence: entre 10% e 30%, aplica a de 30% (sem empilhar)', async () => {
     const svc = new BillingService(
       fakeSettings('10.00', [
-        { title: '10% off', discount_type: 'percentage', discount_value: 10, min_order_cents: null },
-        { title: '30% off', discount_type: 'percentage', discount_value: 30, min_order_cents: null },
+        {
+          title: '10% off',
+          discount_type: 'percentage',
+          discount_value: 10,
+          min_order_cents: null,
+        },
+        {
+          title: '30% off',
+          discount_type: 'percentage',
+          discount_value: 30,
+          min_order_cents: null,
+        },
       ]),
     );
     const totals = await svc.computeTotals(10_000);

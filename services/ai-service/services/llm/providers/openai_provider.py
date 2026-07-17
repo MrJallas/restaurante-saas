@@ -4,12 +4,19 @@ from ..base import LLMProvider
 
 
 class OpenAIProvider(LLMProvider):
-    def __init__(self, api_key: str, base_url: str = "", timeout: float = 60.0):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "",
+        timeout: float = 60.0,
+        reasoning_effort: str = "",
+    ):
         from openai import AsyncOpenAI
         kwargs: dict = {"api_key": api_key or "sk-no-key", "timeout": timeout}
         if base_url:
             kwargs["base_url"] = base_url
         self.client = AsyncOpenAI(**kwargs)
+        self.reasoning_effort = reasoning_effort.strip()
 
     async def chat(
         self,
@@ -34,6 +41,8 @@ class OpenAIProvider(LLMProvider):
             # behaviour explicit for local servers that don't honour the
             # spec default.
             create_kwargs["tool_choice"] = "auto"
+        if self.reasoning_effort:
+            create_kwargs["reasoning_effort"] = self.reasoning_effort
 
         response = await self.client.chat.completions.create(**create_kwargs)
 
@@ -83,12 +92,15 @@ class OpenAIProvider(LLMProvider):
         model: str,
         max_tokens: int = 50,
     ) -> dict:
-        response = await self.client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=max_tokens,
-            temperature=0.0,
-        )
+        create_kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": 0.0,
+        }
+        if self.reasoning_effort:
+            create_kwargs["reasoning_effort"] = self.reasoning_effort
+        response = await self.client.chat.completions.create(**create_kwargs)
 
         choice = response.choices[0]
         usage = response.usage

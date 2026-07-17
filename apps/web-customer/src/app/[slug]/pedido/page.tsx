@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { apiGet } from '../../../lib/api';
+import { ApiRequestError, apiGet } from '../../../lib/api';
 import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
@@ -105,28 +105,42 @@ export default function PedidoPage() {
 
   const [orders, setOrders] = useState<OrderApi[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [scope, setScope] = useState<'table' | 'mine'>('table');
   const stopRef = useRef(false);
 
   // Refetch sob demanda — chamada inicial, polling de fallback (60s — antes
   // era 15s mas com WebSocket viramos event-driven, polling so cobre o caso
   // do socket dropar) e em todo evento que vem da sala da mesa.
-  const reload = useCallback(async () => {
-    if (!slug) return;
-    try {
-      const res = await apiGet<{ orders: OrderApi[] }>(`/${slug}/orders`);
-      if (!stopRef.current) setOrders(res.orders);
-    } catch {
-      /* ignore */
-    } finally {
-      if (!stopRef.current) setLoading(false);
-    }
-  }, [slug]);
+  const reload = useCallback(
+    async (showLoading = false) => {
+      if (!slug) return;
+      if (showLoading) setLoading(true);
+      try {
+        const res = await apiGet<{ orders: OrderApi[] }>(`/${slug}/orders`);
+        if (!stopRef.current) {
+          setOrders(res.orders);
+          setLoadError(null);
+        }
+      } catch (error) {
+        if (!stopRef.current) {
+          setLoadError(
+            error instanceof ApiRequestError && error.statusCode === 401
+              ? 'Sua sessão expirou. Escaneie o QR da mesa novamente.'
+              : 'Não consegui carregar seus pedidos. Verifique a conexão e tente de novo.',
+          );
+        }
+      } finally {
+        if (!stopRef.current) setLoading(false);
+      }
+    },
+    [slug],
+  );
 
   useEffect(() => {
     if (!slug) return;
     stopRef.current = false;
-    reload();
+    void reload(true);
     const timer = setInterval(reload, 60_000);
     return () => {
       stopRef.current = true;
@@ -210,6 +224,30 @@ export default function PedidoPage() {
       >
         <div className="flex flex-1 items-center justify-center">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-ink border-t-transparent" />
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (loadError && orders.length === 0) {
+    return (
+      <AppShell
+        slug={slug}
+        restaurantName=""
+        tableLabel={tableLabel || ''}
+        activeHref={`/${slug}/pedido`}
+      >
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+          <h1 className="text-[20px] font-semibold tracking-[-0.02em] text-ink">
+            Não consegui abrir seu pedido
+          </h1>
+          <p role="alert" className="max-w-[290px] text-[13px] leading-[1.5] text-mute">
+            {loadError}
+          </p>
+          <PillButton variant="filled" onClick={() => void reload(true)}>
+            Tentar novamente
+          </PillButton>
+          <PillButton onClick={() => push(`/${slug}`)}>Voltar</PillButton>
         </div>
       </AppShell>
     );

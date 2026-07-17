@@ -507,19 +507,20 @@ test.describe('P1-B — filtro Bebidas case-insensitive', () => {
   });
 });
 
-test.describe('P2-G — middleware Next.js gateia /cozinha/tv e /bar/tv', () => {
-  test('middleware existe e protege as rotas TV', async () => {
+test.describe('P2-G — proxy Next.js gateia /cozinha/tv e /bar/tv', () => {
+  test('proxy existe e protege as rotas TV', async () => {
     const fs = await import('node:fs/promises');
     const path = await import('node:path');
-    const file = path.resolve(__dirname, '../../../web-staff/src/middleware.ts');
+    // Next 16 renomeou o convention file `middleware.ts` para `proxy.ts`.
+    const file = path.resolve(__dirname, '../../../web-staff/src/proxy.ts');
     const src = await fs.readFile(file, 'utf8');
-    expect(src, 'middleware deve existir e cobrir /cozinha e /bar').toMatch(
+    expect(src, 'proxy deve existir e cobrir /cozinha e /bar').toMatch(
       // [\s\S] em vez da flag /s — tsconfig do workspace targeta < es2018
       // e o tsc --noEmit (validação obrigatória) rejeitava TS1501 aqui.
       /matcher[\s\S]*cozinha[\s\S]*bar|cozinha[\s\S]*bar[\s\S]*matcher/,
     );
-    expect(src, 'middleware deve checar cookie tv_pin').toMatch(/tv_pin/);
-    expect(src, 'middleware deve redirecionar pra unlock').toMatch(/cozinha\/unlock/);
+    expect(src, 'proxy deve checar cookie tv_pin').toMatch(/tv_pin/);
+    expect(src, 'proxy deve redirecionar pra unlock').toMatch(/cozinha\/unlock/);
   });
 
   test('endpoint /api/tv-unlock existe e tem timing-safe compare', async () => {

@@ -8,7 +8,13 @@ import * as React from 'react';
 import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
-import { getThread, sendStaffMessage, listMyZonePauses } from '../../lib/api/waiter';
+import {
+  getThread,
+  listMyZonePauses,
+  markMessageRead,
+  sendStaffMessage,
+} from '../../lib/api/waiter';
+import { unreadIncomingMessageIds } from '../../lib/message-read';
 import { useWaiterEvents } from '../../hooks/useWaiterEvents';
 import { useHostEvents } from '../../hooks/useHostEvents';
 import type {
@@ -78,6 +84,7 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
   const [pauses, setPauses] = useState<ZonePauseDto[]>([]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const waiterEvents = useWaiterEvents(
     role === 'waiter' || role === 'cook' ? { tenantSlug, waiterId: myUserId } : { tenantSlug: '' },
   );
@@ -90,9 +97,17 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
       const res = await getThread(tenantSlug, threadId, myUserId);
       setThread(res.thread);
       setMessages(res.messages);
+      setErrorMessage(null);
+      const unreadIds = unreadIncomingMessageIds(res.messages, myUserId);
+      if (unreadIds.length > 0) {
+        void Promise.allSettled(
+          unreadIds.map((messageId) => markMessageRead(tenantSlug, messageId, myUserId)),
+        );
+      }
     } catch {
       setThread(null);
       setMessages([]);
+      setErrorMessage('Não foi possível carregar esta conversa. Tente novamente.');
     }
   }, [tenantSlug, threadId, myUserId]);
 
@@ -164,8 +179,11 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
       );
       setMessages((prev) => [...prev, msg]);
       setDraft('');
+      setErrorMessage(null);
     } catch {
-      /* noop */
+      setErrorMessage(
+        'Não foi possível enviar. Sua mensagem continua no campo para tentar de novo.',
+      );
     } finally {
       setSending(false);
     }
@@ -237,12 +255,9 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
             CONVERSA
           </div>
         </div>
-        <button
-          type="button"
-          aria-label="Mais"
+        <span
+          aria-hidden="true"
           style={{
-            all: 'unset',
-            cursor: 'pointer',
             width: 36,
             height: 36,
             borderRadius: 10,
@@ -253,7 +268,7 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
           }}
         >
           {Icon.more(20)}
-        </button>
+        </span>
       </div>
 
       {role === 'waiter' && activePause && (
@@ -403,6 +418,22 @@ export const ScreenStaffMessageThread: React.FC<ScreenStaffMessageThreadProps> =
           );
         })}
       </div>
+
+      {errorMessage && (
+        <div
+          role="alert"
+          style={{
+            padding: '8px 14px',
+            borderTop: `1px solid ${C.danger}`,
+            background: C.dangerBg,
+            color: C.danger,
+            fontSize: 12,
+            fontWeight: 600,
+          }}
+        >
+          {errorMessage}
+        </div>
+      )}
 
       {/* Composer */}
       <div

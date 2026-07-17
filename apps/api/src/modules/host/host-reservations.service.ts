@@ -8,6 +8,12 @@ import {
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import type { ReservationEntryDto, ReservationStatus } from '@restaurant/shared-types';
+import {
+  RESTAURANT_LOCAL_DATE_SQL,
+  RESTAURANT_TIMEZONE_SQL,
+  restaurantLocalDateOfSql,
+  restaurantLocalDateTimeToInstantSql,
+} from '../../common/utils/restaurant-local-time';
 
 interface ReservationRow {
   id: string;
@@ -15,6 +21,7 @@ interface ReservationRow {
   party: number;
   phone: string | null;
   scheduled_at: string;
+  local_time: string;
   table_id: string | null;
   table_number: number | null;
   status: ReservationStatus;
@@ -26,7 +33,7 @@ interface ReservationRow {
 /**
  * Reservas do host — extraídas do host.service (decomposição do god
  * service). CRUD do dia: listar as reservas de hoje + as ainda em aberto,
- * criar (parsing de when='HH:MM' → hoje às HH:MM no fuso do servidor, ou
+ * criar (when='HH:MM' → hoje às HH:MM no fuso configurado do restaurante, ou
  * ISO 8601) e atualizar status/mesa/nota. O HostService mantém delegates de
  * 1 linha pra preservar a facade usada pelo host.controller.
  *
@@ -42,12 +49,14 @@ export class HostReservationsService {
   async listReservations(): Promise<ReservationEntryDto[]> {
     const rows = (await this.tenantConn.query(
       `SELECT r.id, r.name, r.party, r.phone,
-              r.scheduled_at, r.table_id,
+              r.scheduled_at,
+              to_char(r.scheduled_at AT TIME ZONE ${RESTAURANT_TIMEZONE_SQL}, 'HH24:MI') AS local_time,
+              r.table_id,
               CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT) AS table_number,
               r.status, r.arrived_at, r.cancelled_at, r.note
          FROM reservations r
          LEFT JOIN tables t ON t.id = r.table_id
-        WHERE r.scheduled_at::date = CURRENT_DATE
+        WHERE ${restaurantLocalDateOfSql('r.scheduled_at')} = ${RESTAURANT_LOCAL_DATE_SQL}
            OR r.status IN ('awaited', 'arrived')
         ORDER BY r.scheduled_at ASC`,
     )) as ReservationRow[];
@@ -63,20 +72,7 @@ export class HostReservationsService {
     note?: string;
     staffId?: string;
   }): Promise<ReservationEntryDto> {
-    let scheduledAt: string;
-    if (/^\d{2}:\d{2}$/.test(body.when)) {
-      // "HH:MM" -> hoje as HH:MM no fuso do servidor.
-      const [hh, mm] = body.when.split(':').map((n) => parseInt(n, 10));
-      const today = new Date();
-      today.setHours(hh, mm, 0, 0);
-      scheduledAt = today.toISOString();
-    } else {
-      const parsed = new Date(body.when);
-      if (Number.isNaN(parsed.getTime())) {
-        throw new HttpException('when invalido (use HH:MM ou ISO 8601).', HttpStatus.BAD_REQUEST);
-      }
-      scheduledAt = parsed.toISOString();
-    }
+    const scheduledAt = await this.resolveScheduledAt(body.when);
 
     let tableId: string | null = null;
     if (body.table != null) {
@@ -94,6 +90,7 @@ export class HostReservationsService {
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id, name, party, phone, scheduled_at, table_id, status,
                    arrived_at, cancelled_at, note,
+                   to_char(scheduled_at AT TIME ZONE ${RESTAURANT_TIMEZONE_SQL}, 'HH24:MI') AS local_time,
                    (SELECT CAST(NULLIF(regexp_replace(code, '[^0-9]', '', 'g'), '') AS INT)
                       FROM tables WHERE id = table_id) AS table_number`,
         [
@@ -154,7 +151,9 @@ export class HostReservationsService {
 
     const refreshed = unwrapRows<ReservationRow>(
       await this.tenantConn.query(
-        `SELECT r.id, r.name, r.party, r.phone, r.scheduled_at, r.table_id,
+        `SELECT r.id, r.name, r.party, r.phone, r.scheduled_at,
+                to_char(r.scheduled_at AT TIME ZONE ${RESTAURANT_TIMEZONE_SQL}, 'HH24:MI') AS local_time,
+                r.table_id,
                 CAST(NULLIF(regexp_replace(t.code, '[^0-9]', '', 'g'), '') AS INT) AS table_number,
                 r.status, r.arrived_at, r.cancelled_at, r.note
            FROM reservations r
@@ -167,6 +166,33 @@ export class HostReservationsService {
   }
 
   // ─── helpers privados ───
+
+  private async resolveScheduledAt(when: string): Promise<string> {
+    if (/^\d{2}:\d{2}$/.test(when)) {
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(when)) {
+        throw new HttpException('when invalido (use HH:MM ou ISO 8601).', HttpStatus.BAD_REQUEST);
+      }
+      const rows = (await this.tenantConn.query(
+        `SELECT ${restaurantLocalDateTimeToInstantSql(
+          RESTAURANT_LOCAL_DATE_SQL,
+          '$1::time',
+        )} AS scheduled_at`,
+        [when],
+      )) as Array<{ scheduled_at: string | Date }>;
+      const raw = rows[0]?.scheduled_at;
+      const parsed = raw instanceof Date ? raw : new Date(raw ?? Number.NaN);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new HttpException('when invalido (use HH:MM ou ISO 8601).', HttpStatus.BAD_REQUEST);
+      }
+      return parsed.toISOString();
+    }
+
+    const parsed = new Date(when);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new HttpException('when invalido (use HH:MM ou ISO 8601).', HttpStatus.BAD_REQUEST);
+    }
+    return parsed.toISOString();
+  }
 
   private async findTableByNumber(number: number): Promise<{ id: string } | null> {
     // Mesma resolução determinística do host.service (P1-P do re-scan): code
@@ -195,15 +221,12 @@ export class HostReservationsService {
   }
 
   private mapReservationRow(row: ReservationRow): ReservationEntryDto {
-    const d = new Date(row.scheduled_at);
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
     return {
       id: row.id,
       name: row.name,
       party: row.party,
       phone: row.phone ?? undefined,
-      when: `${hh}:${mm}`,
+      when: row.local_time,
       table: row.table_number,
       status: row.status,
       note: row.note,

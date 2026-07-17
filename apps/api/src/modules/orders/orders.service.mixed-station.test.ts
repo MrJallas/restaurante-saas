@@ -16,6 +16,7 @@
  * termina a comida o order fecha em 'ready'.
  */
 
+import { BadRequestException } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { EtaDecoratorService } from './eta-decorator.service';
 import { BillingService } from '../billing/billing.service';
@@ -37,12 +38,15 @@ const DRINK_ITEM = 'ccccccc4-0000-4000-8000-000000000d21';
  * station-scoped write são reconhecidas pelo prefixo/keyword; as de
  * updateStatus (order-level) reusam o padrão do characterization existente.
  */
-function fakeMixedDb() {
-  const items: Record<string, { kind: 'food' | 'drink'; status: string }> = {
-    [FOOD_ITEM]: { kind: 'food', status: 'received' },
-    [DRINK_ITEM]: { kind: 'drink', status: 'received' },
+function fakeMixedDb(initialOrderStatus = 'received') {
+  const items: Record<
+    string,
+    { kind: 'food' | 'drink'; status: string; prepStartedAt: string | null }
+  > = {
+    [FOOD_ITEM]: { kind: 'food', status: 'received', prepStartedAt: null },
+    [DRINK_ITEM]: { kind: 'drink', status: 'received', prepStartedAt: null },
   };
-  const order = { status: 'received' as string, history: [] as string[] };
+  const order = { status: initialOrderStatus, history: [] as string[] };
 
   const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
     const s = sql.replace(/\s+/g, ' ').trim();
@@ -54,12 +58,18 @@ function fakeMixedDb() {
     if (/^UPDATE order_items( oi)? SET status/.test(s)) {
       const newStatus = params[0] as string;
       const currentItemStatus = params[2] as string;
+      const allStations = /AND TRUE AND oi\.status/.test(s);
       const isBar = /kind\s*=\s*'drink'/.test(s);
-      const kindWanted: 'food' | 'drink' = isBar ? 'drink' : 'food';
+      const kindWanted: 'food' | 'drink' | null = allStations ? null : isBar ? 'drink' : 'food';
       const touched: Array<{ id: string }> = [];
       for (const [id, it] of Object.entries(items)) {
-        if (it.kind === kindWanted && it.status === currentItemStatus) {
+        if ((kindWanted === null || it.kind === kindWanted) && it.status === currentItemStatus) {
           it.status = newStatus;
+          // Só modela o relógio se o SQL realmente o persiste. Assim a
+          // regressão falha se o avanço voltar a atualizar apenas `status`.
+          if (newStatus === 'in_progress' && s.includes('prep_started_at')) {
+            it.prepStartedAt = `started:${kindWanted ?? 'all'}`;
+          }
           touched.push({ id });
         }
       }
@@ -120,17 +130,50 @@ function makeService(conn: TenantConnectionProvider) {
 const staffActor = { actorType: 'staff' as const, sessionTableId: null };
 
 describe('pedido MISTO comida+bebida — status por estação (não vaza entre cozinha e bar)', () => {
+  it('tipa explicitamente o parâmetro de status reutilizado no CASE para o PostgreSQL', async () => {
+    const db = fakeMixedDb();
+    const originalQuery = (
+      db.conn as unknown as { query: (sql: string, params?: unknown[]) => Promise<unknown[]> }
+    ).query;
+    let stationUpdateSql = '';
+    (db.conn as unknown as { query: typeof originalQuery }).query = async (sql, params) => {
+      if (/UPDATE\s+order_items/i.test(sql)) stationUpdateSql = sql;
+      return originalQuery(sql, params);
+    };
+
+    await makeService(db.conn).advanceStationItems(
+      ORDER,
+      'kitchen',
+      'in_progress',
+      'kitchen',
+      'restaurant_dev',
+      staffActor,
+    );
+
+    expect(stationUpdateSql).toMatch(/SET status = \$1::varchar/i);
+    expect(stationUpdateSql).toMatch(/WHEN \$1::varchar = 'in_progress'/i);
+  });
+
   it('bar avança a bebida até ready → a COMIDA continua não-pronta e o order NÃO vira ready', async () => {
     const db = fakeMixedDb();
     const service = makeService(db.conn);
 
     // Bar: received → in_progress → ready (só a bebida)
-    await service.advanceStationItems(ORDER, 'bar', 'in_progress', 'bar', 'restaurant_dev', staffActor);
+    await service.advanceStationItems(
+      ORDER,
+      'bar',
+      'in_progress',
+      'bar',
+      'restaurant_dev',
+      staffActor,
+    );
     await service.advanceStationItems(ORDER, 'bar', 'ready', 'bar', 'restaurant_dev', staffActor);
 
     // A bebida está pronta, a comida NÃO.
     expect(db.items[DRINK_ITEM].status).toBe('ready');
     expect(db.items[FOOD_ITEM].status).toBe('received');
+    expect(db.items[DRINK_ITEM].prepStartedAt).toBe('started:drink');
+    expect(db.items[FOOD_ITEM].prepStartedAt).toBeNull();
     // O ORDER não pode ter virado 'ready' — a comida some da cozinha se virar.
     expect(db.order.status).not.toBe('ready');
   });
@@ -140,7 +183,14 @@ describe('pedido MISTO comida+bebida — status por estação (não vaza entre c
     const service = makeService(db.conn);
 
     // Bar termina a bebida.
-    await service.advanceStationItems(ORDER, 'bar', 'in_progress', 'bar', 'restaurant_dev', staffActor);
+    await service.advanceStationItems(
+      ORDER,
+      'bar',
+      'in_progress',
+      'bar',
+      'restaurant_dev',
+      staffActor,
+    );
     await service.advanceStationItems(ORDER, 'bar', 'ready', 'bar', 'restaurant_dev', staffActor);
     expect(db.order.status).not.toBe('ready');
 
@@ -153,11 +203,87 @@ describe('pedido MISTO comida+bebida — status por estação (não vaza entre c
       'restaurant_dev',
       staffActor,
     );
-    await service.advanceStationItems(ORDER, 'kitchen', 'ready', 'kitchen', 'restaurant_dev', staffActor);
+    await service.advanceStationItems(
+      ORDER,
+      'kitchen',
+      'ready',
+      'kitchen',
+      'restaurant_dev',
+      staffActor,
+    );
 
     // Agora TODOS os itens estão ready → order fecha em 'ready'.
     expect(db.items[FOOD_ITEM].status).toBe('ready');
     expect(db.items[DRINK_ITEM].status).toBe('ready');
+    expect(db.items[FOOD_ITEM].prepStartedAt).toBe('started:food');
+    expect(db.items[DRINK_ITEM].prepStartedAt).toBe('started:drink');
     expect(db.order.status).toBe('ready');
+  });
+
+  it('caller legado sem station avança TODOS os itens sem divergir do pedido agregado', async () => {
+    const db = fakeMixedDb();
+    const service = makeService(db.conn);
+
+    await service.advanceStationItems(
+      ORDER,
+      null,
+      'in_progress',
+      'manager',
+      'restaurant_dev',
+      staffActor,
+    );
+    expect(db.order.status).toBe('in_progress');
+    expect(db.items[FOOD_ITEM].status).toBe('in_progress');
+    expect(db.items[DRINK_ITEM].status).toBe('in_progress');
+    expect(db.items[FOOD_ITEM].prepStartedAt).toBe('started:all');
+    expect(db.items[DRINK_ITEM].prepStartedAt).toBe('started:all');
+
+    await service.advanceStationItems(
+      ORDER,
+      null,
+      'ready',
+      'manager',
+      'restaurant_dev',
+      staffActor,
+    );
+    expect(db.order.status).toBe('ready');
+    expect(db.items[FOOD_ITEM].status).toBe('ready');
+    expect(db.items[DRINK_ITEM].status).toBe('ready');
+  });
+
+  it('alias legado confirmed -> preparing também sincroniza todos os itens', async () => {
+    const db = fakeMixedDb('confirmed');
+    const service = makeService(db.conn);
+
+    await service.advanceStationItems(
+      ORDER,
+      null,
+      'preparing',
+      'manager',
+      'restaurant_dev',
+      staffActor,
+    );
+    expect(db.order.status).toBe('preparing');
+    expect(db.items[FOOD_ITEM].status).toBe('in_progress');
+    expect(db.items[DRINK_ITEM].status).toBe('in_progress');
+  });
+
+  it('valida a máquina global antes de tocar itens (open -> in_progress rejeitado)', async () => {
+    const db = fakeMixedDb('open');
+    const service = makeService(db.conn);
+
+    await expect(
+      service.advanceStationItems(
+        ORDER,
+        'kitchen',
+        'in_progress',
+        'cook',
+        'restaurant_dev',
+        staffActor,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(db.items[FOOD_ITEM].status).toBe('received');
+    expect(db.items[DRINK_ITEM].status).toBe('received');
+    expect(db.order.status).toBe('open');
   });
 });

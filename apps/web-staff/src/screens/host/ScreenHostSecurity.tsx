@@ -15,12 +15,13 @@
 // e 2FA fica honestamente desabilitado ("em breve").
 
 import * as React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useG, G_FONT, MONO_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GButton, GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
 import { useStaffTheme } from '../../lib/theme';
 import { staffAuthChangePin } from '../../lib/api';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 
 interface ScreenHostSecurityProps {
   /** Slug do tenant — necessário pro change-pin/logout real. */
@@ -433,6 +434,9 @@ function ChangePinSheet({
   const [confirm, setConfirm] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const titleId = useId();
+  const descriptionId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(true, onClose);
 
   const submit = async () => {
     setErr(null);
@@ -463,9 +467,11 @@ function ChangePinSheet({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
-      aria-label="Trocar PIN"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
       style={{
         position: 'fixed',
         inset: 0,
@@ -497,10 +503,14 @@ function ChangePinSheet({
             margin: '4px auto 14px',
           }}
         />
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}>
+        <h2
+          id={titleId}
+          style={{ margin: 0, fontSize: 18, fontWeight: 700, color: C.ink, letterSpacing: -0.2 }}
+        >
           Trocar PIN
         </h2>
         <div
+          id={descriptionId}
           style={{ fontSize: 12.5, color: C.mute, marginTop: 4, fontWeight: 500, lineHeight: 1.4 }}
         >
           Use de 4 a 6 dígitos. Ao trocar, as outras sessões são desconectadas.

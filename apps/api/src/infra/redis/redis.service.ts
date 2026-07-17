@@ -58,6 +58,26 @@ export class RedisService implements OnModuleDestroy {
     await this.timed(() => this.client.del(key));
   }
 
+  /**
+   * Libera um lock somente se ele ainda pertence ao caller.
+   *
+   * Um `DEL` simples não é seguro para leases: o owner A pode ultrapassar o
+   * TTL, o owner B readquirir a mesma chave e, quando A finalmente terminar,
+   * apagar o lock de B. O compare-and-delete em Lua mantém GET+DEL atômicos no
+   * Redis e transforma a liberação atrasada de A em no-op.
+   */
+  async compareAndDelete(key: string, expectedValue: string): Promise<boolean> {
+    const result = await this.timed(() =>
+      this.client.eval(
+        "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+        1,
+        key,
+        expectedValue,
+      ),
+    );
+    return Number(result) === 1;
+  }
+
   async decr(key: string): Promise<number> {
     return this.timed(async () => this.client.decr(key));
   }
@@ -107,6 +127,10 @@ export class RedisService implements OnModuleDestroy {
 
   async smembers(key: string): Promise<string[]> {
     return this.timed(() => this.client.smembers(key));
+  }
+
+  async srem(key: string, ...members: string[]): Promise<number> {
+    return this.timed(() => this.client.srem(key, ...members));
   }
 
   async ping(): Promise<boolean> {

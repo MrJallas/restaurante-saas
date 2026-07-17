@@ -99,10 +99,7 @@ function makeService() {
     }
 
     // Fallback do conflito: SELECT * FROM late_arrival_requests WHERE ... status='pending'
-    if (
-      s.startsWith('SELECT * FROM late_arrival_requests') &&
-      s.includes("status = 'pending'")
-    ) {
+    if (s.startsWith('SELECT * FROM late_arrival_requests') && s.includes("status = 'pending'")) {
       const [tableSessionId, customerId] = params as (string | null)[];
       const found = requests
         .filter(

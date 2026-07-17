@@ -51,6 +51,8 @@ export function proxy(request: NextRequest): NextResponse {
 
 export const config = {
   // Tudo menos `/api/*` (proxyado pro backend, que tem CSP própria) e os assets
-  // estáticos do Next (servidos com headers próprios).
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
+  // estáticos do Next (servidos com headers próprios). O endpoint WebSocket do
+  // HMR também não pode atravessar o proxy: uma resposta HTTP ali causa reload
+  // contínuo e torna os controles do app aparentemente inertes em dev.
+  matcher: ['/((?!api|_next/static|_next/image|_next/webpack-hmr|favicon.ico).*)'],
 };

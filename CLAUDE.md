@@ -81,6 +81,14 @@ Se em dúvida, **mostre diff antes de aplicar** ou pergunte ao user.
 - **Design canon**: `docs/design-canvas/handoff/cliente/cliente-journey-v20.jsx`
   e `cliente-late-arrival.jsx`. V20 é o source-of-truth — V13/V14 são
   legacy.
+- **Late-arrival boundary**: não criar/reintroduzir tool de IA para iniciar
+  late-arrival. O fluxo real começa no QR da mesa ocupada, identifica o cliente
+  no web-customer e usa `POST /:slug/late-arrival-requests`; o customer-host
+  aprova ou rejeita.
+- **Customer bootstrap throttles**: `/customer/welcome` usa bucket por IP real
+  do peer + table session (default 30/15min, `CUSTOMER_WELCOME_RATE_*`);
+  `/customer/identify` permanece 5/IP/15min. Nunca confiar em XFF nesses
+  limites.
 - **Continuation API**: `services/ai-service/services/continuation.py` ·
   pool de templates por kind. Slots ausentes caem em fallback (round 4
   C-NEW-4) — não revert.
@@ -92,3 +100,49 @@ Se em dúvida, **mostre diff antes de aplicar** ou pergunte ao user.
 - **Chips canônicos**: tools customer-side de mutação retornam
   `chips: [...]` sempre (round 4 C-NEW-3). Coverage ≥9/10 enforced em
   `tests/test_tools_registry.py::test_chips_coverage_at_least_9_of_10_mutations`.
+- **Carga real dos garçons**: o contrato gerencial vive em
+  `GET /:slug/dashboard/team-kpis.waiterWorkload`. A projeção distribui cada
+  sessão ativa uma única vez entre candidatos por zona/turno/pausa; não volte a
+  multiplicar `occupied_tables` por cada garçom da mesma zona. O alerta
+  `manager_staff_workload_imbalance` é singleton com cooldown e manager-only.
+  Mapa e drill-down consomem esse mesmo snapshot; normalize o BIGINT/string de
+  `tables-overview.number`, filtre `onShift` na seção "em turno" e preserve o
+  `slug` ao navegar por ações de alerta.
+- **Atraso por estação**: `lateOrders` é kitchen-only enquanto não existir um
+  target de bar configurável. Use `order_items.prep_started_at` (migration 078),
+  `oi.status='in_progress'` e `mi.kind <> 'drink'`; some `oi.quantity` apenas das
+  comidas ativas. Nunca derive o relógio de `orders.updated_at`/history agregado
+  nem use os 5 minutos do protótipo como SLA real. O DTO carrega o próprio
+  `targetMinutes`; mapa, telas e `waiterWorkload` devem preservar essa mesma
+  definição.
+- **Identidade customer**: `SessionData.customerId` é compartilhado pela mesa e
+  nunca autoriza PII ou ações pessoais. Use `CallerResolverService` com
+  `recognition_token`; sem cookie, falhe fechado ou devolva somente conteúdo
+  genérico/table-scoped. Exceção de produto temporária (Caleb, 2026-07-11):
+  `welcome`/`identify` podem emitir o cookie canônico só com CPF conhecido. Não
+  trate isso como auth forte nem como segurança resolvida; preserve rate-limit,
+  token fora do body, log mascarado e isolamento tenant.
+- **LGPD erasure**: somente o botão out-of-band do browser autenticado chama
+  `POST /:slug/lgpd-requests`. Tool-call do LLM jamais apaga. Preserve lease e
+  CAS da migration 079, rotação do token, invalidação do cache e desconexão do
+  socket após fulfillment.
+- **Estados operacionais**: erro/loading não são vazio, tranquilidade ou
+  not-found. Preserve dados stale, mostre retry e desabilite toda mutação até
+  carregar a entidade autoritativa (QR, chamado, reserva, fila, entregas).
+- **KDS por estação**: todo preparo atualiza `order_items`; cook/bartender usam
+  kitchen/bar. `/bar` é individual por `staff_token`; `/bar/tv` segue protegido
+  por PIN. Não volte a derivar o estágio local só de `orders.status`.
+- **Dependências Python**: Docker instala `services/ai-service/requirements.lock`.
+  Dependências de teste ficam no `requirements-dev.lock`; regenere os dois para
+  Python 3.11 e valide o lock com `pip-audit`.
+- **Fechamento do loop 2026-07-11**: leia
+  `qa-reports/loop-audit-2026-07-11/FINAL-REPORT.md` antes de reabrir achados.
+  O gate final foi 1.597 testes + lint/build forçados + noite Playwright, em
+  duas rodadas limpas. No SQL station-scoped, preserve o cast `$1::varchar` no
+  `SET status` e no `CASE`; sem ele o PostgreSQL retorna 42P08 apesar dos fakes
+  unitários passarem. `/cashier` é holding sem liquidação e Pix é demo. CPF-only
+  foi aceito temporariamente e torna o release PARTIAL por risco de takeover;
+  a correção futura é OTP em canal verificado ou confirmação presencial, não
+  uma mudança silenciosa. Preserve também o cleanup de QRTEST91/92 no `finally`
+  do spec da noite; a rodada deve terminar sem estado operacional ativo nas
+  mesas de teste.

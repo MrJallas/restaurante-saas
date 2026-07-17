@@ -10,15 +10,20 @@
 
 import { io, type Socket } from 'socket.io-client';
 
-export type StaffSocketRole = 'waiter' | 'manager' | 'host';
+export type StaffSocketRole = 'waiter' | 'manager' | 'host' | 'cook';
+
+export function resolveStaffSocketUrl(configuredUrl: string | undefined, origin: string): string {
+  const configured = configuredUrl?.trim();
+  return configured || origin;
+}
 
 export function resolveWsUrl(): string | null {
   if (typeof window === 'undefined') return null;
   const explicit = (window as { __WS_URL__?: string }).__WS_URL__ || process.env.NEXT_PUBLIC_WS_URL;
-  if (explicit) return explicit;
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (apiUrl) return apiUrl.replace(/\/?api\/?$/, '');
-  return 'http://localhost:3001';
+  // Same-origin por padrão: o Next repassa /socket.io para a API. Assim um
+  // iPhone/terminal só precisa alcançar a porta 3002 do app e o cookie de
+  // sessão permanece no mesmo origin. Deploy separado ainda pode sobrescrever.
+  return resolveStaffSocketUrl(explicit, window.location.origin);
 }
 
 export function readStaffId(): string | undefined {
@@ -64,9 +69,8 @@ export function acquireStaffSocket(
 
   // Ciclo 2 (decisão Caleb 2026-07-04): o WS autentica pelo COOKIE de sessão
   // `staff_token` (setado no login pelo proxy), não mais pela key no bundle.
-  // `withCredentials: true` faz o cookie subir no handshake do socket — como
-  // cookies ignoram porta, o cookie do web-staff (:3002) chega no gateway
-  // (:3001) no mesmo host. staffId/tenantSlug/role seguem no `auth` só pra
+  // `withCredentials: true` faz o cookie subir no handshake same-origin e o
+  // Next o preserva ao repassar pra API. staffId/tenantSlug/role seguem no `auth` só pra
   // os join:* rooms; a IDENTIDADE quem prova é o token verificado no gateway.
   let socket: Socket;
   try {
@@ -91,7 +95,9 @@ export function acquireStaffSocket(
 
   socket.on('connect', () => {
     entry.retryAttempt = 0;
-    socket.emit('join:tenant', { slug: tenantSlug, role });
+    // A room operacional da cozinha se chama `kitchen`; a identidade
+    // autenticada no token/handshake continua sendo `cook`.
+    socket.emit('join:tenant', { slug: tenantSlug, role: role === 'cook' ? 'kitchen' : role });
     socket.emit('join:staff', { staffId });
     if (role === 'manager') {
       socket.emit('join:manager', { managerId: staffId });

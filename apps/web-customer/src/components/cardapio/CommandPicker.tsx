@@ -62,68 +62,72 @@ export function CommandPicker({ open, priceCents, onClose, onConfirm }: CommandP
           Você pode pagar separado ou dividir com a mesa no final.
         </p>
 
-        <button
-          type="button"
-          onClick={() => setSelected('individual')}
-          className={`mb-2.5 flex w-full items-start gap-3 rounded-[18px] border-[1.3px] p-4 text-left ${
-            selected === 'individual' ? 'border-ink bg-surface' : 'border-border-soft bg-bg'
-          }`}
-        >
-          <span
-            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.3px] ${
-              selected === 'individual' ? 'border-ink bg-ink' : 'border-border-soft'
+        <div role="group" aria-label="Escolha da comanda">
+          <button
+            type="button"
+            onClick={() => setSelected('individual')}
+            aria-pressed={selected === 'individual'}
+            className={`mb-2.5 flex w-full items-start gap-3 rounded-[18px] border-[1.3px] p-4 text-left ${
+              selected === 'individual' ? 'border-ink bg-surface' : 'border-border-soft bg-bg'
             }`}
           >
-            {selected === 'individual' && <span className="h-2 w-2 rounded-full bg-white" />}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-[15px] font-semibold tracking-[-0.01em]">Minha comanda</div>
-              <span className="rounded-full border border-ink px-2 py-[1.5px] text-[9px] font-semibold uppercase tracking-[0.5px]">
-                Recomendado
-              </span>
+            <span
+              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.3px] ${
+                selected === 'individual' ? 'border-ink bg-ink' : 'border-border-soft'
+              }`}
+            >
+              {selected === 'individual' && <span className="h-2 w-2 rounded-full bg-white" />}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[15px] font-semibold tracking-[-0.01em]">Minha comanda</div>
+                <span className="rounded-full border border-ink px-2 py-[1.5px] text-[9px] font-semibold uppercase tracking-[0.5px]">
+                  Recomendado
+                </span>
+              </div>
+              <div className="mt-1 text-[12px] text-mute">
+                {individualCount > 0
+                  ? `${individualCount} ${individualCount === 1 ? 'item' : 'itens'} · R$ ${(
+                      individualSub / 100
+                    )
+                      .toFixed(2)
+                      .replace('.', ',')}`
+                  : 'Você paga só o que pediu'}
+              </div>
             </div>
-            <div className="mt-1 text-[12px] text-mute">
-              {individualCount > 0
-                ? `${individualCount} ${individualCount === 1 ? 'item' : 'itens'} · R$ ${(
-                    individualSub / 100
-                  )
-                    .toFixed(2)
-                    .replace('.', ',')}`
-                : 'Você paga só o que pediu'}
-            </div>
-          </div>
-        </button>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setSelected('table')}
-          className={`flex w-full items-start gap-3 rounded-[18px] border-[1.3px] p-4 text-left ${
-            selected === 'table' ? 'border-ink bg-surface' : 'border-border-soft bg-bg'
-          }`}
-        >
-          <span
-            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.3px] ${
-              selected === 'table' ? 'border-ink bg-ink' : 'border-border-soft'
+          <button
+            type="button"
+            onClick={() => setSelected('table')}
+            aria-pressed={selected === 'table'}
+            className={`flex w-full items-start gap-3 rounded-[18px] border-[1.3px] p-4 text-left ${
+              selected === 'table' ? 'border-ink bg-surface' : 'border-border-soft bg-bg'
             }`}
           >
-            {selected === 'table' && <span className="h-2 w-2 rounded-full bg-white" />}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="text-[15px] font-semibold tracking-[-0.01em]">Comanda da mesa</div>
-            <div className="mt-1 text-[12px] text-mute">
-              {tableCount > 0
-                ? `${tableCount} ${tableCount === 1 ? 'item' : 'itens'} · ${
-                    participants.length || 1
-                  } ${participants.length === 1 ? 'pessoa' : 'pessoas'} · R$ ${(tableSub / 100)
-                    .toFixed(2)
-                    .replace('.', ',')}`
-                : 'Será dividido entre quem está na mesa'}
+            <span
+              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.3px] ${
+                selected === 'table' ? 'border-ink bg-ink' : 'border-border-soft'
+              }`}
+            >
+              {selected === 'table' && <span className="h-2 w-2 rounded-full bg-white" />}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[15px] font-semibold tracking-[-0.01em]">Comanda da mesa</div>
+              <div className="mt-1 text-[12px] text-mute">
+                {tableCount > 0
+                  ? `${tableCount} ${tableCount === 1 ? 'item' : 'itens'} · ${
+                      participants.length || 1
+                    } ${participants.length === 1 ? 'pessoa' : 'pessoas'} · R$ ${(tableSub / 100)
+                      .toFixed(2)
+                      .replace('.', ',')}`
+                  : 'Será dividido entre quem está na mesa'}
+              </div>
             </div>
-          </div>
-        </button>
+          </button>
+        </div>
 
-        <label className="mt-4 flex cursor-pointer items-center gap-2.5 text-[13px] text-mute">
+        <label className="mt-4 flex min-h-11 cursor-pointer items-center gap-2.5 text-[13px] text-mute">
           <span
             className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[4px] border-[1.3px] ${
               remember ? 'border-ink bg-ink text-white' : 'border-border-soft'

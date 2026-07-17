@@ -65,7 +65,7 @@ export function FoodDetail({ item, onBack, onAskAI, onAdd, isAdding }: FoodDetai
             type="button"
             onClick={onBack}
             aria-label="Voltar"
-            className="absolute left-[18px] top-[50px] flex h-9 w-9 items-center justify-center rounded-full border-[1.2px] border-ink bg-bg"
+            className="absolute left-[18px] top-[50px] flex h-11 w-11 items-center justify-center rounded-full border-[1.2px] border-ink bg-bg"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
               <path
@@ -141,7 +141,7 @@ export function FoodDetail({ item, onBack, onAskAI, onAdd, isAdding }: FoodDetai
                 type="button"
                 aria-label="Diminuir"
                 onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                className="flex h-10 w-10 items-center justify-center rounded-full border-[1.3px] border-ink bg-bg text-[18px] font-semibold"
+                className="flex h-11 w-11 items-center justify-center rounded-full border-[1.3px] border-ink bg-bg text-[18px] font-semibold"
               >
                 −
               </button>
@@ -152,7 +152,7 @@ export function FoodDetail({ item, onBack, onAskAI, onAdd, isAdding }: FoodDetai
                 type="button"
                 aria-label="Aumentar"
                 onClick={() => setQuantity((q) => q + 1)}
-                className="flex h-10 w-10 items-center justify-center rounded-full border-[1.3px] border-ink bg-ink text-[18px] font-semibold text-white"
+                className="flex h-11 w-11 items-center justify-center rounded-full border-[1.3px] border-ink bg-ink text-[18px] font-semibold text-white"
               >
                 +
               </button>

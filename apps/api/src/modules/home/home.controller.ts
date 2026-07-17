@@ -22,8 +22,10 @@ export class HomeController {
   @Get()
   @UseGuards(SessionGuard)
   async getHome(@Session() session: SessionData, @Req() req: TenantRequest) {
-    const customerId =
-      (await this.callerResolver.tryGetCustomerId(req)) ?? session.customerId ?? null;
+    // Home continua disponível antes do welcome, mas só personaliza nome,
+    // consumo e preferências quando há recognition_token válido. O
+    // customerId no payload Redis é compartilhado pela mesa e não é PII-safe.
+    const customerId = await this.callerResolver.tryGetCustomerId(req);
     const draftCount = Number(req.headers['x-draft-order-count'] ?? 0);
     const kindHint = Array.isArray(req.headers['x-continuation-kind-hint'])
       ? req.headers['x-continuation-kind-hint'][0]

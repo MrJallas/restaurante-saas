@@ -43,6 +43,13 @@ function formatDistance(request: ScanVerificationRequestDto | null): string {
   return 'localização sem distância confirmada';
 }
 
+export function canHostDecideScan(request: ScanVerificationRequestDto | null): boolean {
+  return (
+    request !== null &&
+    (request.currentAssigneeRole == null || request.currentAssigneeRole === 'host')
+  );
+}
+
 export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProps> = ({
   tenantSlug,
   requestId,
@@ -58,15 +65,23 @@ export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProp
 
   useEffect(() => {
     let alive = true;
-    getScanVerification(tenantSlug, requestId)
-      .then((r) => {
-        if (alive) setRequest(r);
-      })
-      .catch((e: unknown) => {
-        if (alive) setError((e as Error)?.message ?? 'Erro ao carregar verificacao');
-      });
+    const load = () => {
+      getScanVerification(tenantSlug, requestId)
+        .then((r) => {
+          if (alive) {
+            setRequest(r);
+            setError(null);
+          }
+        })
+        .catch((e: unknown) => {
+          if (alive) setError((e as Error)?.message ?? 'Erro ao carregar verificacao');
+        });
+    };
+    load();
+    const tid = setInterval(load, 3000);
     return () => {
       alive = false;
+      clearInterval(tid);
     };
   }, [tenantSlug, requestId]);
 
@@ -76,6 +91,13 @@ export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProp
   }, []);
 
   async function handle(action: 'approve' | 'reject') {
+    const requestExpired = request?.expiresAt
+      ? new Date(request.expiresAt).getTime() <= Date.now()
+      : true;
+    // Defesa em profundidade: um clique programático durante loading, erro,
+    // expiração ou depois da escalada nunca pode disparar a decisão.
+    if (!request || error || requestExpired || !canHostDecideScan(request) || submitting) return;
+
     setSubmitting(true);
     setError(null);
     try {
@@ -96,6 +118,14 @@ export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProp
 
   const expiresAt = request?.expiresAt;
   const expired = expiresAt ? new Date(expiresAt).getTime() <= now : false;
+  const assignedElsewhere = request !== null && !canHostDecideScan(request);
+  const canDecide = canHostDecideScan(request) && !error && !expired;
+  const assigneeLabel =
+    request?.currentAssigneeRole === 'manager'
+      ? 'gerência'
+      : request?.currentAssigneeRole === 'waiter'
+        ? 'garçom'
+        : 'recepção';
 
   return (
     <div
@@ -133,7 +163,16 @@ export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProp
               opacity: 0.85,
             }}
           >
-            QR FISICO - {expired ? 'EXPIRADO' : fmtDeadline(expiresAt)}
+            QR FISICO ·{' '}
+            {!request
+              ? error
+                ? 'INDISPONÍVEL'
+                : 'CARREGANDO'
+              : assignedElsewhere
+                ? `COM ${assigneeLabel.toUpperCase()}`
+                : expired
+                  ? 'EXPIRADO'
+                  : fmtDeadline(expiresAt)}
           </div>
           <div style={{ fontSize: 30, fontWeight: 800, marginTop: 8, letterSpacing: -0.6 }}>
             {request ? `Mesa ${request.tableNumber}` : '--'}
@@ -222,10 +261,15 @@ export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProp
               lineHeight: 1.5,
             }}
           >
-            <b>Decisao</b>
+            <b>{!request ? 'Verificação' : assignedElsewhere ? 'Encaminhada' : 'Decisão'}</b>
             <br />
-            Aprove se houver cliente fisicamente na mesa. Rejeite se a mesa estiver vazia ou se
-            parecer tentativa com foto do QR.
+            {!request
+              ? error
+                ? 'Não foi possível carregar os dados. As ações permanecem bloqueadas até a atualização funcionar.'
+                : 'Carregando os dados da verificação antes de liberar qualquer ação.'
+              : assignedElsewhere
+                ? `O prazo da recepção terminou e a verificação está agora com ${assigneeLabel}. Acompanhe sem tentar decidir por outro perfil.`
+                : 'Aprove se houver cliente fisicamente na mesa. Rejeite se a mesa estiver vazia ou se parecer tentativa com foto do QR.'}
           </div>
 
           {error && (
@@ -260,7 +304,7 @@ export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProp
           kind="secondary"
           dark={dark}
           onClick={() => handle('reject')}
-          disabled={submitting || expired}
+          disabled={submitting || !canDecide}
         >
           Rejeitar
         </GButton>
@@ -270,7 +314,7 @@ export const ScreenHostScanVerification: React.FC<ScreenHostScanVerificationProp
             full
             dark={dark}
             onClick={() => handle('approve')}
-            disabled={submitting || expired}
+            disabled={submitting || !canDecide}
           >
             {submitting ? 'Enviando...' : 'Aprovar entrada'}
           </GButton>

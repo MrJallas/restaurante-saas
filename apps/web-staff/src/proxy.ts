@@ -64,6 +64,8 @@ export function proxy(req: NextRequest): NextResponse {
 
 export const config = {
   // Todas as rotas (menos assets estáticos) — o CSP vale em tudo; o TV-gate só
-  // atua nos PROTECTED_PATHS.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // atua nos PROTECTED_PATHS. O upgrade WebSocket do HMR precisa passar direto:
+  // se o proxy responder HTTP, o Next dev entra em reload loop e a UI perde
+  // todo estado entre dois cliques.
+  matcher: ['/((?!_next/static|_next/image|_next/webpack-hmr|favicon.ico).*)'],
 };

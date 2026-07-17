@@ -88,7 +88,9 @@ describe('proxy TV gate — tvPinValid fail-CLOSE (P1 A05)', () => {
     for (const k of TOUCHED) saved[k] = process.env[k];
     // Backend nunca deve ser tocado quando o gate bloqueia; quando libera,
     // devolvemos um 200 vazio pra provar que passou do gate.
-    global.fetch = jest.fn(async () => new Response('[]', { status: 200 })) as unknown as typeof fetch;
+    global.fetch = jest.fn(
+      async () => new Response('[]', { status: 200 }),
+    ) as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -164,5 +166,25 @@ describe('proxy TV gate — tvPinValid fail-CLOSE (P1 A05)', () => {
 
     expect(res.status).toBe(401);
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('staff_token individual válido no browser não exige TV PIN', async () => {
+    setEnv('TV_ACCESS_PIN', 'secret-pin-123');
+    setEnv('VERCEL_ENV', 'production');
+
+    const { GET } = await loadRoute();
+    const res = await GET(
+      fakeReq({
+        method: 'GET',
+        path: KDS_PATH,
+        cookies: { staff_token: 'staff-session-token' },
+      }),
+      { params: Promise.resolve({ path: KDS_PATH }) },
+    );
+
+    expect(res.status).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const upstream = (global.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
+    expect(upstream.headers).toMatchObject({ 'x-staff-token': 'staff-session-token' });
   });
 });

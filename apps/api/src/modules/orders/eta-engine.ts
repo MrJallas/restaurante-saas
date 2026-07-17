@@ -33,7 +33,7 @@ export const ETA_QUEUED_STATUSES = new Set([
 
 export function computeEtaRange(
   status: string,
-  aheadCount: number,
+  aheadWorkUnits: number,
   base: [number, number],
 ): { min: number; max: number } | null {
   const stage = ETA_STAGE_RANGE[status];
@@ -47,8 +47,8 @@ export function computeEtaRange(
   } else if (status === 'in_progress' || status === 'preparing') {
     [min, max] = [Math.max(1, Math.ceil(base[0] / 2)), Math.max(2, Math.ceil(base[1] / 2))];
   }
-  if (ETA_QUEUED_STATUSES.has(status) && aheadCount > 0) {
-    const slots = Math.ceil(aheadCount / ETA_KITCHEN_PARALLEL_LINES);
+  if (ETA_QUEUED_STATUSES.has(status) && aheadWorkUnits > 0) {
+    const slots = Math.ceil(aheadWorkUnits / ETA_KITCHEN_PARALLEL_LINES);
     min += slots * ETA_PER_QUEUED_ORDER_MIN;
     max += slots * ETA_PER_QUEUED_ORDER_MAX;
   }

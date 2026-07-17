@@ -1,21 +1,28 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
-import { apiPost } from '../../../../lib/api';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { apiGet, apiPost } from '../../../../lib/api';
 import { recordContinuationHint } from '../../../../lib/continuationHints';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
 import { PillButton } from '../../../../components/ui/PillButton';
+import {
+  canOpenConfirmedPaymentFeedback,
+  type FeedbackPaymentSummary,
+} from './feedbackPaymentAccess';
 import { resolveFeedbackSubmission } from './resolveFeedback';
 
 const TAGS = ['Comida', 'Atendimento', 'Ambiente', 'Rapidez', 'Assistente IA'] as const;
 
 export default function PagamentoFeedbackPage() {
   const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { push } = useNav();
-  const { visitId, customerId } = useSession();
+  const { hydrated, visitId, customerId } = useSession();
   const slug = params.slug as string;
+  const paymentId = searchParams.get('paymentId');
 
   const [rating, setRating] = useState(0);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -23,10 +30,37 @@ export default function PagamentoFeedbackPage() {
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paymentVerified, setPaymentVerified] = useState(false);
 
   useEffect(() => {
-    recordContinuationHint('pagou');
-  }, []);
+    if (!hydrated || !slug) return;
+    let cancelled = false;
+    const redirectUnverified = () => {
+      if (!cancelled) {
+        router.replace(`/${slug}/pagamento?reason=payment_not_confirmed`);
+      }
+    };
+    if (!paymentId || !visitId) {
+      redirectUnverified();
+      return () => {
+        cancelled = true;
+      };
+    }
+    apiGet<{ payments: FeedbackPaymentSummary[] }>(`/${slug}/payments`)
+      .then(({ payments }) => {
+        if (cancelled) return;
+        if (!canOpenConfirmedPaymentFeedback({ paymentId, visitId, payments })) {
+          redirectUnverified();
+          return;
+        }
+        recordContinuationHint('pagou');
+        setPaymentVerified(true);
+      })
+      .catch(redirectUnverified);
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, paymentId, router, slug, visitId]);
 
   const toggleTag = (t: string) => {
     setSelectedTags((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
@@ -64,6 +98,17 @@ export default function PagamentoFeedbackPage() {
   const skip = () => {
     push(`/${slug}/cardapio`);
   };
+
+  if (!paymentVerified) {
+    return (
+      <div
+        className="flex min-h-dvh items-center justify-center bg-bg px-6 text-center text-[13px] text-mute"
+        role="status"
+      >
+        Verificando o pagamento…
+      </div>
+    );
+  }
 
   if (sent) {
     return (
@@ -106,7 +151,7 @@ export default function PagamentoFeedbackPage() {
           </div>
         </div>
 
-        <div className="flex gap-2.5">
+        <div className="flex gap-2.5" role="group" aria-label="Avaliação em estrelas">
           {[1, 2, 3, 4, 5].map((n) => {
             const active = n <= rating;
             return (
@@ -115,6 +160,7 @@ export default function PagamentoFeedbackPage() {
                 type="button"
                 onClick={() => setRating(n)}
                 aria-label={`${n} estrela${n > 1 ? 's' : ''}`}
+                aria-pressed={rating === n}
                 className={`flex h-[46px] w-[46px] items-center justify-center rounded-full border-[1.2px] text-[20px] transition-colors ${
                   active ? 'border-ink bg-ink text-white' : 'border-border-soft bg-bg text-faint'
                 }`}
@@ -129,7 +175,11 @@ export default function PagamentoFeedbackPage() {
           <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-[1px] text-mute">
             O que você mais gostou?
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div
+            className="flex flex-wrap gap-1.5"
+            role="group"
+            aria-label="Destaques da experiência"
+          >
             {TAGS.map((t) => {
               const selected = selectedTags.includes(t);
               return (
@@ -137,7 +187,8 @@ export default function PagamentoFeedbackPage() {
                   key={t}
                   type="button"
                   onClick={() => toggleTag(t)}
-                  className={`rounded-full border-[1.2px] border-ink px-3.5 py-[7px] text-[12px] font-medium transition-colors ${
+                  aria-pressed={selected}
+                  className={`min-h-11 rounded-full border-[1.2px] border-ink px-3.5 py-[7px] text-[12px] font-medium transition-colors ${
                     selected ? 'bg-ink text-white' : 'bg-bg text-ink'
                   }`}
                 >

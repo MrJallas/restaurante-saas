@@ -91,8 +91,7 @@ function fakeDb(opts: {
       const individual = opts.settledForIndividual ?? 0;
       // Escopo 'table_bill' (o fix): (visit_id IS NULL OR split_mode IS NOT NULL)
       // sem `visit_id = $2` → soma table-scope + TODOS os splits.
-      const isTableBill =
-        s.includes('visit_id IS NULL') && s.includes('split_mode IS NOT NULL');
+      const isTableBill = s.includes('visit_id IS NULL') && s.includes('split_mode IS NOT NULL');
       // Escopo 'table' puro (código pré-fix, aqui só como fallback): visit_id NULL
       // sem split_mode.
       const isTableOnly = s.includes('visit_id IS NULL') && !s.includes('split_mode');
@@ -134,7 +133,12 @@ function fakeDb(opts: {
 }
 
 function fakeRedis(): RedisService {
-  return { setNX: async () => true, del: async () => 1, get: async () => null } as never;
+  return {
+    setNX: async () => true,
+    compareAndDelete: async () => true,
+    del: async () => 1,
+    get: async () => null,
+  } as never;
 }
 
 function make(opts: Parameters<typeof fakeDb>[0]) {
@@ -214,7 +218,7 @@ describe('DOUBLE-CHARGE cross-scope table ↔ split (a conta da MESA é UMA dív
     // Mesa 11000. Já foram pagos 5000 por mode=table + 3000 por split de
     // outros = 8000. Sobram 3000. Beto tenta pagar a parte canônica dele
     // (3666), mas a mesa só deve mais 3000 → cobra no máximo 3000, nunca 3666.
-    const { service, db } = make({
+    const { service } = make({
       ...mesaOpts,
       settledForTable: 5_000,
       settledForSplit: 3_000,
@@ -235,7 +239,7 @@ describe('DOUBLE-CHARGE cross-scope table ↔ split (a conta da MESA é UMA dív
     // 1) Ana paga a mesa inteira por mode=table.
     const t1 = make({ ...mesaOpts, settledForTable: 0, settledForSplit: 0 });
     const anaPay = await t1.service.requestPayment(SESSION, null, 'table', 'pix');
-    let collected = anaPay.amountCents; // 11000
+    const collected = anaPay.amountCents; // 11000
     expect(collected).toBe(11_000);
 
     // 2) Beto abre split DEPOIS — a mesa já está liquidada (settledForTable=11000).

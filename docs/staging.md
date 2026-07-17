@@ -54,14 +54,14 @@ CONFLICT`, então re-rodar não gera linhas duplicadas.
 Staging **não** é dev. Os defaults locais que destravam o ambiente são
 inseguros expostos. Setar no ambiente da API (`apps/api`) e do web-staff:
 
-| Env                         | Dev (local)                                   | Staging (obrigatório)                                                                                                                                                                                                            |
-| --------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `STAFF_API_KEY`             | vazio / `dev-staff-api-key-change-in-prod`    | **segredo forte único**. `NODE_ENV=production` faz o boot abortar se ausente ou se for o literal committado (`assert-staff-key.ts`).                                                                                             |
-| `NEXT_PUBLIC_STAFF_API_KEY` | —                                             | **NUNCA setar**. A key saiu do bundle no épico de auth; hoje só vive server-side no proxy `apps/web-staff/.../api/proxy` como `STAFF_API_KEY`. Prefixo `NEXT_PUBLIC_` a vazaria pro JS do browser.                               |
-| `STAFF_SESSION_REQUIRED`    | `false` (fallback `x-staff-id` legado ligado) | **`true`**. Gate #34: força o `x-staff-token` emitido no login e **rejeita** o header `x-staff-id` legado (evita downgrade attack — `staff-auth-context.ts`). Só ligar depois de confirmar que o web-staff sempre manda o token. |
-| `TV_ACCESS_PIN`             | não setado (TV KDS pública, no-op)            | **setar um PIN**. Sem ele, as rotas de TV/KDS ficam abertas (`proxy route` e `web-staff/middleware.ts` tratam ausência como dev no-op).                                                                                          |
-| `CORS_ORIGINS`              | default `http://localhost:3003,3002`          | **domínios de staging** (CSV). Honrado por `main.ts` (HTTP) e `events.gateway.ts` (WebSocket).                                                                                                                                   |
-| `NODE_ENV`                  | `development`                                 | `production` (ativa os fail-fast de `STAFF_API_KEY` e `secure` nos cookies).                                                                                                                                                     |
+| Env                         | Dev (local)                                   | Staging (obrigatório)                                                                                                                                                                                       |
+| --------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `STAFF_API_KEY`             | vazio / `dev-staff-api-key-change-in-prod`    | **segredo forte único**. `NODE_ENV=production` faz o boot abortar se ausente ou se for o literal committado (`assert-staff-key.ts`).                                                                        |
+| `NEXT_PUBLIC_STAFF_API_KEY` | —                                             | **NUNCA setar**. A key saiu do bundle no épico de auth; hoje só vive server-side no proxy `apps/web-staff/.../api/proxy` como `STAFF_API_KEY`. Prefixo `NEXT_PUBLIC_` a vazaria pro JS do browser.          |
+| `STAFF_SESSION_REQUIRED`    | `false` (fallback `x-staff-id` legado ligado) | Gate #34 é **automático e fail-closed** em `NODE_ENV=production`, `APP_ENV=staging` ou Vercel preview/production. Definir `true` continua útil para antecipar o gate em dev; nenhum deploy pode desligá-lo. |
+| `TV_ACCESS_PIN`             | não setado (TV KDS pública, no-op)            | **setar um PIN**. Sem ele, as rotas de TV/KDS ficam abertas (`proxy route` e `web-staff/middleware.ts` tratam ausência como dev no-op).                                                                     |
+| `CORS_ORIGINS`              | default `http://localhost:3003,3002`          | **domínios de staging** (CSV). Honrado por `main.ts` (HTTP) e `events.gateway.ts` (WebSocket).                                                                                                              |
+| `NODE_ENV`                  | `development`                                 | `production` (ativa os fail-fast de `STAFF_API_KEY` e `secure` nos cookies).                                                                                                                                |
 
 ## Checklist de go-live do beta
 
@@ -70,7 +70,8 @@ inseguros expostos. Setar no ambiente da API (`apps/api`) e do web-staff:
    `migrate-tenants.ts` antes de subir (wirado no `command` do serviço `api`
    em `docker-compose.yml`). Confirmar nos logs `[migrate-tenants] OK`.
 3. **Secrets setados** conforme a tabela acima — em especial `STAFF_API_KEY`
-   forte, `STAFF_SESSION_REQUIRED=true`, `TV_ACCESS_PIN`, `CORS_ORIGINS`.
+   forte, `TV_ACCESS_PIN`, `CORS_ORIGINS`; confirme nos testes que o gate
+   automático de sessão staff está ativo no ambiente de deploy.
    `NUNCA` `NEXT_PUBLIC_STAFF_API_KEY`.
 4. **Boot fail-fast passou**: a API sobe sem `STAFF_API_KEY nao configurada`
    nem `usa o default committado` (`assert-staff-key.ts`).

@@ -1,4 +1,11 @@
-import { ConflictException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -33,6 +40,7 @@ interface ScanVerificationRow {
   radius_meters: string | number | null;
   escalation_level: number;
   escalation_chain_id: string | null;
+  current_assignee_role: 'host' | 'manager' | 'waiter' | null;
   ttl_expires_at: string;
   decided_at: string | null;
   rejection_reason: string | null;
@@ -213,13 +221,17 @@ export class ScanVerificationService {
         table_session_id: string;
         customer_id: string;
         escalation_chain_id: string | null;
+        current_assignee_role: string | null;
         status: ScanVerificationStatus;
       }>(
         await tx.query(
-          `SELECT id, table_session_id, customer_id, escalation_chain_id, status
-             FROM scan_verification_requests
-            WHERE id = $1
-            FOR UPDATE`,
+          `SELECT svr.id, svr.table_session_id, svr.customer_id,
+                  svr.escalation_chain_id, svr.status,
+                  ec.current_assignee_role
+             FROM scan_verification_requests svr
+             LEFT JOIN escalation_chains ec ON ec.id = svr.escalation_chain_id
+            WHERE svr.id = $1
+            FOR UPDATE OF svr`,
           [id],
         ),
       )[0];
@@ -228,6 +240,24 @@ export class ScanVerificationService {
       }
       if (current.status !== 'pending') {
         throw new ConflictException(`Verificacao ja decidida (status=${current.status}).`);
+      }
+
+      const actors = unwrapRows<{ role: string }>(
+        await tx.query(`SELECT role FROM staff WHERE id = $1 AND is_active = true LIMIT 1`, [
+          staffId,
+        ]),
+      );
+      const actorRole = actors[0]?.role;
+      const assignedRole = current.current_assignee_role ?? 'host';
+      const managerOverride = actorRole === 'manager' || actorRole === 'owner';
+      const assignedActor =
+        (actorRole === 'host' && assignedRole === 'host') ||
+        (actorRole === 'waiter' && assignedRole === 'waiter');
+      if (!managerOverride && !assignedActor) {
+        throw new ForbiddenException({
+          message_user: 'Esta verificação está atribuída a outro perfil da equipe.',
+          code: 'SCAN_VERIFICATION_ROLE_FORBIDDEN',
+        });
       }
 
       await tx.query(
@@ -368,13 +398,15 @@ export class ScanVerificationService {
                   svr.radius_meters,
                   svr.escalation_level,
                   svr.escalation_chain_id,
+                  ec.current_assignee_role,
                   svr.ttl_expires_at,
                   svr.decided_at,
                   svr.rejection_reason,
                   svr.created_at
              FROM scan_verification_requests svr
              JOIN tables t ON t.id = svr.table_id
-             JOIN customers c ON c.id = svr.customer_id`;
+             JOIN customers c ON c.id = svr.customer_id
+             LEFT JOIN escalation_chains ec ON ec.id = svr.escalation_chain_id`;
   }
 
   private mapRow(row: ScanVerificationRow): ScanVerificationRequestDto {
@@ -405,6 +437,7 @@ export class ScanVerificationService {
       radiusMeters,
       escalationLevel: row.escalation_level,
       escalationChainId: row.escalation_chain_id,
+      currentAssigneeRole: row.current_assignee_role,
       expiresAt: row.ttl_expires_at,
       ttlExpiresAt: row.ttl_expires_at,
       decidedAt: row.decided_at,
@@ -435,19 +468,23 @@ export class ScanVerificationService {
       this.finiteEnvNumber('CUSTOMER_GEOFENCE_LONGITUDE') ??
       this.finiteEnvNumber('CUSTOMER_GEOFENCE_LON');
     const envRadius = this.finiteEnvNumber('CUSTOMER_GEOFENCE_RADIUS_METERS');
+    const envEnabled = this.optionalEnvBoolean('CUSTOMER_GEOFENCE_ENABLED');
 
     try {
       const rows = (await this.tenantConn.query(
-        `SELECT geofence_latitude, geofence_longitude, geofence_radius_meters
+        `SELECT geofence_latitude, geofence_longitude, geofence_radius_meters,
+                geofence_enabled
            FROM settings
           LIMIT 1`,
       )) as Array<{
         geofence_latitude: number | string | null;
         geofence_longitude: number | string | null;
         geofence_radius_meters: number | string | null;
+        geofence_enabled?: boolean | null;
       }>;
       const row = rows[0];
       return {
+        enabled: envEnabled ?? row?.geofence_enabled === true,
         latitude: envLat ?? this.finiteNumber(row?.geofence_latitude),
         longitude: envLon ?? this.finiteNumber(row?.geofence_longitude),
         radiusMeters: envRadius ?? this.finiteNumber(row?.geofence_radius_meters) ?? 3,
@@ -456,6 +493,7 @@ export class ScanVerificationService {
       const pgErr = err as { code?: string };
       if (pgErr.code !== '42703') throw err;
       return {
+        enabled: envEnabled ?? (envLat != null && envLon != null),
         latitude: envLat,
         longitude: envLon,
         radiusMeters: envRadius ?? 3,
@@ -465,6 +503,13 @@ export class ScanVerificationService {
 
   private finiteEnvNumber(name: string): number | null {
     return this.finiteNumber(process.env[name]);
+  }
+
+  private optionalEnvBoolean(name: string): boolean | null {
+    const raw = process.env[name]?.trim().toLowerCase();
+    if (raw === 'true' || raw === '1' || raw === 'yes') return true;
+    if (raw === 'false' || raw === '0' || raw === 'no') return false;
+    return null;
   }
 
   private normalizeLocation(location?: CustomerLocationSignal | null): CustomerLocationSignal {

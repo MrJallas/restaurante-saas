@@ -1,12 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { RedisService } from '../../infra/redis/redis.service';
+import {
+  RESTAURANT_LOCAL_DAY_START_SQL,
+  restaurantLocalDateOfSql,
+  restaurantLocalDayStartDaysAgoSql,
+} from '../../common/utils/restaurant-local-time';
+import { WaiterWorkloadService, WaiterWorkloadSnapshotDto } from './waiter-workload.service';
 
 @Injectable()
 export class DashboardService {
   constructor(
     private readonly tenantConn: TenantConnectionProvider,
     private readonly redis: RedisService,
+    @Optional() private readonly waiterWorkload?: WaiterWorkloadService,
   ) {}
 
   /**
@@ -72,7 +79,7 @@ export class DashboardService {
       `WITH h AS (
          SELECT order_id, to_status, created_at
            FROM order_status_history
-          WHERE created_at >= current_date
+          WHERE created_at >= ${RESTAURANT_LOCAL_DAY_START_SQL}
        ),
        deltas AS (
          SELECT p.stage, p.ord,
@@ -145,6 +152,7 @@ export class DashboardService {
       avgRating: number | null;
       ratingsCount: number;
     }>;
+    waiterWorkload: WaiterWorkloadSnapshotDto | null;
   }> {
     // AO VIVO · TTL 10s (calls/deliveries do dia sobem em tempo real).
     return this.cached('team-kpis', 10, () => this.loadTeamKpis());
@@ -161,6 +169,7 @@ export class DashboardService {
       avgRating: number | null;
       ratingsCount: number;
     }>;
+    waiterWorkload: WaiterWorkloadSnapshotDto | null;
   }> {
     const rows = (await this.tenantConn.query(
       `SELECT s.id AS staff_id, s.name, s.role,
@@ -172,17 +181,17 @@ export class DashboardService {
          FROM staff s
          LEFT JOIN waiter_calls wc
                 ON wc.acknowledged_by = s.id
-               AND wc.acknowledged_at >= current_date
+               AND wc.acknowledged_at >= ${RESTAURANT_LOCAL_DAY_START_SQL}
          LEFT JOIN order_deliveries od
                 ON od.claimed_by = s.id
-               AND od.claimed_at >= current_date
+               AND od.claimed_at >= ${RESTAURANT_LOCAL_DAY_START_SQL}
          LEFT JOIN LATERAL (
            SELECT AVG(r.rating) AS avg_rating, COUNT(*) AS ratings_count
              FROM order_ratings r
              JOIN order_deliveries od2
                ON od2.order_id = r.order_id AND od2.claimed_by = s.id
             WHERE r.rating IS NOT NULL
-              AND r.submitted_at >= current_date - interval '7 days'
+              AND r.submitted_at >= ${restaurantLocalDayStartDaysAgoSql('7')}
          ) rat ON true
         WHERE s.is_active = true
         GROUP BY s.id, s.name, s.role, rat.avg_rating, rat.ratings_count
@@ -198,6 +207,7 @@ export class DashboardService {
       avg_rating: unknown;
       ratings_count: unknown;
     }>;
+    const waiterWorkload = this.waiterWorkload ? await this.waiterWorkload.getSnapshot() : null;
     return {
       team: rows.map((r) => {
         const avgSecs = r.avg_response_secs == null ? null : Number(r.avg_response_secs);
@@ -218,10 +228,11 @@ export class DashboardService {
           ratingsCount: Number(r.ratings_count) || 0,
         };
       }),
+      waiterWorkload,
     };
   }
 
-  /** Mesas ativas (conta e idade reais) + pedidos acima da meta da cozinha. */
+  /** Mesas ativas (conta e idade reais) + trabalho da cozinha acima da meta. */
   async getActiveTables(): Promise<{
     tables: Array<{
       sessionId: string;
@@ -234,8 +245,11 @@ export class DashboardService {
     lateOrders: Array<{
       orderId: string;
       tableLabel: string;
+      tableNumber: number;
+      station: 'kitchen';
       minutesInPrep: number;
       itemCount: number;
+      targetMinutes: number;
     }>;
     kitchenEtaMaxMinutes: number | null;
   }> {
@@ -255,8 +269,11 @@ export class DashboardService {
     lateOrders: Array<{
       orderId: string;
       tableLabel: string;
+      tableNumber: number;
+      station: 'kitchen';
       minutesInPrep: number;
       itemCount: number;
+      targetMinutes: number;
     }>;
     kitchenEtaMaxMinutes: number | null;
   }> {
@@ -284,31 +301,33 @@ export class DashboardService {
 
     let lateRows: Array<Record<string, unknown>> = [];
     if (kitchenEtaMaxMinutes != null) {
-      // BUG P1: o relógio de preparo NÃO pode sair de o.updated_at — o reorder
-      // da cozinha (applyKitchenRanksInTx) faz `SET priority_rank=..., updated_at
-      // = now()` em pedidos in_progress, então cada "Ver fila" + reordenar
-      // zerava minutes_in_prep e sumia com TODOS os alertas. Fonte real do
-      // "entrou em preparo" = a transição pra in_progress na order_status_history
-      // (MESMA fonte que a query irmã loadOrderFunnel já usa). MAX(created_at)
-      // pega a última entrada em preparo caso o pedido tenha revisitado o status.
+      // Fonte autoritativa = ITEM da estação. `orders.updated_at` muda com
+      // reorder; `order_status_history` só registra a primeira estação que fez
+      // o pedido agregado entrar em `in_progress`. Em pedido misto, portanto,
+      // ambos davam um relógio falso. `prep_started_at` é gravado no avanço de
+      // cada estação (migration 078). O target existente é exclusivamente da
+      // cozinha; bebida fica fora até existir uma meta de bar real/configurável.
       lateRows = (await this.tenantConn.query(
         `SELECT o.id AS order_id, t.label AS table_label,
-                EXTRACT(EPOCH FROM (now() - prep.started_at)) / 60 AS minutes_in_prep,
-                (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id)::int AS item_count
+                COALESCE(NULLIF(regexp_replace(t.code, '\\D', '', 'g'), ''), '0')::int AS table_number,
+                'kitchen'::text AS station,
+                EXTRACT(EPOCH FROM (now() - MIN(oi.prep_started_at))) / 60 AS minutes_in_prep,
+                SUM(oi.quantity)::int AS item_count,
+                $1::int AS target_minutes
            FROM orders o
            JOIN table_sessions ts ON ts.id = o.table_session_id
            JOIN tables t ON t.id = ts.table_id
-           JOIN LATERAL (
-             SELECT MAX(h.created_at) AS started_at
-               FROM order_status_history h
-              WHERE h.order_id = o.id
-                AND h.to_status = 'in_progress'
-           ) prep ON true
-          WHERE o.status = 'in_progress'
-            AND prep.started_at IS NOT NULL
-            AND prep.started_at < now() - ($1 || ' minutes')::interval
-          ORDER BY prep.started_at ASC`,
-        [String(kitchenEtaMaxMinutes)],
+           JOIN order_items oi ON oi.order_id = o.id
+           JOIN menu_items mi ON mi.id = oi.menu_item_id
+          WHERE o.status NOT IN ('cancelled', 'delivered', 'ready', 'in_transit',
+                                 'pending_confirmation')
+            AND oi.status = 'in_progress'
+            AND oi.prep_started_at IS NOT NULL
+            AND mi.kind <> 'drink'
+          GROUP BY o.id, t.label, t.code
+         HAVING MIN(oi.prep_started_at) < now() - make_interval(mins => $1::int)
+          ORDER BY MIN(oi.prep_started_at) ASC`,
+        [kitchenEtaMaxMinutes],
       )) as Array<Record<string, unknown>>;
     }
 
@@ -324,8 +343,11 @@ export class DashboardService {
       lateOrders: lateRows.map((r) => ({
         orderId: String(r.order_id),
         tableLabel: String(r.table_label),
+        tableNumber: Number(r.table_number) || 0,
+        station: 'kitchen' as const,
         minutesInPrep: Math.round(Number(r.minutes_in_prep) || 0),
         itemCount: Number(r.item_count) || 0,
+        targetMinutes: Number(r.target_minutes) || kitchenEtaMaxMinutes!,
       })),
       kitchenEtaMaxMinutes,
     };
@@ -339,21 +361,31 @@ export class DashboardService {
   private async loadOverview() {
     // Today's stats
     const todayOrders = (await this.tenantConn.query(
-      `SELECT COUNT(*) as count, COALESCE(SUM(total_cents), 0) as revenue
+      `SELECT COUNT(*) as count
        FROM orders
-       WHERE created_at >= CURRENT_DATE AND status != 'cancelled'`,
-    )) as { count: string; revenue: string }[];
+       WHERE created_at >= ${RESTAURANT_LOCAL_DAY_START_SQL}
+         AND status != 'cancelled'`,
+    )) as { count: string }[];
+
+    // Receita é caixa liquidado, não pedidos lançados. Um pedido aberto ou
+    // entregue sem pagamento não pode inflar faturamento.
+    const todayRevenue = (await this.tenantConn.query(
+      `SELECT COALESCE(SUM(amount_cents), 0) AS revenue
+         FROM payments
+        WHERE status IN ('confirmed', 'paid')
+          AND COALESCE(paid_at, updated_at, created_at) >= ${RESTAURANT_LOCAL_DAY_START_SQL}`,
+    )) as { revenue: string }[];
 
     const todayCustomers = (await this.tenantConn.query(
       `SELECT COUNT(DISTINCT customer_id) as count
        FROM visits
-       WHERE created_at >= CURRENT_DATE`,
+       WHERE created_at >= ${RESTAURANT_LOCAL_DAY_START_SQL}`,
     )) as { count: string }[];
 
     const avgRating = (await this.tenantConn.query(
       `SELECT ROUND(AVG(overall_rating), 1) as avg
        FROM feedbacks
-       WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'`,
+       WHERE created_at >= ${restaurantLocalDayStartDaysAgoSql('30')}`,
     )) as { avg: string }[];
 
     const pendingOrders = (await this.tenantConn.query(
@@ -363,7 +395,7 @@ export class DashboardService {
     return {
       today: {
         orders: parseInt(todayOrders[0].count),
-        revenueCents: parseInt(todayOrders[0].revenue),
+        revenueCents: parseInt(todayRevenue[0].revenue),
         customers: parseInt(todayCustomers[0].count),
         avgRating: parseFloat(avgRating[0].avg) || 0,
         pendingOrders: parseInt(pendingOrders[0].count),
@@ -380,13 +412,28 @@ export class DashboardService {
     // Janela FECHADA em N datas terminando HOJE: days=1 = só hoje. O `- ($1 - 1)`
     // (não `- $1`) corrige o off-by-one que devolvia N+1 datas — a soma da
     // "Receita" com days=1 tinha que bater com o "Faturamento" só-hoje do
-    // overview (`created_at >= CURRENT_DATE`), e days=7 mostra 7 barras, não 8.
+    // overview (desde a meia-noite civil do restaurante), e days=7 mostra 7
+    // barras, não 8. O agrupamento também projeta cada instante no timezone do
+    // tenant; DATE(timestamptz) seguiria o timezone da conexão PostgreSQL.
+    const paidLocalDateSql = restaurantLocalDateOfSql('COALESCE(paid_at, updated_at, created_at)');
+    const orderLocalDateSql = restaurantLocalDateOfSql('o.created_at');
     const rows = (await this.tenantConn.query(
-      `SELECT DATE(created_at) as date, COALESCE(SUM(total_cents), 0) as revenue, COUNT(*) as orders
-       FROM orders
-       WHERE created_at >= CURRENT_DATE - ($1 - 1)::int AND status != 'cancelled'
-       GROUP BY DATE(created_at)
-       ORDER BY date ASC`,
+      `WITH settled AS (
+         SELECT ${paidLocalDateSql} AS date,
+                COALESCE(SUM(amount_cents), 0) AS revenue
+           FROM payments
+          WHERE COALESCE(paid_at, updated_at, created_at) >= ${restaurantLocalDayStartDaysAgoSql(
+            '$1 - 1',
+          )}
+            AND status IN ('confirmed', 'paid')
+          GROUP BY ${paidLocalDateSql}
+       )
+       SELECT s.date, s.revenue,
+              (SELECT COUNT(*) FROM orders o
+                WHERE ${orderLocalDateSql} = s.date
+                  AND o.status != 'cancelled') AS orders
+         FROM settled s
+        ORDER BY s.date ASC`,
       [days],
     )) as { date: string; revenue: string; orders: string }[];
 
@@ -397,19 +444,38 @@ export class DashboardService {
     }));
   }
 
-  async getTopItems(limit = 10) {
-    // ANALÍTICO · TTL 60s (ranking acumulado; arg entra na key).
-    return this.cached(`top-items:${limit}`, 60, () => this.loadTopItems(limit));
+  async getTopItems(limit = 10, days = 30) {
+    const cacheKey = days === 30 ? `top-items:${limit}` : `top-items:${limit}:${days}`;
+    return this.cached(cacheKey, 60, () => this.loadTopItems(limit, days));
   }
 
-  private async loadTopItems(limit: number) {
+  private async loadTopItems(limit: number, days: number) {
     return this.tenantConn.query(
-      `SELECT mi.id, mi.name, mi.price_cents, mi.total_orders, mc.name as category_name
-       FROM menu_items mi
-       JOIN menu_categories mc ON mc.id = mi.category_id
-       ORDER BY mi.total_orders DESC
-       LIMIT $1`,
-      [limit],
+      `SELECT mi.id, mi.name, mi.price_cents,
+              SUM(oi.quantity)::int AS total_orders,
+              SUM(oi.subtotal_cents)::int AS revenue_cents,
+              mc.name AS category_name
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+         JOIN menu_items mi ON mi.id = oi.menu_item_id
+         JOIN menu_categories mc ON mc.id = mi.category_id
+        WHERE o.status NOT IN ('cancelled', 'pending_confirmation')
+          AND o.created_at >= ${restaurantLocalDayStartDaysAgoSql('$2 - 1')}
+          AND (
+            SELECT COALESCE(SUM(p.amount_cents), 0)
+              FROM payments p
+             WHERE p.table_session_id = o.table_session_id
+               AND p.status IN ('confirmed', 'paid')
+          ) >= (
+            SELECT COALESCE(SUM(o2.total_cents), 0)
+              FROM orders o2
+             WHERE o2.table_session_id = o.table_session_id
+               AND o2.status NOT IN ('cancelled', 'pending_confirmation')
+          )
+        GROUP BY mi.id, mi.name, mi.price_cents, mc.name
+        ORDER BY SUM(oi.quantity) DESC, mi.name ASC
+        LIMIT $1`,
+      [limit, days],
     );
   }
 
@@ -450,7 +516,7 @@ export class DashboardService {
               SUM(estimated_cost_cents) as total_cost_cents,
               SUM(CASE WHEN was_blocked THEN 1 ELSE 0 END) as blocked_count
        FROM assistant_messages
-       WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'`,
+       WHERE created_at >= ${restaurantLocalDayStartDaysAgoSql('30')}`,
     )) as {
       total_messages: string;
       total_tokens: string;

@@ -12,6 +12,7 @@ def create_provider() -> LLMProvider:
             api_key=settings.LLM_API_KEY,
             base_url=settings.LLM_BASE_URL,
             timeout=settings.LLM_REQUEST_TIMEOUT,
+            reasoning_effort=settings.LLM_REASONING_EFFORT,
         )
     elif provider == "anthropic":
         from .providers.anthropic_provider import AnthropicProvider

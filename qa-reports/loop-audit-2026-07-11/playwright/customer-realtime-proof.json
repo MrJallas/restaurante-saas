@@ -1,0 +1,46 @@
+{
+  "result": "PASS",
+  "executedAt": "2026-07-11T06:15:57Z",
+  "browser": "WebKit",
+  "device": "iPhone 14",
+  "baseUrl": "http://127.0.0.1:3003",
+  "sessions": {
+    "host": "loop-rt-host-0711",
+    "joiner": "loop-rt-joiner-0711"
+  },
+  "applicationPollingControl": {
+    "hostIntervalMs": 2500,
+    "hostBlockedRegistrations": 4,
+    "hostNoParticipantFetchWindowMs": 85571,
+    "joinerIntervalMs": 8000,
+    "joinerBlockedRegistrations": 2,
+    "joinerNoParticipantFetchWindowMs": 58963
+  },
+  "joinRequest": {
+    "socketEvent": "participant:join_request",
+    "socketFrameAtPerformanceMs": 109062,
+    "eventDrivenFetchAtPerformanceMs": 109063,
+    "socketToFetchMs": 1,
+    "bannerVisibleWithinMs": 1721,
+    "name": "Convidado Realtime 0711"
+  },
+  "decision": {
+    "socketEvent": "participant:decision",
+    "status": "approved",
+    "socketFrameAtPerformanceMs": 86457,
+    "eventDrivenFetchAtPerformanceMs": 86459,
+    "socketToFetchMs": 2,
+    "joinerHomeVisibleWithinMs": 430
+  },
+  "console": {
+    "hostErrors": 0,
+    "hostWarnings": 0,
+    "joinerErrors": 0,
+    "joinerWarnings": 0
+  },
+  "cleanup": {
+    "activeSessionsForQrTest91": 0,
+    "openReleasesForQrTest91": 0,
+    "historicalAuditRowsRetained": true
+  }
+}

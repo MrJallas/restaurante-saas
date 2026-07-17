@@ -72,6 +72,11 @@ function sharedRedis(): RedisService {
       return true;
     },
     get: async (k: string) => store.get(k) ?? null,
+    compareAndDelete: async (k: string, expected: string) => {
+      if (store.get(k) !== expected) return false;
+      store.delete(k);
+      return true;
+    },
     del: async (k: string) => {
       store.delete(k);
     },
@@ -133,8 +138,7 @@ function sharedDb(opts: {
     }
     // sumSettled: soma por escopo, calculada do store compartilhado.
     if (s.startsWith('SELECT COALESCE(SUM(amount_cents)')) {
-      const isTableBill =
-        s.includes('visit_id IS NULL') && s.includes('split_mode IS NOT NULL');
+      const isTableBill = s.includes('visit_id IS NULL') && s.includes('split_mode IS NOT NULL');
       // Gate SÓ na leitura decisiva do saldo table-bill (uma por request):
       // é aqui que o TOCTOU acontece — todos leem tableRemaining stale antes de
       // qualquer INSERT quando os locks não serializam.
@@ -161,10 +165,7 @@ function sharedDb(opts: {
     // Dedup de pending por escopo (SELECT id, expires_at ... status='pending').
     // Devolve o expires_at REAL (ISO) pra que o lazy-expiry do código
     // transicione um pending vencido pra 'expired' em vez de barrar o retry.
-    if (
-      s.startsWith('SELECT id, expires_at FROM payments') &&
-      s.includes(`status = 'pending'`)
-    ) {
+    if (s.startsWith('SELECT id, expires_at FROM payments') && s.includes(`status = 'pending'`)) {
       const visitArg = (params[1] as string | undefined) ?? null;
       const wantsVisit = s.includes('visit_id = $2');
       return payments
@@ -177,6 +178,29 @@ function sharedDb(opts: {
           id: `existing-${idx}`,
           expires_at: p.expires_at === null ? null : new Date(p.expires_at).toISOString(),
         }));
+    }
+    // Recovery idempotente do pending ativo: depois do dedup por escopo, o
+    // service carrega a row persistida para devolver o mesmo paymentId/QR no
+    // retry, sem criar outra cobrança.
+    if (s.startsWith('SELECT id, status, amount_cents, method')) {
+      const id = params[0] as string;
+      const idx = Number(id.replace('existing-', ''));
+      const p = payments[idx];
+      if (!p || p.status !== 'pending') return [];
+      return [
+        {
+          id,
+          status: p.status,
+          amount_cents: p.amount_cents,
+          method: 'pix',
+          pix_qr_code: `qr-${idx}`,
+          pix_copy_paste: `qr-${idx}`,
+          expires_at: p.expires_at === null ? null : new Date(p.expires_at).toISOString(),
+          split_mode: p.split_mode,
+          split_allocations: null,
+          created_at: '2026-07-04T00:00:00Z',
+        },
+      ];
     }
     // Lazy-expiry: UPDATE ... SET status='expired' WHERE id=$1 (id='existing-N').
     // Tira a row do bucket 'pending' sem virar 'settled' — libera o retry.
@@ -423,7 +447,7 @@ describe('REGRESSÃO: pending EXPIRADO não reserva pra sempre', () => {
     expect(res.amountCents).toBe(11_000);
   });
 
-  it('pending table-bill NÃO-expirado reserva o saldo (2º request não re-cobra)', async () => {
+  it('pending table-bill NÃO-expirado é recuperado no retry (sem re-cobrar)', async () => {
     // Mesa 11000. Existe um pending de 11000 table-scope AINDA válido. Um
     // mode=table novo tem que ver remaining 0 → recusa ("nada pendente").
     const db = sharedDb({
@@ -439,9 +463,13 @@ describe('REGRESSÃO: pending EXPIRADO não reserva pra sempre', () => {
       ],
     });
     const svc = svcWith(db);
-    // Dedup de pending table-scope também barra (já existe pending na mesma
-    // cerca) — de todo jeito, NÃO pode inserir uma 2ª cobrança da mesa.
-    await expect(svc.requestPayment(SESSION, null, 'table', 'pix')).rejects.toThrow();
+    // O POST é idempotente: devolve o pagamento já criado, em vez de inserir
+    // uma 2ª cobrança ou deixar o usuário sem o QR após perda da resposta.
+    await expect(svc.requestPayment(SESSION, null, 'table', 'pix')).resolves.toMatchObject({
+      paymentId: 'existing-0',
+      status: 'pending',
+      amountCents: 11_000,
+    });
     const insertedTableBill = db.payments.filter((p) => p.visit_id === null).length;
     expect(insertedTableBill).toBe(1); // só o seed, nenhum INSERT novo
   });

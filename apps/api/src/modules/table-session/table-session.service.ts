@@ -340,8 +340,8 @@ export class TableSessionService {
         }
 
         const isFirst = !lockedHostId;
-        const consumedReleaseId = isFirst
-          ? (unwrapRows<{ id: string }>(
+        const consumedRelease = isFirst
+          ? (unwrapRows<{ id: string; party_size: number | null }>(
               await tx.query(
                 `UPDATE table_qr_releases
                     SET consumed_at = now(),
@@ -357,13 +357,21 @@ export class TableSessionService {
                      ORDER BY created_at DESC
                      LIMIT 1
                   )
-                  RETURNING id`,
+                  RETURNING id, party_size`,
                 [tableId, tableSessionId, customerId],
               ),
-            )[0]?.id ?? null)
+            )[0] ?? null)
           : null;
+        if (consumedRelease?.party_size) {
+          await tx.query(
+            `UPDATE table_sessions
+                SET staff_party_override = $2, updated_at = now()
+              WHERE id = $1`,
+            [tableSessionId, consumedRelease.party_size],
+          );
+        }
         const nextStatus: 'pending' | 'approved' =
-          isFirst && consumedReleaseId ? 'approved' : 'pending';
+          isFirst && consumedRelease ? 'approved' : 'pending';
 
         let inserted: { color_index: number; status: string }[];
         try {

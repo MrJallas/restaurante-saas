@@ -117,9 +117,7 @@ function fakeDb(seed?: {
         const [orderId, customerId] = params as [string, string];
         const row = inserted.find(
           (r) =>
-            r.status === 'pending_review' &&
-            r.order_id === orderId &&
-            r.customer_id === customerId,
+            r.status === 'pending_review' && r.order_id === orderId && r.customer_id === customerId,
         );
         return row ? [row] : [];
       }
@@ -138,7 +136,9 @@ function fakeDb(seed?: {
     if (s.startsWith('SELECT c.*,')) {
       const id = params[0] as string;
       const row = inserted.find((r) => r.id === id);
-      return row ? [{ ...row, table_session_id: null, table_number: null, customer_name: null }] : [];
+      return row
+        ? [{ ...row, table_session_id: null, table_number: null, customer_name: null }]
+        : [];
     }
 
     throw new Error(`fake complaints: SQL não roteado: ${s}`);

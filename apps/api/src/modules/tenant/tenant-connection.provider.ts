@@ -41,6 +41,12 @@ export class TenantConnectionProvider {
     return this.request.tenantSlug;
   }
 
+  /** Schema validado pelo TenantMiddleware para integrações que precisam
+   * invalidar caches escopados no mesmo namespace do PostgreSQL. */
+  getTenantSchemaName(): string | undefined {
+    return this.request.tenantSchemaName;
+  }
+
   async query(sql: string, params?: unknown[]): Promise<unknown[]> {
     const schemaName = this.request.tenantSchemaName;
     if (!schemaName) {

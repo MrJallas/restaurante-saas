@@ -4,7 +4,7 @@
 // handoff/garcom/garcom-screens-host.jsx :: ScreenHostHome.
 //
 // Sumário no topo (4 contadores) + lista de mesas livres (pra liberar) +
-// late-arrival approvals pendentes (per docs/features/customer-host-model.md).
+// acompanhamento passivo de late-arrival.
 
 import * as React from 'react';
 import { useEffect, useState } from 'react';
@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import { useG, G_FONT, HSt } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
+import { OperationalErrorBanner } from '../../components/OperationalErrorBanner';
 import {
   listHostTables,
   listPendingLateArrivals,
@@ -19,6 +20,7 @@ import {
   type HostTableEntry,
 } from '../../lib/api/host';
 import { useStaffTheme } from '../../lib/theme';
+import { operationalErrorCopy } from '../../lib/operational-error';
 import type {
   LateArrivalRequestDto,
   ScanVerificationRequestDto,
@@ -66,6 +68,9 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
   const [tables, setTables] = useState<HostTableEntry[]>([]);
   const [lateArrivals, setLateArrivals] = useState<LateArrivalRequestDto[]>([]);
   const [scanVerifications, setScanVerifications] = useState<ScanVerificationRequestDto[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const { on } = useHostEvents({ tenantSlug, hostId });
 
   useEffect(() => {
@@ -73,16 +78,18 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
     async function load() {
       try {
         const [t, la, sv] = await Promise.all([
-          listHostTables(tenantSlug).catch(() => []),
-          listPendingLateArrivals(tenantSlug).catch(() => []),
-          listPendingScanVerifications(tenantSlug).catch(() => []),
+          listHostTables(tenantSlug),
+          listPendingLateArrivals(tenantSlug),
+          listPendingScanVerifications(tenantSlug),
         ]);
         if (!alive) return;
         setTables(t);
         setLateArrivals(la);
         setScanVerifications(sv);
-      } catch {
-        /* noop */
+        setHasLoaded(true);
+        setLoadError(null);
+      } catch (error) {
+        if (alive) setLoadError(operationalErrorCopy(error, 'o salão'));
       }
     }
     load();
@@ -91,21 +98,25 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
       alive = false;
       clearInterval(tid);
     };
-  }, [tenantSlug]);
+  }, [retryKey, tenantSlug]);
 
   useEffect(() => {
     const off = on((event: WsEvent) => {
       if (event.event === 'late_arrival.created') {
         listPendingLateArrivals(tenantSlug)
           .then(setLateArrivals)
-          .catch(() => undefined);
+          .catch((error: unknown) =>
+            setLoadError(operationalErrorCopy(error, 'as solicitações de chegada tardia')),
+          );
       } else if (
         event.event === 'scan_verification.created' ||
         event.event === 'scan_verification.escalated'
       ) {
         listPendingScanVerifications(tenantSlug)
           .then(setScanVerifications)
-          .catch(() => undefined);
+          .catch((error: unknown) =>
+            setLoadError(operationalErrorCopy(error, 'as verificações de mesa')),
+          );
       } else if (
         event.event === 'late_arrival.approved' ||
         event.event === 'late_arrival.rejected' ||
@@ -166,7 +177,13 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
           </div>
         }
         title="Salão"
-        sub={`${livres} LIVRES · ${ocupadas} EM USO`}
+        sub={
+          !hasLoaded
+            ? loadError
+              ? 'DADOS INDISPONÍVEIS'
+              : 'CARREGANDO SALÃO'
+            : `${livres} LIVRES · ${ocupadas} EM USO`
+        }
         right={
           <GIconBtn
             icon={Icon.bell(20)}
@@ -177,6 +194,17 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
           />
         }
       />
+
+      {loadError && (
+        <OperationalErrorBanner
+          message={loadError}
+          onRetry={() => setRetryKey((key) => key + 1)}
+          dark={dark}
+          hasStaleData={
+            tables.length > 0 || lateArrivals.length > 0 || scanVerifications.length > 0
+          }
+        />
+      )}
 
       <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px 80px' }}>
         {/* Sumário · 4 contadores */}
@@ -359,7 +387,7 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
                 marginBottom: 8,
               }}
             >
-              Aprovar chegada tardia ({lateArrivals.length})
+              Chegadas tardias ({lateArrivals.length})
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {lateArrivals.map((la) => (
@@ -406,13 +434,13 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
                         fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
                       }}
                     >
-                      LATE-ARRIVAL · CASCATA HOST
+                      LATE-ARRIVAL · ACOMPANHAMENTO
                     </div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: '#1d1c19', marginTop: 2 }}>
                       Mesa {la.tableNumber} · {la.requesterName}
                     </div>
                     <div style={{ fontSize: 12, color: '#7A4D10', fontWeight: 500, marginTop: 2 }}>
-                      {la.visitContext ?? 'Aprove ou rejeite o pedido'}
+                      {la.visitContext ?? 'Aguardando o anfitrião da mesa'}
                     </div>
                   </div>
                   <span style={{ color: '#7A4D10', flexShrink: 0 }}>{Icon.arrow(16)}</span>
@@ -437,7 +465,11 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
         </div>
         {livresList.length === 0 ? (
           <div style={{ padding: '20px 16px', color: C.mute, fontSize: 13, textAlign: 'center' }}>
-            Sem mesas livres no momento.
+            {!hasLoaded && !loadError
+              ? 'Carregando mesas…'
+              : loadError
+                ? 'Não foi possível confirmar as mesas livres.'
+                : 'Sem mesas livres no momento.'}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

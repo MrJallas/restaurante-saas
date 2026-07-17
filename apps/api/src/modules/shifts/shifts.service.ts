@@ -1,9 +1,15 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { StaffMessagesService } from '../staff-messages/staff-messages.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { MongoService } from '../../infra/mongo/mongo.service';
+import { RESTAURANT_LOCAL_DATE_SQL } from '../../common/utils/restaurant-local-time';
 
 export interface ShiftDefinitionRow {
   id: string;
@@ -35,6 +41,19 @@ export class ShiftsService {
     private readonly alerts: AlertsService,
     private readonly mongo: MongoService,
   ) {}
+
+  /** Data civil de hoje no timezone configurado para este tenant. */
+  async getRestaurantLocalDate(): Promise<string> {
+    const rows = (await this.tenantConn.query(
+      `SELECT ${RESTAURANT_LOCAL_DATE_SQL}::text AS local_date`,
+      [],
+    )) as Array<{ local_date: string }>;
+    const localDate = rows[0]?.local_date;
+    if (!localDate) {
+      throw new ServiceUnavailableException('Não foi possível obter a data local do restaurante.');
+    }
+    return localDate;
+  }
 
   async listForDate(workDate: string): Promise<ShiftWithMembersRow[]> {
     const shifts = (await this.tenantConn.query(
@@ -276,8 +295,10 @@ export class ShiftsService {
 
     const managers = (await this.tenantConn.query(
       `SELECT id, name FROM staff
-        WHERE role = 'manager' AND is_active = true
-        ORDER BY name ASC
+        WHERE role IN ('manager', 'owner') AND is_active = true
+        -- Prefere a operação diária por um gerente; em tenant pequeno o
+        -- owner é o aprovador legítimo e não pode deixar o fluxo órfão.
+        ORDER BY CASE role WHEN 'manager' THEN 0 ELSE 1 END, name ASC
         LIMIT 1`,
       [],
     )) as Array<{ id: string; name: string }>;

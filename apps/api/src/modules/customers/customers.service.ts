@@ -1,4 +1,4 @@
-import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, Logger, Optional } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
@@ -10,6 +10,8 @@ import {
   type GeofenceConfig,
 } from '../../common/utils/geofence';
 import type { CustomerLocationCheck, CustomerLocationSignal } from '@restaurant/shared-types';
+import { RedisService } from '../../infra/redis/redis.service';
+import { EventsGateway } from '../websocket/events.gateway';
 
 export interface CustomerWelcomeResult {
   customerId: string;
@@ -56,6 +58,8 @@ export class CustomersService {
   constructor(
     private readonly tenantConn: TenantConnectionProvider,
     private readonly tableSessionService: TableSessionService,
+    @Optional() private readonly redis?: RedisService,
+    @Optional() private readonly events?: EventsGateway,
   ) {}
 
   async welcome(
@@ -87,54 +91,38 @@ export class CustomersService {
     let totalVisits = 1;
     let resolvedName = name.trim();
     let wasReclaim = false;
-    // Returning branch (CPF já existe) DEFERE o incremento de total_visits pra
-    // depois do INSERT idempotente em `visits`, gateando-o na visita ser NOVA
-    // (P1 super-count). O counter existente da row é o baseline até sabermos se
-    // esta sessão é uma visita nova ou um reload.
-    let returningExistingVisits: number | null = null;
-
     if ((existing as unknown[]).length > 0) {
       const customer = (existing as Record<string, unknown>[])[0];
       customerId = customer.id as string;
       resolvedName = customer.name as string;
-      const storedToken = customer.recognition_token as string;
+      const storedToken = customer.recognition_token as string | null;
       isReturning = true;
-      returningExistingVisits = customer.total_visits as number;
-      totalVisits = returningExistingVisits;
+      totalVisits = customer.total_visits as number;
 
-      const tokenMatches = callerRecognitionToken != null && callerRecognitionToken === storedToken;
-
-      if (tokenMatches) {
-        recognitionToken = storedToken;
-      } else {
-        recognitionToken = uuidv4();
-        wasReclaim = true;
-
-        await this.tenantConn.query(
-          'UPDATE customers SET recognition_token = $1, updated_at = now() WHERE id = $2',
-          [recognitionToken, customerId],
-        );
-
-        this.logger.warn(
-          JSON.stringify({
-            event: 'recognition_token_rotated',
-            cpf_hash: cleanCpf.slice(0, 3) + '***' + cleanCpf.slice(-2),
-            customer_id: customerId,
-            table_session_id: sessionId,
-            reason: callerRecognitionToken == null ? 'no_cookie' : 'token_mismatch',
-          }),
-        );
-      }
+      // DECISÃO TEMPORÁRIA DE PRODUTO (Caleb, 2026-07-11): saber o CPF basta
+      // para entrar no perfil existente. Isto NÃO prova posse e permite tomada
+      // de conta por CPF conhecido; o risco é aceito até existir recuperação
+      // forte. Mantemos o bearer fora do body (cookie HttpOnly), rate-limit no
+      // controller e ownership downstream, mas essas barreiras não tornam o
+      // CPF um segredo. O token canônico é reutilizado para dois logins
+      // concorrentes não se invalidarem mutuamente.
+      const cpfLogin = await this.acceptCpfOnlyLogin({
+        customerId,
+        storedToken,
+        callerRecognitionToken,
+        cleanCpf,
+        source: 'welcome',
+        tableSessionId: sessionId,
+      });
+      recognitionToken = cpfLogin.recognitionToken;
+      wasReclaim = cpfLogin.wasReclaim;
     } else {
       const newRecognitionToken = uuidv4();
-      // ON CONFLICT (cpf): sob welcomes concorrentes do MESMO CPF novo, todos
-      // passam pelo SELECT acima sem encontrar o customer e caem aqui. Sem o
-      // ON CONFLICT, os inserts perdedores colidem na unique de cpf e estouram
-      // 500 (P1-1 — welcome customer race). O DO UPDATE incrementa total_visits
-      // no perdedor: o contador converge (1 insert + N-1 updates) e ninguém
-      // recebe 5xx. total_visits == 1 ⇒ ganhou a corrida (novo); > 1 ⇒ perdeu
-      // (returning, com nome/token canônicos da linha já existente).
-      const upserted = unwrapRows<{
+      // Dois welcomes podem observar o CPF ausente ao mesmo tempo. Como a
+      // decisão vigente é CPF-only, o perdedor da UNIQUE também autentica: o
+      // no-op DO UPDATE devolve a linha/token canônicos do vencedor sem
+      // incrementar visitas antes do INSERT idempotente em `visits`.
+      const upsertedCustomer = unwrapRows<{
         id: string;
         name: string;
         recognition_token: string;
@@ -144,20 +132,26 @@ export class CustomersService {
           `INSERT INTO customers (name, cpf, recognition_token, total_visits, last_visit_at)
            VALUES ($1, $2, $3, 1, now())
            ON CONFLICT (cpf) DO UPDATE
-             SET total_visits = customers.total_visits + 1,
-                 last_visit_at = now(),
-                 updated_at = now()
+             SET updated_at = customers.updated_at
            RETURNING id, name, recognition_token, total_visits`,
           [name.trim(), cleanCpf, newRecognitionToken],
         ),
       );
-      const row = upserted[0];
+
+      const row = upsertedCustomer[0];
       customerId = row.id;
       totalVisits = row.total_visits;
       recognitionToken = row.recognition_token;
-      if (totalVisits > 1) {
+      if (row.recognition_token !== newRecognitionToken) {
         isReturning = true;
         resolvedName = row.name;
+        wasReclaim = true;
+        this.logAcceptedCpfOnlyLogin({
+          customerId,
+          cleanCpf,
+          source: 'welcome_concurrent_registration',
+          tableSessionId: sessionId,
+        });
       }
     }
 
@@ -185,30 +179,26 @@ export class CustomersService {
       visitId = (visitRow as Record<string, unknown>[])[0].id as string;
     }
 
-    // Incremento gated do contador denormalizado, SÓ pro returning-branch (CPF
-    // já existia). O new-CPF branch acima já cravou total_visits via o upsert
-    // ON CONFLICT (cpf) — customer recém-criado sempre tem visita nova nesta
-    // sessão, sem risco de reload duplo. `last_visit_at` é carimbado nos dois
-    // casos (visto por último ≠ contagem).
-    if (returningExistingVisits !== null) {
-      if (isNewVisit) {
-        const updatedRows = unwrapRows<{ total_visits: number }>(
-          await this.tenantConn.query(
-            `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
-            [customerId],
-          ),
-        );
-        totalVisits = updatedRows[0].total_visits;
-      } else {
-        // Reload da mesma sessão: reusa a contagem existente, só atualiza o
-        // "visto por último". Não infla o contador.
-        await this.tenantConn.query(
-          `UPDATE customers SET last_visit_at = now(), updated_at = now() WHERE id = $1`,
-          [customerId],
-        );
-        totalVisits = returningExistingVisits;
-      }
-    }
+    // `visits` é a fonte da verdade UNIQUE(table_session_id, customer_id).
+    // Reconciliar pelo COUNT, em vez de somar a partir do branch do upsert,
+    // também fecha a corrida em que o request perdedor do cadastro insere a
+    // visita antes do vencedor: na mesma sessão ambos convergem em 1; em
+    // sessões diferentes convergem no número real. `last_visit_at` continua
+    // sendo "visto por último", inclusive em reload.
+    const reconciledCustomer = unwrapRows<{ total_visits: number }>(
+      await this.tenantConn.query(
+        `UPDATE customers
+            SET total_visits = (
+                  SELECT COUNT(*)::int FROM visits WHERE customer_id = $1
+                ),
+                last_visit_at = now(),
+                updated_at = now()
+          WHERE id = $1
+          RETURNING total_visits`,
+        [customerId],
+      ),
+    );
+    totalVisits = reconciledCustomer[0].total_visits;
 
     const participant = await this.tableSessionService.upsertParticipant(
       sessionId,
@@ -259,7 +249,8 @@ export class CustomersService {
   async identify(
     cpf: string,
     nameInput?: string,
-    _currentSessionId?: string,
+    currentSessionId?: string,
+    callerRecognitionToken?: string | null,
   ): Promise<{
     customerId: string;
     isReturning: boolean;
@@ -284,14 +275,14 @@ export class CustomersService {
       const customer = existing[0];
       const customerId = customer.id as string;
       const canonicalName = customer.name as string;
-      let recognitionToken = customer.recognition_token as string | null;
-      if (!recognitionToken) {
-        recognitionToken = uuidv4();
-        await this.tenantConn.query(
-          'UPDATE customers SET recognition_token = $1, updated_at = now() WHERE id = $2',
-          [recognitionToken, customerId],
-        );
-      }
+      const cpfLogin = await this.acceptCpfOnlyLogin({
+        customerId,
+        storedToken: customer.recognition_token as string | null,
+        callerRecognitionToken,
+        cleanCpf,
+        source: 'identify',
+        tableSessionId: currentSessionId,
+      });
       return {
         customerId,
         isReturning: true,
@@ -301,7 +292,7 @@ export class CustomersService {
           name: canonicalName,
           totalVisits: customer.total_visits as number,
         },
-        recognitionToken,
+        recognitionToken: cpfLogin.recognitionToken,
       };
     }
 
@@ -311,24 +302,42 @@ export class CustomersService {
       throw new HttpException('Nome obrigatorio para CPF novo.', HttpStatus.BAD_REQUEST);
     }
 
-    const recognitionToken = uuidv4();
-    const inserted = (await this.tenantConn.query(
-      `INSERT INTO customers (name, cpf, recognition_token, total_visits)
+    const newRecognitionToken = uuidv4();
+    const upserted = unwrapRows<{
+      id: string;
+      name: string;
+      recognition_token: string;
+      total_visits: number;
+    }>(
+      await this.tenantConn.query(
+        `INSERT INTO customers (name, cpf, recognition_token, total_visits)
        VALUES ($1, $2, $3, 0)
-       RETURNING id`,
-      [trimmedName, cleanCpf, recognitionToken],
-    )) as Array<Record<string, unknown>>;
-    const customerId = inserted[0].id as string;
+       ON CONFLICT (cpf) DO UPDATE
+         SET updated_at = customers.updated_at
+       RETURNING id, name, recognition_token, total_visits`,
+        [trimmedName, cleanCpf, newRecognitionToken],
+      ),
+    );
+    const row = upserted[0];
+    const isReturning = row.recognition_token !== newRecognitionToken;
+    if (isReturning) {
+      this.logAcceptedCpfOnlyLogin({
+        customerId: row.id,
+        cleanCpf,
+        source: 'identify_concurrent_registration',
+        tableSessionId: currentSessionId,
+      });
+    }
     return {
-      customerId,
-      isReturning: false,
-      canonicalName: trimmedName,
+      customerId: row.id,
+      isReturning,
+      canonicalName: row.name,
       customer: {
-        customerId,
-        name: trimmedName,
-        totalVisits: 0,
+        customerId: row.id,
+        name: row.name,
+        totalVisits: row.total_visits,
       },
-      recognitionToken,
+      recognitionToken: row.recognition_token,
     };
   }
 
@@ -402,24 +411,20 @@ export class CustomersService {
       visitId = (visitRow as Record<string, unknown>[])[0].id as string;
     }
 
-    let totalVisits: number;
-    if (isNewVisit) {
-      const updatedRows = unwrapRows<{ total_visits: number }>(
-        await this.tenantConn.query(
-          `UPDATE customers SET total_visits = total_visits + 1, last_visit_at = now(), updated_at = now() WHERE id = $1 RETURNING total_visits`,
-          [customerId],
-        ),
-      );
-      totalVisits = updatedRows[0].total_visits;
-    } else {
-      // Reload da mesma sessão: reusa a contagem existente, só atualiza o
-      // "visto por último". Não infla o contador.
+    const reconciledCustomer = unwrapRows<{ total_visits: number }>(
       await this.tenantConn.query(
-        `UPDATE customers SET last_visit_at = now(), updated_at = now() WHERE id = $1`,
+        `UPDATE customers
+            SET total_visits = (
+                  SELECT COUNT(*)::int FROM visits WHERE customer_id = $1
+                ),
+                last_visit_at = now(),
+                updated_at = now()
+          WHERE id = $1
+          RETURNING total_visits`,
         [customerId],
-      );
-      totalVisits = customer.total_visits as number;
-    }
+      ),
+    );
+    const totalVisits = reconciledCustomer[0].total_visits;
 
     const participant = await this.tableSessionService.upsertParticipant(
       sessionId,
@@ -459,8 +464,9 @@ export class CustomersService {
    * Lookup-only helper: resolve `recognition_token` cookie → customerId.
    * Round 5 (B-NEW-9): chat-history controllers precisam validar ownership
    * dos endpoints DELETE/list sem trustar `query.customerId`. Retorna null
-   * se token não bate em nenhum customer (possivel caso reclaim em outra
-   * mesa rotacionou o token); chamador trata 401/403.
+   * se token não bate em nenhum customer (por exemplo, após logout global que
+   * rotacionou a credencial); chamador trata 401/403. O login CPF-only vigente
+   * reutiliza o token canônico e, portanto, não o invalida por si só.
    *
    * Diferente de `recognize()`: NÃO cria visit nem upsert participant.
    * Só leitura.
@@ -479,6 +485,92 @@ export class CustomersService {
       customerId: r.id as string,
       name: r.name as string,
     };
+  }
+
+  /**
+   * Revoga a credencial persistente do perfil. Limpar apenas o cookie do
+   * navegador deixaria o bearer antigo válido por um ano (e utilizável por
+   * qualquer cópia vazada); por isso o logout rotaciona o token no banco.
+   * A operação é idempotente: token ausente/já revogado simplesmente retorna
+   * false e o controller ainda expira o cookie local.
+   */
+  async revokeRecognitionToken(recognitionToken: string): Promise<boolean> {
+    if (!recognitionToken) return false;
+    const replacement = uuidv4();
+    const rows = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `UPDATE customers
+            SET recognition_token = $1,
+                updated_at = now()
+          WHERE recognition_token = $2
+          RETURNING id`,
+        [replacement, recognitionToken],
+      ),
+    );
+    const customerId = rows[0]?.id;
+    if (!customerId) return false;
+
+    // O handshake WS guarda token→customer por 5 min. Rotacionar só no PG
+    // deixava o bearer antigo reutilizável pelo cache até o TTL; invalida o
+    // namespace exato e derruba conexões já autenticadas desse customer.
+    const schemaName = this.tenantConn.getTenantSchemaName();
+    if (schemaName) {
+      await this.redis?.del(`recognition_customer:${schemaName}:${recognitionToken}`);
+    }
+    this.events?.disconnectCustomer(customerId);
+    return true;
+  }
+
+  /**
+   * Débito de segurança aceito: CPF-only login. Reutiliza o token canônico em
+   * vez de expô-lo no body ou rotacioná-lo a cada tentativa. Se uma linha
+   * legada estiver sem token, cria um antes de emitir o cookie HttpOnly.
+   */
+  private async acceptCpfOnlyLogin(input: {
+    customerId: string;
+    storedToken: string | null;
+    callerRecognitionToken?: string | null;
+    cleanCpf: string;
+    source: 'welcome' | 'identify';
+    tableSessionId?: string;
+  }): Promise<{ recognitionToken: string; wasReclaim: boolean }> {
+    let recognitionToken = input.storedToken;
+    if (!recognitionToken) {
+      recognitionToken = uuidv4();
+      await this.tenantConn.query(
+        'UPDATE customers SET recognition_token = $1, updated_at = now() WHERE id = $2',
+        [recognitionToken, input.customerId],
+      );
+    }
+
+    const wasReclaim = input.callerRecognitionToken !== recognitionToken;
+    if (wasReclaim) {
+      this.logAcceptedCpfOnlyLogin({
+        customerId: input.customerId,
+        cleanCpf: input.cleanCpf,
+        source: input.source,
+        tableSessionId: input.tableSessionId,
+      });
+    }
+    return { recognitionToken, wasReclaim };
+  }
+
+  private logAcceptedCpfOnlyLogin(input: {
+    customerId: string;
+    cleanCpf: string;
+    source: string;
+    tableSessionId?: string;
+  }): void {
+    this.logger.warn(
+      JSON.stringify({
+        event: 'customer_cpf_only_login_accepted',
+        security_debt: 'cpf_is_not_proof_of_identity',
+        cpf_masked: input.cleanCpf.slice(0, 3) + '***' + input.cleanCpf.slice(-2),
+        customer_id: input.customerId,
+        source: input.source,
+        table_session_id: input.tableSessionId ?? null,
+      }),
+    );
   }
 
   async getLastVisitItems(
@@ -591,19 +683,25 @@ export class CustomersService {
       this.finiteEnvNumber('CUSTOMER_GEOFENCE_LONGITUDE') ??
       this.finiteEnvNumber('CUSTOMER_GEOFENCE_LON');
     const envRadius = this.finiteEnvNumber('CUSTOMER_GEOFENCE_RADIUS_METERS');
+    const envEnabled = this.optionalEnvBoolean('CUSTOMER_GEOFENCE_ENABLED');
 
     try {
       const rows = (await this.tenantConn.query(
-        `SELECT geofence_latitude, geofence_longitude, geofence_radius_meters
+        `SELECT geofence_latitude, geofence_longitude, geofence_radius_meters,
+                geofence_enabled
            FROM settings
           LIMIT 1`,
       )) as Array<{
         geofence_latitude: number | string | null;
         geofence_longitude: number | string | null;
         geofence_radius_meters: number | string | null;
+        geofence_enabled?: boolean | null;
       }>;
       const row = rows[0];
       return {
+        // A flag explícita manda. Coordenadas legadas podem fornecer o ponto,
+        // mas nunca religam um recurso que o owner desligou no dashboard.
+        enabled: envEnabled ?? row?.geofence_enabled === true,
         latitude: envLat ?? this.finiteNumber(row?.geofence_latitude),
         longitude: envLon ?? this.finiteNumber(row?.geofence_longitude),
         radiusMeters: envRadius ?? this.finiteNumber(row?.geofence_radius_meters) ?? 3,
@@ -612,6 +710,7 @@ export class CustomersService {
       const pgErr = err as { code?: string };
       if (pgErr.code !== '42703') throw err;
       return {
+        enabled: envEnabled ?? (envLat != null && envLon != null),
         latitude: envLat,
         longitude: envLon,
         radiusMeters: envRadius ?? 3,
@@ -621,6 +720,13 @@ export class CustomersService {
 
   private finiteEnvNumber(name: string): number | null {
     return this.finiteNumber(process.env[name]);
+  }
+
+  private optionalEnvBoolean(name: string): boolean | null {
+    const raw = process.env[name]?.trim().toLowerCase();
+    if (raw === 'true' || raw === '1' || raw === 'yes') return true;
+    if (raw === 'false' || raw === '0' || raw === 'no') return false;
+    return null;
   }
 
   private finiteNumber(value: unknown): number | null {

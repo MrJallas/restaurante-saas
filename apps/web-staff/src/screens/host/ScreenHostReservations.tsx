@@ -9,7 +9,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
+import { OperationalErrorBanner } from '../../components/OperationalErrorBanner';
 import { createReservation, listReservations, type ReservationEntry } from '../../lib/api/host';
+import { operationalErrorCopy } from '../../lib/operational-error';
 import { useStaffTheme } from '../../lib/theme';
 
 interface ScreenHostReservationsProps {
@@ -39,20 +41,27 @@ export const ScreenHostReservations: React.FC<ScreenHostReservationsProps> = ({
   const [phone, setPhone] = useState('');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let alive = true;
     listReservations(tenantSlug)
       .then((data) => {
-        if (alive) setList(data);
+        if (alive) {
+          setList(data);
+          setHasLoaded(true);
+          setLoadError(null);
+        }
       })
-      .catch(() => {
-        if (alive) setList([]);
+      .catch((error: unknown) => {
+        if (alive) setLoadError(operationalErrorCopy(error, 'as reservas'));
       });
     return () => {
       alive = false;
     };
-  }, [tenantSlug]);
+  }, [retryKey, tenantSlug]);
 
   const visible = list.filter((r) => filter === 'all' || r.status === filter);
 
@@ -74,8 +83,9 @@ export const ScreenHostReservations: React.FC<ScreenHostReservationsProps> = ({
       setNote('');
       setParty(2);
       setWhen('20:00');
-    } catch {
-      /* noop */
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(operationalErrorCopy(error, 'as reservas'));
     } finally {
       setSubmitting(false);
     }
@@ -113,6 +123,15 @@ export const ScreenHostReservations: React.FC<ScreenHostReservationsProps> = ({
         }
       />
 
+      {loadError && (
+        <OperationalErrorBanner
+          message={loadError}
+          onRetry={() => setRetryKey((key) => key + 1)}
+          dark={dark}
+          hasStaleData={list.length > 0}
+        />
+      )}
+
       <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px 80px' }}>
         <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
           {STATUS_FILTERS.map((f) => {
@@ -142,7 +161,11 @@ export const ScreenHostReservations: React.FC<ScreenHostReservationsProps> = ({
 
         {visible.length === 0 ? (
           <div style={{ padding: '32px 16px', color: C.mute, fontSize: 14, textAlign: 'center' }}>
-            Sem reservas para esse filtro.
+            {!hasLoaded && !loadError
+              ? 'Carregando reservas…'
+              : loadError
+                ? 'Não foi possível confirmar as reservas agora.'
+                : 'Sem reservas para esse filtro.'}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

@@ -18,6 +18,11 @@ import { Bubble } from '../../components/ui/Bubble';
 import { ManagerBubble, type ManagerChipActionKind } from '../../components/ui/ManagerBubble';
 import { BottomSheet } from '../../components/ui/BottomSheet';
 import type { ComplaintChipAction } from '@restaurant/shared-types';
+import {
+  COMPLAINT_TEAM_COPY,
+  complaintStatusDescription,
+  complaintStatusTitle,
+} from './complaintTeamCopy';
 
 interface ScreenCustomerComplaintWaitingProps {
   slug: string;
@@ -57,7 +62,8 @@ function formatRelative(iso: string | null): string {
  *
  * Shows the customer's bubble at the top and the manager's response (if any)
  * as a `ManagerBubble`. When the response hasn't arrived yet, displays a
- * reassuring spinner with ETA. Subscribes to `complaint.responded` and
+ * neutral waiting indicator without fabricated SLA. Subscribes to
+ * `complaint.responded` and
  * `complaint.resolved` to live-update.
  *
  * "Ver outras reclamações" opens a sheet with the customer's prior complaints
@@ -198,11 +204,7 @@ export function ScreenCustomerComplaintWaiting({
           Sua reclamação · protocolo {complaintId.slice(0, 8).toUpperCase()}
         </div>
         <h1 className="mb-1 text-[20px] font-semibold tracking-[-0.02em] text-ink">
-          {resolved
-            ? 'Resolvida'
-            : complaint?.status === 'responded'
-              ? 'Renata respondeu'
-              : 'Renata foi avisada'}
+          {complaintStatusTitle(complaint?.status, resolved)}
         </h1>
         {complaint && (complaint.rating ?? 0) > 0 && (
           <div className="mb-2 text-[12px] text-mute">
@@ -210,11 +212,7 @@ export function ScreenCustomerComplaintWaiting({
           </div>
         )}
         <p className="mb-5 text-[13px] leading-[1.5] text-mute">
-          {resolved
-            ? 'A gerência marcou como resolvida. Se algo ainda incomoda, é só falar.'
-            : complaint?.status === 'responded'
-              ? 'Confira a resposta abaixo.'
-              : 'Costuma responder em ~2 min · você verá a resposta aqui mesmo.'}
+          {complaintStatusDescription(complaint?.status, resolved)}
         </p>
 
         {error && (
@@ -232,8 +230,8 @@ export function ScreenCustomerComplaintWaiting({
             ) : (
               <ManagerBubble
                 key={msg.id}
-                name="Renata"
-                role="Gerente"
+                name={COMPLAINT_TEAM_COPY.bubbleName}
+                role={COMPLAINT_TEAM_COPY.bubbleRole}
                 when={msg.when ?? 'agora'}
                 chipAction={msg.chipAction ?? null}
               >
@@ -256,7 +254,7 @@ export function ScreenCustomerComplaintWaiting({
                   style={{ animationDelay: '300ms' }}
                 />
               </span>
-              Renata está respondendo
+              {COMPLAINT_TEAM_COPY.pending}
             </div>
           )}
         </div>

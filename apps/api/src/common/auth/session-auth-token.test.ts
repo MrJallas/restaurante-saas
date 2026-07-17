@@ -10,6 +10,7 @@ import {
   invalidateSessionAuthById,
   assertSessionSecretConfigured,
   DEV_SESSION_TOKEN_SECRET,
+  COMPROMISED_COMPOSE_SESSION_SECRET,
 } from './session-auth-token';
 import type { RedisService } from '../../infra/redis/redis.service';
 
@@ -93,7 +94,16 @@ describe('assertSessionSecretConfigured (fail-fast do secret em prod)', () => {
         NODE_ENV: 'production',
         SESSION_TOKEN_SECRET: DEV_SESSION_TOKEN_SECRET,
       }),
-    ).toThrow(/default committado/);
+    ).toThrow(/default público comprometido/);
+  });
+
+  it('rejeita o antigo fallback público do compose até em development', () => {
+    expect(() =>
+      assertSessionSecretConfigured(noopLogger, {
+        NODE_ENV: 'development',
+        SESSION_TOKEN_SECRET: COMPROMISED_COMPOSE_SESSION_SECRET,
+      }),
+    ).toThrow(/default público comprometido/);
   });
 
   it('prod com secret único → OK', () => {

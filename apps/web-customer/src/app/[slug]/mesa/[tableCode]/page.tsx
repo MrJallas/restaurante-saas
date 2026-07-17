@@ -7,6 +7,17 @@ import { listCustomerCourtesies, respondCustomerCourtesy } from '../../../../lib
 import { clearDeliveredContinuationHint } from '../../../../lib/continuationHints';
 import { recordCustomerEvent } from '../../../../lib/customerEvents';
 import { captureCustomerLocationSignal } from '../../../../lib/location';
+import { tenantNavigationDestination } from '../../../../lib/customer-navigation';
+import { createQrBootstrapDeadline } from '../../../../lib/qr-bootstrap-deadline';
+import {
+  shouldExitPendingQrApproval,
+  shouldRebootstrapQrSession,
+  stripQrBootstrapSecretsFromHistory,
+} from '../../../../lib/qr-session-recovery';
+import {
+  participantGateDestination,
+  type ParticipantGateStatus,
+} from '../../../../lib/waiting-approval-state';
 import { setSessionToken } from '../../../../lib/storage';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
@@ -37,6 +48,8 @@ import type {
 // Hard cap para a splash "Preparando sua experiencia". Se o initSession demorar
 // mais que isso, o pageState e forcado para 'welcome' para a UI nao travar.
 const SPLASH_MAX_MS = 3000;
+const PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE =
+  'Não foi possível confirmar sua autorização para esta mesa. Tente novamente.';
 
 type PageState = 'loading' | 'welcome' | 'home' | 'error' | 'pending_approval';
 
@@ -199,7 +212,7 @@ function buildContinuationChips(
 }
 
 function continuationChipNavigationDestination(slug: string, payload: string): string {
-  return payload.startsWith('/') ? payload : `/${slug}/${payload}`;
+  return tenantNavigationDestination(slug, payload);
 }
 
 type CourtesyDecision = Exclude<CourtesyStatus, 'pendente'>;
@@ -234,6 +247,7 @@ export default function MesaPage() {
   const tableCode = params.tableCode;
 
   const {
+    hydrated,
     setSession,
     setCustomer,
     clearSession,
@@ -267,17 +281,18 @@ export default function MesaPage() {
   // Se status='pending', renderiza a tela de espera ate host/staff aprovar.
   // Se rejeitado, mostra mensagem terminal.
   const checkParticipantStatus = useCallback(
-    async (cid: string | null): Promise<'approved' | 'pending' | 'rejected' | null> => {
-      if (!cid) return null;
+    async (cid: string | null): Promise<ParticipantGateStatus> => {
+      if (!cid) return 'unavailable';
       try {
         const res = await apiGet<ParticipantsResponse>(`/${slug}/table/participants`);
         const me = res.participants.find((p) => p.customerId === cid);
         const host = res.participants.find((p) => p.isHost);
         setHostName(host?.name ?? (me?.status === 'pending' ? 'equipe' : null));
         setIsHost(!!me?.isHost);
-        return me?.status ?? null;
-      } catch {
-        return null;
+        return me?.status ?? 'unavailable';
+      } catch (error) {
+        console.error('[mesa] participant status unavailable', error);
+        return 'unavailable';
       }
     },
     [slug],
@@ -375,31 +390,57 @@ export default function MesaPage() {
   // 'home' antes da recognition completar, deixando o customer sem nome
   // ("Ola, visitante" em vez de "Ola, Caleb"). useRef captura o valor
   // inicial e nao re-renderiza, entao essa guarda nao falsifica em re-runs.
-  const initialIsValidRef = useRef(isValid);
+  // Captura a existência da sessão SOMENTE depois que o provider terminou de
+  // ler sessionStorage. Capturar `isValid=false` no primeiro render fazia um
+  // hard reload/deep-link ignorar o bundle logo depois reidratado e tentar um
+  // novo /session/init sem hmac, caindo em erro/QR desnecessário.
+  const initialIsValidRef = useRef<boolean | null>(null);
+  if (hydrated && initialIsValidRef.current === null) {
+    initialIsValidRef.current = isValid;
+  }
   useEffect(() => {
-    if (!initialIsValidRef.current) return;
+    if (!hydrated || initialIsValidRef.current !== true) return;
     if (!isValid) return;
     if (sessionTableCode && sessionTableCode !== tableCode) return;
-    if (homeData && settings) {
-      setPageState('home');
-      return;
-    }
     let cancelled = false;
     (async () => {
       try {
+        const participantStatus = await checkParticipantStatus(customerId);
+        if (cancelled) return;
+        const destination = participantGateDestination(participantStatus);
+        if (destination === 'pending_approval') {
+          setPageState('pending_approval');
+          return;
+        }
+        if (destination === 'error') {
+          setErrorMessage(
+            participantStatus === 'rejected'
+              ? 'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.'
+              : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
+          );
+          setPageState('error');
+          return;
+        }
+        if (homeData && settings) {
+          setPageState('home');
+          return;
+        }
         const [pubSettings, home] = await Promise.all([
           apiGet<PublicSettings>(`/${slug}/settings/public`),
-          apiGet<HomeData>(`/${slug}/home${customerId ? `?customerId=${customerId}` : ''}`),
+          apiGet<HomeData>(`/${slug}/home`),
         ]);
         if (cancelled) return;
         setSettings(pubSettings);
+        // A sessão reidratada foi revalidada pelo backend. Se a pessoa chegou
+        // aqui por um novo scan da mesma mesa, substitui a entrada atual para
+        // HMAC/accessToken não permanecerem no histórico nem no Back/Forward.
+        stripQrBootstrapSecretsFromHistory();
         // Round 21 §G: defesa contra heroMessage vazio do BE. Antes,
         // qualquer falha de template render ou timeout silencioso
         // resultava em fallback `defaultHeroMessage` (sempre a mesma
         // string) — user via "Olá, Caleb! Posso ajudar..." TODAS as
         // vezes em vez do pool de 35 templates rotativos.
         if (!home || !home.heroMessage || home.heroMessage.trim().length === 0) {
-          // eslint-disable-next-line no-console
           console.warn('[mesa] /home retornou heroMessage vazio — caindo no fallback estático', {
             home,
           });
@@ -409,24 +450,49 @@ export default function MesaPage() {
         setPageState('home');
       } catch (err) {
         if (cancelled) return;
-        // Antes (silent catch) o user nunca sabia que o /home falhou —
-        // a tela mostrava texto genérico forever. Agora logamos no
-        // console pro dev pegar via Safari Web Inspector.
-        // eslint-disable-next-line no-console
-        console.error('[mesa] /home failed — usando defaultHeroMessage:', err);
-        setPageState('home');
+        // O bundle do sessionStorage acelera hard reload/back, mas não é fonte
+        // de verdade. Se o staff encerrou a mesa, o primeiro endpoint protegido
+        // devolve 401. Antes esse catch mascarava o erro e mostrava uma home
+        // aparentemente funcional usando o token revogado. Preservamos o cookie
+        // recognition_token (clearSession só limpa a sessão da mesa), voltamos ao
+        // bootstrap do QR físico atual e deixamos /session/init emitir um novo
+        // token opaco.
+        if (shouldRebootstrapQrSession(err)) {
+          initialIsValidRef.current = false;
+          clearSession();
+          setHomeData(null);
+          setSettings(null);
+          setPageState('loading');
+          setSessionResetNonce((nonce) => nonce + 1);
+          return;
+        }
+        console.error('[mesa] não foi possível revalidar a sessão/home:', err);
+        setErrorMessage('Não foi possível carregar os dados da mesa. Tente novamente.');
+        setPageState('error');
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [isValid, slug, customerId, homeData, settings, sessionTableCode, tableCode]);
+  }, [
+    hydrated,
+    isValid,
+    slug,
+    customerId,
+    homeData,
+    settings,
+    sessionTableCode,
+    tableCode,
+    clearSession,
+    checkParticipantStatus,
+  ]);
 
   useEffect(() => {
     // Guard em tempo de montagem: se o SessionContext ja foi populado antes
     // (navegacao programatica com sessao ativa), nao reinicia. Usamos o valor
     // inicial em ref para o init nao ser cancelado pelo proprio setSession.
-    if (initialIsValidRef.current && sessionResetNonce === 0) return;
+    if (!hydrated) return;
+    if (initialIsValidRef.current === true && sessionResetNonce === 0) return;
 
     // Escopo local por mount — em StrictMode o effect roda mount→unmount→mount
     // e cada "vida" tem seu proprio cancelled + timer. Nao da para usar useRef
@@ -435,22 +501,22 @@ export default function MesaPage() {
     let cancelled = false;
     let transitioned = false;
 
-    const transitionTo = (next: PageState) => {
-      if (cancelled || transitioned) return;
-      transitioned = true;
-      window.clearTimeout(hardCap);
-      setPageState(next);
-    };
-
-    // Hard cap de 1.5s: se a splash ainda estiver visivel, mostra erro — algo
-    // esta muito lento e nao da para cair na WelcomeModal sem o /session/init
-    // ter terminado (o backend exige session cookie nos proximos endpoints).
-    const hardCap = window.setTimeout(() => {
+    // O deadline cobre apenas o bootstrap de rede. Assim que init + settings
+    // terminam, ele é limpo ANTES do prompt nativo de localização: o tempo
+    // humano para ler/decidir não pode perder uma corrida contra a splash.
+    const bootstrapDeadline = createQrBootstrapDeadline(() => {
       if (cancelled || transitioned) return;
       transitioned = true;
       setErrorMessage('Conexão lenta. Toque para tentar novamente.');
       setPageState('error');
     }, SPLASH_MAX_MS);
+
+    const transitionTo = (next: PageState) => {
+      if (cancelled || transitioned) return;
+      transitioned = true;
+      bootstrapDeadline.clear();
+      setPageState(next);
+    };
 
     async function initSession() {
       try {
@@ -470,6 +536,7 @@ export default function MesaPage() {
         const pubSettings = await apiGet<PublicSettings>(`/${slug}/settings/public`);
         if (cancelled) return;
         setSettings(pubSettings);
+        bootstrapDeadline.clear();
 
         // Auto-recognize via httpOnly cookie (server reads req.cookies)
         {
@@ -504,6 +571,10 @@ export default function MesaPage() {
               tableLabel: session.tableLabel,
               slug,
             });
+            // Só limpa depois de persistir o token+bundle. Assim um reload
+            // durante geolocalização negada ainda conserva o bootstrap, mas
+            // uma sessão válida nunca deixa credenciais do QR no histórico.
+            stripQrBootstrapSecretsFromHistory();
 
             // Warm-up do roteador assim que a sessao foi autorizada: as duas
             // rotas que o usuario mais abre sao /cardapio e /assistente. Em 3G
@@ -539,19 +610,22 @@ export default function MesaPage() {
 
             const status = await checkParticipantStatus(customer.customerId);
             if (cancelled) return;
-            if (status === 'pending') {
+            const destination = participantGateDestination(status);
+            if (destination === 'pending_approval') {
               transitionTo('pending_approval');
               return;
             }
-            if (status === 'rejected') {
+            if (destination === 'error') {
               setErrorMessage(
-                'Sua entrada não foi autorizada. Tente outra mesa ou peça ao garçom.',
+                status === 'rejected'
+                  ? 'Sua entrada não foi autorizada. Tente outra mesa ou peça ao garçom.'
+                  : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
               );
               transitionTo('error');
               return;
             }
 
-            const home = await apiGet<HomeData>(`/${slug}/home?customerId=${customer.customerId}`);
+            const home = await apiGet<HomeData>(`/${slug}/home`);
             if (cancelled) return;
             setHomeData(home);
             clearDeliveredContinuationHint(home?.continuationMessage?.kind);
@@ -575,10 +649,8 @@ export default function MesaPage() {
         transitionTo('welcome');
       } catch (err) {
         if (cancelled || transitioned) return;
-        transitioned = true;
-        window.clearTimeout(hardCap);
         setErrorMessage(humanizeInitError(err));
-        setPageState('error');
+        transitionTo('error');
       }
     }
 
@@ -586,9 +658,10 @@ export default function MesaPage() {
 
     return () => {
       cancelled = true;
-      window.clearTimeout(hardCap);
+      bootstrapDeadline.clear();
     };
   }, [
+    hydrated,
     slug,
     tableCode,
     setSession,
@@ -610,11 +683,10 @@ export default function MesaPage() {
   }, [clearSession, isValid, sessionTableCode, tableCode]);
 
   const refreshHomeContinuation = useCallback(async () => {
-    const url = customerId ? `/${slug}/home?customerId=${customerId}` : `/${slug}/home`;
-    const home = await apiGet<HomeData>(url);
+    const home = await apiGet<HomeData>(`/${slug}/home`);
     setHomeData(home);
     clearDeliveredContinuationHint(home?.continuationMessage?.kind);
-  }, [slug, customerId]);
+  }, [slug]);
 
   useEffect(() => {
     if (pageState !== 'home') return;
@@ -696,13 +768,16 @@ export default function MesaPage() {
         // customer entrou na fila — mostra tela de espera ate o host
         // decidir.
         const status = await checkParticipantStatus(cid ?? null);
-        if (status === 'pending') {
+        const destination = participantGateDestination(status);
+        if (destination === 'pending_approval') {
           setPageState('pending_approval');
           return;
         }
-        if (status === 'rejected') {
+        if (destination === 'error') {
           setErrorMessage(
-            'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.',
+            status === 'rejected'
+              ? 'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.'
+              : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
           );
           setPageState('error');
           return;
@@ -712,13 +787,14 @@ export default function MesaPage() {
           setTimeout(() => setReclaimBanner(false), 5000);
         }
         setLocationCheck(customer?.locationCheck ?? null);
-        const url = cid ? `/${slug}/home?customerId=${cid}` : `/${slug}/home`;
-        const home = await apiGet<HomeData>(url);
+        const home = await apiGet<HomeData>(`/${slug}/home`);
         setHomeData(home);
         clearDeliveredContinuationHint(home?.continuationMessage?.kind);
         setPageState('home');
-      } catch {
-        setPageState('home');
+      } catch (error) {
+        console.error('[mesa] welcome completion failed', error);
+        setErrorMessage('Não foi possível carregar os dados da mesa. Tente novamente.');
+        setPageState('error');
       }
     },
     [slug, checkParticipantStatus],
@@ -746,11 +822,14 @@ export default function MesaPage() {
     (async () => {
       const status = await checkParticipantStatus(customerId);
       if (cancelled) return;
-      if (status === 'pending') {
+      const destination = participantGateDestination(status);
+      if (destination === 'pending_approval') {
         setPageState('pending_approval');
-      } else if (status === 'rejected') {
+      } else if (destination === 'error') {
         setErrorMessage(
-          'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.',
+          status === 'rejected'
+            ? 'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.'
+            : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
         );
         setPageState('error');
       }
@@ -829,15 +908,27 @@ export default function MesaPage() {
         hostName={hostName}
         onApproved={async () => {
           try {
-            await checkParticipantStatus(customerId);
-            const url = customerId ? `/${slug}/home?customerId=${customerId}` : `/${slug}/home`;
-            const home = await apiGet<HomeData>(url);
+            const status = await checkParticipantStatus(customerId);
+            const destination = participantGateDestination(status);
+            if (destination === 'pending_approval') return;
+            if (destination === 'error') {
+              setErrorMessage(
+                status === 'rejected'
+                  ? 'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.'
+                  : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
+              );
+              setPageState('error');
+              return;
+            }
+            const home = await apiGet<HomeData>(`/${slug}/home`);
             setHomeData(home);
             clearDeliveredContinuationHint(home?.continuationMessage?.kind);
-          } catch {
-            /* ignore */
+            setPageState('home');
+          } catch (error) {
+            console.error('[mesa] approved participant home load failed', error);
+            setErrorMessage('Não foi possível carregar os dados da mesa. Tente novamente.');
+            setPageState('error');
           }
-          setPageState('home');
         }}
         onRejected={() => {
           setErrorMessage(
@@ -845,15 +936,24 @@ export default function MesaPage() {
           );
           setPageState('error');
         }}
+        onExpired={() => {
+          clearSession();
+          setErrorMessage(
+            'O tempo de verificação acabou ou a mesa foi encerrada. Escaneie novamente o QR da mesa.',
+          );
+          setPageState('error');
+        }}
         onCancel={async () => {
           // P1 (re-scan): cancelamento REAL do join pendente (System A).
           // Derruba o session_participant 'pending' do caller no BE e sai da
-          // tela de espera. Best-effort: mesmo se o POST falhar, tiramos B do
-          // limbo pra ele não ficar preso (o BE é CAS-idempotente).
-          try {
-            await apiPost(`/${slug}/table/participants/cancel`, {});
-          } catch {
-            /* ignore — o BE é idempotente; ainda assim liberamos o FE */
+          // tela de espera somente depois do ACK. Em falha, a tela mantém o
+          // estado pending e oferece retry em vez de afirmar cancelamento.
+          const result = await apiPost<{ cancelled: boolean }>(
+            `/${slug}/table/participants/cancel`,
+            {},
+          );
+          if (result.cancelled !== true) {
+            throw new Error('pending_join_not_cancelled');
           }
           setErrorMessage(
             'Você cancelou o pedido de entrada. Escaneie o QR de novo quando quiser tentar.',
@@ -1059,12 +1159,14 @@ function PendingApprovalWrapper({
   hostName,
   onApproved,
   onRejected,
+  onExpired,
   onCancel,
 }: {
   slug: string;
   hostName: string | null;
   onApproved: () => void;
   onRejected: () => void;
+  onExpired: () => void;
   onCancel: () => Promise<void>;
 }) {
   const { sessionId, customerId } = useSession();
@@ -1083,20 +1185,28 @@ function PendingApprovalWrapper({
   // Useful pra casos onde o WS dropou silenciosamente.
   useEffect(() => {
     if (!sessionId || !customerId) return;
-    const tick = setInterval(async () => {
+    let cancelled = false;
+    const tick = async () => {
       try {
         const res = await apiGet<{
           participants: { customerId: string; status: string }[];
         }>(`/${slug}/table/participants`);
+        if (cancelled) return;
         const me = res.participants.find((p) => p.customerId === customerId);
         if (me?.status === 'approved') onApproved();
         else if (me?.status === 'rejected') onRejected();
-      } catch {
-        /* ignore */
+        else if (!me) onExpired();
+      } catch (error) {
+        if (!cancelled && shouldExitPendingQrApproval(error)) onExpired();
       }
-    }, 8000);
-    return () => clearInterval(tick);
-  }, [slug, sessionId, customerId, onApproved, onRejected]);
+    };
+    void tick();
+    const interval = setInterval(() => void tick(), 8000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [slug, sessionId, customerId, onApproved, onRejected, onExpired]);
 
   return (
     <ScreenCustomerWaitingApproval

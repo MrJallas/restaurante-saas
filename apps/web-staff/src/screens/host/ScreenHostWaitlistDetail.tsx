@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
+import { OperationalErrorBanner } from '../../components/OperationalErrorBanner';
 import {
   listHostTables,
   listWaitlist,
@@ -13,6 +14,7 @@ import {
   type WaitlistEntry,
 } from '../../lib/api/host';
 import { useStaffTheme } from '../../lib/theme';
+import { isAuthoritativeEmpty, type OperationalLoadState } from '../../lib/operational-error';
 
 interface ScreenHostWaitlistDetailProps {
   tenantSlug: string;
@@ -38,37 +40,58 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [entryState, setEntryState] = useState<OperationalLoadState>('loading');
+  const [tablesState, setTablesState] = useState<OperationalLoadState>('loading');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let alive = true;
     async function load() {
-      try {
-        const [waitlist, tableRows] = await Promise.all([
-          listWaitlist(tenantSlug),
-          listHostTables(tenantSlug).catch(() => []),
-        ]);
-        if (!alive) return;
-        setEntry(waitlist.find((item) => item.id === entryId) ?? null);
-        setTables(tableRows);
-      } catch {
-        if (alive) setEntry(null);
-      } finally {
-        if (alive) setLoading(false);
+      setLoading(true);
+      const [waitlistResult, tablesResult] = await Promise.allSettled([
+        listWaitlist(tenantSlug),
+        listHostTables(tenantSlug),
+      ]);
+      if (!alive) return;
+      if (waitlistResult.status === 'fulfilled') {
+        setEntry(waitlistResult.value.find((item) => item.id === entryId) ?? null);
+        setEntryState('ready');
+      } else {
+        console.error('[host-waitlist-detail] waitlist load failed', waitlistResult.reason);
+        setEntryState('error');
       }
+      if (tablesResult.status === 'fulfilled') {
+        setTables(tablesResult.value);
+        setTablesState('ready');
+      } else {
+        console.error('[host-waitlist-detail] tables load failed', tablesResult.reason);
+        setTablesState('error');
+      }
+      setLoading(false);
     }
-    load();
+    void load();
     return () => {
       alive = false;
     };
-  }, [tenantSlug, entryId]);
+  }, [tenantSlug, entryId, reloadKey]);
 
   const suggestions = useMemo(() => {
-    if (!entry) return [];
+    if (!entry || tablesState !== 'ready') return [];
     return tables
       .filter((table) => table.status === 'livre' && table.capacity >= entry.party)
       .sort((a, b) => a.capacity - b.capacity || a.number - b.number)
       .slice(0, 4);
-  }, [entry, tables]);
+  }, [entry, tables, tablesState]);
+
+  const loadError =
+    entryState === 'error' && tablesState === 'error'
+      ? 'Não foi possível carregar a fila nem as mesas.'
+      : entryState === 'error'
+        ? 'Não foi possível confirmar essa pessoa na fila.'
+        : tablesState === 'error'
+          ? 'Não foi possível atualizar as mesas disponíveis.'
+          : null;
+  const entryNotFound = isAuthoritativeEmpty(entryState, entry ? 1 : 0);
 
   async function markLeft() {
     setSubmitting(true);
@@ -83,22 +106,11 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
     }
   }
 
-  // Sentar alguém da fila: primeiro tira a entrada da waitlist com transição
-  // 'seated' (DELETE /host/waitlist/:id?transition=seated) e só então segue
-  // pro fluxo de liberar/abrir a mesa. Sem isso a entrada continua 'waiting',
-  // reaparece no poll de 12s, é recontada em "N ESPERANDO" e fica sentável de
-  // novo (fila presa). Guarda de submitting evita duplo-clique.
-  async function seatFromWaitlist(tableNumber: number) {
+  // A transição waiting -> seated acontece junto da liberação QR no POST
+  // seguinte. Até a confirmação final, a pessoa continua corretamente na fila.
+  function seatFromWaitlist(tableNumber: number) {
     if (submitting) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      await removeFromWaitlist(tenantSlug, entryId, 'seated');
-      onLiberate?.(tableNumber);
-    } catch {
-      setError('Não foi possível sentar essa pessoa agora.');
-      setSubmitting(false);
-    }
+    onLiberate?.(tableNumber);
   }
 
   return (
@@ -124,12 +136,21 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
         }
       />
 
+      {loadError && (
+        <OperationalErrorBanner
+          dark={dark}
+          message={loadError}
+          hasStaleData={entry !== null || tables.length > 0}
+          onRetry={() => setReloadKey((value) => value + 1)}
+        />
+      )}
+
       <div style={{ flex: 1, overflow: 'auto', padding: '16px 16px 88px' }}>
-        {loading ? (
+        {loading && !entry ? (
           <div style={{ padding: 28, color: C.faint, fontSize: 12, textAlign: 'center' }}>
             Carregando...
           </div>
-        ) : !entry ? (
+        ) : entryNotFound ? (
           <div
             style={{
               padding: '32px 18px',
@@ -144,7 +165,7 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
           >
             Essa pessoa não está mais aguardando.
           </div>
-        ) : (
+        ) : entry ? (
           <>
             <section style={{ marginBottom: 18 }}>
               <div
@@ -221,7 +242,7 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
               >
                 Mesas compatíveis
               </div>
-              {suggestions.length === 0 ? (
+              {tablesState === 'ready' && suggestions.length === 0 ? (
                 <div
                   style={{
                     marginTop: 8,
@@ -236,7 +257,7 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
                 >
                   Nenhuma mesa livre comporta esse grupo agora.
                 </div>
-              ) : (
+              ) : suggestions.length > 0 ? (
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {suggestions.map((table, idx) => (
                     <button
@@ -287,7 +308,7 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
                     </button>
                   ))}
                 </div>
-              )}
+              ) : null}
             </section>
 
             {error && (
@@ -307,10 +328,10 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
               </div>
             )}
           </>
-        )}
+        ) : null}
       </div>
 
-      {entry && (
+      {entry && entryState === 'ready' && (
         <div
           style={{
             padding: '12px 16px 18px',
@@ -329,7 +350,7 @@ export const ScreenHostWaitlistDetail: React.FC<ScreenHostWaitlistDetailProps> =
               full
               dark={dark}
               onClick={() => suggestions[0] && seatFromWaitlist(suggestions[0].number)}
-              disabled={suggestions.length === 0 || submitting}
+              disabled={tablesState !== 'ready' || suggestions.length === 0 || submitting}
             >
               {suggestions[0] ? `Sentar na mesa ${suggestions[0].number}` : 'Sem mesa compatível'}
             </GButton>

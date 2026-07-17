@@ -41,6 +41,8 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
   const C = useG(dark);
   const [threads, setThreads] = useState<StaffMessageThreadDto[]>([]);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
 
   const waiterEvents = useWaiterEvents(
     role === 'waiter' || role === 'cook' ? { tenantSlug, waiterId: userId } : { tenantSlug: '' },
@@ -89,7 +91,15 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
     };
   }, [tenantSlug, userId, waiterEvents, hostEvents]);
 
-  const visible = filter === 'unread' ? threads.filter((t) => t.unreadCount > 0) : threads;
+  const filteredByUnread = filter === 'unread' ? threads.filter((t) => t.unreadCount > 0) : threads;
+  const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR');
+  const visible = normalizedQuery
+    ? filteredByUnread.filter((thread) =>
+        [thread.subject, thread.lastMessagePreview]
+          .filter((value): value is string => typeof value === 'string')
+          .some((value) => value.toLocaleLowerCase('pt-BR').includes(normalizedQuery)),
+      )
+    : filteredByUnread;
   const unreadCount = threads.reduce((s, t) => s + (t.unreadCount > 0 ? 1 : 0), 0);
 
   return (
@@ -147,7 +157,12 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
         </div>
         <button
           type="button"
-          aria-label="Buscar"
+          aria-label={searchOpen ? 'Fechar busca' : 'Buscar'}
+          aria-pressed={searchOpen}
+          onClick={() => {
+            if (searchOpen) setQuery('');
+            setSearchOpen(!searchOpen);
+          }}
           style={{
             all: 'unset',
             cursor: 'pointer',
@@ -164,6 +179,41 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
           {Icon.search(20)}
         </button>
       </div>
+
+      {searchOpen && (
+        <label
+          style={{
+            margin: '10px 12px 0',
+            minHeight: 42,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '0 12px',
+            borderRadius: 12,
+            border: `1px solid ${C.borderSoft}`,
+            background: C.bg,
+            color: C.faint,
+          }}
+        >
+          {Icon.search(18)}
+          <input
+            autoFocus
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar conversa"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              border: 0,
+              outline: 0,
+              background: 'transparent',
+              color: C.ink,
+              fontFamily: G_FONT,
+              fontSize: 14,
+            }}
+          />
+        </label>
+      )}
 
       {/* Filter chips */}
       <div
@@ -259,7 +309,7 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
             {Icon.chat(34)}
           </div>
           <div style={{ fontSize: 18, fontWeight: 800, color: C.ink, letterSpacing: -0.3 }}>
-            Nenhuma mensagem ainda
+            {normalizedQuery ? 'Nenhuma conversa encontrada' : 'Nenhuma mensagem ainda'}
           </div>
           <div
             style={{
@@ -270,7 +320,9 @@ export const ScreenStaffMessages: React.FC<ScreenStaffMessagesProps> = ({
               maxWidth: 280,
             }}
           >
-            Quando alguém da equipe te mandar uma mensagem, aparece aqui.
+            {normalizedQuery
+              ? 'Tente outro nome ou trecho da mensagem.'
+              : 'Quando alguém da equipe te mandar uma mensagem, aparece aqui.'}
           </div>
         </div>
       ) : (

@@ -10,7 +10,6 @@ import { AiServiceClient, type AiToolCall } from '../../infra/ai/ai-service.clie
 import { RedisService } from '../../infra/redis/redis.service';
 import { ChatHistoryService } from '../chat-history/chat-history.service';
 import { CustomerStaffMessagesService } from '../customer-staff-messages/customer-staff-messages.service';
-import { LgpdService } from '../lgpd/lgpd.service';
 import { EventsGateway } from '../websocket/events.gateway';
 
 const BLOCKED_RESPONSE =
@@ -33,6 +32,51 @@ const SUGGESTION_CHIPS = [
 const FALLBACK_RESPONSE = 'Desculpe, estou com dificuldade no momento. Posso ajudar em breve.';
 
 const MAX_MESSAGES_PER_SESSION = 50;
+
+const OPENING_DAY_LABELS: Record<string, string> = {
+  mon: 'Segunda',
+  tue: 'Terça',
+  wed: 'Quarta',
+  thu: 'Quinta',
+  fri: 'Sexta',
+  sat: 'Sábado',
+  sun: 'Domingo',
+};
+
+/** Converte somente o shape validado de horários em dado factual pro prompt. */
+export function formatOpeningHoursForAssistant(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return 'Horários de funcionamento ainda não cadastrados.';
+  }
+  const record = value as Record<string, unknown>;
+  const lines: string[] = [];
+  for (const [day, label] of Object.entries(OPENING_DAY_LABELS)) {
+    const windows = record[day];
+    if (windows === null) {
+      lines.push(`${label}: fechado`);
+      continue;
+    }
+    if (!Array.isArray(windows) || windows.length === 0) {
+      return 'Horários de funcionamento ainda não cadastrados.';
+    }
+    const formatted: string[] = [];
+    for (const window of windows) {
+      const candidate = window as { open?: unknown; close?: unknown };
+      if (
+        !candidate ||
+        typeof candidate.open !== 'string' ||
+        typeof candidate.close !== 'string' ||
+        !/^\d{2}:\d{2}$/.test(candidate.open) ||
+        !/^\d{2}:\d{2}$/.test(candidate.close)
+      ) {
+        return 'Horários de funcionamento ainda não cadastrados.';
+      }
+      formatted.push(`${candidate.open}–${candidate.close}`);
+    }
+    lines.push(`${label}: ${formatted.join(' e ')}`);
+  }
+  return lines.join('; ');
+}
 
 interface MenuItemRow {
   id: string;
@@ -971,6 +1015,79 @@ export function enrichRecommendationToolCalls(
   };
 }
 
+/**
+ * Preços e metadados financeiros nunca vêm do texto/modelo. Mesmo que o
+ * ai-service esteja em uma versão antiga ou devolva shape snake_case, a API
+ * reconstrói a comparação com o cardápio canônico carregado do tenant.
+ */
+export function enrichComparisonToolCalls(
+  response: string,
+  toolCalls: Array<Record<string, unknown>>,
+  menuItems: MenuItemRow[],
+): { response: string; toolCalls: Array<Record<string, unknown>> } {
+  const index = toolCalls.findIndex((call) => call.name === 'compare_dishes');
+  if (index < 0) return { response, toolCalls };
+
+  const call = toolCalls[index];
+  const args = isPlainRecord(call.arguments) ? call.arguments : {};
+  const result = isPlainRecord(call.result) ? call.result : {};
+  const resultPayload = isPlainRecord(result.actionPayload) ? result.actionPayload : {};
+  const payloadItems = Array.isArray(resultPayload.items)
+    ? resultPayload.items.filter(isPlainRecord)
+    : [];
+  const requestedIds = Array.isArray(args.itemIds)
+    ? args.itemIds.filter((value): value is string => typeof value === 'string')
+    : [];
+  const fallbackIds = payloadItems.flatMap((item) =>
+    typeof item.id === 'string' ? [item.id] : [],
+  );
+  const ids = requestedIds.length >= 2 ? requestedIds : fallbackIds;
+  const byId = new Map(menuItems.map((item) => [item.id, item]));
+  const canonical = ids.flatMap((id) => {
+    const item = byId.get(id);
+    return item ? [item] : [];
+  });
+  if (canonical.length < 2) return { response, toolCalls };
+
+  const message = `Comparando:\n${canonical
+    .map((item) => {
+      const allergens = item.allergens?.length ? ` · alérgenos: ${item.allergens.join(', ')}` : '';
+      return `- ${item.name}: ${formatCents(item.price_cents)}${allergens}`;
+    })
+    .join('\n')}`;
+  const normalizedItems = canonical.map((item) => ({
+    id: item.id,
+    name: item.name,
+    priceCents: item.price_cents,
+    imageUrl: item.image_url,
+    categoryName: item.category_name,
+    allergens: item.allergens ?? [],
+  }));
+  const chips = [
+    ...canonical.slice(0, 2).map((item) => ({
+      id: `compare-pick-${item.id}`,
+      label: `Quero ${item.name}`,
+      action: 'send',
+      payload: `quero o ${item.name}`,
+    })),
+    {
+      id: 'compare-other',
+      label: 'Comparar outros',
+      action: 'send',
+      payload: 'compara outros pratos pra mim',
+    },
+  ];
+  const actionPayload = { ...resultPayload, items: normalizedItems };
+  const nextCalls = [...toolCalls];
+  nextCalls[index] = {
+    ...call,
+    result: { ...result, message, chips, actionPayload },
+    actionPayload,
+    chips,
+  };
+  return { response: message, toolCalls: nextCalls };
+}
+
 @Injectable()
 export class AssistantService {
   private readonly logger = new Logger(AssistantService.name);
@@ -989,7 +1106,6 @@ export class AssistantService {
     // ("Mensagens com a equipe").
     @Optional()
     private readonly customerStaffMessages?: CustomerStaffMessagesService,
-    @Optional() private readonly lgpdService?: LgpdService,
     @Optional() private readonly events?: EventsGateway,
   ) {}
 
@@ -1012,7 +1128,11 @@ export class AssistantService {
 
       if (threadId) {
         try {
-          const messages = await this.chatHistory.listMessagesForCustomer(threadId, customerId);
+          const messages = await this.chatHistory.listMessagesForCustomer(
+            threadId,
+            customerId,
+            tenantId,
+          );
           return messages
             .filter((m) => m.role === 'user' || m.role === 'assistant')
             .slice(-10)
@@ -1084,6 +1204,7 @@ export class AssistantService {
     continueThreadId?: string | null,
     tenantSlug?: string | null,
     pendingJoinRequest?: PendingJoinRequestInput | null,
+    sessionAuthToken?: string | null,
   ) {
     // IDOR guard: cliente nao pode passar `customerId` de outro cliente
     // pra extrair contexto de consumo / historico alheio. Validamos que
@@ -1206,6 +1327,7 @@ export class AssistantService {
         tenantId: tenantSlug || _schemaName,
         customerId: safeCustomerId,
         sessionId: tableSessionId,
+        sessionToken: sessionAuthToken || undefined,
       });
 
       const normalizedToolsRaw = rescueDietaryRecommendationTool(
@@ -1247,10 +1369,15 @@ export class AssistantService {
             ];
           })
         : [];
-      const recommendationContext = enrichRecommendationToolCalls(
-        message,
+      const comparisonContext = enrichComparisonToolCalls(
         result.response,
         normalizedToolsRaw,
+        menuItems,
+      );
+      const recommendationContext = enrichRecommendationToolCalls(
+        message,
+        comparisonContext.response,
+        comparisonContext.toolCalls,
         menuItems,
         lastItemsForRec,
         favoriteItemsForRec,
@@ -1320,8 +1447,6 @@ export class AssistantService {
           }
         }
       }
-
-      await this.persistLgpdToolRequests(normalizedTools, safeCustomerId, _schemaName);
 
       // P1 #B-6 fix (round 3): dual-write pra Mongo `chat_messages`.
       // Best-effort — Postgres remains source of truth e o appendTurn
@@ -1403,57 +1528,12 @@ export class AssistantService {
     }
   }
 
-  private async persistLgpdToolRequests(
-    toolCalls: Array<Record<string, unknown>>,
-    customerId: string | null,
-    tenantId: string,
-  ): Promise<void> {
-    if (!customerId || !this.lgpdService) return;
-
-    for (const tc of toolCalls) {
-      if (tc.name !== 'lgpd_data_request') continue;
-
-      const actionPayload =
-        tc.actionPayload && typeof tc.actionPayload === 'object' && !Array.isArray(tc.actionPayload)
-          ? (tc.actionPayload as Record<string, unknown>)
-          : {};
-      const lgpdErasure =
-        actionPayload.lgpdErasure &&
-        typeof actionPayload.lgpdErasure === 'object' &&
-        !Array.isArray(actionPayload.lgpdErasure)
-          ? (actionPayload.lgpdErasure as Record<string, unknown>)
-          : {};
-
-      if (lgpdErasure.backendDispatched === true) continue;
-
-      const args = (tc.arguments ?? {}) as Record<string, unknown>;
-      const requestType =
-        typeof lgpdErasure.type === 'string'
-          ? lgpdErasure.type
-          : typeof args.type === 'string'
-            ? args.type
-            : 'erasure';
-      const kind = requestType === 'erasure' ? 'erasure' : 'export';
-      const protocolNumber =
-        typeof lgpdErasure.protocolNumber === 'string' ? lgpdErasure.protocolNumber : undefined;
-
-      try {
-        await this.lgpdService.createRequest(
-          {
-            kind,
-            customerId,
-            protocolNumber,
-            notes: `assistant lgpd_data_request type=${requestType}`,
-          },
-          tenantId,
-        );
-      } catch (err) {
-        this.logger.warn(`Falha ao persistir lgpd_data_request: ${(err as Error).message}`);
-      }
-    }
-  }
-
   async getHistory(tableSessionId: string, customerId: string | null = null) {
+    // A sessão da mesa é compartilhada. Sem recognition_token não existe uma
+    // identidade individual que permita separar dois navegadores anônimos;
+    // portanto não reidratamos nem usamos histórico até o caller se identificar.
+    if (!customerId) return [];
+
     // Filtro por customer_id quando presente — sem isso o cliente B na
     // mesma mesa do cliente A via TODA a conversa de A no /assistente
     // (LGPD/privacidade, P1-B). Para fluxo anonimo (customerId null),
@@ -1500,6 +1580,10 @@ export class AssistantService {
     tableSessionId: string,
     customerId: string | null = null,
   ): Promise<AssistantPublicHistoryMessage[]> {
+    // Fail-closed pelo mesmo motivo de getHistory(): `tableSessionId` sozinho
+    // não autoriza histórico pessoal nem broadcasts legados.
+    if (!customerId) return [];
+
     const rows = (await this.tenantConn.query(
       `WITH recent AS (
          SELECT
@@ -1778,10 +1862,12 @@ export class AssistantService {
   }> {
     // Get restaurant settings
     const settingsRows = (await this.tenantConn.query(
-      `SELECT restaurant_name FROM settings LIMIT 1`,
-    )) as { restaurant_name: string }[];
+      `SELECT restaurant_name, timezone, opening_hours FROM settings LIMIT 1`,
+    )) as Array<{ restaurant_name: string; timezone: string; opening_hours: unknown }>;
 
     const restaurantName = settingsRows[0]?.restaurant_name || 'Restaurante';
+    const timezone = settingsRows[0]?.timezone || 'America/Sao_Paulo';
+    const openingHoursSummary = formatOpeningHoursForAssistant(settingsRows[0]?.opening_hours);
 
     // Get menu categories
     const categories = (await this.tenantConn.query(
@@ -1812,6 +1898,8 @@ export class AssistantService {
     return {
       context: {
         restaurant_name: restaurantName,
+        timezone,
+        opening_hours_summary: openingHoursSummary,
         categories: categories.map((c) => c.name).join(', '),
         menu_summary: menuSummary,
       },

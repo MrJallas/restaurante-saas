@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nest
 import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import type { Request } from 'express';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { HostOrManagerGuard } from '../../common/guards/host-only.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { ScanVerificationService } from './scan-verification.service';
 import type { ScanVerificationRequestDto, ScanVerificationStatus } from '@restaurant/shared-types';
@@ -28,11 +29,13 @@ export class ScanVerificationController {
   ) {}
 
   @Get()
+  @UseGuards(HostOrManagerGuard)
   async list(@Query() q: ListScanVerificationQuery): Promise<ScanVerificationRequestDto[]> {
     return this.service.list({ status: q.status });
   }
 
   @Get(':id')
+  @UseGuards(HostOrManagerGuard)
   async getById(@Param('id') id: string): Promise<ScanVerificationRequestDto> {
     return this.service.getById(id);
   }

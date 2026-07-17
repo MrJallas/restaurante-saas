@@ -16,6 +16,7 @@
  * acknowledge).
  */
 
+import { ForbiddenException } from '@nestjs/common';
 import { WaiterCallsService } from './waiter-calls.service';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import type { EventsGateway } from '../websocket/events.gateway';
@@ -24,6 +25,8 @@ import type { BillingService } from '../billing/billing.service';
 const CALL = 'dddd4444-0000-4000-8000-000000000004';
 const SESSION = 'eeee5555-0000-4000-8000-000000000005';
 const SLUG = 'restaurant_dev';
+const STAFF = 'aaaa5555-0000-4000-8000-000000000005';
+const OTHER_STAFF = 'bbbb5555-0000-4000-8000-000000000005';
 
 /**
  * DB fake: roteia o UPDATE ... RETURNING de resolveCall. `updated` controla
@@ -38,6 +41,9 @@ function makeService(opts: { updated?: boolean }) {
     if (s.startsWith("UPDATE waiter_calls SET status = 'resolved'")) {
       if (opts.updated === false) return [[], 0] as unknown[];
       return [[{ id: params[0], table_session_id: SESSION }], 1] as unknown[];
+    }
+    if (s.startsWith('SELECT status, acknowledged_by FROM waiter_calls')) {
+      return [{ status: 'acknowledged', acknowledged_by: OTHER_STAFF }];
     }
     throw new Error(`fake resolve: SQL não roteado: ${s}`);
   };
@@ -54,7 +60,7 @@ function makeService(opts: { updated?: boolean }) {
 describe('WaiterCallsService.resolveCall — garçom conclui o chamado (P1)', () => {
   it('move pra resolved e EMITE waiter:resolved com o session real', async () => {
     const { service, resolvedEmits } = makeService({ updated: true });
-    const res = await service.resolveCall(CALL, SLUG);
+    const res = await service.resolveCall(CALL, SLUG, STAFF);
     expect(res).toEqual({ callId: CALL, status: 'resolved' });
     // O WS destrava a sheet do cliente: precisa carregar o session real
     // (não undefined — regra do unwrapRows).
@@ -62,10 +68,9 @@ describe('WaiterCallsService.resolveCall — garçom conclui o chamado (P1)', ()
     expect(resolvedEmits[0]).toEqual({ slug: SLUG, callId: CALL, sessionId: SESSION });
   });
 
-  it('chamado já terminal (nada a resolver) → NÃO re-emite WS', async () => {
+  it('garçom diferente do owner não resolve nem re-emite WS', async () => {
     const { service, resolvedEmits } = makeService({ updated: false });
-    const res = await service.resolveCall(CALL, SLUG);
-    expect(res).toEqual({ callId: CALL, status: 'resolved' });
+    await expect(service.resolveCall(CALL, SLUG, STAFF)).rejects.toBeInstanceOf(ForbiddenException);
     expect(resolvedEmits).toHaveLength(0);
   });
 });

@@ -9,12 +9,16 @@ function HostLiberatePageInner() {
   const search = useSearchParams();
   const params = useParams<{ tableId: string }>();
   const tenantSlug = search.get('tenant') ?? '';
+  const reservationId = search.get('reservationId') ?? undefined;
+  const waitlistId = search.get('waitlistId') ?? undefined;
   const tableNumber = parseInt(params?.tableId ?? '0', 10) || 0;
 
   return (
     <ScreenHostTableLiberate
       tenantSlug={tenantSlug}
       tableNumber={tableNumber}
+      reservationId={reservationId}
+      waitlistId={waitlistId}
       onBack={() => router.back()}
       onDone={() => router.push(`/host?tenant=${tenantSlug}`)}
     />

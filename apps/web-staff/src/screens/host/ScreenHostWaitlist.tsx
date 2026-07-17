@@ -9,7 +9,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
+import { OperationalErrorBanner } from '../../components/OperationalErrorBanner';
 import { addToWaitlist, listWaitlist, type WaitlistEntry } from '../../lib/api/host';
+import { operationalErrorCopy } from '../../lib/operational-error';
 import { useStaffTheme } from '../../lib/theme';
 
 interface ScreenHostWaitlistProps {
@@ -45,15 +47,22 @@ export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
   const [phone, setPhone] = useState('');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let alive = true;
     async function load() {
       try {
         const data = await listWaitlist(tenantSlug);
-        if (alive) setList(data);
-      } catch {
-        if (alive) setList([]);
+        if (alive) {
+          setList(data);
+          setHasLoaded(true);
+          setLoadError(null);
+        }
+      } catch (error) {
+        if (alive) setLoadError(operationalErrorCopy(error, 'a lista de espera'));
       }
     }
     load();
@@ -62,7 +71,7 @@ export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
       alive = false;
       clearInterval(tid);
     };
-  }, [tenantSlug]);
+  }, [retryKey, tenantSlug]);
 
   const visible = list.filter((entry) => partyMatchesFilter(entry.party, filter));
 
@@ -82,8 +91,9 @@ export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
       setPhone('');
       setNote('');
       setParty(2);
-    } catch {
-      /* noop */
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(operationalErrorCopy(error, 'a lista de espera'));
     } finally {
       setSubmitting(false);
     }
@@ -115,6 +125,15 @@ export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
           />
         }
       />
+
+      {loadError && (
+        <OperationalErrorBanner
+          message={loadError}
+          onRetry={() => setRetryKey((key) => key + 1)}
+          dark={dark}
+          hasStaleData={list.length > 0}
+        />
+      )}
 
       <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px 80px' }}>
         <div
@@ -149,7 +168,11 @@ export const ScreenHostWaitlist: React.FC<ScreenHostWaitlistProps> = ({
 
         {visible.length === 0 ? (
           <div style={{ padding: '32px 16px', color: C.mute, fontSize: 14, textAlign: 'center' }}>
-            Sem ninguém esperando.
+            {!hasLoaded && !loadError
+              ? 'Carregando fila…'
+              : loadError
+                ? 'Não foi possível confirmar a fila agora.'
+                : 'Sem ninguém esperando.'}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

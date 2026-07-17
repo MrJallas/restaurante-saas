@@ -31,12 +31,25 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         except Exception as e:
             return ToolResult(error={"code": "api_error", "message": str(e)})
 
+    normalized_items = []
     lines = []
     for it in items:
-        price = (it.get("priceCents") or 0) / 100
+        # apps/api devolve linhas SQL em snake_case. Aceitar só priceCents
+        # fazia todo compare real exibir R$ 0,00 apesar de o banco ter o preço.
+        raw_price = it.get("priceCents")
+        if raw_price is None:
+            raw_price = it.get("price_cents")
+        price_cents = int(raw_price) if isinstance(raw_price, (int, float)) else 0
+        price = price_cents / 100
         allergens = it.get("allergens") or []
         allergens_str = f" · alérgenos: {', '.join(allergens)}" if allergens else ""
-        lines.append(f"- {it.get('name', '?')}: R$ {price:.2f}{allergens_str}")
+        lines.append(f"- {it.get('name', '?')}: R$ {price:.2f}".replace(".", ",") + allergens_str)
+        normalized_items.append({
+            **it,
+            "priceCents": price_cents,
+            "imageUrl": it.get("imageUrl") if it.get("imageUrl") is not None else it.get("image_url"),
+            "categoryName": it.get("categoryName") if it.get("categoryName") is not None else it.get("category_name"),
+        })
 
     # Round 4 §C-NEW-3 — chips por item facilitam "quero esse" 1-tap
     chips = [
@@ -58,5 +71,5 @@ def call(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     return ToolResult(
         message="Comparando:\n" + "\n".join(lines),
         chips=chips,
-        action_payload={"items": items},
+        action_payload={"items": normalized_items},
     )

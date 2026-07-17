@@ -2,8 +2,18 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@restaurant/shared-types'],
+  // Next 16 bloqueia recursos dev/HMR quando o Host difere de `localhost`.
+  // Permite loopback e o host LAN explicitamente escolhido pelo operador;
+  // não abre wildcard e não afeta o build de produção.
+  allowedDevOrigins: [
+    ...new Set(['localhost', '127.0.0.1', process.env.PUBLIC_HOST].filter(Boolean)),
+  ],
   // A05: não vazar o framework/versão no header (reduz info-disclosure).
   poweredByHeader: false,
+  // Socket.IO usa `/socket.io/` por contrato. Sem este gate o Next remove a
+  // barra com 308 antes dos rewrites; Engine.IO não segue redirect durante o
+  // upgrade e o realtime degrada silenciosamente para polling da aplicação.
+  skipTrailingSlashRedirect: true,
 
   // Em mobile real (iPhone + hotspot + firewall do Mac), a porta 3001 da API
   // nao e alcancavel de fora — so a 3003 (web-customer) passa. Em vez de
@@ -19,6 +29,16 @@ const nextConfig = {
       {
         source: '/api/:path*',
         destination: `${upstream}/api/:path*`,
+      },
+      {
+        source: '/socket.io',
+        destination: `${upstream}/socket.io/`,
+      },
+      {
+        // Socket.IO (polling + upgrade WebSocket) usa a mesma origem do app.
+        // Isso evita expor/depender da porta 3001 em Simulator ou device LAN.
+        source: '/socket.io/:path*',
+        destination: `${upstream}/socket.io/:path*`,
       },
     ];
   },

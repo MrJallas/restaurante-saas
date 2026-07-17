@@ -8,12 +8,19 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /**
  * Quando `true`, o `x-staff-id` legado (não vinculado ao portador) é
- * REJEITADO — só o `x-staff-token` emitido no login autoriza. Deixe
- * `false` (default) enquanto os clients migram; ligue em prod assim que
- * o web-staff sempre mandar o token.
+ * REJEITADO — só o `x-staff-token` emitido no login autoriza. O flag permite
+ * antecipar o gate em dev; ambientes production/staging são sempre
+ * fail-closed, mesmo se o operador esquecer a variável.
  */
-function tokenRequired(): boolean {
-  return process.env.STAFF_SESSION_REQUIRED === 'true';
+export function staffSessionTokenRequired(env: NodeJS.ProcessEnv = process.env): boolean {
+  const deployment = (env.VERCEL_ENV ?? env.APP_ENV ?? '').toLowerCase();
+  return (
+    env.STAFF_SESSION_REQUIRED === 'true' ||
+    env.NODE_ENV === 'production' ||
+    deployment === 'production' ||
+    deployment === 'preview' ||
+    deployment === 'staging'
+  );
 }
 
 function headerValue(
@@ -77,7 +84,7 @@ export async function resolveAuthenticatedStaff(
     return { staffId: payload.staffId, tokenRole: payload.role, source: 'token' };
   }
 
-  if (tokenRequired()) {
+  if (staffSessionTokenRequired()) {
     return { error: 'missing' };
   }
 

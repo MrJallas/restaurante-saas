@@ -2,13 +2,24 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
+  Optional,
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { RedisService } from '../../infra/redis/redis.service';
-import { hashPin, verifyPin as verifyPinHash, isLegacyPinHash } from './staff-pin.util';
+import {
+  generateTemporaryPin,
+  hashPin,
+  verifyPin as verifyPinHash,
+  isLegacyPinHash,
+} from './staff-pin.util';
+import { revokeStaffSessions } from '../../common/auth/staff-session-token';
+import { invalidateCachedStaffRole } from '../../common/guards/staff-role-cache';
+import { EventsGateway } from '../websocket/events.gateway';
+import { RESTAURANT_LOCAL_DATE_SQL } from '../../common/utils/restaurant-local-time';
 
 // Round 18 (Onda 1 wiring): inclui host/bartender/cashier — canvas
 // StaffForm permite todos os 6 roles. host ja existia em registros
@@ -27,10 +38,49 @@ export class StaffService {
   constructor(
     private readonly tenantConn: TenantConnectionProvider,
     private readonly redis: RedisService,
+    @Optional() private readonly events?: EventsGateway,
   ) {}
 
+  private async revokeSecuritySessions(staffId: string): Promise<void> {
+    const slug = this.tenantConn.getTenantSlug();
+    if (!slug) {
+      throw new Error('Tenant ausente ao revogar sessões de staff.');
+    }
+    await revokeStaffSessions(this.redis, {
+      staffId,
+      slug,
+    });
+    invalidateCachedStaffRole(this.tenantConn, staffId);
+    this.events?.disconnectStaff(staffId);
+  }
+
+  /**
+   * A conta owner nasce somente pelo provisionamento do tenant. Ela não faz
+   * parte do cadastro operacional de equipe e não pode ser lida/mutada pelas
+   * rotas manager de staff — caso contrário um gerente poderia trocar o PIN,
+   * desativar ou excluir o dono e assumir a conta de maior privilégio.
+   */
+  private ownerProtected(): ForbiddenException {
+    return new ForbiddenException({
+      message: 'A conta do dono é protegida e só pode ser gerenciada pelo próprio dono.',
+      message_user: 'A conta do dono é protegida e só pode ser gerenciada pelo próprio dono.',
+      code: 'OWNER_PROTECTED',
+    });
+  }
+
+  private async assertOperationalStaff(id: string): Promise<void> {
+    const rows = (await this.tenantConn.query(`SELECT role FROM staff WHERE id = $1 LIMIT 1`, [
+      id,
+    ])) as Array<{ role: string }>;
+    if (!rows.length) throw new NotFoundException('Funcionario nao encontrado.');
+    if (rows[0].role === 'owner') throw this.ownerProtected();
+  }
+
   async list(role?: string, activeOnly = false) {
-    const where: string[] = [];
+    // Owner não é membro do roster operacional e carrega PII/identidade de
+    // maior privilégio. O filtro é incondicional, inclusive se alguém tentar
+    // explicitamente `?role=owner`.
+    const where: string[] = [`role <> 'owner'`];
     const params: unknown[] = [];
     let idx = 1;
     if (role) {
@@ -40,7 +90,7 @@ export class StaffService {
     if (activeOnly) {
       where.push('is_active = true');
     }
-    const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const whereClause = `WHERE ${where.join(' AND ')}`;
     return this.tenantConn.query(
       `SELECT id, name, role, is_active, cpf, phone, email, default_shift,
               created_at, updated_at
@@ -70,9 +120,30 @@ export class StaffService {
    * passa `null` e mantém comportamento legacy (waiter precisa do
    * mapa todo).
    */
-  async listActiveTables(callerSessionId?: string | null): Promise<unknown[]> {
-    const sessionFilter = callerSessionId ? `AND ts.id = $1` : '';
-    const params = callerSessionId ? [callerSessionId] : [];
+  async listActiveTables(
+    callerSessionId?: string | null,
+    callerStaffId?: string | null,
+  ): Promise<unknown[]> {
+    const sessionFilter = callerSessionId
+      ? `AND ts.id = $1`
+      : callerStaffId
+        ? `AND (
+             EXISTS (
+               SELECT 1 FROM waiter_zone_assignments mine
+                WHERE mine.staff_id = $1
+                  AND mine.zone_id = t.zone_id
+                  AND mine.work_date = ${RESTAURANT_LOCAL_DATE_SQL}
+                  AND mine.removed_at IS NULL
+             )
+             OR NOT EXISTS (
+               SELECT 1 FROM waiter_zone_assignments any_assignment
+                WHERE any_assignment.zone_id = t.zone_id
+                  AND any_assignment.work_date = ${RESTAURANT_LOCAL_DATE_SQL}
+                  AND any_assignment.removed_at IS NULL
+             )
+           )`
+        : 'AND false';
+    const params = callerSessionId ? [callerSessionId] : callerStaffId ? [callerStaffId] : [];
     return this.tenantConn.query(
       `
       SELECT
@@ -302,8 +373,9 @@ export class StaffService {
               created_at, updated_at
          FROM staff WHERE id = $1`,
       [id],
-    )) as unknown[];
+    )) as Array<Record<string, unknown> & { role: string }>;
     if (!rows.length) throw new NotFoundException('Funcionario nao encontrado.');
+    if (rows[0].role === 'owner') throw this.ownerProtected();
     return rows[0];
   }
 
@@ -358,6 +430,7 @@ export class StaffService {
     if (!sRows.length) {
       throw new NotFoundException('Funcionario nao encontrado.');
     }
+    if (sRows[0].role === 'owner') throw this.ownerProtected();
     const staffRole = sRows[0].role;
 
     // SQL `since` expression. `date_trunc('day', now())` = 00:00 today.
@@ -575,7 +648,7 @@ export class StaffService {
   async create(data: {
     name: string;
     role: string;
-    pin: string;
+    pin?: string;
     cpf?: string;
     phone?: string;
     email?: string;
@@ -584,29 +657,34 @@ export class StaffService {
     if (!VALID_ROLES.includes(data.role)) {
       throw new BadRequestException('Cargo invalido.');
     }
-    if (!/^\d{4,6}$/.test(data.pin)) {
-      throw new BadRequestException('PIN deve ter 4-6 digitos.');
-    }
     if (data.default_shift && !VALID_SHIFTS.includes(data.default_shift)) {
       throw new BadRequestException('Turno padrao invalido.');
     }
+    // A credencial nunca nasce no browser. `data.pin` só existe durante a
+    // migração de clientes antigos e é deliberadamente ignorado.
+    const tempPin = generateTemporaryPin();
     try {
       const rows = (await this.tenantConn.query(
-        `INSERT INTO staff (name, role, pin_hash, cpf, phone, email, default_shift)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO staff
+           (name, role, pin_hash, cpf, phone, email, default_shift, must_change_pin)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, true)
          RETURNING id, name, role, is_active, cpf, phone, email, default_shift,
                    created_at, updated_at`,
         [
           data.name,
           data.role,
-          hashPin(data.pin),
+          hashPin(tempPin),
           data.cpf ?? null,
           data.phone ?? null,
           data.email ?? null,
           data.default_shift ?? null,
         ],
       )) as unknown[];
-      return rows[0];
+      return {
+        ...(rows[0] as Record<string, unknown>),
+        tempPin,
+        mustChangePin: true,
+      };
     } catch (e) {
       // Round 18: traduz unique_violation do CPF (idx staff_cpf_unique
       // da migration 041) pra erro amigavel. PG codigo 23505.
@@ -631,6 +709,8 @@ export class StaffService {
       default_shift: string;
     }>,
   ) {
+    await this.assertOperationalStaff(id);
+
     const setClauses: string[] = [];
     const params: unknown[] = [];
     let idx = 1;
@@ -652,6 +732,7 @@ export class StaffService {
       }
       setClauses.push(`pin_hash = $${idx++}`);
       params.push(hashPin(data.pin));
+      setClauses.push('must_change_pin = true');
     }
     if (data.isActive !== undefined) {
       setClauses.push(`is_active = $${idx++}`);
@@ -692,11 +773,22 @@ export class StaffService {
     );
 
     if (!rows.length) throw new NotFoundException('Funcionario nao encontrado.');
+    if (data.role !== undefined || data.pin !== undefined || data.isActive !== undefined) {
+      await this.revokeSecuritySessions(id);
+    }
     return rows[0];
   }
 
   async delete(id: string) {
-    await this.tenantConn.query(`DELETE FROM staff WHERE id = $1`, [id]);
+    await this.assertOperationalStaff(id);
+    const deleted = unwrapRows<{ id: string }>(
+      await this.tenantConn.query(
+        `DELETE FROM staff WHERE id = $1 AND role <> 'owner' RETURNING id`,
+        [id],
+      ),
+    );
+    if (!deleted.length) throw new NotFoundException('Funcionario nao encontrado.');
+    await this.revokeSecuritySessions(id);
     return { deleted: true };
   }
 
@@ -716,7 +808,8 @@ export class StaffService {
     }
 
     const rows = (await this.tenantConn.query(
-      `SELECT pin_hash FROM staff WHERE id = $1 AND is_active = true`,
+      `SELECT pin_hash FROM staff
+        WHERE id = $1 AND is_active = true AND role <> 'owner'`,
       [id],
     )) as { pin_hash: string }[];
 
@@ -739,6 +832,7 @@ export class StaffService {
                 SET pin_hash = $1, updated_at = now()
               WHERE id = $2
                 AND is_active = true
+                AND role <> 'owner'
                 AND pin_hash NOT LIKE '$2%'`,
             [hashPin(pin), id],
           );

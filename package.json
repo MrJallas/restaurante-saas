@@ -25,6 +25,11 @@
   },
   "packageManager": "npm@9.8.1",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.19.0"
+  },
+  "dependencies": {
+    "@nestjs/platform-express": "11.1.28",
+    "@nestjs/platform-socket.io": "11.1.28",
+    "@nestjs/websockets": "11.1.28"
   }
 }

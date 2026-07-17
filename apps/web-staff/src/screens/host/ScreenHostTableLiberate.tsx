@@ -5,11 +5,11 @@
 // ScreenHostTableLiberate.
 
 import * as React from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn } from '../../components/waiter/Primitives';
-import { liberateTable } from '../../lib/api/host';
+import { liberateTable, listHostTables, listReservations, listWaitlist } from '../../lib/api/host';
 import { useStaffTheme } from '../../lib/theme';
 
 interface ScreenHostTableLiberateProps {
@@ -18,6 +18,8 @@ interface ScreenHostTableLiberateProps {
   capacity?: number;
   sector?: string;
   partySize?: number;
+  reservationId?: string;
+  waitlistId?: string;
   onBack?: () => void;
   onDone?: () => void;
 }
@@ -25,23 +27,83 @@ interface ScreenHostTableLiberateProps {
 export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = ({
   tenantSlug,
   tableNumber,
-  capacity = 4,
-  sector = 'Salão',
-  partySize: initialParty = capacity,
+  capacity,
+  sector,
+  partySize: initialParty,
+  reservationId,
+  waitlistId,
   onBack,
   onDone,
 }) => {
   const { dark } = useStaffTheme();
   const C = useG(dark);
-  const [partySize, setPartySize] = useState(initialParty);
+  const linkedSource = Boolean(reservationId || waitlistId);
+  const [resolvedCapacity, setResolvedCapacity] = useState<number | null>(capacity ?? null);
+  const [resolvedSector, setResolvedSector] = useState(sector ?? 'Salão');
+  const [sourceLabel, setSourceLabel] = useState<string | null>(null);
+  const [partySize, setPartySize] = useState(initialParty ?? 1);
+  const [contextLoading, setContextLoading] = useState(true);
+  const [contextError, setContextError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    let alive = true;
+    async function loadContext() {
+      setContextLoading(true);
+      setContextError(null);
+      try {
+        const tables = await listHostTables(tenantSlug);
+        const table = tables.find((row) => row.number === tableNumber);
+        if (!table) throw new Error('Mesa não encontrada.');
+
+        let sourceParty = initialParty ?? table.capacity;
+        let nextSourceLabel: string | null = null;
+        if (reservationId) {
+          const reservations = await listReservations(tenantSlug);
+          const reservation = reservations.find((row) => row.id === reservationId);
+          if (!reservation) throw new Error('Reserva não está mais disponível.');
+          sourceParty = reservation.party;
+          nextSourceLabel = `Reserva · ${reservation.name}`;
+        } else if (waitlistId) {
+          const waitlist = await listWaitlist(tenantSlug);
+          const entry = waitlist.find((row) => row.id === waitlistId);
+          if (!entry) throw new Error('Pessoa não está mais aguardando na fila.');
+          sourceParty = entry.party;
+          nextSourceLabel = `Fila · ${entry.name}`;
+        }
+
+        if (!alive) return;
+        setResolvedCapacity(table.capacity);
+        setResolvedSector(table.sector);
+        setPartySize(sourceParty);
+        setSourceLabel(nextSourceLabel);
+      } catch (loadError) {
+        if (alive) {
+          setContextError(
+            loadError instanceof Error ? loadError.message : 'Não foi possível carregar a mesa.',
+          );
+        }
+      } finally {
+        if (alive) setContextLoading(false);
+      }
+    }
+    void loadContext();
+    return () => {
+      alive = false;
+    };
+  }, [initialParty, reservationId, tableNumber, tenantSlug, waitlistId]);
+
   async function liberate() {
+    if (contextLoading || contextError || resolvedCapacity == null) return;
     setSubmitting(true);
     setError(null);
     try {
-      await liberateTable(tenantSlug, tableNumber, { partySize });
+      await liberateTable(tenantSlug, tableNumber, {
+        partySize,
+        reservationId,
+        waitlistId,
+      });
       onDone?.();
     } catch (e: unknown) {
       setError((e as Error)?.message ?? 'Erro ao liberar mesa');
@@ -94,7 +156,9 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
             fontWeight: 700,
           }}
         >
-          {sector} · {capacity} {capacity === 1 ? 'lugar' : 'lugares'}
+          {contextLoading
+            ? 'Carregando mesa…'
+            : `${resolvedSector} · ${resolvedCapacity ?? '—'} ${resolvedCapacity === 1 ? 'lugar' : 'lugares'}`}
         </div>
         <div
           style={{
@@ -105,7 +169,7 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
             letterSpacing: -0.5,
           }}
         >
-          Liberar pra novo grupo?
+          {sourceLabel ? `Liberar para ${sourceLabel}?` : 'Liberar pra novo grupo?'}
         </div>
         <div
           style={{
@@ -138,33 +202,36 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
             style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
+              justifyContent: linkedSource ? 'center' : 'space-between',
               border: `1.5px solid ${C.ink}`,
               borderRadius: 14,
               padding: '6px 8px',
               background: C.bg,
+              minHeight: 58,
             }}
           >
-            <button
-              type="button"
-              aria-label="Diminuir"
-              onClick={() => setPartySize((n) => Math.max(1, n - 1))}
-              style={{
-                all: 'unset',
-                cursor: 'pointer',
-                boxSizing: 'border-box',
-                width: 44,
-                height: 44,
-                borderRadius: 10,
-                background: C.surface,
-                color: C.ink,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {Icon.minus(20)}
-            </button>
+            {!linkedSource && (
+              <button
+                type="button"
+                aria-label="Diminuir"
+                onClick={() => setPartySize((n) => Math.max(1, n - 1))}
+                style={{
+                  all: 'unset',
+                  cursor: 'pointer',
+                  boxSizing: 'border-box',
+                  width: 44,
+                  height: 44,
+                  borderRadius: 10,
+                  background: C.surface,
+                  color: C.ink,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {Icon.minus(20)}
+              </button>
+            )}
             <div
               style={{
                 fontSize: 32,
@@ -177,30 +244,37 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
             >
               {partySize}
             </div>
-            <button
-              type="button"
-              aria-label="Aumentar"
-              onClick={() => setPartySize((n) => Math.min(capacity * 2, n + 1))}
-              style={{
-                all: 'unset',
-                cursor: 'pointer',
-                boxSizing: 'border-box',
-                width: 44,
-                height: 44,
-                borderRadius: 10,
-                background: C.surface,
-                color: C.ink,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {Icon.plus(20)}
-            </button>
+            {!linkedSource && (
+              <button
+                type="button"
+                aria-label="Aumentar"
+                onClick={() => setPartySize((n) => Math.min((resolvedCapacity ?? 1) * 2, n + 1))}
+                style={{
+                  all: 'unset',
+                  cursor: 'pointer',
+                  boxSizing: 'border-box',
+                  width: 44,
+                  height: 44,
+                  borderRadius: 10,
+                  background: C.surface,
+                  color: C.ink,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {Icon.plus(20)}
+              </button>
+            )}
           </div>
+          {linkedSource && sourceLabel && (
+            <div style={{ marginTop: 7, color: C.faint, fontSize: 11, textAlign: 'center' }}>
+              Tamanho confirmado pela origem; altere a reserva/fila para corrigir.
+            </div>
+          )}
         </div>
 
-        {error && (
+        {(contextError || error) && (
           <div
             role="alert"
             style={{
@@ -213,7 +287,7 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
               fontWeight: 600,
             }}
           >
-            {error}
+            {contextError ?? error}
           </div>
         )}
       </div>
@@ -225,7 +299,13 @@ export const ScreenHostTableLiberate: React.FC<ScreenHostTableLiberateProps> = (
           background: C.bg,
         }}
       >
-        <GButton kind="primary" full dark={dark} onClick={liberate} disabled={submitting}>
+        <GButton
+          kind="primary"
+          full
+          dark={dark}
+          onClick={liberate}
+          disabled={submitting || contextLoading || !!contextError}
+        >
           {submitting ? 'Liberando...' : 'Liberar mesa'}
         </GButton>
       </div>

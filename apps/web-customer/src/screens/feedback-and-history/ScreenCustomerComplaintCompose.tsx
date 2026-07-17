@@ -9,6 +9,7 @@ import { useRequireCustomerId } from '../../hooks/useRequireCustomerId';
 import { AppShell } from '../../components/layout/AppShell';
 import { PillButton } from '../../components/ui/PillButton';
 import type { ComplaintProblemType } from '@restaurant/shared-types';
+import { COMPLAINT_TEAM_COPY } from './complaintTeamCopy';
 
 interface ScreenCustomerComplaintComposeProps {
   slug: string;
@@ -73,9 +74,6 @@ export function ScreenCustomerComplaintCompose({
         customerId: session.customerId,
         visitId: session.visitId ?? undefined,
         problemType,
-        // shared-type calls it `description`; our composer surface uses
-        // `text` (the BE field name). The helper merges the chip label.
-        description: text.trim(),
         text: text.trim(),
       });
       // Cache the freshly-created complaint so the waiting screen has data
@@ -103,11 +101,11 @@ export function ScreenCustomerComplaintCompose({
       showHamburger={false}
     >
       <div className="flex flex-1 flex-col px-[22px] pb-10 pt-3">
-        {/* Renata online indicator (per spec) */}
+        {/* Sem presença em tempo real: identifica o canal, não inventa online. */}
         <div className="mb-4 flex items-center gap-2 self-start rounded-full border border-border-soft bg-surface px-3 py-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-success" />
+          <span className="h-1.5 w-1.5 rounded-full bg-mute" />
           <span className="text-[10px] font-semibold uppercase tracking-[1.2px] text-mute">
-            Renata · online agora
+            {COMPLAINT_TEAM_COPY.badge}
           </span>
         </div>
 
@@ -115,13 +113,13 @@ export function ScreenCustomerComplaintCompose({
           Reportar um problema
         </h1>
         <p className="mb-5 text-[14px] leading-[1.45] text-mute">
-          Conta o que aconteceu · vou passar pra Renata. Costuma responder em ~2 min.
+          {COMPLAINT_TEAM_COPY.composeDescription}
         </p>
 
         <div className="mb-2 text-[10px] font-semibold uppercase tracking-[1.5px] text-mute">
           Tipo do problema
         </div>
-        <div className="mb-5 flex flex-wrap gap-2">
+        <div className="mb-5 flex flex-wrap gap-2" role="group" aria-label="Tipo do problema">
           {PROBLEM_CHIPS.map((chip) => {
             const active = problemType === chip.value;
             return (
@@ -130,7 +128,7 @@ export function ScreenCustomerComplaintCompose({
                 type="button"
                 onClick={() => setProblemType(chip.value)}
                 aria-pressed={active}
-                className={`inline-flex items-center rounded-full px-3.5 py-2 text-[13px] font-medium tracking-[-0.005em] transition-colors duration-100 ${
+                className={`inline-flex min-h-11 items-center rounded-full px-3.5 py-2 text-[13px] font-medium tracking-[-0.005em] transition-colors duration-100 ${
                   active
                     ? 'border-[1.2px] border-ink bg-ink text-white'
                     : 'border-[1.2px] border-border-soft bg-bg text-ink active:bg-surface'
@@ -170,7 +168,7 @@ export function ScreenCustomerComplaintCompose({
 
         <div className="mt-6 flex flex-col gap-2.5">
           <PillButton variant="filled" fullWidth disabled={!canSubmit} onClick={handleSubmit}>
-            {submitting ? 'Enviando…' : 'Enviar pra Renata'}
+            {submitting ? 'Enviando…' : COMPLAINT_TEAM_COPY.submit}
           </PillButton>
           <PillButton
             variant="outline"

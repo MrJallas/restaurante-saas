@@ -2,6 +2,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import type { CustomerLocationCheck, CustomerLocationSignal } from '@restaurant/shared-types';
 
 export interface GeofenceConfig {
+  enabled: boolean;
   latitude: number | null;
   longitude: number | null;
   radiusMeters: number;
@@ -52,6 +53,16 @@ export function evaluateCustomerGeofence(
   location: CustomerLocationSignal | null | undefined,
   config: GeofenceConfig,
 ): CustomerLocationCheck {
+  // O dono pode desligar a exigência presencial. Nesse estado não pedimos
+  // permissão de localização nem fabricamos uma aprovação geográfica.
+  if (!config.enabled) {
+    return {
+      status: location?.status ?? 'unknown',
+      distanceMeters: null,
+      insideRadius: null,
+      radiusMeters: null,
+    };
+  }
   const coords = assertUsableCustomerLocation(location);
   if (config.latitude == null || config.longitude == null) {
     return {

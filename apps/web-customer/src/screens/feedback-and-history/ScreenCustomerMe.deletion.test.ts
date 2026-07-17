@@ -10,7 +10,9 @@ describe('describeDeletionResult (bug: LGPD apagar conversas ignora deletedCount
   });
 
   it('empty-state só quando REALMENTE não havia nada (count = 0)', () => {
-    expect(describeDeletionResult('staff', 0)).toBe('Nenhuma mensagem com a equipe por aqui ainda.');
+    expect(describeDeletionResult('staff', 0)).toBe(
+      'Nenhuma mensagem com a equipe por aqui ainda.',
+    );
     expect(describeDeletionResult('ai', 0)).toBe('Nenhuma conversa com IA por aqui ainda.');
     expect(describeDeletionResult('all', 0)).toBe('Nenhuma mensagem por aqui ainda.');
   });

@@ -8,9 +8,18 @@ import { useSession } from '../../../../hooks/useSession';
 import { AppShell } from '../../../../components/layout/AppShell';
 import { PillButton } from '../../../../components/ui/PillButton';
 import { buildEnviadoQuery } from './enviadoQuery';
+import { runOrderAction, type OrderActionResult } from './orderAction';
 
 const TOTAL_SECONDS = 15;
 const REVEAL_INTERVAL_MS = 2200;
+
+function actionFailureCopy(action: 'confirmar' | 'cancelar', result: OrderActionResult): string {
+  const failed = result.failedIds.length;
+  if (result.succeededIds.length > 0) {
+    return `A ação chegou a ${result.succeededIds.length} pedido(s), mas falhou em ${failed}. Tente ${action} novamente.`;
+  }
+  return `Não consegui ${action} o pedido agora. Verifique sua conexão e tente novamente.`;
+}
 
 export default function PedidoConfirmandoPage() {
   const params = useParams();
@@ -29,7 +38,9 @@ export default function PedidoConfirmandoPage() {
   const [seconds, setSeconds] = useState(TOTAL_SECONDS);
   const [reveal, setReveal] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const autoSentRef = useRef(false);
+  const preserveDraftOnAbandonRef = useRef(false);
 
   const pct = ((TOTAL_SECONDS - seconds) / TOTAL_SECONDS) * 100;
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
@@ -57,12 +68,22 @@ export default function PedidoConfirmandoPage() {
   }, [seconds]);
 
   const confirmNow = useCallback(async () => {
-    if (busy || orderIds.length === 0) return;
+    if (busy) return;
+    if (orderIds.length === 0) {
+      preserveDraftOnAbandonRef.current = true;
+      setActionError('Não encontrei o pedido para confirmar. Volte ao resumo e tente novamente.');
+      return;
+    }
+    preserveDraftOnAbandonRef.current = true;
     setBusy(true);
-    try {
-      await Promise.all(orderIds.map((id) => apiPatch(`/${slug}/orders/${id}/confirm`, {})));
-    } catch {
-      /* backend may auto-confirm */
+    setActionError(null);
+    const result = await runOrderAction(orderIds, (id) =>
+      apiPatch(`/${slug}/orders/${id}/confirm`, {}),
+    );
+    if (result.failedIds.length > 0) {
+      setActionError(actionFailureCopy('confirmar', result));
+      setBusy(false);
+      return;
     }
     clear();
     // Carrega TODOS os ids pra tela de sucesso (carrinho misto = 2+ orders);
@@ -71,12 +92,22 @@ export default function PedidoConfirmandoPage() {
   }, [busy, clear, orderIds, router, slug]);
 
   const cancelEdit = useCallback(async () => {
-    if (busy || orderIds.length === 0) return;
+    if (busy) return;
+    if (orderIds.length === 0) {
+      preserveDraftOnAbandonRef.current = true;
+      setActionError('Não encontrei o pedido para cancelar. Tente novamente.');
+      return;
+    }
+    preserveDraftOnAbandonRef.current = true;
     setBusy(true);
-    try {
-      await Promise.all(orderIds.map((id) => apiPatch(`/${slug}/orders/${id}/cancel`, {})));
-    } catch {
-      /* ignore */
+    setActionError(null);
+    const result = await runOrderAction(orderIds, (id) =>
+      apiPatch(`/${slug}/orders/${id}/cancel`, {}),
+    );
+    if (result.failedIds.length > 0) {
+      setActionError(actionFailureCopy('cancelar', result));
+      setBusy(false);
+      return;
     }
     router.replace(`/${slug}/pedido/revisar`);
   }, [busy, orderIds, router, slug]);
@@ -100,7 +131,9 @@ export default function PedidoConfirmandoPage() {
   // cobrança é a idem-key estável por hash do draft (fix (a) em orderPayload);
   // isto é só defesa em profundidade.
   useEffect(() => {
-    const onAbandon = () => clear();
+    const onAbandon = () => {
+      if (!preserveDraftOnAbandonRef.current) clear();
+    };
     window.addEventListener('pagehide', onAbandon);
     return () => window.removeEventListener('pagehide', onAbandon);
   }, [clear]);
@@ -249,13 +282,20 @@ export default function PedidoConfirmandoPage() {
           )}
         </div>
 
-        <div className="flex shrink-0 gap-2.5 px-[22px] pb-safe pb-6 pt-2.5">
-          <PillButton onClick={cancelEdit} disabled={busy} className="flex-1">
-            ← Editar
-          </PillButton>
-          <PillButton variant="filled" onClick={confirmNow} disabled={busy} className="flex-[2]">
-            Confirmar agora
-          </PillButton>
+        <div className="shrink-0 px-[22px] pb-safe pb-6 pt-2.5">
+          {actionError && (
+            <div role="alert" className="mb-2 text-center text-[12px] text-red-600">
+              {actionError}
+            </div>
+          )}
+          <div className="flex gap-2.5">
+            <PillButton onClick={cancelEdit} disabled={busy} className="flex-1">
+              ← Editar
+            </PillButton>
+            <PillButton variant="filled" onClick={confirmNow} disabled={busy} className="flex-[2]">
+              {busy ? 'Processando…' : 'Confirmar agora'}
+            </PillButton>
+          </div>
         </div>
       </div>
     </AppShell>

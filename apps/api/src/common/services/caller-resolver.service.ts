@@ -158,6 +158,22 @@ export class CallerResolverService {
     return staffId;
   }
 
+  /** Identidade + papel atuais, derivados do caller e reconferidos no tenant. */
+  async requireActiveStaffIdentity(req: Request): Promise<{ staffId: string; role: string }> {
+    const staffId = this.requireStaffId(req);
+    const rows = (await this.tenantConn.query(
+      `SELECT role FROM staff WHERE id = $1 AND is_active = true LIMIT 1`,
+      [staffId],
+    )) as Array<{ role: string }>;
+    if (!rows[0]?.role) {
+      throw new HttpException(
+        authErrorResponse('AUTH_INVALID', 'Sessão expirada'),
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    return { staffId, role: rows[0].role };
+  }
+
   /** Variante non-throw — retorna null se header ausente/inválido. */
   tryGetStaffId(req: Request): string | null {
     try {

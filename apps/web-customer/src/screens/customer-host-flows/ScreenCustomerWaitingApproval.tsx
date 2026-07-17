@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { PillButton } from '../../components/ui/PillButton';
 import { useSession } from '../../hooks/useSession';
@@ -8,12 +8,21 @@ import { useCustomerHostEvents } from '../../hooks/useCustomerHostEvents';
 import { ScreenCustomerMergeCooldown } from './ScreenCustomerMergeCooldown';
 import {
   cancelLateArrivalRequest,
+  getLateArrivalRequestStatus,
+  getTableMergeRequestStatus,
   rejectTableMerge,
   requestHostAssist,
 } from '../../lib/api/customer-host';
+import { ApiRequestError } from '../../lib/api';
+import {
+  approvalSecondsLeft,
+  approvalUiState,
+  mergeApprovalUiState,
+  type ApprovalUiState,
+} from '../../lib/waiting-approval-state';
 
 export type WaitingMode = 'late-arrival' | 'merge-target' | 'merge-origin';
-export type WaitingState = 'waiting' | 'approved' | 'rejected' | 'expired' | 'cooldown';
+export type WaitingState = ApprovalUiState | 'cooldown';
 
 interface ScreenCustomerWaitingApprovalProps {
   slug: string;
@@ -76,9 +85,19 @@ export function ScreenCustomerWaitingApproval({
   const router = useRouter();
   const { sessionId, customerId } = useSession();
 
-  const [state, setState] = useState<WaitingState>('waiting');
+  // Request persistido começa em "checking": nunca exibimos "aguardando" com
+  // base só na query string. System A (participant pending) não tem requestId
+  // e continua autoritativo pelo wrapper/poll próprio via onCancel.
+  const [state, setState] = useState<WaitingState>(() =>
+    requestId ? 'checking' : onCancel ? 'waiting' : 'unavailable',
+  );
   const [escalated, setEscalated] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [authoritativeExpiresAt, setAuthoritativeExpiresAt] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusBusy, setStatusBusy] = useState(false);
+  const stateRef = useRef<WaitingState>(state);
+  stateRef.current = state;
   const [cooldown, setCooldown] = useState<{
     cooldownEndsAt: string;
     targetTableNumber?: number | null;
@@ -89,6 +108,62 @@ export function ScreenCustomerWaitingApproval({
   // só router.back() (o request seguia pending e expirava como timeout).
   const [hostAssist, setHostAssist] = useState<'idle' | 'sent' | 'error'>('idle');
   const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  const refreshStatus = useCallback(async () => {
+    if (!requestId) {
+      if (!onCancel) {
+        setStatusError('Este link não tem um pedido para acompanhar.');
+        setState('unavailable');
+      }
+      return;
+    }
+    setStatusBusy(true);
+    try {
+      const request =
+        mode === 'late-arrival'
+          ? await getLateArrivalRequestStatus(requestId, { slug })
+          : await getTableMergeRequestStatus(requestId, { slug });
+      setAuthoritativeExpiresAt(request.expiresAt ?? null);
+      setStatusError(null);
+      const incoming = approvalUiState(request.status);
+      setState((current) =>
+        current === 'cooldown' ? current : mergeApprovalUiState(current, incoming),
+      );
+    } catch (error) {
+      const message =
+        error instanceof ApiRequestError && error.statusCode === 401
+          ? 'Sua identificação expirou. Escaneie o QR da mesa novamente.'
+          : error instanceof ApiRequestError && error.statusCode === 404
+            ? 'Este pedido não existe, não pertence a esta mesa ou já não pode ser acompanhado.'
+            : 'Não consegui confirmar o status agora. Verifique sua conexão e tente de novo.';
+      setStatusError(message);
+      // Antes da primeira resposta não há estado legítimo para preservar. Se
+      // já tínhamos pending confirmado, mantemos só até o TTL autoritativo;
+      // ao zerar, o countdown effect troca para checking/unavailable.
+      if (stateRef.current === 'checking' || stateRef.current === 'unavailable') {
+        setState('unavailable');
+      }
+    } finally {
+      setStatusBusy(false);
+    }
+  }, [mode, onCancel, requestId, slug]);
+
+  // REST é a fonte de verdade; WS só reduz latência. Consulta imediatamente,
+  // depois em polling leve e sempre que a aba volta/recupera conexão.
+  useEffect(() => {
+    if (!requestId) return;
+    void refreshStatus();
+    const interval = window.setInterval(() => void refreshStatus(), 5_000);
+    const onFocus = () => void refreshStatus();
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onFocus);
+    };
+  }, [requestId, refreshStatus]);
 
   const callHostToTable = async () => {
     try {
@@ -106,11 +181,12 @@ export function ScreenCustomerWaitingApproval({
     if (onCancel) {
       if (cancelBusy) return;
       setCancelBusy(true);
+      setCancelError(null);
       try {
         await onCancel();
       } catch {
         setCancelBusy(false);
-        setHostAssist('error');
+        setCancelError('Não consegui cancelar agora — tente de novo.');
       }
       return;
     }
@@ -122,6 +198,7 @@ export function ScreenCustomerWaitingApproval({
     }
     if (cancelBusy) return;
     setCancelBusy(true);
+    setCancelError(null);
     try {
       if (mode === 'late-arrival') {
         // P1 (re-scan): cancelamento REAL do pedido de join pelo PRÓPRIO
@@ -142,31 +219,33 @@ export function ScreenCustomerWaitingApproval({
     } catch {
       // Sem desfecho confirmado → mantém a tela; o WS autoritativo decide.
       setCancelBusy(false);
-      setHostAssist('error');
+      setCancelError('Não consegui cancelar agora — tente de novo.');
     }
   };
 
   // ─── Countdown ─────────────────────────────────────────────────────────
-  // Keep recomputing seconds left until the deadline; fall back to "60 s"
-  // when no expiresAt is provided (rare, but defensive against API hiccups).
+  // Só usa prazo confirmado pelo endpoint quando existe requestId. A query
+  // expiresAt é mantida exclusivamente pro System A inline sem recurso REST.
   useEffect(() => {
-    if (!expiresAt) {
+    const deadline = requestId ? authoritativeExpiresAt : expiresAt;
+    if (!deadline || state !== 'waiting') {
       setSecondsLeft(null);
       return;
     }
-    const target = new Date(expiresAt).getTime();
     const tick = () => {
-      const remaining = Math.max(0, Math.ceil((target - Date.now()) / 1000));
+      const remaining = approvalSecondsLeft(deadline);
       setSecondsLeft(remaining);
-      if (remaining === 0 && state === 'waiting') {
-        // Soft expiration on the client. The WS event is authoritative,
-        // so we wait for it; until then the eyebrow already reads "0 s".
+      if (remaining === 0 && requestId) {
+        // Não deixamos "aguardando · 0 s". Ao vencer, escondemos o estado
+        // otimista e revalidamos imediatamente no servidor.
+        setState('checking');
+        void refreshStatus();
       }
     };
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  }, [expiresAt, state]);
+  }, [authoritativeExpiresAt, expiresAt, refreshStatus, requestId, state]);
 
   // ─── WS subscription ───────────────────────────────────────────────────
   useCustomerHostEvents({
@@ -177,18 +256,21 @@ export function ScreenCustomerWaitingApproval({
         case 'late_arrival.approved': {
           if (mode !== 'late-arrival') return;
           if (requestId && event.payload.requestId !== requestId) return;
+          setStatusError(null);
           setState('approved');
           break;
         }
         case 'late_arrival.rejected': {
           if (mode !== 'late-arrival') return;
           if (requestId && event.payload.requestId !== requestId) return;
+          setStatusError(null);
           setState(event.payload.reason === 'host_timeout' ? 'expired' : 'rejected');
           break;
         }
         case 'late_arrival.expired': {
           if (mode !== 'late-arrival') return;
           if (requestId && event.payload.requestId !== requestId) return;
+          setStatusError(null);
           setState('expired');
           break;
         }
@@ -198,6 +280,7 @@ export function ScreenCustomerWaitingApproval({
           // We only flip to "approved" on `side==='both'` — single-side
           // approvals are intermediate (the other side is still deciding).
           if (event.payload.side === 'both') {
+            setStatusError(null);
             setState('approved');
           }
           break;
@@ -205,6 +288,7 @@ export function ScreenCustomerWaitingApproval({
         case 'table_merge.rejected': {
           if (mode === 'late-arrival') return;
           if (requestId && event.payload.requestId !== requestId) return;
+          setStatusError(null);
           setState(event.payload.rejectedBy === 'timeout' ? 'expired' : 'rejected');
           break;
         }
@@ -241,13 +325,17 @@ export function ScreenCustomerWaitingApproval({
   useEffect(() => {
     if (state !== 'approved') return;
     const id = window.setTimeout(() => {
-      router.push(approvedRedirectTo ?? `/${slug}`);
+      // replace evita que "voltar" reabra uma espera já decidida.
+      router.replace(approvedRedirectTo ?? `/${slug}`);
     }, 1100);
     return () => window.clearTimeout(id);
   }, [state, slug, router, approvedRedirectTo]);
 
   // ─── Copy by mode + state ──────────────────────────────────────────────
   const eyebrow = useMemo(() => {
+    if (state === 'checking') return 'Conferindo status do pedido';
+    if (state === 'unavailable') return 'Status não confirmado';
+    if (state === 'cancelled') return 'Pedido cancelado';
     if (state === 'approved') {
       if (mode === 'late-arrival') return 'Você tá na mesa';
       return 'Mesas juntadas';
@@ -273,6 +361,9 @@ export function ScreenCustomerWaitingApproval({
   }, [state, escalated, secondsLeft, mode]);
 
   const hero = useMemo(() => {
+    if (state === 'checking') return 'Só um instante';
+    if (state === 'unavailable') return 'Não consegui confirmar';
+    if (state === 'cancelled') return 'Pedido cancelado';
     if (state === 'approved') return mode === 'late-arrival' ? 'Aprovado!' : 'Mesas juntadas!';
     if (state === 'expired')
       return mode === 'late-arrival' ? 'Sem resposta da mesa' : 'Sem resposta da outra mesa';
@@ -282,6 +373,15 @@ export function ScreenCustomerWaitingApproval({
   }, [state, mode]);
 
   const sub = useMemo(() => {
+    if (state === 'checking') {
+      return 'Estamos consultando o restaurante para mostrar a decisão mais recente.';
+    }
+    if (state === 'unavailable') {
+      return statusError ?? 'Verifique sua conexão e tente consultar de novo.';
+    }
+    if (state === 'cancelled') {
+      return 'O pedido foi cancelado e não está mais aguardando decisão da mesa.';
+    }
     if (state === 'approved') {
       return mode === 'late-arrival'
         ? 'Te conectando ao chat da mesa em 1 s…'
@@ -300,12 +400,15 @@ export function ScreenCustomerWaitingApproval({
     return mode === 'late-arrival'
       ? `${hostName ?? 'O host da mesa'} foi avisado · ele tá decidindo se você pode entrar.`
       : 'Mandamos o pedido pra outra mesa · só falta eles confirmarem.';
-  }, [state, mode, hostName]);
+  }, [state, mode, hostName, statusError]);
 
   const eyebrowColor =
     state === 'approved'
       ? 'text-success'
-      : state === 'rejected' || state === 'expired'
+      : state === 'rejected' ||
+          state === 'expired' ||
+          state === 'cancelled' ||
+          state === 'unavailable'
         ? 'text-mute'
         : 'text-mute';
 
@@ -336,7 +439,7 @@ export function ScreenCustomerWaitingApproval({
           <span
             className={`font-mono text-[10px] font-bold uppercase tracking-[1.2px] ${eyebrowColor}`}
           >
-            {state === 'waiting' && (
+            {(state === 'waiting' || state === 'checking') && (
               <span className="mr-2 inline-block h-1.5 w-1.5 animate-bounce-dot rounded-full bg-ink align-middle" />
             )}
             {eyebrow}
@@ -351,9 +454,12 @@ export function ScreenCustomerWaitingApproval({
           </p>
 
           <div className="my-8 flex h-24 w-24 items-center justify-center">
-            {state === 'waiting' && <Pulse />}
+            {(state === 'waiting' || state === 'checking') && <Pulse />}
             {state === 'approved' && <CheckMark />}
-            {(state === 'rejected' || state === 'expired') && <Sleep />}
+            {(state === 'rejected' ||
+              state === 'expired' ||
+              state === 'cancelled' ||
+              state === 'unavailable') && <Sleep />}
           </div>
 
           {/* Pill ladder · indica step / redirecionamento */}
@@ -376,12 +482,56 @@ export function ScreenCustomerWaitingApproval({
             </div>
           )}
 
+          {state === 'unavailable' && (
+            <div className="mt-7 flex w-full flex-col gap-2.5">
+              <PillButton
+                variant="filled"
+                fullWidth
+                onClick={() => void refreshStatus()}
+                disabled={statusBusy || !requestId}
+              >
+                {statusBusy ? 'Conferindo…' : 'Tentar novamente'}
+              </PillButton>
+              <PillButton variant="outline" fullWidth onClick={() => router.replace(`/${slug}`)}>
+                Voltar ao restaurante
+              </PillButton>
+            </div>
+          )}
+
+          {state === 'cancelled' && (
+            <PillButton
+              variant="filled"
+              fullWidth
+              onClick={() => router.replace(`/${slug}/assistente`)}
+              className="mt-7"
+            >
+              Continuar no restaurante
+            </PillButton>
+          )}
+
           {/* CTAs · variam por estado · agora colados no bloco central
               em vez de empurrados ao bottom (V20 canon). */}
           {state === 'waiting' && (
-            <PillButton variant="outline" onClick={cancelMergeRequest} className="mt-7">
-              {cancelBusy ? 'Cancelando…' : 'Cancelar pedido'}
-            </PillButton>
+            <>
+              <PillButton
+                variant="outline"
+                onClick={cancelMergeRequest}
+                disabled={cancelBusy}
+                className="mt-7"
+              >
+                {cancelBusy ? 'Cancelando…' : 'Cancelar pedido'}
+              </PillButton>
+              {cancelError && (
+                <p role="alert" className="mt-3 text-[12px] font-medium text-mute">
+                  {cancelError}
+                </p>
+              )}
+              {statusError && (
+                <p role="status" className="mt-3 max-w-[300px] text-[12px] font-medium text-mute">
+                  Último status confirmado mantido. {statusError}
+                </p>
+              )}
+            </>
           )}
 
           {(state === 'rejected' || state === 'expired') && (

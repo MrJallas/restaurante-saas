@@ -6,7 +6,7 @@ import { CpfInput } from '../../components/welcome/CpfInput';
 import { PillButton } from '../../components/ui/PillButton';
 import { useSession } from '../../hooks/useSession';
 import { cleanCpf, validateCpf } from '../../lib/cpf';
-import { toInternalPath } from '../../lib/safe-internal-path';
+import { toTenantInternalPath } from '../../lib/safe-internal-path';
 import { identifyCustomer, createLateArrivalRequest } from '../../lib/api/customer-host';
 import type { CustomerIdentifyResponse } from '@restaurant/shared-types';
 
@@ -33,9 +33,9 @@ interface ScreenCustomerIdentifyBeforeJoinProps {
   slug: string;
   /**
    * Which flow this gate is serving. Defaults to `'gate'` — the common,
-   * safe case (prove CPF, then continue). Only `'late-arrival'` (or a
-   * `redirectTo` that explicitly points at a waiting-approval path) opts into
-   * creating the late_arrival_request + waiting-approval routing.
+   * safe case (prove CPF, then continue). Only the explicit
+   * `'late-arrival'` intent may create a late_arrival_request. A redirect is
+   * data, never an authorization/intention signal.
    */
   intent?: IdentifyIntent;
   /**
@@ -94,13 +94,13 @@ export function ScreenCustomerIdentifyBeforeJoin({
 
   // Distingue o late-arrival REAL do gate-de-CPF. Só entra no fluxo
   // late-arrival (cria request + waiting-approval) quando há sinal EXPLÍCITO:
-  // `intent==='late-arrival'` OU um `redirectTo` que aponta de propósito pra
-  // uma waiting-approval. Qualquer outra chegada (o caso comum: cliente
+  // `intent==='late-arrival'`. Nunca inferimos intenção de uma URL recebida
+  // por query string: além de confundir jornadas, isso transformava
+  // `javascript:...//waiting-approval` em sink XSS no router.push. Qualquer
+  // outra chegada (o caso comum: cliente
   // sentado que só precisa provar CPF) é tratada como `gate` — a intenção
   // default e segura.
-  const isLateArrival =
-    intent === 'late-arrival' ||
-    (!!redirectTo && /(?:^|\/)waiting-approval(?:\/|\?|$)/.test(redirectTo));
+  const isLateArrival = intent === 'late-arrival';
 
   const [name, setName] = useState('');
   const [cpf, setCpf] = useState('');
@@ -158,6 +158,7 @@ export function ScreenCustomerIdentifyBeforeJoin({
         });
 
         destination = buildWaitingUrl({
+          slug,
           base: redirectTo ?? `/${slug}/waiting-approval`,
           requestId: request.id,
           expiresAt: request.expiresAt,
@@ -313,18 +314,27 @@ export function ScreenCustomerIdentifyBeforeJoin({
  * `late_arrival.*` e usa o `expiresAt` pra dirigir o countdown. Sem esses
  * params a tela ficava presa em "aguardando host" pra sempre (P1-K).
  */
-function buildWaitingUrl(input: {
+export function buildWaitingUrl(input: {
+  slug: string;
   base: string;
   requestId: string;
   expiresAt?: string | null;
   hostName?: string | null;
 }): string {
-  const [path, existingQuery = ''] = input.base.split('?');
-  const params = new URLSearchParams(existingQuery);
-  params.set('requestId', input.requestId);
-  if (input.expiresAt) params.set('expiresAt', input.expiresAt);
-  if (input.hostName) params.set('hostName', input.hostName);
-  return `${path}?${params.toString()}`;
+  const fallback = `/${input.slug}/waiting-approval`;
+  const internal = toTenantInternalPath(input.base, input.slug);
+  const parsed = new URL(internal ?? fallback, 'https://internal.invalid');
+  // Late-arrival sempre termina na landing específica. Mesmo um path interno
+  // válido não pode transformar este fluxo em redirect arbitrário.
+  if (parsed.pathname !== fallback) {
+    parsed.pathname = fallback;
+    parsed.search = '';
+    parsed.hash = '';
+  }
+  parsed.searchParams.set('requestId', input.requestId);
+  if (input.expiresAt) parsed.searchParams.set('expiresAt', input.expiresAt);
+  if (input.hostName) parsed.searchParams.set('hostName', input.hostName);
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
 }
 
 /**
@@ -348,11 +358,10 @@ function resolveGateDestination(input: {
   // Path absoluto → só se resolver na MESMA origin. Fecha open-redirect POR
   // CONSTRUÇÃO (via toInternalPath): `//host`, `/\host`, `\/host`, `http(s)://`
   // — a classe inteira — caem no fallback slug home. Não é denylist de padrões.
-  if (raw.startsWith('/')) {
-    return toInternalPath(raw) ?? `/${input.slug}`;
-  }
+  if (raw.startsWith('/')) return toTenantInternalPath(raw, input.slug) ?? `/${input.slug}`;
   // Segmento relativo → prefixa o slug (sempre same-origin por construção).
-  return `/${input.slug}/${raw.replace(/^\/+/, '')}`;
+  const relative = `/${input.slug}/${raw.replace(/^\/+/, '')}`;
+  return toTenantInternalPath(relative, input.slug) ?? `/${input.slug}`;
 }
 
 interface FieldShellProps {

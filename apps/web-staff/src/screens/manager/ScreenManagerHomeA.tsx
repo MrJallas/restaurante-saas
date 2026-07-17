@@ -31,7 +31,15 @@ import {
   type InProgressKind,
   type InProgressState,
 } from '../../components/manager';
-import { manager, staffRosterApi, teamKpisApi } from '../../lib/api/manager';
+import { OperationalErrorBanner } from '../../components/OperationalErrorBanner';
+import {
+  manager,
+  staffRosterApi,
+  teamKpisApi,
+  type AlertActionDescriptor,
+} from '../../lib/api/manager';
+import { normalizeAlertActions, resolveManagerAlertRoute } from '../../lib/alert-actions';
+import { isAuthoritativeEmpty, type OperationalLoadState } from '../../lib/operational-error';
 import { listReservations, type ReservationEntry } from '../../lib/api/host';
 import { useManagerEvents } from '../../hooks/useManagerEvents';
 import type { ComplaintDto } from '@restaurant/shared-types';
@@ -48,7 +56,7 @@ interface HomeAlert {
   msg: string;
   sub: string;
   ts: string;
-  actions: string[];
+  actions: AlertActionDescriptor[];
 }
 
 function homeRelativeTs(iso: string): string {
@@ -138,6 +146,11 @@ export function ScreenManagerHomeA({
   const [, setRefreshTick] = useState(0);
   const [alerts, setAlerts] = useState<HomeAlert[]>([]);
   const [reservations, setReservations] = useState<ReservationEntry[]>([]);
+  const [alertsState, setAlertsState] = useState<OperationalLoadState>('loading');
+  const [inProgressLoadState, setInProgressLoadState] = useState<OperationalLoadState>('loading');
+  const [teamState, setTeamState] = useState<OperationalLoadState>('loading');
+  const [reservationsState, setReservationsState] = useState<OperationalLoadState>('loading');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let stop = false;
@@ -152,132 +165,157 @@ export function ScreenManagerHomeA({
             msg: row.title,
             sub: row.sub ?? '',
             ts: homeRelativeTs(row.created_at),
-            actions: (row.actions ?? []).map((a) => a.label).slice(0, 2),
+            actions: normalizeAlertActions(row.actions),
           })),
         );
+        setAlertsState('ready');
       })
-      .catch(() => {
-        /* sem servidor → card fica no empty-state, sem inventar alerta */
+      .catch((error) => {
+        console.error('[manager-home] alerts load failed', error);
+        if (!stop) setAlertsState('error');
       });
     return () => {
       stop = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantSlug]);
+  }, [api, tenantSlug, reloadKey]);
 
   const dismissAlert = (id: string) => {
     const snapshot = alerts;
     setAlerts((prev) => prev.filter((a) => a.id !== id));
-    api.alerts.dismiss(id).catch(() => setAlerts(snapshot));
+    api.alerts.dismiss(id).catch((error) => {
+      console.error('[manager-home] alert dismiss failed', error);
+      setAlerts(snapshot);
+      setAlertsState('error');
+    });
   };
-  const runAlertAction = (action: string) => {
-    const label = action.toLowerCase();
-    if (label.includes('cozinha') || label.includes('fila')) {
-      router.push(`/manager/kitchen-reorder?slug=${tenantSlug}`);
-    } else if (label.includes('cliente') || label.includes('mensagem')) {
-      router.push(`/manager/mensagens?slug=${tenantSlug}`);
-    } else if (label.includes('garçom') || label.includes('garcom') || label.includes('equipe')) {
-      router.push(`/manager/equipe?slug=${tenantSlug}`);
-    } else {
-      router.push(`/manager/alertas?slug=${tenantSlug}`);
-    }
+  const runAlertAction = (action: AlertActionDescriptor) => {
+    router.push(resolveManagerAlertRoute(action, tenantSlug));
   };
 
   const refreshAll = useMemo(
     () => async () => {
-      try {
-        const [pauses, complaints, lateArrivals, merges, lgpd] = await Promise.all([
-          api.zonePauses.list({ active: true }).catch(() => []),
-          api.complaints.list().catch(() => []),
-          api.lateArrival.list().catch(() => []),
-          api.tableMerge.list().catch(() => []),
-          api.lgpd.list().catch(() => []),
+      const [pausesResult, complaintsResult, lateArrivalsResult, mergesResult, lgpdResult] =
+        await Promise.allSettled([
+          api.zonePauses.list({ active: true }),
+          api.complaints.list(),
+          api.lateArrival.list(),
+          api.tableMerge.list(),
+          api.lgpd.list(),
         ]);
+      const pauses = pausesResult.status === 'fulfilled' ? pausesResult.value : [];
+      const complaints = complaintsResult.status === 'fulfilled' ? complaintsResult.value : [];
+      const lateArrivals =
+        lateArrivalsResult.status === 'fulfilled' ? lateArrivalsResult.value : [];
+      const merges = mergesResult.status === 'fulfilled' ? mergesResult.value : [];
+      const lgpd = lgpdResult.status === 'fulfilled' ? lgpdResult.value : [];
 
-        const items: InProgressItem[] = [];
+      const items: InProgressItem[] = [];
 
-        // Active zone pauses → zone-pause-active info card
-        for (const p of pauses) {
-          if (!p.active) continue;
-          const remaining = Math.max(
-            0,
-            Math.floor((new Date(p.endsAt).getTime() - Date.now()) / 1000),
-          );
-          items.push({
-            id: `zp-${p.id}`,
-            kind: 'zone-pause-active',
-            state: 'active',
-            zonePauseWaiterName: p.waiterName,
-            zonePauseRemaining: remaining,
-            toRoute: '/manager/pausa-zona',
-          });
+      // Active zone pauses → zone-pause-active info card
+      for (const p of pauses) {
+        if (!p.active) continue;
+        const remaining = Math.max(
+          0,
+          Math.floor((new Date(p.endsAt).getTime() - Date.now()) / 1000),
+        );
+        items.push({
+          id: `zp-${p.id}`,
+          kind: 'zone-pause-active',
+          state: 'active',
+          zonePauseWaiterName: p.waiterName,
+          zonePauseRemaining: remaining,
+          toRoute: '/manager/pausa-zona',
+        });
+      }
+
+      // Open complaints (status !== resolved)
+      for (const c of complaints) {
+        if (c.status === 'resolved') continue;
+        items.push({
+          id: `c-${c.id}`,
+          kind: 'complaint',
+          state: 'active',
+          complaintTable: c.tableNumber,
+          complaintCustomer: c.customerName,
+          complaintSummary: c.description,
+          complaint: c,
+          toRoute: `/manager/chamado/${c.id}?kind=complaint`,
+        });
+      }
+      if (replyComplaintId && !replyComplaint && complaintsResult.status === 'fulfilled') {
+        const pendingReply = complaints.find(
+          (c) => c.id === replyComplaintId && c.status !== 'resolved',
+        );
+        if (pendingReply?.tableSessionId && pendingReply.customerId) {
+          setReplyComplaint(pendingReply);
         }
+      }
 
-        // Open complaints (status !== resolved)
-        for (const c of complaints) {
-          if (c.status === 'resolved') continue;
-          items.push({
-            id: `c-${c.id}`,
-            kind: 'complaint',
-            state: 'active',
-            complaintTable: c.tableNumber,
-            complaintCustomer: c.customerName,
-            complaintSummary: c.description,
-            complaint: c,
-            toRoute: `/manager/chamado/${c.id}?kind=complaint`,
-          });
-        }
-        if (replyComplaintId && !replyComplaint) {
-          const pendingReply = complaints.find(
-            (c) => c.id === replyComplaintId && c.status !== 'resolved',
-          );
-          if (pendingReply?.tableSessionId && pendingReply.customerId) {
-            setReplyComplaint(pendingReply);
-          }
-        }
+      // Pending late-arrivals
+      for (const r of lateArrivals) {
+        if (r.status !== 'pending') continue;
+        items.push({
+          id: `la-${r.id}`,
+          kind: 'late-arrival',
+          state: 'waiting',
+          requesterName: r.requesterName,
+          requestedTable: r.tableNumber,
+          toRoute: `/manager/stat/late-arrival/${r.id}`,
+        });
+      }
 
-        // Pending late-arrivals
-        for (const r of lateArrivals) {
-          if (r.status !== 'pending') continue;
-          items.push({
-            id: `la-${r.id}`,
-            kind: 'late-arrival',
-            state: 'waiting',
-            requesterName: r.requesterName,
-            requestedTable: r.tableNumber,
-            toRoute: `/manager/stat/late-arrival/${r.id}`,
-          });
-        }
+      // Pending merges
+      for (const m of merges) {
+        if (m.status !== 'pending') continue;
+        items.push({
+          id: `tm-${m.id}`,
+          kind: 'table-merge',
+          state: 'waiting',
+          requesterName: m.originHostName ?? undefined,
+          requestedTable: m.originTableNumber ?? undefined,
+          toRoute: `/manager/stat/merge/${m.id}`,
+        });
+      }
 
-        // Pending merges
-        for (const m of merges) {
-          if (m.status !== 'pending') continue;
-          items.push({
-            id: `tm-${m.id}`,
-            kind: 'table-merge',
-            state: 'waiting',
-            requesterName: m.originHostName ?? undefined,
-            requestedTable: m.originTableNumber ?? undefined,
-            toRoute: `/manager/stat/merge/${m.id}`,
-          });
-        }
+      // LGPD pending (rare; usually fulfilled instantly for erasure)
+      for (const l of lgpd) {
+        if (l.status === 'fulfilled' || l.status === 'rejected') continue;
+        items.push({
+          id: `lgpd-${l.id}`,
+          kind: 'lgpd-request-pending',
+          state: 'active',
+          lgpdRequestNumber: l.protocolNumber,
+          lgpdType: l.type,
+          toRoute: `/manager/stat/lgpd/${l.id}`,
+        });
+      }
 
-        // LGPD pending (rare; usually fulfilled instantly for erasure)
-        for (const l of lgpd) {
-          if (l.status === 'fulfilled' || l.status === 'rejected') continue;
-          items.push({
-            id: `lgpd-${l.id}`,
-            kind: 'lgpd-request-pending',
-            state: 'active',
-            lgpdRequestNumber: l.protocolNumber,
-            lgpdType: l.type,
-            toRoute: `/manager/stat/lgpd/${l.id}`,
-          });
-        }
-
-        setInProgress(items);
-      } catch {
-        // silent — keep last good state
+      const failedPrefixes = [
+        pausesResult.status === 'rejected' ? 'zp-' : null,
+        complaintsResult.status === 'rejected' ? 'c-' : null,
+        lateArrivalsResult.status === 'rejected' ? 'la-' : null,
+        mergesResult.status === 'rejected' ? 'tm-' : null,
+        lgpdResult.status === 'rejected' ? 'lgpd-' : null,
+      ].filter((prefix): prefix is string => prefix !== null);
+      setInProgress((previous) => [
+        ...items,
+        ...previous.filter((item) => failedPrefixes.some((prefix) => item.id.startsWith(prefix))),
+      ]);
+      const failures = [
+        pausesResult,
+        complaintsResult,
+        lateArrivalsResult,
+        mergesResult,
+        lgpdResult,
+      ].filter((result) => result.status === 'rejected');
+      if (failures.length > 0) {
+        console.error(
+          '[manager-home] one or more in-progress sources failed',
+          failures.map((result) => result.reason),
+        );
+        setInProgressLoadState('error');
+      } else {
+        setInProgressLoadState('ready');
       }
     },
     [api, replyComplaint, replyComplaintId],
@@ -291,7 +329,7 @@ export function ScreenManagerHomeA({
       clearInterval(tick);
       clearInterval(refresh);
     };
-  }, [refreshAll]);
+  }, [refreshAll, reloadKey]);
 
   // Fetch staff list + real per-staff KPIs for the shift section (P1 #14, #32,
   // P1-F). team-kpis é ranqueado por staffId; casamos com o roster pelo id.
@@ -305,10 +343,9 @@ export function ScreenManagerHomeA({
           staffRosterApi(tenantSlug).list(),
           teamKpisApi(tenantSlug)
             .get()
-            .then((r) => r.team)
-            .catch(() => []),
+            .then((r) => r.team),
         ]);
-        if (cancelled || !roster.length) return;
+        if (cancelled) return;
         const kpiByStaffId = new Map(kpis.map((k) => [k.staffId, k]));
         setTeam(
           roster.map((s, i) => {
@@ -334,14 +371,16 @@ export function ScreenManagerHomeA({
             };
           }),
         );
-      } catch {
-        // keep fallback
+        setTeamState('ready');
+      } catch (error) {
+        console.error('[manager-home] team load failed', error);
+        if (!cancelled) setTeamState('error');
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [tenantSlug]);
+  }, [tenantSlug, reloadKey]);
 
   // Próximas reservas (P2 re-scan) — dado real de GET /host/reservations.
   // Sem reservas ou endpoint fora → lista vazia e a UI mostra empty-state.
@@ -349,15 +388,19 @@ export function ScreenManagerHomeA({
     let cancelled = false;
     listReservations(tenantSlug)
       .then((data) => {
-        if (!cancelled) setReservations(data);
+        if (!cancelled) {
+          setReservations(data);
+          setReservationsState('ready');
+        }
       })
-      .catch(() => {
-        // keep empty → empty-state honesto
+      .catch((error) => {
+        console.error('[manager-home] reservations load failed', error);
+        if (!cancelled) setReservationsState('error');
       });
     return () => {
       cancelled = true;
     };
-  }, [tenantSlug]);
+  }, [tenantSlug, reloadKey]);
 
   // Live updates
   useManagerEvents(tenantSlug, (event) => {
@@ -394,6 +437,16 @@ export function ScreenManagerHomeA({
     .filter((r) => r.status === 'awaited')
     .sort((a, b) => a.when.localeCompare(b.when))
     .slice(0, 3);
+  const failedSources = [
+    alertsState === 'error' ? 'alertas' : null,
+    inProgressLoadState === 'error' ? 'operações em curso' : null,
+    teamState === 'error' ? 'equipe' : null,
+    reservationsState === 'error' ? 'reservas' : null,
+  ].filter((source): source is string => source !== null);
+  const operationalError =
+    failedSources.length > 0 ? `Não foi possível atualizar ${failedSources.join(', ')}.` : null;
+  const hasStaleOperationalData =
+    alerts.length > 0 || inProgress.length > 0 || team.length > 0 || reservations.length > 0;
 
   return (
     <div
@@ -413,6 +466,15 @@ export function ScreenManagerHomeA({
           greetingName={greetingName}
           bellBadge={bellBadge ?? inProgress.length}
         />
+
+        {operationalError && (
+          <OperationalErrorBanner
+            dark={dark}
+            message={operationalError}
+            hasStaleData={hasStaleOperationalData}
+            onRetry={() => setReloadKey((value) => value + 1)}
+          />
+        )}
 
         <div style={{ marginTop: 4 }}>
           {/* V11 · Cozinha · Reordenar fila / Pausa · Pedidos novos
@@ -475,11 +537,15 @@ export function ScreenManagerHomeA({
 
         <MSection
           dark={dark}
-          title={`Hoje no turno · ${alerts.length}`}
+          title={
+            alertsState === 'ready' || alerts.length > 0
+              ? `Hoje no turno · ${alerts.length}`
+              : 'Hoje no turno'
+          }
           action="Ver todos →"
           onAction={() => router.push('/manager/alertas')}
         >
-          {topAlerts.length === 0 ? (
+          {isAuthoritativeEmpty(alertsState, topAlerts.length) ? (
             <div
               style={{
                 padding: '4px 16px 0',
@@ -492,7 +558,7 @@ export function ScreenManagerHomeA({
             >
               Tudo tranquilo por aqui
             </div>
-          ) : (
+          ) : topAlerts.length > 0 ? (
             <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               {topAlerts.map((a) => {
                 const isHigh = a.sev === 'high';
@@ -567,51 +633,48 @@ export function ScreenManagerHomeA({
                     >
                       {a.sub}
                     </div>
-                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                      <button
-                        type="button"
-                        onClick={() => runAlertAction(a.actions[0])}
-                        style={{
-                          all: 'unset',
-                          cursor: 'pointer',
-                          padding: '6px 12px',
-                          borderRadius: 8,
-                          background: C.ink,
-                          color: C.bg,
-                          fontSize: 12,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {a.actions[0]}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => runAlertAction(a.actions[1])}
-                        style={{
-                          all: 'unset',
-                          cursor: 'pointer',
-                          padding: '6px 12px',
-                          borderRadius: 8,
-                          background: 'transparent',
-                          color: C.ink,
-                          border: `1px solid ${C.borderSoft}`,
-                          fontSize: 12,
-                          fontWeight: 600,
-                        }}
-                      >
-                        {a.actions[1]}
-                      </button>
-                    </div>
+                    {a.actions.length > 0 && (
+                      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                        {a.actions.map((action, index) => {
+                          const primary =
+                            action.kind === 'primary' || (!action.kind && index === 0);
+                          return (
+                            <button
+                              key={`${action.label}:${index}`}
+                              type="button"
+                              onClick={() => runAlertAction(action)}
+                              style={{
+                                all: 'unset',
+                                cursor: 'pointer',
+                                padding: '6px 12px',
+                                borderRadius: 8,
+                                background: primary ? C.ink : 'transparent',
+                                color: primary ? C.bg : C.ink,
+                                border: primary ? undefined : `1px solid ${C.borderSoft}`,
+                                fontSize: 12,
+                                fontWeight: primary ? 700 : 600,
+                              }}
+                            >
+                              {action.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
-          )}
+          ) : null}
         </MSection>
 
         <MSection
           dark={dark}
-          title={`Equipe ativa · ${onShift.length}`}
+          title={
+            teamState === 'ready' || team.length > 0
+              ? `Equipe ativa · ${onShift.length}`
+              : 'Equipe ativa'
+          }
           action="Ver mais →"
           onAction={() => router.push('/manager/equipe')}
         >
@@ -692,15 +755,19 @@ export function ScreenManagerHomeA({
         <MSection
           dark={dark}
           title="Próximas reservas"
-          action={upcomingReservations.length > 0 ? 'Agenda completa →' : undefined}
+          action={
+            upcomingReservations.length > 0 && reservationsState !== 'error'
+              ? 'Agenda completa →'
+              : undefined
+          }
           onAction={
-            upcomingReservations.length > 0
+            upcomingReservations.length > 0 && reservationsState !== 'error'
               ? () => router.push(`/host/reservations?tenant=${tenantSlug}`)
               : undefined
           }
         >
           <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {upcomingReservations.length === 0 ? (
+            {isAuthoritativeEmpty(reservationsState, upcomingReservations.length) ? (
               <div
                 style={{
                   padding: '16px 12px',
@@ -715,7 +782,7 @@ export function ScreenManagerHomeA({
               >
                 Nenhuma reserva aguardada. Reservas criadas na recepção aparecem aqui.
               </div>
-            ) : (
+            ) : upcomingReservations.length > 0 ? (
               upcomingReservations.map((r) => (
                 <button
                   key={r.id}
@@ -789,7 +856,7 @@ export function ScreenManagerHomeA({
                   <span style={{ color: C.faint, opacity: 0.6 }}>{Icon.arrow(16)}</span>
                 </button>
               ))
-            )}
+            ) : null}
           </div>
         </MSection>
 

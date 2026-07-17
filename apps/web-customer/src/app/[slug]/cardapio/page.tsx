@@ -221,14 +221,14 @@ export default function CardapioPage() {
               onClick={() =>
                 setCommandMode(commandMode === 'individual' ? 'table' : 'individual', true)
               }
-              className="shrink-0 rounded-full border border-ink px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.8px] text-ink"
+              className="min-h-11 shrink-0 rounded-full border border-ink px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.8px] text-ink"
             >
               Trocar
             </button>
             <button
               type="button"
               onClick={() => setCommandMode(null, true)}
-              className="shrink-0 rounded-full border border-border-soft px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.8px] text-mute"
+              className="min-h-11 shrink-0 rounded-full border border-border-soft px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.8px] text-mute"
             >
               Redefinir
             </button>
@@ -237,14 +237,19 @@ export default function CardapioPage() {
       </div>
 
       <div className="shrink-0 px-[22px] pb-2.5">
-        <div className="flex gap-1 rounded-full border border-border-soft bg-surface p-1">
+        <div
+          className="flex gap-1 rounded-full border border-border-soft bg-surface p-1"
+          role="group"
+          aria-label="Tipo de cardápio"
+        >
           <button
             type="button"
             onClick={() => {
               setTab('food');
               setActiveCategory(null);
             }}
-            className={`flex-1 rounded-full px-4 py-2 text-[13px] ${
+            aria-pressed={tab === 'food'}
+            className={`min-h-11 flex-1 rounded-full px-4 py-2 text-[13px] ${
               tab === 'food' ? 'bg-ink font-semibold text-white' : 'font-medium text-mute'
             }`}
           >
@@ -256,7 +261,8 @@ export default function CardapioPage() {
               setTab('drink');
               setActiveCategory(null);
             }}
-            className={`flex-1 rounded-full px-4 py-2 text-[13px] ${
+            aria-pressed={tab === 'drink'}
+            className={`min-h-11 flex-1 rounded-full px-4 py-2 text-[13px] ${
               tab === 'drink' ? 'bg-ink font-semibold text-white' : 'font-medium text-mute'
             }`}
           >
@@ -283,7 +289,7 @@ export default function CardapioPage() {
               type="button"
               onClick={() => setSearchQuery('')}
               aria-label="Limpar busca"
-              className="flex h-5 w-5 items-center justify-center rounded-full bg-surface text-[11px] text-mute"
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-surface text-[11px] text-mute"
             >
               ×
             </button>
@@ -292,7 +298,11 @@ export default function CardapioPage() {
       </div>
 
       {searchResults === null && currentCategories.length > 0 && (
-        <div className="flex shrink-0 gap-2 overflow-x-auto px-[22px] pb-2.5 pt-1.5 [&::-webkit-scrollbar]:hidden">
+        <div
+          className="flex shrink-0 gap-2 overflow-x-auto px-[22px] pb-2.5 pt-1.5 [&::-webkit-scrollbar]:hidden"
+          role="group"
+          aria-label="Filtrar por categoria"
+        >
           {currentCategories.map((cat) => {
             const count = currentItems.filter((i) => i.category_id === cat.id).length;
             const active = activeCategory === cat.id;
@@ -301,7 +311,8 @@ export default function CardapioPage() {
                 key={cat.id}
                 type="button"
                 onClick={() => setActiveCategory(active ? null : cat.id)}
-                className={`shrink-0 whitespace-nowrap rounded-full border-[1.2px] border-ink px-4 py-2 text-[13px] font-medium ${
+                aria-pressed={active}
+                className={`min-h-11 shrink-0 whitespace-nowrap rounded-full border-[1.2px] border-ink px-4 py-2 text-[13px] font-medium ${
                   active ? 'bg-ink text-white' : 'bg-bg text-ink'
                 }`}
               >

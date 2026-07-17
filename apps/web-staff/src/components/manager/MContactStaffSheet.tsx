@@ -10,11 +10,12 @@
 // sucesso. Agora chama o endpoint canonico `POST /staff-messages` e
 // surface erros via setError.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useG, G_FONT, MONO_FONT } from './tokens';
 import { Icon } from './Icons';
 import { GButton, MAvatar } from './primitives';
 import { staffPost } from '../../lib/api';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 
 export interface ManagerStaffTarget {
   staffId: string;
@@ -76,9 +77,10 @@ export function MContactStaffSheet({
   // Drag-to-dismiss state (vaul-style). Round 18 add — antes o handle
   // visual era afordância falsa (parecia arrastável mas não tinha
   // pointer listeners).
-  const sheetRef = useRef<HTMLDivElement | null>(null);
   const dragStartY = useRef<number | null>(null);
   const [dragOffsetY, setDragOffsetY] = useState(0);
+  const titleId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(open, () => onClose?.());
 
   useEffect(() => {
     if (open) {
@@ -142,9 +144,10 @@ export function MContactStaffSheet({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
-      aria-label={`Mensagem pra ${target.name}`}
+      aria-labelledby={titleId}
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -159,7 +162,6 @@ export function MContactStaffSheet({
       }}
     >
       <div
-        ref={sheetRef}
         onClick={(e) => e.stopPropagation()}
         style={{
           height: sheetH,
@@ -211,6 +213,7 @@ export function MContactStaffSheet({
               {target.contextHint ? ` · ${target.contextHint}` : ''}
             </div>
             <div
+              id={titleId}
               style={{
                 fontSize: 22,
                 fontWeight: 700,
@@ -243,7 +246,10 @@ export function MContactStaffSheet({
                 <span style={{ width: 6, height: 6, borderRadius: 3, background: '#1E8C5A' }} />
                 Enviado
               </div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: C.ink, letterSpacing: -0.3 }}>
+              <div
+                id={titleId}
+                style={{ fontSize: 17, fontWeight: 700, color: C.ink, letterSpacing: -0.3 }}
+              >
                 {target.name}
               </div>
             </div>

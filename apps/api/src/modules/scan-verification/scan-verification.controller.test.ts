@@ -16,6 +16,7 @@
  */
 
 import { HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import type { Request } from 'express';
 import { ScanVerificationController } from './scan-verification.controller';
 import type { ScanVerificationService } from './scan-verification.service';
@@ -24,6 +25,7 @@ import type { CustomersService } from '../../modules/customers/customers.service
 import type { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
 import type { StaffSessionPayload } from '../../common/auth/staff-session-token';
 import type { ScanVerificationRequestDto } from '@restaurant/shared-types';
+import { HostOrManagerGuard } from '../../common/guards/host-only.guard';
 
 const TOKEN_STAFF_A = 'aaaaaaaa-0000-4000-8000-00000000000a';
 const HEADER_STAFF_B = 'bbbbbbbb-0000-4000-8000-00000000000b';
@@ -65,6 +67,15 @@ describe('ScanVerificationController — ator do approve/reject vem do token (ga
   });
   afterEach(() => {
     warnSpy.mockRestore();
+  });
+
+  it('restringe listagem e detalhe com PII/geolocalização a host/gerência', () => {
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, ScanVerificationController.prototype.list),
+    ).toContain(HostOrManagerGuard);
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, ScanVerificationController.prototype.getById),
+    ).toContain(HostOrManagerGuard);
   });
 
   describe('com req.staffAuth (token verificado do staff A) + x-staff-id spoofado (staff B)', () => {

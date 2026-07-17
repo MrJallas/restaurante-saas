@@ -7,7 +7,7 @@
 // Transferir, Fechar). VIP toggle lives in the MoreSheet of this screen
 // (per docs/features/vip-customer.md).
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -26,6 +26,7 @@ import {
   updateHostTableSession,
 } from '../../lib/api/host';
 import type { SessionFlag, SessionFlagToggleResponseDto } from '@restaurant/shared-types';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 
 export interface ScreenManagerTableMenuProps {
   dark?: boolean;
@@ -776,10 +777,14 @@ function EditTableSheet({
 }) {
   const [party, setParty] = useState(initialParty);
   const [note, setNote] = useState(initialNote);
+  const titleId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(true, onClose);
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -800,7 +805,9 @@ function EditTableSheet({
           padding: '18px 16px 20px',
         }}
       >
-        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>Editar mesa</div>
+        <div id={titleId} style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>
+          Editar mesa
+        </div>
         <div style={{ marginTop: 14 }}>
           <div
             style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}
@@ -907,10 +914,14 @@ function TransferSheet({
   const [value, setValue] = useState('');
   const target = parseInt(value, 10);
   const valid = Number.isFinite(target) && target > 0 && target !== currentTable;
+  const titleId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(true, onClose);
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -931,7 +942,9 @@ function TransferSheet({
           padding: '18px 16px 20px',
         }}
       >
-        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>Transferir mesa</div>
+        <div id={titleId} style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>
+          Transferir mesa
+        </div>
         <label style={{ display: 'block', marginTop: 14 }}>
           <span
             style={{ fontSize: 11, color: C.faint, fontWeight: 800, textTransform: 'uppercase' }}
@@ -999,10 +1012,17 @@ function ConfirmSheet({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const titleId = useId();
+  const descriptionId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(true, onCancel);
+
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
       onClick={onCancel}
       style={{
         position: 'fixed',
@@ -1023,8 +1043,11 @@ function ConfirmSheet({
           padding: '18px 16px 20px',
         }}
       >
-        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>{title}</div>
+        <div id={titleId} style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>
+          {title}
+        </div>
         <div
+          id={descriptionId}
           style={{ marginTop: 8, fontSize: 13, lineHeight: 1.45, color: C.mute, fontWeight: 500 }}
         >
           {body}
@@ -1116,6 +1139,8 @@ function MoreSheet({
   onClose: () => void;
 }) {
   const C = useG(!!dark);
+  const titleId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(true, onClose);
   // Round 18 (Onda 2A): drag-to-dismiss state. Antes o handle visual era
   // afordância falsa.
   const dragStartY = useRef<number | null>(null);
@@ -1137,8 +1162,10 @@ function MoreSheet({
   };
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -1188,6 +1215,7 @@ function MoreSheet({
           />
         </div>
         <div
+          id={titleId}
           style={{
             padding: '4px 22px 12px',
             fontSize: 11,

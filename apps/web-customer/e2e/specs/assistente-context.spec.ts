@@ -31,6 +31,7 @@ import {
   participantsForSession,
   resetQrTables,
   staffByRole,
+  staffFetch,
   waitFor,
 } from '../helpers/physical-qr';
 
@@ -38,8 +39,6 @@ test.describe.configure({ mode: 'serial' });
 test.setTimeout(180_000);
 
 const SLUG = 'restaurant_dev';
-const API = `http://localhost:3001/api/${SLUG}`;
-const STAFF_KEY = 'dev-staff-api-key-change-in-prod';
 
 let cpfSeed = Math.floor(Date.now() % 100_000);
 let ipSeed = Math.floor(Date.now() % 60_000);
@@ -88,12 +87,11 @@ function redisDel(pattern: string): void {
 }
 
 async function patchStatus(orderId: string, status: string): Promise<void> {
-  const r = await fetch(`${API}/orders/${orderId}/status`, {
+  const r = await staffFetch(`/${SLUG}/orders/${orderId}/status`, {
     method: 'PATCH',
-    headers: { 'x-staff-key': STAFF_KEY, 'content-type': 'application/json' },
     body: JSON.stringify({ status, changedBy: 'e2e-assistente-context' }),
   });
-  expect(r.status, `PATCH status → ${status}`).toBe(200);
+  expect(r.status, `PATCH status → ${status}: ${JSON.stringify(r.body)}`).toBe(200);
 }
 
 /** Navega pro assistente capturando o kind da continuation da landing. */
@@ -234,6 +232,50 @@ test('chip/frase direta: rule-layer sem LLM com UX de IA (indicador + chips coer
   await expect(page.getByTestId('menu-overlay')).toBeVisible({ timeout: 15_000 });
 });
 
+test('pergunta aberta usa o LLM real e persiste modelo/tokens sem fallback', async ({ page }) => {
+  await newSession(page, { tableCode: 'QRTEST91', name: 'Cliente LLM Real', cpf: freshCpf() });
+  await page.goto(`/${SLUG}/assistente`, { waitUntil: 'networkidle' });
+
+  const question =
+    'Entre os pratos principais, compare sabores e texturas e explique qual combina melhor com uma noite fria, sem apenas abrir o cardápio.';
+  const input = page.getByPlaceholder('Pergunte alguma coisa...');
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.url().includes(`/${SLUG}/assistant/message`) &&
+      response.request().method() === 'POST',
+    { timeout: 150_000 },
+  );
+  await input.fill(question);
+  await input.press('Enter');
+
+  const response = await responsePromise;
+  expect(response.status()).toBe(201);
+  const body = (await response.json()) as { response?: string; wasBlocked?: boolean };
+  expect(body.wasBlocked).toBe(false);
+  expect(body.response).toBeTruthy();
+  expect(body.response).not.toContain('estou com dificuldade no momento');
+  await expect(page.getByText(body.response!, { exact: false }).first()).toBeVisible({
+    timeout: 20_000,
+  });
+
+  const metadata = psql(
+    `SELECT concat_ws('|', provider_used, model_used, tokens_in::text, tokens_out::text, latency_ms::text)
+       FROM assistant_messages
+      WHERE user_message = '${question.replace(/'/g, "''")}'
+      ORDER BY created_at DESC
+      LIMIT 1`,
+  ).split('|');
+  expect(metadata[0]).toBeTruthy();
+  expect(metadata[0]).not.toBe('local');
+  expect(metadata[1]).not.toMatch(/^(rule|ack)-layer$/);
+  expect(Number(metadata[2])).toBeGreaterThan(0);
+  expect(Number(metadata[3])).toBeGreaterThan(0);
+  expect(Number(metadata[4])).toBeGreaterThan(0);
+
+  const expectedModel = process.env.E2E_EXPECT_LLM_MODEL;
+  if (expectedModel) expect(metadata[1]).toBe(expectedModel);
+});
+
 test('resposta do gerente é privada: só o destinatário vê (realtime + reload)', async ({
   page,
   browser,
@@ -285,13 +327,9 @@ test('resposta do gerente é privada: só o destinatário vê (realtime + reload
     const manager = await staffByRole('manager');
     expect(manager?.id).toBeTruthy();
     const message = `Mensagem privada do gerente ${Date.now()}`;
-    const sendRes = await fetch(`${API}/assistant/staff-to-customer`, {
+    const sendRes = await staffFetch(`/${SLUG}/assistant/staff-to-customer`, {
       method: 'POST',
-      headers: {
-        'x-staff-key': STAFF_KEY,
-        'x-staff-id': manager!.id,
-        'content-type': 'application/json',
-      },
+      staff: manager,
       body: JSON.stringify({
         tableSessionId: session.id,
         message,
@@ -299,7 +337,7 @@ test('resposta do gerente é privada: só o destinatário vê (realtime + reload
         toCustomerId: hostRow!.customer_id,
       }),
     });
-    expect(sendRes.status, 'POST staff-to-customer').toBe(201);
+    expect(sendRes.status, `POST staff-to-customer: ${JSON.stringify(sendRes.body)}`).toBe(201);
 
     // Realtime: SÓ o host vê a bubble; o convidado não recebe nada.
     await expect(page.getByText(message)).toBeVisible({ timeout: 15_000 });

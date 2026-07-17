@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { BillingService } from '../billing/billing.service';
@@ -218,11 +223,11 @@ export class WaiterCallsService {
    * vai a mesa REAL e a conta REAL da sessão inteira (todos os billing
    * modes: é o fechamento presencial), com a MESMA taxa do POST /payments.
    */
-  async getCallStaffDetail(callId: string) {
+  async getCallStaffDetail(callId: string, staffId: string) {
     const rows = (await this.tenantConn.query(
       `SELECT wc.id, wc.status, wc.reason, wc.created_at, wc.acknowledged_at,
               wc.resolved_at, wc.cancelled_at, wc.assigned_waiter_name,
-              wc.eta_minutes, wc.table_session_id,
+              wc.eta_minutes, wc.table_session_id, wc.acknowledged_by,
               t.label AS table_label, t.code AS table_code
          FROM waiter_calls wc
          JOIN table_sessions ts ON ts.id = wc.table_session_id
@@ -240,6 +245,7 @@ export class WaiterCallsService {
       assigned_waiter_name: string | null;
       eta_minutes: number | null;
       table_session_id: string;
+      acknowledged_by: string | null;
       table_label: string;
       table_code: string;
     }>;
@@ -247,6 +253,9 @@ export class WaiterCallsService {
       throw new NotFoundException('Chamado nao encontrado.');
     }
     const call = rows[0];
+    if (call.status === 'acknowledged' && call.acknowledged_by !== staffId) {
+      throw new ForbiddenException('Chamado já foi assumido por outro garçom.');
+    }
 
     const sumRows = (await this.tenantConn.query(
       `SELECT COALESCE(SUM(total_cents), 0) AS total
@@ -355,16 +364,30 @@ export class WaiterCallsService {
    * (lista limpa). RETURNING + unwrapRows pra carregar o table_session_id
    * real no WS (mesmo footgun do acknowledge: cast cru → session undefined).
    */
-  async resolveCall(callId: string, slug: string) {
+  async resolveCall(callId: string, slug: string, staffId: string) {
     const updated = unwrapRows<{ id: string; table_session_id: string }>(
       await this.tenantConn.query(
         `UPDATE waiter_calls
        SET status = 'resolved', resolved_at = now()
-       WHERE id = $1 AND status IN ('pending', 'acknowledged')
+       WHERE id = $1 AND status = 'acknowledged' AND acknowledged_by = $2
        RETURNING id, table_session_id`,
-        [callId],
+        [callId, staffId],
       ),
     );
+
+    if (!updated.length) {
+      const rows = (await this.tenantConn.query(
+        `SELECT status, acknowledged_by FROM waiter_calls WHERE id = $1`,
+        [callId],
+      )) as Array<{ status: string; acknowledged_by: string | null }>;
+      if (!rows.length) throw new NotFoundException('Chamado nao encontrado.');
+      if (rows[0].status === 'acknowledged' && rows[0].acknowledged_by !== staffId) {
+        throw new ForbiddenException('Chamado já foi assumido por outro garçom.');
+      }
+      if (rows[0].status !== 'resolved') {
+        throw new BadRequestException('Atenda o chamado antes de concluí-lo.');
+      }
+    }
 
     // Só emite quando REALMENTE resolveu uma row ativa — re-resolve de um
     // chamado já terminal (ou inexistente) não re-notifica ninguém.
@@ -424,7 +447,7 @@ export class WaiterCallsService {
     return { callId, status: 'cancelled' };
   }
 
-  async getPendingCalls() {
+  async getPendingCalls(staffId: string) {
     // `ts.flags` is required by `priorityOf()` (see
     // apps/api/src/modules/vip/priority.util.ts and
     // docs/features/vip-customer.md). Migration 031 added
@@ -444,15 +467,16 @@ export class WaiterCallsService {
     // mesmo conjunto do índice único parcial e do getActiveCall.
     return this.tenantConn.query(
       `SELECT wc.id, wc.status, wc.reason, wc.created_at,
-              wc.assigned_waiter_name, wc.eta_minutes,
+              wc.assigned_waiter_name, wc.eta_minutes, wc.acknowledged_by,
               t.label as table_label, t.code as table_code,
               COALESCE(ts.flags, '{}') as flags
        FROM waiter_calls wc
        JOIN table_sessions ts ON ts.id = wc.table_session_id
        JOIN tables t ON t.id = ts.table_id
-       WHERE wc.status = ANY($1)
+       WHERE wc.status = 'pending'
+          OR (wc.status = 'acknowledged' AND wc.acknowledged_by = $1)
        ORDER BY wc.created_at ASC`,
-      [ACTIVE_STATUSES],
+      [staffId],
     );
   }
 }

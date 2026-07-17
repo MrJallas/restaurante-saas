@@ -86,6 +86,15 @@ export const animationClass = {
 
 // ─── Reduced motion hook ──────────────────────────────────────────────
 
+/** Synchronous preference read for non-React animation coordinators. */
+export function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
 /**
  * `prefers-reduced-motion: reduce` — retorna true se o usuário pediu
  * pra desligar animações via OS. Primitivos checam e devolvem string

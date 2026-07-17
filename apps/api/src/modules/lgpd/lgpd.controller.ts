@@ -9,13 +9,15 @@ import {
   UseGuards,
   HttpException,
   HttpStatus,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { IsEmail, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { SessionGuard } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { CustomersService } from '../customers/customers.service';
+import { Tenant } from '../../common/decorators/tenant.decorator';
 import { LgpdService } from './lgpd.service';
 
 class CreateLgpdDto {
@@ -25,14 +27,6 @@ class CreateLgpdDto {
   @IsOptional()
   @IsUUID()
   customerId?: string;
-
-  @IsOptional()
-  @Matches(/^\d{11}$/)
-  customerCpf?: string;
-
-  @IsOptional()
-  @IsEmail()
-  customerEmail?: string;
 
   @IsOptional()
   @IsString()
@@ -84,23 +78,50 @@ export class LgpdController {
    * session token). Variação não-fixada do B-NEW-9 (chat-history) que
    * ficou só no chat-history controller.
    *
-   * Atacante NÃO consegue mais passar UUID alheio: dto.customerId é
-   * IGNORADO; sempre usa caller.customerId resolvido do cookie.
+   * Atacante NÃO consegue mais passar UUID/CPF/e-mail alheio: customerId do
+   * body é ignorado, CPF/e-mail nem pertencem ao DTO público, e o service lê
+   * o CPF canônico da linha autenticada. O cadastro não tem e-mail canônico,
+   * então pedidos originados pelo cliente persistem esse campo como null.
    */
   @Post()
   @UseGuards(SessionGuard)
-  async create(@Param('slug') slug: string, @Body() dto: CreateLgpdDto, @Req() req: Request) {
+  async create(
+    @Param('slug') slug: string,
+    @Tenant() tenantId: string,
+    @Body() dto: CreateLgpdDto,
+    @Req() req: Request,
+  ) {
     const callerCustomerId = await this.resolveCallerCustomerId(req);
-    return this.service.createRequest(
+    const result = await this.service.createCustomerRequest(
       {
         kind: dto.kind,
         customerId: callerCustomerId,
-        customerCpf: dto.customerCpf ?? null,
-        customerEmail: dto.customerEmail ?? null,
         notes: dto.notes,
       },
+      tenantId,
       slug,
     );
+    // O protocolo fica persistido como pending, mas a chamada não pode parecer
+    // sucesso ao FE/AI enquanto qualquer store estiver offline ou parcial.
+    if (dto.kind === 'erasure' && result.status !== 'fulfilled') {
+      throw new HttpException(result, HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    return result;
+  }
+
+  /** Retry manual enquanto o worker durável ainda não existe. */
+  @Post(':id/retry')
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
+  async retry(
+    @Param('slug') slug: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Tenant() tenantId: string,
+  ) {
+    const result = await this.service.retryRequest(id, tenantId, slug);
+    if (result.status !== 'fulfilled') {
+      throw new HttpException(result, HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    return result;
   }
 
   private async resolveCallerCustomerId(req: Request): Promise<string> {

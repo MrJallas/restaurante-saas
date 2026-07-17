@@ -195,7 +195,7 @@ export class CourtesiesService {
 
   async listForSession(
     tableSessionId: string,
-    customerId?: string,
+    customerId?: string | null,
   ): Promise<CustomerCourtesyDto[]> {
     await this.attachTableNumberCourtesiesToActiveSession(tableSessionId);
     const rows = await this.listRowsForOpenSession(tableSessionId);
@@ -206,11 +206,9 @@ export class CourtesiesService {
   }
 
   async listHistoryForCustomer(
-    customerId: string | undefined,
+    customerId: string,
     tableSessionId: string,
   ): Promise<CustomerCourtesyHistoryDto[]> {
-    if (!customerId) return [];
-
     await this.attachTableNumberCourtesiesToActiveSession(tableSessionId);
     await this.upsertCourtesyHistoryForCustomerRows(
       customerId,
@@ -245,7 +243,7 @@ export class CourtesiesService {
     status: CourtesyStatus,
     tableSessionId: string,
     slug?: string,
-    customerId?: string,
+    customerId?: string | null,
   ): Promise<CustomerCourtesyDto> {
     if (!VALID_STATUS.includes(status) || status === 'pendente') {
       throw new BadRequestException({

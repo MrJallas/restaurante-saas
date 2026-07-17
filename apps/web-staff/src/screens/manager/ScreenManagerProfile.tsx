@@ -8,7 +8,7 @@
 // destacado mostarda · Histórico · Equipe e turnos · Cortesias) · Conta ·
 // Estabelecimento (só owner) · Sair em vermelho · footer versão.
 
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -21,6 +21,7 @@ import {
 } from '../../components/manager';
 import { performStaffLogout } from '../../lib/api';
 import { manager, type ManagerShiftLog } from '../../lib/api/manager';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 
 export interface ScreenManagerProfileProps {
   dark?: boolean;
@@ -391,6 +392,24 @@ export function ScreenManagerProfile({
           </div>
         </MSection>
 
+        {/* 6 · ESTABELECIMENTO — aparece somente para a sessão owner real. */}
+        {isOwner && (
+          <MSection dark={dark} title="Estabelecimento · só donos">
+            <div style={{ padding: '0 16px' }}>
+              <ActionRow
+                dark={dark}
+                icon={Icon.settings(18)}
+                lbl="Configurações do restaurante"
+                sub="Nome, horários, taxa de serviço e presença no local"
+                accent
+                onClick={() =>
+                  router.push(`/manager/estabelecimento?slug=${encodeURIComponent(tenantSlug)}`)
+                }
+              />
+            </div>
+          </MSection>
+        )}
+
         {/* 7 · SAIR · destrutivo · brick */}
         <div style={{ padding: '24px 16px 16px' }}>
           <button
@@ -613,10 +632,17 @@ function EndShiftConfirmSheet({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const titleId = useId();
+  const descriptionId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(true, onCancel);
+
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
       style={{
         position: 'fixed',
         inset: 0,
@@ -636,8 +662,11 @@ function EndShiftConfirmSheet({
           boxShadow: '0 -16px 34px rgba(0,0,0,0.22)',
         }}
       >
-        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>Encerrar turno?</div>
+        <div id={titleId} style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>
+          Encerrar turno?
+        </div>
         <div
+          id={descriptionId}
           style={{ marginTop: 8, fontSize: 13, lineHeight: 1.45, color: C.mute, fontWeight: 500 }}
         >
           O sistema vai salvar o resumo do turno no histórico, limpar esta sessão e voltar para o
@@ -699,6 +728,9 @@ function EndShiftSummarySheet({
   fmtCents: (c?: number) => string | null;
   onFinish: () => void;
 }) {
+  const titleId = useId();
+  const descriptionId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(true, onFinish);
   const metrics = [
     ['Vendas', fmtCents(summary.salesCents) ?? 'R$ 0'],
     ['Pedidos', String(summary.orders)],
@@ -707,8 +739,11 @@ function EndShiftSummarySheet({
   ];
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
       style={{
         position: 'fixed',
         inset: 0,
@@ -728,8 +763,13 @@ function EndShiftSummarySheet({
           boxShadow: '0 -16px 34px rgba(0,0,0,0.22)',
         }}
       >
-        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>Turno encerrado</div>
-        <div style={{ marginTop: 5, fontSize: 12, color: C.faint, fontWeight: 700 }}>
+        <div id={titleId} style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>
+          Turno encerrado
+        </div>
+        <div
+          id={descriptionId}
+          style={{ marginTop: 5, fontSize: 12, color: C.faint, fontWeight: 700 }}
+        >
           {summary.staffName} · {new Date(summary.endedAt).toLocaleString('pt-BR')}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 14 }}>

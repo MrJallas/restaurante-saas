@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import {
   ScreenCustomerWaitingApproval,
   type WaitingMode,
 } from '../../../screens/customer-host-flows/ScreenCustomerWaitingApproval';
-import { getSessionToken } from '../../../lib/storage';
+import { toTenantInternalPath } from '../../../lib/safe-internal-path';
+import { parseWaitingMode } from '../../../lib/waiting-approval-state';
 
 /**
  * `/[slug]/waiting-approval` · landing page after the late-arrival /
@@ -23,20 +23,13 @@ import { getSessionToken } from '../../../lib/storage';
 export default function WaitingApprovalPage() {
   const params = useParams<{ slug: string }>();
   const search = useSearchParams();
-  const router = useRouter();
   const slug = params?.slug ?? '';
 
-  const mode = (search?.get('mode') as WaitingMode | null) ?? 'late-arrival';
+  const mode: WaitingMode = parseWaitingMode(search?.get('mode'));
   const requestId = search?.get('requestId') ?? null;
   const expiresAt = search?.get('expiresAt') ?? null;
   const hostName = search?.get('hostName') ?? null;
-  const redirectTo = search?.get('redirect') ?? undefined;
-
-  useEffect(() => {
-    if (!getSessionToken()) {
-      router.replace(`/${slug}`);
-    }
-  }, [slug, router]);
+  const redirectTo = toTenantInternalPath(search?.get('redirect'), slug) ?? undefined;
 
   return (
     <ScreenCustomerWaitingApproval

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -14,31 +14,9 @@ import {
 } from '../../components/manager';
 import { useStaffTheme, type StaffThemeMode } from '../../lib/theme';
 import { manager, type ManagerSecuritySession, type ManagerShiftLog } from '../../lib/api/manager';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 
 type Toast = { tone: 'success' | 'danger' | 'info'; text: string } | null;
-
-const NOTIFICATION_ROWS = [
-  {
-    id: 'turn.alerts',
-    label: 'Avisos do turno',
-    sub: 'Chamados, reclamações e alertas críticos',
-    defaultOn: true,
-  },
-  { id: 'turn.push', label: 'Push', sub: 'Notificação no dispositivo', defaultOn: true },
-  { id: 'turn.sound', label: 'Sons', sub: 'Toque curto em eventos urgentes', defaultOn: true },
-  {
-    id: 'turn.lockScreen',
-    label: 'Lock screen',
-    sub: 'Prévia na tela bloqueada',
-    defaultOn: false,
-  },
-  {
-    id: 'critical.complaints',
-    label: 'Reclamações críticas',
-    sub: 'Prioridade alta no painel',
-    defaultOn: true,
-  },
-];
 
 const THEME_OPTIONS: Array<{ id: StaffThemeMode; label: string; sub: string }> = [
   { id: 'light', label: 'Claro', sub: 'Tema claro' },
@@ -65,48 +43,36 @@ function formatDateTime(iso: string) {
 
 export function ScreenManagerNotificationPrefs({ tenantSlug }: { tenantSlug: string }) {
   const { dark } = useStaffTheme();
+  const C = useG(dark);
   const router = useRouter();
-  const api = useMemo(() => manager(tenantSlug), [tenantSlug]);
-  const [prefs, setPrefs] = useState<Record<string, boolean>>(
-    Object.fromEntries(NOTIFICATION_ROWS.map((r) => [r.id, r.defaultOn])),
-  );
-  const [toast, setToast] = useToast();
-
-  useEffect(() => {
-    api.account
-      .getPreferences()
-      .then((p) => setPrefs({ ...prefs, ...p.notifications }))
-      .catch((e) => setToast({ tone: 'danger', text: (e as Error).message }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api]);
-
-  const toggle = (id: string) => {
-    const nextValue = !prefs[id];
-    setPrefs((prev) => ({ ...prev, [id]: nextValue }));
-    api.account
-      .updatePreferences({ notifications: { [id]: nextValue } })
-      .then(() => setToast({ tone: 'success', text: 'Preferência salva.' }))
-      .catch((e) => {
-        setPrefs((prev) => ({ ...prev, [id]: !nextValue }));
-        setToast({ tone: 'danger', text: (e as Error).message });
-      });
-  };
+  void tenantSlug;
 
   return (
     <SettingsShell title="Notificações" dark={dark} onBack={() => router.back()} active="me">
-      <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {NOTIFICATION_ROWS.map((row) => (
-          <ToggleRow
-            key={row.id}
-            dark={dark}
-            label={row.label}
-            sub={row.sub}
-            checked={!!prefs[row.id]}
-            onChange={() => toggle(row.id)}
-          />
-        ))}
+      <div style={{ padding: '18px 16px' }}>
+        <div
+          role="status"
+          style={{
+            padding: 18,
+            borderRadius: 14,
+            border: `1px solid ${C.borderSoft}`,
+            background: C.bg,
+            fontSize: 13,
+            color: C.ink,
+            fontWeight: 600,
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 800 }}>
+            {Icon.bell(20)}
+            Preferências ainda indisponíveis
+          </div>
+          <p style={{ margin: '10px 0 0', color: C.mute, fontWeight: 500 }}>
+            O app ainda não possui provedor de push nem controle real de som ou tela bloqueada.
+            Esses comportamentos seguem o dispositivo; nada é alterado ou salvo nesta tela.
+          </p>
+        </div>
       </div>
-      {toast && <ToastView dark={dark} toast={toast} />}
     </SettingsShell>
   );
 }
@@ -203,17 +169,14 @@ export function ScreenManagerSecurity({ tenantSlug }: { tenantSlug: string }) {
   const C = useG(dark);
   const router = useRouter();
   const api = useMemo(() => manager(tenantSlug), [tenantSlug]);
-  const [twoFactor, setTwoFactor] = useState(false);
   const [sessions, setSessions] = useState<ManagerSecuritySession[]>([]);
   const [pinOpen, setPinOpen] = useState(false);
   const [toast, setToast] = useToast();
 
   const refresh = () => {
-    Promise.all([api.account.getPreferences(), api.account.sessions()])
-      .then(([prefs, sessionRes]) => {
-        setTwoFactor(prefs.twoFactorEnabled);
-        setSessions(sessionRes.sessions);
-      })
+    api.account
+      .sessions()
+      .then((sessionRes) => setSessions(sessionRes.sessions))
       .catch((e) => setToast({ tone: 'danger', text: (e as Error).message }));
   };
 
@@ -221,18 +184,6 @@ export function ScreenManagerSecurity({ tenantSlug }: { tenantSlug: string }) {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
-
-  const toggle2fa = () => {
-    const next = !twoFactor;
-    setTwoFactor(next);
-    api.account
-      .updatePreferences({ twoFactorEnabled: next })
-      .then(() => setToast({ tone: 'success', text: next ? '2FA ativo.' : '2FA inativo.' }))
-      .catch((e) => {
-        setTwoFactor(!next);
-        setToast({ tone: 'danger', text: (e as Error).message });
-      });
-  };
 
   const revoke = (id: string) => {
     api.account
@@ -258,16 +209,31 @@ export function ScreenManagerSecurity({ tenantSlug }: { tenantSlug: string }) {
       </div>
       <SectionLabel dark={dark}>Autenticação em 2 fatores</SectionLabel>
       <div style={{ padding: '0 16px' }}>
-        <ToggleRow
-          dark={dark}
-          label="Pedir código a cada login"
-          sub="Camada extra de acesso"
-          checked={twoFactor}
-          onChange={toggle2fa}
-        />
+        <div
+          role="status"
+          style={{
+            padding: 14,
+            borderRadius: 12,
+            border: `1px solid ${C.borderSoft}`,
+            background: C.bg,
+            fontSize: 12.5,
+            color: C.mute,
+            fontWeight: 600,
+            lineHeight: 1.45,
+          }}
+        >
+          2FA ainda não está disponível. O login continua protegido por PIN, limite de tentativas e
+          sessões revogáveis; nenhum código adicional é exigido enquanto não houver um segundo fator
+          real.
+        </div>
       </div>
       <SectionLabel dark={dark}>Sessões ativas</SectionLabel>
       <div style={{ padding: '0 16px 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {sessions.length === 0 && (
+          <div style={{ padding: 14, color: C.faint, fontSize: 12.5, fontWeight: 600 }}>
+            Nenhuma sessão adicional encontrada.
+          </div>
+        )}
         {sessions.map((s) => (
           <div
             key={s.id}
@@ -316,6 +282,7 @@ export function ScreenManagerSecurity({ tenantSlug }: { tenantSlug: string }) {
               style={{
                 all: 'unset',
                 cursor: s.current ? 'not-allowed' : 'pointer',
+                minHeight: 44,
                 padding: '8px 10px',
                 borderRadius: 10,
                 border: `1px solid ${s.current ? C.borderSoft : '#F4C7C7'}`,
@@ -340,6 +307,7 @@ export function ScreenManagerSecurity({ tenantSlug }: { tenantSlug: string }) {
               .then(() => {
                 setPinOpen(false);
                 setToast({ tone: 'success', text: 'PIN atualizado.' });
+                refresh();
               })
               .catch((e) => setToast({ tone: 'danger', text: (e as Error).message }));
           }}
@@ -506,84 +474,6 @@ function SettingsShell({
   );
 }
 
-function ToggleRow({
-  label,
-  sub,
-  checked,
-  onChange,
-  dark,
-}: {
-  label: string;
-  sub: string;
-  checked: boolean;
-  onChange: () => void;
-  dark: boolean;
-}) {
-  const C = useG(dark);
-  return (
-    <label
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        padding: '12px 14px',
-        borderRadius: 12,
-        border: `1px solid ${C.borderSoft}`,
-        background: C.bg,
-        cursor: 'pointer',
-      }}
-    >
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 14, fontWeight: 800 }}>{label}</span>
-        <span
-          style={{
-            display: 'block',
-            marginTop: 2,
-            fontSize: 11.5,
-            color: C.faint,
-            fontWeight: 600,
-          }}
-        >
-          {sub}
-        </span>
-      </span>
-      <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={onChange}
-          aria-label={label}
-          style={{ position: 'absolute', inset: 0, opacity: 0, margin: 0, cursor: 'pointer' }}
-        />
-        <span
-          aria-hidden
-          style={{
-            width: 44,
-            height: 26,
-            borderRadius: 999,
-            background: checked ? C.ink : C.borderSoft,
-            position: 'relative',
-            display: 'inline-block',
-          }}
-        >
-          <span
-            style={{
-              position: 'absolute',
-              top: 3,
-              left: checked ? 21 : 3,
-              width: 20,
-              height: 20,
-              borderRadius: '50%',
-              background: '#fff',
-              transition: 'left 140ms ease',
-            }}
-          />
-        </span>
-      </span>
-    </label>
-  );
-}
-
 function SectionLabel({ children, dark }: { children: React.ReactNode; dark: boolean }) {
   const C = useG(dark);
   return (
@@ -683,6 +573,8 @@ function ChangePinSheet({
   const [nextPin, setNextPin] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const titleId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(true, onClose);
 
   const submit = () => {
     setError(null);
@@ -699,8 +591,10 @@ function ChangePinSheet({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -730,7 +624,9 @@ function ChangePinSheet({
             margin: '0 auto 14px',
           }}
         />
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900 }}>Trocar PIN</h2>
+        <h2 id={titleId} style={{ margin: 0, fontSize: 18, fontWeight: 900 }}>
+          Trocar PIN
+        </h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
           <PinField dark={dark} label="PIN atual" value={currentPin} onChange={setCurrentPin} />
           <PinField dark={dark} label="Novo PIN" value={nextPin} onChange={setNextPin} />

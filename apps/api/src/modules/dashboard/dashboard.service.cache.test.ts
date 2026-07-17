@@ -54,8 +54,9 @@ describe('DashboardService — cache de leitura (FASE 3)', () => {
       const second = await svc.getOverview();
 
       expect(second).toEqual(first);
-      // 4 queries no miss, ZERO no hit (cache guarda o objeto inteiro).
-      expect(getCalls()).toBe(4);
+      // 5 queries no miss (pedidos e receita liquidada são fontes distintas),
+      // ZERO no hit (cache guarda o objeto inteiro).
+      expect(getCalls()).toBe(5);
       const entry = store.get('cache:dash:restaurant_dev:overview');
       expect(entry?.ttl).toBe(10);
     });
@@ -176,8 +177,8 @@ describe('DashboardService — cache de leitura (FASE 3)', () => {
 
       const result = await svc.getOverview();
       expect(result.today).toBeDefined();
-      // get quebra → miss → 4 queries; set quebra → não propaga.
-      expect(getCalls()).toBe(4);
+      // get quebra → miss → 5 queries; set quebra → não propaga.
+      expect(getCalls()).toBe(5);
     });
 
     it('Redis fora → query roda (getTopItems, método com arg)', async () => {

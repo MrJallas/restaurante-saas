@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useG, G_FONT } from '../../components/waiter/tokens';
 import { Icon } from '../../components/waiter/Icons';
 import { GAppHeader, GButton, GIconBtn, HBottomNav } from '../../components/waiter/Primitives';
+import { OperationalErrorBanner } from '../../components/OperationalErrorBanner';
 import {
   listHostTables,
   listReservations,
@@ -13,6 +14,7 @@ import {
   type ReservationEntry,
 } from '../../lib/api/host';
 import { useStaffTheme } from '../../lib/theme';
+import { isAuthoritativeEmpty, type OperationalLoadState } from '../../lib/operational-error';
 
 interface ScreenHostReservationDetailProps {
   tenantSlug: string;
@@ -36,37 +38,61 @@ export const ScreenHostReservationDetail: React.FC<ScreenHostReservationDetailPr
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reservationState, setReservationState] = useState<OperationalLoadState>('loading');
+  const [tablesState, setTablesState] = useState<OperationalLoadState>('loading');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let alive = true;
     async function load() {
-      try {
-        const [reservations, tableRows] = await Promise.all([
-          listReservations(tenantSlug),
-          listHostTables(tenantSlug).catch(() => []),
-        ]);
-        if (!alive) return;
-        setReservation(reservations.find((item) => item.id === reservationId) ?? null);
-        setTables(tableRows);
-      } catch {
-        if (alive) setReservation(null);
-      } finally {
-        if (alive) setLoading(false);
+      setLoading(true);
+      const [reservationsResult, tablesResult] = await Promise.allSettled([
+        listReservations(tenantSlug),
+        listHostTables(tenantSlug),
+      ]);
+      if (!alive) return;
+      if (reservationsResult.status === 'fulfilled') {
+        setReservation(reservationsResult.value.find((item) => item.id === reservationId) ?? null);
+        setReservationState('ready');
+      } else {
+        console.error(
+          '[host-reservation-detail] reservation load failed',
+          reservationsResult.reason,
+        );
+        setReservationState('error');
       }
+      if (tablesResult.status === 'fulfilled') {
+        setTables(tablesResult.value);
+        setTablesState('ready');
+      } else {
+        console.error('[host-reservation-detail] tables load failed', tablesResult.reason);
+        setTablesState('error');
+      }
+      setLoading(false);
     }
-    load();
+    void load();
     return () => {
       alive = false;
     };
-  }, [tenantSlug, reservationId]);
+  }, [tenantSlug, reservationId, reloadKey]);
 
   const suggestions = useMemo(() => {
-    if (!reservation) return [];
+    if (!reservation || tablesState !== 'ready') return [];
     return tables
       .filter((table) => table.status === 'livre' && table.capacity >= reservation.party)
       .sort((a, b) => a.capacity - b.capacity || a.number - b.number)
       .slice(0, 4);
-  }, [reservation, tables]);
+  }, [reservation, tables, tablesState]);
+
+  const loadError =
+    reservationState === 'error' && tablesState === 'error'
+      ? 'Não foi possível carregar a reserva nem as mesas.'
+      : reservationState === 'error'
+        ? 'Não foi possível confirmar os dados da reserva.'
+        : tablesState === 'error'
+          ? 'Não foi possível atualizar as mesas disponíveis.'
+          : null;
+  const reservationNotFound = isAuthoritativeEmpty(reservationState, reservation ? 1 : 0);
 
   async function setStatus(status: 'arrived' | 'cancelled' | 'no_show') {
     setSubmitting(true);
@@ -100,12 +126,21 @@ export const ScreenHostReservationDetail: React.FC<ScreenHostReservationDetailPr
         sub={reservation ? `${reservation.when} · ${reservation.party} pessoa(s)` : ''}
       />
 
+      {loadError && (
+        <OperationalErrorBanner
+          dark={dark}
+          message={loadError}
+          hasStaleData={reservation !== null || tables.length > 0}
+          onRetry={() => setReloadKey((value) => value + 1)}
+        />
+      )}
+
       <div style={{ flex: 1, overflow: 'auto', padding: '16px 16px 88px' }}>
-        {loading ? (
+        {loading && !reservation ? (
           <div style={{ padding: 28, color: C.faint, fontSize: 12, textAlign: 'center' }}>
             Carregando...
           </div>
-        ) : !reservation ? (
+        ) : reservationNotFound ? (
           <div
             style={{
               padding: '32px 18px',
@@ -120,7 +155,7 @@ export const ScreenHostReservationDetail: React.FC<ScreenHostReservationDetailPr
           >
             Reserva não encontrada.
           </div>
-        ) : (
+        ) : reservation ? (
           <>
             <section style={{ marginBottom: 18 }}>
               <div
@@ -258,7 +293,7 @@ export const ScreenHostReservationDetail: React.FC<ScreenHostReservationDetailPr
                   </div>
                   <span style={{ color: '#1E8C5A' }}>{Icon.arrow(16)}</span>
                 </button>
-              ) : suggestions.length === 0 ? (
+              ) : tablesState === 'ready' && suggestions.length === 0 ? (
                 <div
                   style={{
                     marginTop: 8,
@@ -273,7 +308,7 @@ export const ScreenHostReservationDetail: React.FC<ScreenHostReservationDetailPr
                 >
                   Nenhuma mesa livre comporta essa reserva agora.
                 </div>
-              ) : (
+              ) : suggestions.length > 0 ? (
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {suggestions.map((table) => (
                     <button
@@ -321,7 +356,7 @@ export const ScreenHostReservationDetail: React.FC<ScreenHostReservationDetailPr
                     </button>
                   ))}
                 </div>
-              )}
+              ) : null}
             </section>
 
             {error && (
@@ -341,68 +376,74 @@ export const ScreenHostReservationDetail: React.FC<ScreenHostReservationDetailPr
               </div>
             )}
           </>
-        )}
+        ) : null}
       </div>
 
-      {reservation && (
-        <div
-          style={{
-            padding: '12px 16px 18px',
-            borderTop: `1px solid ${C.borderFaint}`,
-            background: C.bg,
-            display: 'flex',
-            gap: 10,
-          }}
-        >
-          {reservation.status === 'awaited' ? (
-            <>
-              <GButton
-                kind="secondary"
-                dark={dark}
-                onClick={() => setStatus('cancelled')}
-                disabled={submitting}
-              >
-                Cancelar
-              </GButton>
-              {/* Bug 2: "não veio" (no_show) precisava de gatilho na UI. Sem
-                  ele todo cancelamento legítimo virava 'cancelled' e poluía a
-                  métrica. Backend + enum + badge já suportavam no_show. */}
-              <GButton
-                kind="ghost"
-                dark={dark}
-                onClick={() => setStatus('no_show')}
-                disabled={submitting}
-              >
-                Não veio
-              </GButton>
-              <div style={{ flex: 1 }}>
+      {reservation &&
+        reservationState === 'ready' &&
+        ['awaited', 'arrived'].includes(reservation.status) && (
+          <div
+            style={{
+              padding: '12px 16px 18px',
+              borderTop: `1px solid ${C.borderFaint}`,
+              background: C.bg,
+              display: 'flex',
+              gap: 10,
+            }}
+          >
+            {reservation.status === 'awaited' ? (
+              <>
                 <GButton
-                  kind="success"
-                  full
+                  kind="secondary"
                   dark={dark}
-                  onClick={() => setStatus('arrived')}
+                  onClick={() => setStatus('cancelled')}
                   disabled={submitting}
                 >
-                  Marcar chegada
+                  Cancelar
                 </GButton>
-              </div>
-            </>
-          ) : (
-            <GButton
-              kind="success"
-              full
-              dark={dark}
-              onClick={() => {
-                const table = reservation.table ?? suggestions[0]?.number;
-                if (table) onLiberate?.(table);
-              }}
-              disabled={submitting || (reservation.table == null && suggestions.length === 0)}
-            >
-              Liberar mesa
-            </GButton>
-          )}
-        </div>
-      )}
+                {/* Bug 2: "não veio" (no_show) precisava de gatilho na UI. Sem
+                  ele todo cancelamento legítimo virava 'cancelled' e poluía a
+                  métrica. Backend + enum + badge já suportavam no_show. */}
+                <GButton
+                  kind="ghost"
+                  dark={dark}
+                  onClick={() => setStatus('no_show')}
+                  disabled={submitting}
+                >
+                  Não veio
+                </GButton>
+                <div style={{ flex: 1 }}>
+                  <GButton
+                    kind="success"
+                    full
+                    dark={dark}
+                    onClick={() => setStatus('arrived')}
+                    disabled={submitting}
+                  >
+                    Marcar chegada
+                  </GButton>
+                </div>
+              </>
+            ) : reservation.status === 'arrived' ? (
+              <GButton
+                kind="success"
+                full
+                dark={dark}
+                onClick={() => {
+                  const table = reservation.table ?? suggestions[0]?.number;
+                  if (table) onLiberate?.(table);
+                }}
+                disabled={
+                  submitting ||
+                  (reservation.table == null &&
+                    (tablesState !== 'ready' || suggestions.length === 0))
+                }
+              >
+                Liberar mesa
+              </GButton>
+            ) : null}
+          </div>
+        )}
 
       <HBottomNav active="reserva" dark={dark} onTabChange={(id) => onTabChange?.(id)} />
     </div>

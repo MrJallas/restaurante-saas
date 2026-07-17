@@ -1,5 +1,6 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { DashboardService } from './dashboard.service';
 
 /**
@@ -13,7 +14,7 @@ import { DashboardService } from './dashboard.service';
  * staff.
  */
 @Controller(':slug/dashboard')
-@UseGuards(StaffOnlyGuard)
+@UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
@@ -52,8 +53,11 @@ export class DashboardController {
   }
 
   @Get('top-items')
-  async getTopItems(@Query('limit') limit?: string) {
-    const items = await this.dashboardService.getTopItems(this.safePositiveInt(limit, 10, 100));
+  async getTopItems(@Query('limit') limit?: string, @Query('days') days?: string) {
+    const items = await this.dashboardService.getTopItems(
+      this.safePositiveInt(limit, 10, 100),
+      this.safePositiveInt(days, 30, 365),
+    );
     return { items };
   }
 

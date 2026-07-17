@@ -35,6 +35,7 @@ interface TopItem {
   price_cents: number;
   total_orders: number;
   category_name: string;
+  revenue_cents: number;
 }
 
 interface ActiveTableRow {
@@ -49,8 +50,10 @@ interface ActiveTableRow {
 interface LateOrderRow {
   orderId: string;
   tableLabel: string;
+  station: 'kitchen';
   minutesInPrep: number;
   itemCount: number;
+  targetMinutes: number;
 }
 
 interface ActiveTablesData {
@@ -109,7 +112,7 @@ function FinanceDetailInner() {
       staffGet<RevenuePoint[]>(`/${slug}/dashboard/revenue?days=${days}`),
       isPending
         ? Promise.resolve<{ items: TopItem[] }>({ items: [] })
-        : staffGet<{ items: TopItem[] }>(`/${slug}/dashboard/top-items?limit=8`),
+        : staffGet<{ items: TopItem[] }>(`/${slug}/dashboard/top-items?limit=8&days=${days}`),
       isPending
         ? staffGet<ActiveTablesData>(`/${slug}/dashboard/active-tables`)
         : Promise.resolve<ActiveTablesData | null>(null),
@@ -288,11 +291,7 @@ function SeriesBody({
             key={item.id}
             C={C}
             left={item.name}
-            right={
-              kind === 'faturamento'
-                ? money(item.price_cents * item.total_orders)
-                : `${item.total_orders}`
-            }
+            right={kind === 'faturamento' ? money(item.revenue_cents) : `${item.total_orders}`}
             sub={
               kind === 'faturamento'
                 ? `${item.total_orders} pedidos · ${item.category_name}`
@@ -343,7 +342,7 @@ function PendingBody({
               C={C}
               left={o.tableLabel}
               right={`${o.minutesInPrep} min`}
-              sub={`${o.itemCount} ${o.itemCount === 1 ? 'item' : 'itens'} em preparo`}
+              sub={`${o.itemCount} ${o.itemCount === 1 ? 'unidade' : 'unidades'} em preparo · meta ${o.targetMinutes} min`}
             />
           ))}
         </div>

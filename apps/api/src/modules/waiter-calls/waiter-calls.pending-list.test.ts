@@ -23,6 +23,8 @@ import type { BillingService } from '../billing/billing.service';
 const PENDING_CALL = 'aaaa1111-0000-4000-8000-000000000001';
 const ACK_CALL = 'bbbb2222-0000-4000-8000-000000000002';
 const RESOLVED_CALL = 'cccc3333-0000-4000-8000-000000000003';
+const STAFF_A = 'dddd3333-0000-4000-8000-000000000004';
+const STAFF_B = 'eeee3333-0000-4000-8000-000000000005';
 
 interface Row {
   id: string;
@@ -34,6 +36,7 @@ interface Row {
   table_label: string;
   table_code: string;
   flags: string[];
+  acknowledged_by: string | null;
 }
 
 /**
@@ -55,6 +58,7 @@ function makeService() {
       table_label: 'Mesa 12',
       table_code: 'M12',
       flags: [],
+      acknowledged_by: null,
     },
     {
       id: ACK_CALL,
@@ -66,6 +70,7 @@ function makeService() {
       table_label: 'Mesa 07',
       table_code: 'M07',
       flags: [],
+      acknowledged_by: STAFF_A,
     },
     {
       id: RESOLVED_CALL,
@@ -77,21 +82,19 @@ function makeService() {
       table_label: 'Mesa 03',
       table_code: 'M03',
       flags: [],
+      acknowledged_by: STAFF_A,
     },
   ];
 
   const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
     const s = sql.replace(/\s+/g, ' ').trim();
     if (s.includes('FROM waiter_calls wc') && s.includes('ORDER BY wc.created_at ASC')) {
-      // Deriva quais status a lista pede olhando o SQL E os params ligados
-      // (o fix usa `status = ANY($1)` com o array vindo por parâmetro, então
-      // 'acknowledged' pode estar no SQL literal OU no param — cobre os dois).
-      const boundStatuses = params.flat().map(String);
-      const wantsAck =
-        /wc\.status[^;]*acknowledged/.test(s) || boundStatuses.includes('acknowledged');
-      const allowed = wantsAck ? new Set(['pending', 'acknowledged']) : new Set(['pending']);
+      const caller = params[0] as string;
       return table
-        .filter((r) => allowed.has(r.status))
+        .filter(
+          (r) =>
+            r.status === 'pending' || (r.status === 'acknowledged' && r.acknowledged_by === caller),
+        )
         .sort((a, b) => a.created_at.localeCompare(b.created_at));
     }
     throw new Error(`fake pending-list: SQL não roteado: ${s}`);
@@ -109,7 +112,7 @@ function makeService() {
 describe('WaiterCallsService.getPendingCalls — lista do garçom (P1 órfão)', () => {
   it('inclui o chamado acknowledged (a-caminho) — não pode sumir da lista', async () => {
     const { service } = makeService();
-    const rows = (await service.getPendingCalls()) as Array<{ id: string; status: string }>;
+    const rows = (await service.getPendingCalls(STAFF_A)) as Array<{ id: string; status: string }>;
     const ids = rows.map((r) => r.id);
     // O essencial: o chamado que o garçom aceitou continua VISÍVEL pra ele
     // tocar "Atendido".
@@ -118,13 +121,20 @@ describe('WaiterCallsService.getPendingCalls — lista do garçom (P1 órfão)',
 
   it('mantém o chamado pending (não regride o caminho feliz)', async () => {
     const { service } = makeService();
-    const rows = (await service.getPendingCalls()) as Array<{ id: string }>;
+    const rows = (await service.getPendingCalls(STAFF_A)) as Array<{ id: string }>;
     expect(rows.map((r) => r.id)).toContain(PENDING_CALL);
   });
 
   it('não vaza chamados terminais (resolved fica fora)', async () => {
     const { service } = makeService();
-    const rows = (await service.getPendingCalls()) as Array<{ id: string }>;
+    const rows = (await service.getPendingCalls(STAFF_A)) as Array<{ id: string }>;
     expect(rows.map((r) => r.id)).not.toContain(RESOLVED_CALL);
+  });
+
+  it('não mostra a B o chamado acknowledged por A', async () => {
+    const { service } = makeService();
+    const rows = (await service.getPendingCalls(STAFF_B)) as Array<{ id: string }>;
+    expect(rows.map((r) => r.id)).not.toContain(ACK_CALL);
+    expect(rows.map((r) => r.id)).toContain(PENDING_CALL);
   });
 });

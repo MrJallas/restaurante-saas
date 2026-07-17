@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { apiGet } from '../../../../lib/api';
+import { ApiRequestError, apiGet } from '../../../../lib/api';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
 import { AppShell } from '../../../../components/layout/AppShell';
@@ -59,6 +59,8 @@ export default function PedidoMesaPage() {
   const [participants, setParticipants] = useState<Participant[]>(sessionParticipants ?? []);
   const [tab, setTab] = useState<TabMode>('all');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     if (!slug) return;
@@ -71,9 +73,16 @@ export default function PedidoMesaPage() {
         ]);
         if (stop) return;
         setOrders(ordersRes.orders);
+        setLoadError(null);
         if (partRes.participants?.length) setParticipants(partRes.participants);
-      } catch {
-        /* ignore */
+      } catch (error) {
+        if (!stop) {
+          setLoadError(
+            error instanceof ApiRequestError && error.statusCode === 401
+              ? 'Sua sessão expirou. Escaneie o QR da mesa novamente.'
+              : 'Não consegui carregar a comanda da mesa. Verifique a conexão e tente de novo.',
+          );
+        }
       } finally {
         if (!stop) setLoading(false);
       }
@@ -84,7 +93,7 @@ export default function PedidoMesaPage() {
       stop = true;
       clearInterval(timer);
     };
-  }, [slug]);
+  }, [slug, retryNonce]);
 
   const flatItems = useMemo(() => {
     return orders
@@ -125,6 +134,36 @@ export default function PedidoMesaPage() {
     );
   }
 
+  if (loadError && orders.length === 0) {
+    return (
+      <AppShell
+        slug={slug}
+        restaurantName=""
+        tableLabel={tableLabel || ''}
+        activeHref={`/${slug}/pedido/mesa`}
+      >
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+          <h1 className="text-[20px] font-semibold tracking-[-0.02em] text-ink">
+            Não consegui abrir a comanda
+          </h1>
+          <p role="alert" className="max-w-[290px] text-[13px] leading-[1.5] text-mute">
+            {loadError}
+          </p>
+          <PillButton
+            variant="filled"
+            onClick={() => {
+              setLoading(true);
+              setRetryNonce((value) => value + 1);
+            }}
+          >
+            Tentar novamente
+          </PillButton>
+          <PillButton onClick={() => push(`/${slug}`)}>Voltar</PillButton>
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell
       slug={slug}
@@ -150,7 +189,11 @@ export default function PedidoMesaPage() {
           </div>
         </div>
 
-        <div className="flex shrink-0 gap-2 px-[22px] pb-3.5">
+        <div
+          className="flex shrink-0 gap-2 px-[22px] pb-3.5"
+          role="group"
+          aria-label="Filtrar pedido da mesa"
+        >
           {(
             [
               { key: 'all', label: 'Todos' },
@@ -164,7 +207,8 @@ export default function PedidoMesaPage() {
                 key={t.key}
                 type="button"
                 onClick={() => setTab(t.key)}
-                className={`rounded-full border-[1.2px] border-ink px-3.5 py-[7px] text-[12px] font-medium transition-colors ${
+                aria-pressed={active}
+                className={`min-h-11 rounded-full border-[1.2px] border-ink px-3.5 py-[7px] text-[12px] font-medium transition-colors ${
                   active ? 'bg-ink text-white' : 'bg-bg text-ink'
                 }`}
               >

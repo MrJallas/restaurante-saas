@@ -40,11 +40,20 @@ interface CustomerSocketEntry {
 const registry = new Map<string, CustomerSocketEntry>();
 const IDLE_LINGER_MS = 5_000;
 
+export function resolveCustomerSocketUrl(
+  configuredUrl: string | undefined,
+  origin: string,
+): string {
+  const configured = configuredUrl?.trim();
+  return configured || origin;
+}
+
 function resolveWsUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_WS_URL ||
-    `${window.location.protocol}//${window.location.hostname}:3001`
-  );
+  // Same-origin por padrão: /socket.io é proxyado pelo próprio Next junto de
+  // /api. Assim Simulator/iPhone/LAN só precisam alcançar a porta do app
+  // customer; nunca fabricamos `hostname:3001` (que no device aponta para uma
+  // porta bloqueada/inexistente). Deploys separados ainda podem fornecer URL.
+  return resolveCustomerSocketUrl(process.env.NEXT_PUBLIC_WS_URL, window.location.origin);
 }
 
 export function acquireCustomerSocket(): CustomerSocketEntry | null {

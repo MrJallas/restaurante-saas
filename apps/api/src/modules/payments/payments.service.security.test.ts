@@ -54,6 +54,9 @@ function fakeTenantConn(opts: {
     if (sql.includes('FROM order_items oi')) {
       return [{ subtotal_cents: opts.outstandingCents, customer_id: CUSTOMER }];
     }
+    if (sql.includes('SELECT id FROM visits')) {
+      return params[0] === SESSION && params[1] === CUSTOMER ? [{ id: VISIT }] : [];
+    }
     if (sql.startsWith('SELECT COALESCE(SUM(total_cents)')) {
       // pg devolve SUM() como STRING (NUMERIC) — imitar o driver real.
       return [{ total: String(opts.outstandingCents) }];
@@ -61,8 +64,8 @@ function fakeTenantConn(opts: {
     if (sql.startsWith('SELECT COALESCE(SUM(amount_cents)')) {
       return [{ paid: '0' }]; // nada liquidado ainda (P1-A)
     }
-    if (sql.includes('FROM payments WHERE id = $1') && sql.includes('SELECT')) {
-      return opts.payment ? [opts.payment] : [];
+    if (sql.includes('FROM payments p') && sql.includes('WHERE p.id = $1')) {
+      return opts.payment ? [{ visit_id: null, owner_customer_id: null, ...opts.payment }] : [];
     }
     if (sql.includes("status = 'pending'")) {
       return []; // sem pendente duplicado
@@ -95,16 +98,29 @@ function fakeTenantConn(opts: {
 function fakeRedis(): RedisService {
   return {
     setNX: async () => true,
+    compareAndDelete: async () => true,
     del: async () => 1,
     get: async () => null,
   } as unknown as RedisService;
 }
 
 describe('PaymentsService security (A04-PAY-01 / A04-PAY-02)', () => {
-  const OLD_ENV = process.env.PAYMENTS_ALLOW_CLIENT_CONFIRM;
+  const OLD_ENV = {
+    allow: process.env.PAYMENTS_ALLOW_CLIENT_CONFIRM,
+    node: process.env.NODE_ENV,
+    app: process.env.APP_ENV,
+    vercel: process.env.VERCEL_ENV,
+  };
   afterEach(() => {
-    if (OLD_ENV === undefined) delete process.env.PAYMENTS_ALLOW_CLIENT_CONFIRM;
-    else process.env.PAYMENTS_ALLOW_CLIENT_CONFIRM = OLD_ENV;
+    for (const [key, value] of Object.entries({
+      PAYMENTS_ALLOW_CLIENT_CONFIRM: OLD_ENV.allow,
+      NODE_ENV: OLD_ENV.node,
+      APP_ENV: OLD_ENV.app,
+      VERCEL_ENV: OLD_ENV.vercel,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   });
 
   describe('A04-PAY-01: auto-confirm pelo cliente nao marca como pago', () => {
@@ -135,6 +151,7 @@ describe('PaymentsService security (A04-PAY-01 / A04-PAY-02)', () => {
     });
 
     it('com a flag ligada (mock/dev) ainda marca confirmed', async () => {
+      process.env.NODE_ENV = 'test';
       process.env.PAYMENTS_ALLOW_CLIENT_CONFIRM = 'true';
       const updates: { sql: string }[] = [];
       const conn = fakeTenantConn({
@@ -152,6 +169,38 @@ describe('PaymentsService security (A04-PAY-01 / A04-PAY-02)', () => {
       const res = await svc.confirmPayment(PAYMENT_ID, SESSION, 'txid');
       expect(res.status).toBe('confirmed');
       expect(updates.some((u) => u.sql.includes('paid_at'))).toBe(true);
+    });
+
+    it.each([
+      { NODE_ENV: 'production' },
+      { NODE_ENV: 'development', APP_ENV: 'staging' },
+      { NODE_ENV: 'development', VERCEL_ENV: 'preview' },
+    ])('ignora a flag perigosa em ambiente publicado: %o', async (runtime) => {
+      process.env.PAYMENTS_ALLOW_CLIENT_CONFIRM = 'true';
+      process.env.NODE_ENV = runtime.NODE_ENV;
+      if ('APP_ENV' in runtime && runtime.APP_ENV) process.env.APP_ENV = runtime.APP_ENV;
+      else delete process.env.APP_ENV;
+      if ('VERCEL_ENV' in runtime && runtime.VERCEL_ENV)
+        process.env.VERCEL_ENV = runtime.VERCEL_ENV;
+      else delete process.env.VERCEL_ENV;
+
+      const updates: { sql: string }[] = [];
+      const conn = fakeTenantConn({
+        outstandingCents: 20000,
+        payment: {
+          id: PAYMENT_ID,
+          status: 'pending',
+          table_session_id: SESSION,
+          expires_at: null,
+        },
+        onUpdate: (sql) => updates.push({ sql }),
+      });
+      const svc = new PaymentsService(conn, fakeRedis(), new BillingService(conn));
+
+      const res = await svc.confirmPayment(PAYMENT_ID, SESSION, 'txid-forjado');
+
+      expect(res.status).toBe('awaiting_settlement');
+      expect(updates.some((u) => u.sql.includes('paid_at'))).toBe(false);
     });
 
     it('ownership: sessao diferente nao encontra o pagamento (404)', async () => {

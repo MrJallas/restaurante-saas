@@ -186,7 +186,7 @@ export function OverlaySalonMap({
           type="button"
           onClick={onClose}
           aria-label="Fechar"
-          className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full border border-border-soft bg-bg text-ink hover:bg-surface"
+          className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full border border-border-soft bg-bg text-ink hover:bg-surface"
         >
           <svg width="13" height="13" viewBox="0 0 18 18" fill="none" aria-hidden>
             <path

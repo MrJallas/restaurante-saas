@@ -1,4 +1,15 @@
-import { Controller, Post, Get, Body, Query, Req, UseGuards, Param } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Query,
+  Req,
+  UseGuards,
+  Param,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import {
   IsString,
@@ -81,13 +92,33 @@ class SendMessageDto {
 class StaffToCustomerDto {
   @IsUUID() tableSessionId!: string;
   @IsString() @IsNotEmpty() @MaxLength(2000) message!: string;
-  @IsUUID() fromStaffId!: string;
+  // Compatibilidade: clientes antigos ainda podem enviar, mas é ignorado.
+  @IsOptional() @IsUUID() fromStaffId?: string;
   /**
    * Destinatário da mensagem (decisão Caleb 2026-06-11): a resposta do
    * gerente é PRIVADA por cliente — persiste com customer_id e emite WS
    * só no room `customer:<id>`, nunca mais no session room (mesa toda).
    */
   @IsUUID() toCustomerId!: string;
+}
+
+/**
+ * Preserve the authenticated customer credential when the assistant delegates
+ * a tool call to the internal AI service. `session.sessionId` is only the
+ * table-session resource id; since A07 it must never be reused as a bearer
+ * credential.
+ */
+export function readSessionAuthToken(req: Request): string | null {
+  const cookieToken = req.cookies?.session_token;
+  if (typeof cookieToken === 'string' && cookieToken.trim()) return cookieToken.trim();
+
+  const headerToken = req.headers['x-session-token'];
+  if (typeof headerToken === 'string' && headerToken.trim()) return headerToken.trim();
+  if (Array.isArray(headerToken)) {
+    const first = headerToken.find((value) => typeof value === 'string' && value.trim());
+    return first?.trim() || null;
+  }
+  return null;
 }
 
 @Controller(':slug/assistant')
@@ -121,6 +152,7 @@ export class AssistantController {
       dto.continueThreadId,
       slug,
       dto.pendingJoinRequest,
+      readSessionAuthToken(req),
     );
   }
 
@@ -159,20 +191,27 @@ export class AssistantController {
    * Auth: manager-only (decisao de produto — waiters chamam o cliente
    * via outros canais; mensagem inline no chat eh manager prerogativa).
    *
-   * `fromStaffId` vem do body do FE. Defesa-em-profundidade: o service
-   * valida que o staffId existe e está ativo no DB (mesmo padrao do
-   * `requireActiveStaffId`). Audit-spoof prevenido pq StaffOnlyGuard
-   * + ManagerOnlyGuard ja confirma que x-staff-id eh manager — body
-   * mismatch eh permitido (manager pode delegar?) mas o staffId
-   * persistido é o do body, nao header. Trade-off explicito.
+   * O autor é derivado do token individual validado, nunca do body. Não há
+   * delegação implícita para assinar como owner/outro gerente.
    */
   @Post('staff-to-customer')
   @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
-  async staffToCustomer(@Body() dto: StaffToCustomerDto, @Tenant() tenantId: string) {
+  async staffToCustomer(
+    @Body() dto: StaffToCustomerDto,
+    @Tenant() tenantId: string,
+    @Req() req: Request,
+  ) {
+    if (!(req as Request & { staffAuth?: { staffId?: string } }).staffAuth?.staffId) {
+      throw new HttpException(
+        'Sessão individual da gerência obrigatória.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    const actor = await this.callerResolver.requireActiveStaffIdentity(req);
     return this.assistantService.sendStaffToCustomer({
       tableSessionId: dto.tableSessionId,
       message: dto.message,
-      fromStaffId: dto.fromStaffId,
+      fromStaffId: actor.staffId,
       toCustomerId: dto.toCustomerId,
       tenantId,
     });

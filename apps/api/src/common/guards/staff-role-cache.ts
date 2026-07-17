@@ -8,6 +8,13 @@ interface CachedStaffRole {
 const staffRoleCache = new Map<string, CachedStaffRole>();
 const staffRoleCacheTtlMs = Number(process.env.STAFF_ROLE_CACHE_TTL_MS ?? 60_000);
 
+export function invalidateCachedStaffRole(
+  tenantConn: TenantConnectionProvider,
+  staffId: string,
+): void {
+  staffRoleCache.delete(`staff-role:v1:${tenantConn.getTenantSlug() ?? 'unknown'}:${staffId}`);
+}
+
 export async function getCachedActiveStaffRole(
   tenantConn: TenantConnectionProvider,
   staffId: string,

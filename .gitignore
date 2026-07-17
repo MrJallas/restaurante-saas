@@ -30,6 +30,17 @@ artifacts/
 # Playwright MCP (cache de browser automation via MCP — sessao-local)
 .playwright-mcp/
 
+# Playwright CLI e capturas locais (traces, vídeos, screenshots e HARs).
+# Evidência textual reproduzível pode ir em qa-reports; mídia pesada não.
+.playwright-cli/
+output/
+
+# Local audit media/network captures (keep lightweight Markdown/JSON manifests only)
+qa-reports/**/playwright/*.png
+qa-reports/**/playwright/*.trace
+qa-reports/**/playwright/*.network
+qa-reports/**/playwright/*.log
+
 # Worktrees criadas por agentes Claude (cada sessao do harness gera uma) —
 # nao versionar nada dentro, evita poluir o repo.
 .claude/worktrees/

@@ -38,6 +38,14 @@ export class LiberateTableDto {
   @Min(1)
   @Max(99)
   partySize?: number;
+
+  @IsOptional()
+  @IsUUID()
+  reservationId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  waitlistId?: string;
 }
 
 // ─── Swap ───

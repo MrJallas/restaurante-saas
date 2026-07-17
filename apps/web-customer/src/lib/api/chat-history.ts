@@ -10,10 +10,10 @@ import type {
  * Lists the customer's chat threads (NoSQL-backed). Sorted by `lastMessageAt`
  * descending — same shape exposed by `ChatHistoryService.listThreads`.
  */
-export function listThreads(slug: string, customerId: string): Promise<ChatThreadDto[]> {
-  return apiGet<ChatThreadDto[]>(
-    `/${slug}/chat-history/threads?customerId=${encodeURIComponent(customerId)}`,
-  );
+export function listThreads(slug: string): Promise<ChatThreadDto[]> {
+  // Identidade vem exclusivamente do recognition_token httpOnly enviado pelo
+  // browser; customerId em query não é credencial e não faz parte do contrato.
+  return apiGet<ChatThreadDto[]>(`/${slug}/chat-history/threads`);
 }
 
 /**
@@ -30,13 +30,9 @@ export function listMessages(slug: string, threadId: string): Promise<ChatMessag
  * Soft-deletes a single thread. The BE marks the thread `deletedByUser=true`
  * and removes the message docs from MongoDB.
  */
-export function deleteThread(
-  slug: string,
-  threadId: string,
-  customerId: string,
-): Promise<ChatThreadDeleteResponse> {
+export function deleteThread(slug: string, threadId: string): Promise<ChatThreadDeleteResponse> {
   return api<ChatThreadDeleteResponse>(
-    `/${slug}/chat-history/threads/${encodeURIComponent(threadId)}?customerId=${encodeURIComponent(customerId)}`,
+    `/${slug}/chat-history/threads/${encodeURIComponent(threadId)}`,
     { method: 'DELETE' },
   );
 }
@@ -46,12 +42,6 @@ export function deleteThread(
  * same endpoint that the LGPD erasure path hits, so the result here is
  * informational (the LGPD flow returns a protocol; this one returns a count).
  */
-export function deleteAllThreads(
-  slug: string,
-  customerId: string,
-): Promise<ChatHistoryDeleteResponse> {
-  return api<ChatHistoryDeleteResponse>(
-    `/${slug}/chat-history?customerId=${encodeURIComponent(customerId)}`,
-    { method: 'DELETE' },
-  );
+export function deleteAllThreads(slug: string): Promise<ChatHistoryDeleteResponse> {
+  return api<ChatHistoryDeleteResponse>(`/${slug}/chat-history`, { method: 'DELETE' });
 }

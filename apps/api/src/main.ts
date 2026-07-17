@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { ValidationPipe, Logger, type WebSocketAdapter } from '@nestjs/common';
+import { ExpressAdapter, NestExpressApplication } from '@nestjs/platform-express';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { createRequestTimingMiddleware } from './common/performance/request-timing';
@@ -13,7 +15,23 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   assertStaffKeyConfigured(logger);
   assertSessionSecretConfigured(logger);
-  const app = await NestFactory.create(AppModule);
+  // Em workspaces npm, @nestjs/core pode ser hoisted na raiz enquanto o
+  // adapter fica em apps/api/node_modules. O auto-loader do Nest resolve o
+  // require a partir de @nestjs/core e não enxerga o pacote irmão; passar o
+  // adapter explicitamente mantém o boot determinístico no Docker e local.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, new ExpressAdapter());
+  // O mesmo layout hoisted afeta o auto-loader do adapter WebSocket. Sem o
+  // registro explícito, o HTTP sobe saudável, mas `/socket.io/` cai no 404 do
+  // Express e todo realtime do salão fica silenciosamente desconectado.
+  // Nest 11.1.28 expõe `WsMessageHandler` em @nestjs/common sem o campo
+  // interno `methodName` que o IoAdapter oficial recebe; o cast atravessa
+  // apenas essa divergência de declarations entre dois pacotes da mesma
+  // versão. O objeto em runtime é o adapter oficial do Nest.
+  app.useWebSocketAdapter(new IoAdapter(app) as unknown as WebSocketAdapter);
+
+  // Nest 11 usa Express 5, cujo parser de query default passou de `extended`
+  // para `simple`. Preserva o contrato anterior para filtros/arrays existentes.
+  app.set('query parser', 'extended');
 
   app.use(createRequestTimingMiddleware());
 

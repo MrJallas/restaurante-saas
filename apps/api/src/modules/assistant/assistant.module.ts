@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { TenantModule } from '../tenant/tenant.module';
 import { ChatHistoryModule } from '../chat-history/chat-history.module';
 import { CustomerStaffMessagesModule } from '../customer-staff-messages/customer-staff-messages.module';
-import { LgpdModule } from '../lgpd/lgpd.module';
 import { CallerResolverModule } from '../../common/services/caller-resolver.module';
 import { AssistantController } from './assistant.controller';
 import { AssistantService } from './assistant.service';
@@ -14,13 +13,7 @@ import { AssistantService } from './assistant.service';
   // CustomerStaffMessagesModule expõe o service que faz persistência
   // paralela em Mongo da inbox "Mensagens com a equipe" — best-effort,
   // não bloqueia o realtime path (Postgres + WS).
-  imports: [
-    TenantModule,
-    ChatHistoryModule,
-    CustomerStaffMessagesModule,
-    LgpdModule,
-    CallerResolverModule,
-  ],
+  imports: [TenantModule, ChatHistoryModule, CustomerStaffMessagesModule, CallerResolverModule],
   controllers: [AssistantController],
   providers: [AssistantService],
   exports: [AssistantService],

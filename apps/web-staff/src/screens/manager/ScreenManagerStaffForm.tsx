@@ -94,14 +94,6 @@ const ROLE_MAP: Record<StaffRole, CreateStaffPayload['role']> = {
   Gerente: 'manager',
 };
 
-function generateProvisionalPin(): string {
-  // Round 18: 4 digitos aleatorios. Em prod isso seria gerado server-side
-  // + enviado por SMS (canvas footer "Senha provisoria" promete isso).
-  // Por ora cliente gera e exibe — o staff troca no primeiro acesso via
-  // verifyPin -> change-pin flow (TODO).
-  return Math.floor(1000 + Math.random() * 9000).toString();
-}
-
 export function ScreenManagerStaffForm({
   dark = false,
   mode = 'create',
@@ -173,17 +165,15 @@ export function ScreenManagerStaffForm({
           default_shift: shift,
         });
       } else {
-        const pin = generateProvisionalPin();
-        await api.staffRoster.create({
+        const created = await api.staffRoster.create({
           name: name.trim(),
           role: ROLE_MAP[role],
-          pin,
           cpf: cpf.trim() || undefined,
           phone: phone.trim() || undefined,
           email: email.trim() || undefined,
           default_shift: shift,
         });
-        setSavedPin(pin);
+        setSavedPin(created.tempPin);
       }
       // Pequena pausa pra usuario ver o PIN antes de redirecionar
       // (so em create — em edit volta direto).

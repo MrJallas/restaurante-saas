@@ -28,6 +28,11 @@ function fakeRedis(): RedisService {
       return true;
     },
     get: async (k: string) => store.get(k) ?? null,
+    compareAndDelete: async (k: string, expected: string) => {
+      if (store.get(k) !== expected) return false;
+      store.delete(k);
+      return true;
+    },
     del: async (k: string) => void store.delete(k),
   } as unknown as RedisService;
 }

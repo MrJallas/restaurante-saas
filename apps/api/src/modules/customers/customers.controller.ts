@@ -43,6 +43,11 @@ const IDENTIFY_RATE_MAX = 5;
 const IDENTIFY_RATE_WINDOW_SECONDS = 15 * 60;
 const IDENTIFY_RATE_LOCK_SECONDS = 15 * 60;
 
+function positiveIntEnv(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 class CustomerLocationDto {
   @IsIn(['unknown', 'prompt', 'granted', 'denied', 'unavailable', 'unsupported'])
   status!: 'unknown' | 'prompt' | 'granted' | 'denied' | 'unavailable' | 'unsupported';
@@ -119,6 +124,19 @@ class CustomerIdentifyDto {
 
 @Controller(':slug/customer')
 export class CustomersController {
+  // Welcome é SessionGuard-protected e atende grupos inteiros atrás do mesmo
+  // Wi-Fi/NAT. O bucket inclui IP real + sessão de mesa e o limite default
+  // comporta grupos legítimos; /identify continua separado em 5/IP.
+  private readonly welcomeRateMax = positiveIntEnv('CUSTOMER_WELCOME_RATE_MAX', 30);
+  private readonly welcomeRateWindowSeconds = positiveIntEnv(
+    'CUSTOMER_WELCOME_RATE_WINDOW_SECONDS',
+    15 * 60,
+  );
+  private readonly welcomeRateLockSeconds = positiveIntEnv(
+    'CUSTOMER_WELCOME_RATE_LOCK_SECONDS',
+    15 * 60,
+  );
+
   constructor(
     private readonly customersService: CustomersService,
     private readonly redis: RedisService,
@@ -129,7 +147,13 @@ export class CustomersController {
    * `POST /customers/identify` — CPF lookup before late-arrival join.
    * Public (this is itself the auth bootstrap for late-arrival flow).
    *
-   * Round 6 (B-NEW-11) hardening:
+   * Round 6 (B-NEW-11) hardening preservado ao redor da decisão temporária de
+   * produto (2026-07-11): CPF conhecido autentica o perfil existente.
+   * O CPF NÃO é prova de posse; o risco de takeover foi aceito por Caleb até
+   * OTP/passkey/verificação assistida. As barreiras abaixo reduzem abuso em
+   * massa e vazamento do bearer, mas não eliminam esse risco.
+   *
+   * Barreiras preservadas:
    *  - Rate limit por IP: 5 tentativas em 15min, depois 429 lock por
    *    15min. Antes era unauth+sem throttle → bruteforce CPF de leak DB
    *    + auto-login viable. Conta tanto sucessos quanto falhas pra
@@ -147,6 +171,7 @@ export class CustomersController {
     req: {
       ip?: string;
       socket?: { remoteAddress?: string };
+      cookies?: Record<string, string>;
       headers: Record<string, string | string[]>;
     },
     @Res({ passthrough: true }) res: Response,
@@ -156,7 +181,12 @@ export class CustomersController {
 
     let result;
     try {
-      result = await this.customersService.identify(dto.cpf, dto.name, dto.currentSessionId);
+      result = await this.customersService.identify(
+        dto.cpf,
+        dto.name,
+        dto.currentSessionId,
+        req.cookies?.recognition_token ?? null,
+      );
     } catch (err) {
       // Conta falhas pro mesmo limite — atacante não bypassa testando
       // formats inválidos pra mapear espaço CPF.
@@ -220,19 +250,19 @@ export class CustomersController {
     }
   }
 
-  // Round 9 (B-NEW-35): mesma família do rate-limit de /identify, agora
-  // pra /welcome. Compartilha as constants IDENTIFY_RATE_* (pattern
-  // single-source-of-truth). Key separado pra que rate-limit de /identify
-  // não engargale /welcome do mesmo IP (e vice-versa).
-  private welcomeClientKey(req: { ip?: string; socket?: { remoteAddress?: string } }): string {
-    // Mesma disciplina do identifyClientKey: IP real do peer TCP, nunca XFF
-    // forjável. Sem isso o atacante rotaciona o header e faz brute-force de
-    // CPF pra rotacionar o recognition_token de qualquer customer.
-    return `customers:welcome:${throttleClientIp(req)}`;
+  // /welcome é autenticado pela sessão de mesa e vários clientes legítimos
+  // compartilham o mesmo IP do Wi-Fi/NAT do restaurante. Portanto o bucket é
+  // composto por IP real + table session: mantém XFF forjado fora da fronteira
+  // de confiança, mas uma mesa movimentada não bloqueia as demais.
+  private welcomeClientKey(
+    req: { ip?: string; socket?: { remoteAddress?: string } },
+    tableSessionId: string,
+  ): string {
+    return `customers:welcome:${throttleClientIp(req)}:${tableSessionId}`;
   }
 
-  private async assertWelcomeRateLimit(ipKey: string): Promise<void> {
-    const lockKey = `${ipKey}:lock`;
+  private async assertWelcomeRateLimit(bucketKey: string): Promise<void> {
+    const lockKey = `${bucketKey}:lock`;
     if (await this.redis.get(lockKey)) {
       throw new HttpException(
         'Muitas tentativas de boas-vindas. Aguarde alguns minutos.',
@@ -241,15 +271,15 @@ export class CustomersController {
     }
   }
 
-  private async bumpWelcomeAttempts(ipKey: string): Promise<void> {
-    const lockKey = `${ipKey}:lock`;
-    const attemptsKey = `${ipKey}:attempts`;
+  private async bumpWelcomeAttempts(bucketKey: string): Promise<void> {
+    const lockKey = `${bucketKey}:lock`;
+    const attemptsKey = `${bucketKey}:attempts`;
     const attempts = await this.redis.incr(attemptsKey);
     if (attempts === 1) {
-      await this.redis.expire(attemptsKey, IDENTIFY_RATE_WINDOW_SECONDS);
+      await this.redis.expire(attemptsKey, this.welcomeRateWindowSeconds);
     }
-    if (attempts >= IDENTIFY_RATE_MAX) {
-      await this.redis.set(lockKey, '1', IDENTIFY_RATE_LOCK_SECONDS);
+    if (attempts >= this.welcomeRateMax) {
+      await this.redis.set(lockKey, '1', this.welcomeRateLockSeconds);
       await this.redis.del(attemptsKey);
     }
   }
@@ -304,19 +334,18 @@ export class CustomersController {
 
   /**
    * Round 9 (B-NEW-35): rate-limit por IP + bumping pro reuso do mesmo
-   * pattern da `/identify`. Antes: customer com session_token loops
-   * CPFs conhecidos pra rotacionar `recognition_token` de qualquer
-   * customer existente — account takeover via brute force CPF.
+   * pattern da `/identify`. A decisão vigente permite account takeover com um
+   * CPF conhecido; o limite reduz enumeração automatizada, mas não é tratado
+   * como autenticação forte.
    *
    * Regras:
-   *  - 5 attempts em 15min por IP (mesma janela do /identify).
-   *  - 429 lock 15min após exceder.
+   *  - 30 attempts em 15min por IP real + sessão de mesa (configurável).
+   *  - 429 lock 15min após atingir o limite (configurável).
    *  - Falhas (CPF inválido, name ausente) também contam pro limite
    *    pra impedir bypass via formats inválidos.
    *
-   * Service.welcome em si ainda rotaciona token quando token-mismatch
-   * — esse é o flow legítimo de "customer reclaim em outro device".
-   * Mas com rate-limit + cookies HttpOnly secure, atacante não escala.
+   * Service.welcome reutiliza o token canônico e o emite só em cookie HttpOnly
+   * para o reclaim CPF-only. Não retornar esse bearer no body.
    */
   @Post('welcome')
   @UseGuards(SessionGuard)
@@ -332,8 +361,8 @@ export class CustomersController {
     },
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ipKey = this.welcomeClientKey(req);
-    await this.assertWelcomeRateLimit(ipKey);
+    const welcomeBucket = this.welcomeClientKey(req, session.sessionId);
+    await this.assertWelcomeRateLimit(welcomeBucket);
 
     const callerRecognitionToken = req.cookies?.recognition_token ?? null;
     let result;
@@ -346,10 +375,10 @@ export class CustomersController {
         dto.location,
       );
     } catch (err) {
-      await this.bumpWelcomeAttempts(ipKey);
+      await this.bumpWelcomeAttempts(welcomeBucket);
       throw err;
     }
-    await this.bumpWelcomeAttempts(ipKey);
+    await this.bumpWelcomeAttempts(welcomeBucket);
 
     res.cookie(
       'recognition_token',
@@ -411,5 +440,28 @@ export class CustomersController {
     const { recognitionToken: _omit, ...safeResult } = result;
     void _omit;
     return safeResult;
+  }
+
+  /**
+   * Logout real do customer. Revoga o bearer persistente no banco e expira os
+   * cookies HttpOnly de identidade e da mesa com os mesmos atributos usados na
+   * emissão. A resposta é
+   * idempotente para que um cookie já expirado nunca prenda a pessoa no app.
+   * Não exige SessionGuard: a sessão da mesa pode já ter vencido justamente
+   * quando a pessoa toca em sair; o recognition cookie é a credencial a
+   * revogar e a operação não lê nem devolve dados do perfil.
+   */
+  @Post('logout')
+  async logout(
+    @Req() req: Request & { cookies?: Record<string, string> },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const revoked = await this.customersService.revokeRecognitionToken(
+      req.cookies?.recognition_token ?? '',
+    );
+    const cookieOptions = getSecureCookieOptions(req);
+    res.clearCookie('recognition_token', cookieOptions);
+    res.clearCookie('session_token', cookieOptions);
+    return { ok: true, revoked };
   }
 }

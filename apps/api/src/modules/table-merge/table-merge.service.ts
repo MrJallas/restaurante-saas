@@ -829,6 +829,34 @@ export class TableMergeService {
   }
 
   /**
+   * Reidratação customer-scoped da waiting-approval/approval deep-link.
+   * Além de a sessão autenticada participar do par, o reconhecimento precisa
+   * ser do solicitante ou de um dos dois hosts. Isso impede que outro
+   * participante com o token compartilhado da mesa consulte o pedido social.
+   */
+  async getCustomerStatus(id: string, tableSessionId: string, customerId: string) {
+    const ownership = (await this.tenantConn.query(
+      `SELECT 1
+         FROM table_merge_requests mr
+         JOIN table_sessions src ON src.id = mr.source_table_session_id
+         JOIN table_sessions tgt ON tgt.id = mr.target_table_session_id
+        WHERE mr.id = $1
+          AND ($2 = mr.source_table_session_id OR $2 = mr.target_table_session_id)
+          AND (
+            $3 = mr.requesting_customer_id
+            OR $3 = src.host_customer_id
+            OR $3 = tgt.host_customer_id
+          )
+        LIMIT 1`,
+      [id, tableSessionId, customerId],
+    )) as Array<Record<string, unknown>>;
+    if (!ownership.length) {
+      throw new HttpException('Pedido de juncao nao encontrado.', HttpStatus.NOT_FOUND);
+    }
+    return this.getById(id);
+  }
+
+  /**
    * Busca enriquecida SEM o sweep de expiração. O sweep enriquece cada
    * request expirado por aqui — se chamasse `getById` (que re-executa o
    * sweep), qualquer shape inesperado no retorno do UPDATE viraria recursão

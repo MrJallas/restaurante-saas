@@ -10,6 +10,8 @@ import {
 } from 'class-validator';
 import type { Request } from 'express';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
+import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
+import { KitchenOrManagerGuard } from '../../common/guards/kitchen-or-manager.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { OrdersService } from './orders.service';
 
@@ -45,18 +47,21 @@ export class KitchenController {
   ) {}
 
   @Get('queue')
+  @UseGuards(KitchenOrManagerGuard)
   async queue() {
     const orders = await this.ordersService.getKitchenQueue();
     return { orders };
   }
 
   @Post('reorder')
+  @UseGuards(ManagerOnlyGuard)
   async reorder(@Param('slug') slug: string, @Body() dto: ReorderKitchenDto, @Req() req: Request) {
     const staffId = await this.callerResolver.requireActiveStaffId(req);
     return this.ordersService.reorderKitchenQueue(dto.orderIds, dto.reason ?? null, staffId, slug);
   }
 
   @Post('reorder-requests')
+  @UseGuards(ManagerOnlyGuard)
   async requestReorder(
     @Param('slug') slug: string,
     @Body() dto: ReorderKitchenDto,
@@ -72,16 +77,19 @@ export class KitchenController {
   }
 
   @Get('reorder-requests/pending')
+  @UseGuards(KitchenOrManagerGuard)
   async pendingReorderRequests() {
     return this.ordersService.getPendingKitchenReorderRequests();
   }
 
   @Get('reorder-requests/:id')
+  @UseGuards(KitchenOrManagerGuard)
   async getReorderRequest(@Param('id') id: string) {
     return this.ordersService.getKitchenReorderRequest(id);
   }
 
   @Post('reorder-requests/:id/cancel')
+  @UseGuards(ManagerOnlyGuard)
   async cancelReorderRequest(
     @Param('slug') slug: string,
     @Param('id') id: string,
@@ -92,6 +100,7 @@ export class KitchenController {
   }
 
   @Post('reorder-requests/:id/respond')
+  @UseGuards(KitchenOrManagerGuard)
   async respondReorderRequest(
     @Param('slug') slug: string,
     @Param('id') id: string,

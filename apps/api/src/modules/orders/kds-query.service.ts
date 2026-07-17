@@ -41,7 +41,18 @@ export class KdsQueryService {
       `
       SELECT
         o.id,
-        o.status,
+        -- Status LOCAL da estação, derivado dos itens que ela ainda precisa
+        -- preparar. orders.status é agregado: quando a cozinha começa, ele
+        -- vira in_progress, mas o bar ainda pode estar em received. Expor o
+        -- agregado fazia o botão do bar pular direto para ready (no-op porque
+        -- seus itens nunca haviam entrado em preparo).
+        CASE
+          WHEN o.status = 'ready' THEN 'ready'
+          WHEN BOOL_OR(oi.status = 'in_progress') THEN 'in_progress'
+          WHEN o.status IN ('open', 'confirmed') THEN o.status
+          ELSE 'received'
+        END AS status,
+        o.status AS order_status,
         o.total_cents,
         o.notes,
         o.visit_id,
@@ -66,6 +77,7 @@ export class KdsQueryService {
               'name', mi.name,
               'quantity', oi.quantity,
               'notes', oi.notes,
+              'status', oi.status,
               -- Rótulo do tamanho escolhido (Peq/Méd/Grande). O preço já chegava
               -- (38b99be), mas o LABEL não — sem ele a cozinha/bar não sabia qual
               -- tamanho preparar. NULL quando o item não tem tamanho.
@@ -137,7 +149,18 @@ export class KdsQueryService {
   async getKitchenQueue(): Promise<KitchenQueueItem[]> {
     return this.tenantConn.query(
       `
-      SELECT o.id, o.status, o.billing_mode, o.total_cents, o.notes, o.visit_id,
+      SELECT o.id,
+             -- Mesmo status LOCAL do feed da TV. O status agregado do pedido
+             -- pode estar in_progress porque o bar começou, enquanto a
+             -- cozinha ainda está em received.
+             CASE
+               WHEN o.status = 'ready' THEN 'ready'
+               WHEN BOOL_OR(oi.status = 'in_progress') THEN 'in_progress'
+               WHEN o.status IN ('open', 'confirmed') THEN o.status
+               ELSE 'received'
+             END AS status,
+             o.status AS order_status,
+             o.billing_mode, o.total_cents, o.notes, o.visit_id,
              o.table_session_id, o.created_at, o.updated_at,
              EXTRACT(EPOCH FROM (now() - o.created_at))::int / 60 AS wait_minutes,
              12 AS meta_minutes,
@@ -166,6 +189,7 @@ export class KdsQueryService {
                  'unitPriceCents', oi.unit_price_cents,
                  'subtotalCents', oi.subtotal_cents,
                  'notes', oi.notes,
+                 'status', oi.status,
                  -- Tamanho escolhido (Peq/Méd/Grande) pra fila do /cozinha; ver
                  -- nota no getActiveOrdersForKds. NULL quando sem tamanho.
                  'size', oi.size,
@@ -202,12 +226,15 @@ export class KdsQueryService {
         AND o.created_at <= now()
         -- Estação: o /cozinha (KDS legado) só mostra itens de COZINHA. Sem
         -- este filtro a fila juntava as bebidas (kind='drink') no painel do
-        -- cozinheiro — e como o /cozinha marca status por PEDIDO, o cozinheiro
-        -- avançar o card flipava também a bebida (3º ponto que compartilha
-        -- status cozinha↔bar num pedido misto). Roteia pelo FLAG autoritativo
-        -- menu_items.kind (migration 016), espelhando getActiveOrdersForKds:
-        -- cozinha = tudo que NÃO é bebida (nunca pelo nome da categoria).
+        -- cozinheiro. A escrita agora também envia station='kitchen'; este
+        -- read-side espelha o mesmo FLAG autoritativo menu_items.kind
+        -- (migration 016): cozinha = tudo que NÃO é bebida (nunca pelo nome
+        -- da categoria).
         AND mi.kind <> 'drink'
+        -- Quando a cozinha terminou seus itens, o card sai da estação mesmo
+        -- se o bar ainda estiver trabalhando. Quando o pedido inteiro ficar
+        -- ready, ele reaparece completo para o handoff/chamada do garçom.
+        AND (o.status = 'ready' OR oi.status <> 'ready')
       GROUP BY o.id, t.label, t.code, delivery.id, delivery.status,
                delivery.called_at, delivery.claimed_at,
                delivery.target_waiter_id, delivery.target_waiter_name

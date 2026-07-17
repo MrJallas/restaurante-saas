@@ -10,6 +10,10 @@ class Settings:
     LLM_BASE_URL: str = os.getenv("LLM_BASE_URL", "")
     LLM_MODEL_MAIN: str = os.getenv("LLM_MODEL_MAIN", "gpt-4o")
     LLM_MODEL_CLASSIFIER: str = os.getenv("LLM_MODEL_CLASSIFIER", "gpt-4o-mini")
+    # OpenAI-compatible local models may spend the entire completion budget
+    # on hidden reasoning and return empty `content`. LM Studio accepts
+    # `reasoning_effort=none`; leave blank for providers that do not.
+    LLM_REASONING_EFFORT: str = os.getenv("LLM_REASONING_EFFORT", "").strip()
     # Timeout generoso pra provedores locais (MLX no M3 Max pode levar 2-3s em prompts longos).
     LLM_REQUEST_TIMEOUT: float = float(os.getenv("LLM_REQUEST_TIMEOUT", "60"))
     # LM Studio com modelos locais pode subir com contexto menor que o payload
@@ -24,8 +28,9 @@ class Settings:
     # the local NestJS dev server.
     API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:3000")
     API_REQUEST_TIMEOUT: float = float(os.getenv("API_REQUEST_TIMEOUT", "10"))
-    # Optional server-side credential for staff tools dispatched through
-    # `/tools/dispatch` (manager/waiter assistant surfaces).
+    # Reserved for a future VERIFIED staff-delegation path. The current
+    # `/tools/dispatch` endpoint never injects this secret from body-claimed
+    # staffId/isManager fields (confused-deputy barrier in main.py).
     STAFF_API_KEY: str = os.getenv("STAFF_API_KEY", "")
     CORS_ORIGINS: list[str] = os.getenv(
         "CORS_ORIGINS", "http://localhost:3003,http://localhost:3001,http://localhost:3002"

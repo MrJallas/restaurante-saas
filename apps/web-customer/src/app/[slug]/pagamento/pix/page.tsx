@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { apiGet, apiPatch } from '../../../../lib/api';
 import { useSession } from '../../../../hooks/useSession';
@@ -8,6 +8,8 @@ import { useNav } from '../../../../hooks/useNav';
 import { AppShell } from '../../../../components/layout/AppShell';
 import { PillButton } from '../../../../components/ui/PillButton';
 import { QRPattern } from '../../../../components/ui/QRPattern';
+import { PIX_INITIAL_LOAD_ERROR, resolvePixGate, type PixLoadStatus } from './pixLoadState';
+import { serviceFeeCopy } from './serviceFeeCopy';
 
 /**
  * ⚠️ PIX É UM STUB DE DEMONSTRAÇÃO — NÃO É BUG. Ver docs/PIX-STATUS.md.
@@ -57,31 +59,97 @@ export default function PagamentoPixPage() {
   const [now, setNow] = useState(Date.now());
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [serviceFeePct, setServiceFeePct] = useState<number | null>(null);
+  const [loadStatus, setLoadStatus] = useState<PixLoadStatus>('loading');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
+
+  useEffect(() => {
+    if (!slug || paymentId) return;
+    router.replace(`/${slug}/pagamento`);
+  }, [paymentId, router, slug]);
 
   useEffect(() => {
     if (!paymentId || !slug) return;
     let stop = false;
-    const load = async () => {
+    let timer: ReturnType<typeof setInterval> | undefined;
+
+    setPayment(null);
+    setLoadStatus('loading');
+    setLoadError(null);
+
+    const load = async (initial: boolean): Promise<boolean> => {
       try {
         const data = await apiGet<PaymentData>(`/${slug}/payments/${paymentId}`);
-        if (stop) return;
+        if (stop) return false;
+        if (
+          data.paymentId !== paymentId ||
+          !Number.isFinite(data.amountCents) ||
+          typeof data.status !== 'string'
+        ) {
+          throw new Error('PAYMENT_RESPONSE_INVALID');
+        }
+
         setPayment(data);
+        setLoadStatus('ready');
+        setLoadError(null);
         if (data.status === 'confirmed') {
-          router.replace(`/${slug}/pagamento/feedback`);
+          router.replace(`/${slug}/pagamento/feedback?paymentId=${encodeURIComponent(paymentId)}`);
+          return false;
         } else if (data.status === 'failed' || data.status === 'expired') {
           router.replace(`/${slug}/pagamento/erro?reason=${data.status}`);
+          return false;
         }
+
+        return true;
       } catch {
-        /* ignore */
+        if (stop) return false;
+        setLoadError(
+          initial
+            ? PIX_INITIAL_LOAD_ERROR
+            : 'Não consegui atualizar o status desta demonstração. Tente novamente.',
+        );
+        if (initial) {
+          setPayment(null);
+          setLoadStatus('error');
+        }
+        return false;
       }
     };
-    load();
-    const timer = setInterval(load, 4000);
+
+    void (async () => {
+      const shouldPoll = await load(true);
+      if (!stop && shouldPoll) {
+        timer = setInterval(() => void load(false), 4000);
+      }
+    })();
+
     return () => {
       stop = true;
-      clearInterval(timer);
+      if (timer) clearInterval(timer);
     };
-  }, [paymentId, slug, router]);
+  }, [paymentId, retryNonce, router, slug]);
+
+  useEffect(() => {
+    if (!slug || !paymentId) return;
+    let stop = false;
+    apiGet<{ serviceFeePct?: number }>(`/${slug}/orders/bill?mode=table`)
+      .then((bill) => {
+        if (
+          !stop &&
+          typeof bill.serviceFeePct === 'number' &&
+          Number.isFinite(bill.serviceFeePct)
+        ) {
+          setServiceFeePct(bill.serviceFeePct);
+        }
+      })
+      .catch(() => {
+        // O valor continua sem percentual; nunca caímos num 10% inventado.
+      });
+    return () => {
+      stop = true;
+    };
+  }, [paymentId, slug]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -91,11 +159,11 @@ export default function PagamentoPixPage() {
   const expiresAtMs = payment?.expiresAt ? new Date(payment.expiresAt).getTime() : 0;
   const remainingMs = expiresAtMs - now;
   const remaining = formatCountdown(remainingMs);
-  const amount = payment?.amountCents ?? 0;
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
   const copyCode = payment?.pixCopyPaste ?? '';
+  const gate = resolvePixGate(paymentId, loadStatus, payment !== null);
 
-  const handleCopy = useCallback(async () => {
+  const handleCopy = async () => {
     if (!copyCode) return;
     // navigator.clipboard exige contexto seguro (HTTPS) — em dev/lan
     // sobre HTTP o iOS Safari rejeita. Fallback pra textarea +
@@ -132,9 +200,9 @@ export default function PagamentoPixPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
-  }, [copyCode]);
+  };
 
-  const handleCancel = useCallback(async () => {
+  const handleCancel = async () => {
     if (cancelling || !paymentId) return;
     setCancelling(true);
     setCancelError(null);
@@ -155,12 +223,76 @@ export default function PagamentoPixPage() {
     } else {
       router.push(`/${slug}/pagamento`);
     }
-  }, [cancelling, paymentId, router, slug]);
+  };
+
+  const handleRetryLoad = () => {
+    setPayment(null);
+    setLoadStatus('loading');
+    setLoadError(null);
+    setRetryNonce((current) => current + 1);
+  };
+
+  if (gate !== 'ready' || !payment) {
+    const isMissingPayment = gate === 'missing-payment';
+    const isLoadError = gate === 'load-error';
+
+    return (
+      <AppShell
+        slug={slug}
+        restaurantName="Demonstração Pix"
+        tableLabel={tableLabel || ''}
+        activeHref={`/${slug}/pagamento`}
+        noMainPadding
+        onBack={() => push(`/${slug}/pagamento`)}
+      >
+        <div className="flex flex-1 flex-col items-center justify-center px-6 pb-8 text-center">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[1.5px] text-mute">
+            Demonstração de pagamento
+          </div>
+          <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-ink">
+            {isMissingPayment
+              ? 'Pagamento não iniciado'
+              : isLoadError
+                ? 'Não foi possível carregar o Pix'
+                : 'Carregando demonstração de Pix…'}
+          </h1>
+          <p
+            role={isLoadError ? 'alert' : undefined}
+            className="mt-2 max-w-sm text-[13px] leading-[1.5] text-mute text-pretty"
+          >
+            {isMissingPayment
+              ? 'Este link não identifica um pagamento. Você será levado de volta para a conta.'
+              : isLoadError
+                ? loadError
+                : 'Aguarde enquanto confirmamos os dados desta demonstração.'}
+          </p>
+          {(isMissingPayment || isLoadError) && (
+            <div className="mt-6 flex w-full max-w-sm flex-col gap-2.5">
+              {isLoadError && (
+                <PillButton fullWidth onClick={handleRetryLoad}>
+                  Tentar novamente
+                </PillButton>
+              )}
+              <PillButton
+                fullWidth
+                variant={isLoadError ? 'outline' : 'filled'}
+                onClick={() => router.replace(`/${slug}/pagamento`)}
+              >
+                Voltar para a conta
+              </PillButton>
+            </div>
+          )}
+        </div>
+      </AppShell>
+    );
+  }
+
+  const amount = payment.amountCents;
 
   return (
     <AppShell
       slug={slug}
-      restaurantName="Pagamento Pix"
+      restaurantName="Demonstração Pix"
       tableLabel={tableLabel || ''}
       activeHref={`/${slug}/pagamento`}
       noMainPadding
@@ -169,11 +301,11 @@ export default function PagamentoPixPage() {
       <div className="flex flex-1 flex-col overflow-auto px-6 pb-3">
         <div className="pb-4 pt-1">
           <div className="mb-1 text-[11px] font-semibold uppercase tracking-[1.5px] text-mute">
-            Aguardando pagamento
+            Demonstração de pagamento
           </div>
-          <div className="text-[24px] font-semibold tracking-[-0.02em]">Escaneie o QR Code</div>
+          <div className="text-[24px] font-semibold tracking-[-0.02em]">QR Code ilustrativo</div>
           <div className="mt-1 text-[13px] text-mute text-pretty">
-            Abra o app do seu banco e aponte a câmera para o código.
+            Este código demonstra a etapa e não funciona no app do seu banco.
           </div>
           {/* Decisão Caleb 2026-07-04 (gate 1D): demo honesta — o QR é
               simulado (sem PSP) e o cliente fica sabendo. */}
@@ -184,7 +316,7 @@ export default function PagamentoPixPage() {
 
         <div className="mb-4 flex justify-center">
           <div className="relative h-[230px] w-[230px] rounded-[16px] border-[1.5px] border-ink bg-bg p-3.5">
-            <QRPattern seedString={paymentId || 'pix'} />
+            <QRPattern seedString={paymentId} />
             <div className="absolute left-1/2 top-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[8px] border-[1.5px] border-ink bg-bg text-[10px] font-bold tracking-[0.5px]">
               PIX
             </div>
@@ -211,8 +343,7 @@ export default function PagamentoPixPage() {
           </div>
           <div className="text-right text-[11px] leading-[1.4] text-mute">
             Sua parte
-            <br />
-            (inclui taxa 10%)
+            <br />({serviceFeeCopy(serviceFeePct)})
           </div>
         </div>
 
@@ -220,7 +351,7 @@ export default function PagamentoPixPage() {
           <div className="mb-2 flex items-center gap-2.5 rounded-[12px] border-[1.3px] border-border-soft bg-surface px-3.5 py-2.5">
             <div className="min-w-0 flex-1">
               <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-[1px] text-mute">
-                Copia e cola
+                Código demonstrativo
               </div>
               <div className="truncate font-mono text-[11px] text-ink">{copyCode}</div>
             </div>
@@ -229,26 +360,34 @@ export default function PagamentoPixPage() {
               onClick={handleCopy}
               className="shrink-0 rounded-full border-[1.2px] border-ink px-3 py-1.5 text-[11px] font-semibold"
             >
-              {copied ? 'Copiado' : 'Copiar'}
+              {copied ? 'Copiado' : 'Copiar demo'}
             </button>
           </div>
         )}
 
         <div className="mt-2 text-center text-[10px] leading-[1.5] text-faint">
-          Assim que o pagamento for confirmado, você será direcionado
+          Esta versão não cobra nem confirma pagamentos automaticamente.
           <br />
-          automaticamente para a próxima etapa.
+          Use esta tela apenas para demonstrar o fluxo.
         </div>
       </div>
 
       <div className="shrink-0 px-[22px] pb-safe pb-6 pt-2.5">
+        {loadError && (
+          <div role="alert" className="mb-2 text-center text-[12px] text-red-600">
+            {loadError}{' '}
+            <button type="button" className="underline" onClick={handleRetryLoad}>
+              Tentar novamente
+            </button>
+          </div>
+        )}
         {cancelError && (
           <div role="alert" className="mb-2 text-center text-[12px] text-red-600">
             {cancelError}
           </div>
         )}
         <PillButton fullWidth onClick={handleCancel} disabled={cancelling}>
-          {cancelling ? 'Cancelando…' : 'Cancelar pagamento'}
+          {cancelling ? 'Encerrando…' : 'Encerrar demonstração'}
         </PillButton>
       </div>
     </AppShell>

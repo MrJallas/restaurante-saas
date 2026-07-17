@@ -9,7 +9,7 @@
 // Dados reais: GET /staff/:id pra nome/role/cpf/email/phone (round 18
 // migration 041 expandiu).
 //
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useG,
@@ -31,6 +31,7 @@ import {
   type StaffResetPinResponse,
   type StaffRosterEntry,
 } from '../../lib/api/manager';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 
 type StaffComparisonMetric = NonNullable<StaffPerformance['teamComparison']>[number]['metric'];
 
@@ -573,10 +574,17 @@ function ResetPinConfirmSheet({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const titleId = useId();
+  const descriptionId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(true, onCancel);
+
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
       style={{
         position: 'fixed',
         inset: 0,
@@ -596,10 +604,11 @@ function ResetPinConfirmSheet({
           boxShadow: '0 -16px 34px rgba(0,0,0,0.22)',
         }}
       >
-        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>
+        <div id={titleId} style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>
           Resetar o PIN de {staffName}?
         </div>
         <div
+          id={descriptionId}
           style={{ marginTop: 8, fontSize: 13, lineHeight: 1.45, color: C.mute, fontWeight: 500 }}
         >
           O PIN atual deixa de funcionar na hora e todas as sessões abertas são desconectadas. Você
@@ -680,6 +689,9 @@ function ResetPinResultSheet({
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const titleId = useId();
+  const descriptionId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(true, onClose);
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(result.tempPin);
@@ -691,8 +703,11 @@ function ResetPinResultSheet({
   };
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
       style={{
         position: 'fixed',
         inset: 0,
@@ -712,10 +727,11 @@ function ResetPinResultSheet({
           boxShadow: '0 -16px 34px rgba(0,0,0,0.22)',
         }}
       >
-        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>
+        <div id={titleId} style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>
           PIN temporário de {result.staff.name}
         </div>
         <div
+          id={descriptionId}
           style={{ marginTop: 6, fontSize: 12.5, lineHeight: 1.45, color: C.mute, fontWeight: 500 }}
         >
           Informe este PIN ao funcionário agora. Ele entra com o PIN temporário e o sistema obriga a

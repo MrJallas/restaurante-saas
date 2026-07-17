@@ -19,7 +19,7 @@
 // (decisão Caleb 2026-06-11; antes ia pro session room e a mesa toda via).
 // State machine: idle → selected → sent.
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useId, useRef } from 'react';
 import { useG, G_FONT, MONO_FONT } from './tokens';
 import { Icon } from './Icons';
 import { GButton } from './primitives';
@@ -28,6 +28,7 @@ import {
   assistantApi,
   type SmartSuggestionChip,
 } from '../../lib/api/manager';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 
 export interface MContactClientSheetProps {
   open: boolean;
@@ -95,6 +96,9 @@ export function MContactClientSheet({
   const [state, setState] = useState<'idle' | 'selected' | 'sent'>('idle');
   const [sending, setSending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(open, () => onClose?.());
 
   // Round 18 (Onda 1 wiring): drag-to-dismiss state. Antes o handle
   // visual era afordância falsa (parecia arrastável mas não tinha
@@ -163,17 +167,11 @@ export function MContactClientSheet({
       // com from_role='staff' e emite WS `assistant.staff_message_received`
       // pra sessao da mesa — cliente recebe em real-time no /assistente.
       //
-      // `fromStaffId` vem do localStorage.staffId (auth pattern do staff
-      // login). Endpoint exige manager-only via guards no backend.
-      const fromStaffId =
-        typeof window !== 'undefined' ? window.localStorage.getItem('staffId') : null;
-      if (!fromStaffId) {
-        throw new Error('staffId ausente — faça login antes de enviar.');
-      }
+      // O backend deriva o autor do cookie/token individual. Nunca enviamos
+      // staffId no body, evitando assinatura como outro gerente/owner.
       await assistantApi(tenantSlug).staffToCustomer({
         tableSessionId,
         message: draft.trim(),
-        fromStaffId,
         // Resposta privada por cliente (2026-06-11): o backend emite o WS
         // só pro room `customer:<toCustomerId>` — a mesa toda não vê mais.
         toCustomerId: customerId,
@@ -222,9 +220,11 @@ export function MContactClientSheet({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
-      aria-label={`Mensagem para Mesa ${tableNumber ?? ''}`}
+      aria-labelledby={titleId}
+      aria-describedby={orderHint ? descriptionId : undefined}
       style={{
         position: 'fixed',
         inset: 0,
@@ -289,6 +289,7 @@ export function MContactClientSheet({
               {eyebrow}
             </div>
             <div
+              id={titleId}
               style={{
                 fontSize: 22,
                 fontWeight: 700,
@@ -300,7 +301,10 @@ export function MContactClientSheet({
               Mensagem para Mesa {tableNumber ?? ''}
             </div>
             {orderHint && (
-              <div style={{ fontSize: 13, color: C.mute, fontWeight: 500, lineHeight: 1.45 }}>
+              <div
+                id={descriptionId}
+                style={{ fontSize: 13, color: C.mute, fontWeight: 500, lineHeight: 1.45 }}
+              >
                 {orderHint}
               </div>
             )}
@@ -324,7 +328,10 @@ export function MContactClientSheet({
               <span style={{ width: 6, height: 6, borderRadius: 3, background: '#1E8C5A' }} />
               Enviado
             </div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: C.ink, letterSpacing: -0.3 }}>
+            <div
+              id={titleId}
+              style={{ fontSize: 17, fontWeight: 700, color: C.ink, letterSpacing: -0.3 }}
+            >
               Mesa {tableNumber ?? ''} · {customerName ?? ''}
             </div>
           </div>

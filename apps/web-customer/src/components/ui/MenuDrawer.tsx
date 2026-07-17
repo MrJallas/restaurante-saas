@@ -1,17 +1,20 @@
 'use client';
 
 import Link from 'next/link';
-import { ReactNode, useContext, useEffect } from 'react';
+import { ReactNode, useContext, useEffect, useState } from 'react';
 import { Merge } from 'lucide-react';
 import { SessionContext } from '../../providers/SessionProvider';
 import { useUIState } from '../../providers/UIStateProvider';
 import { useNav } from '../../hooks/useNav';
+import { useDraftOrder } from '../../providers/DraftOrderProvider';
+import { logoutCustomer } from '../../lib/api/customer-auth';
+import { orderSummarySubtitle, type DrawerOrderSummary } from './menuDrawerSummary';
 
 interface MenuDrawerProps {
   slug: string;
   restaurantName: string;
   tableLabel: string;
-  orderSummary?: { items: number; totalCents: number } | null;
+  orderSummary?: DrawerOrderSummary | null;
   tableOrderSummary?: {
     items: number;
     people: number;
@@ -33,8 +36,11 @@ export function MenuDrawer({
   participantsCount,
 }: MenuDrawerProps) {
   const { drawerOpen, closeDrawer, openCallWaiterSheet } = useUIState();
-  const { customerName } = useContext(SessionContext);
+  const { customerName, clearSession } = useContext(SessionContext);
+  const { clear: clearDraft } = useDraftOrder();
   const { push } = useNav();
+  const [exitKind, setExitKind] = useState<'switch' | 'leave' | null>(null);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!drawerOpen) return;
@@ -92,11 +98,7 @@ export function MenuDrawer({
     }
   })();
 
-  const orderSub = orderSummary
-    ? `${orderSummary.items} itens · R$ ${(orderSummary.totalCents / 100)
-        .toFixed(2)
-        .replace('.', ',')}`
-    : 'Nenhum item no pedido';
+  const orderSub = orderSummarySubtitle(orderSummary);
 
   const tableSub = tableOrderSummary
     ? `Comanda compartilhada · ${tableOrderSummary.items} itens`
@@ -107,14 +109,22 @@ export function MenuDrawer({
       ? `${tableOrderSummary.newCount} novos`
       : undefined;
 
-  const handleLogout = () => {
+  const handleExit = async (kind: 'switch' | 'leave') => {
+    if (exitKind) return;
+    setExitKind(kind);
+    setLogoutError(null);
     try {
-      window.sessionStorage.clear();
-    } catch {
-      /* ignore */
+      await logoutCustomer(slug);
+      clearDraft();
+      clearSession();
+      closeDrawer();
+      push(kind === 'switch' ? `/${slug}` : '/');
+    } catch (error) {
+      setLogoutError(
+        error instanceof Error ? error.message : 'Não consegui sair com segurança. Tente de novo.',
+      );
+      setExitKind(null);
     }
-    closeDrawer();
-    push('/');
   };
 
   return (
@@ -139,7 +149,7 @@ export function MenuDrawer({
               type="button"
               onClick={closeDrawer}
               aria-label="Fechar menu"
-              className="flex h-[34px] w-[34px] items-center justify-center rounded-full border-[1.2px] border-ink text-ink"
+              className="flex h-11 w-11 items-center justify-center rounded-full border-[1.2px] border-ink text-ink"
             >
               ×
             </button>
@@ -278,14 +288,22 @@ export function MenuDrawer({
             active={activeHref?.endsWith('/eu')}
           />
 
-          <DrawerLink
-            onNavigate={closeDrawer}
-            href={`/${slug}`}
-            icon="↺"
-            label="Trocar perfil"
-            sub="Entrar com outro nome"
-            small
-          />
+          <button
+            type="button"
+            onClick={() => void handleExit('switch')}
+            disabled={exitKind !== null}
+            className="flex min-h-11 w-full items-center gap-3.5 border-l-[3px] border-transparent px-[22px] py-2.5 text-left transition-colors duration-100 active:bg-surface"
+          >
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-[1.2px] border-ink text-[12px] text-ink">
+              ↺
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium tracking-[-0.008em]">
+                {exitKind === 'switch' ? 'Encerrando perfil…' : 'Trocar perfil'}
+              </span>
+              <span className="mt-px block text-[11px] text-mute">Entrar com outro nome</span>
+            </span>
+          </button>
           <DrawerLink
             onNavigate={closeDrawer}
             href={`/${slug}/assistente?prefill=${encodeURIComponent('Como funciona este app?')}`}
@@ -295,14 +313,22 @@ export function MenuDrawer({
           />
           <button
             type="button"
-            onClick={handleLogout}
+            onClick={() => void handleExit('leave')}
+            disabled={exitKind !== null}
             className="flex w-full items-center gap-3.5 border-l-[3px] border-transparent px-[22px] py-2.5 text-left text-danger transition-colors duration-100 active:bg-surface"
           >
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-[1.2px] border-danger text-[12px] text-danger">
               →
             </span>
-            <span className="text-[13px] font-medium tracking-[-0.008em]">Sair da mesa</span>
+            <span className="text-[13px] font-medium tracking-[-0.008em]">
+              {exitKind === 'leave' ? 'Saindo…' : 'Sair da mesa'}
+            </span>
           </button>
+          {logoutError && (
+            <p role="alert" className="px-[22px] py-2 text-[11px] leading-[1.4] text-danger">
+              {logoutError}
+            </p>
+          )}
         </nav>
 
         <div className="border-t border-border-soft px-[22px] pt-3.5 pb-7 text-center text-[10px] leading-[1.5] text-faint">

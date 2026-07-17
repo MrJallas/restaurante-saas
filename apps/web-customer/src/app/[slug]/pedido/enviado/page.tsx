@@ -8,7 +8,8 @@ import { useNav } from '../../../../hooks/useNav';
 import { AppShell } from '../../../../components/layout/AppShell';
 import { PillButton } from '../../../../components/ui/PillButton';
 import {
-  aggregateOrders,
+  EnviadoOrdersLoadError,
+  loadEnviadoOrders,
   parseEnviadoOrderIds,
   ENVIADO_STATUS_INDEX as STATUS_INDEX,
   type EnviadoOrder,
@@ -33,44 +34,100 @@ export default function PedidoEnviadoPage() {
   const orderIdsKey = orderIds.join(',');
 
   const [order, setOrder] = useState<EnviadoOrder | null>(null);
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [loadError, setLoadError] = useState('');
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   useEffect(() => {
     const ids = orderIdsKey ? orderIdsKey.split(',') : [];
-    if (ids.length === 0) return;
     let stop = false;
+    let hasVerifiedOrder = false;
+    setOrder(null);
+    setLoadState('loading');
+    setLoadError('');
     const load = async () => {
       try {
-        const results = await Promise.all(
-          ids.map((id) => apiGet<EnviadoOrder>(`/${slug}/orders/${id}`)),
+        const result = await loadEnviadoOrders(ids, (id) =>
+          apiGet<EnviadoOrder>(`/${slug}/orders/${id}`),
         );
-        if (!stop) setOrder(aggregateOrders(results));
-      } catch {
-        /* ignore */
+        if (!stop) {
+          hasVerifiedOrder = true;
+          setOrder(result);
+          setLoadState('ready');
+        }
+      } catch (error) {
+        if (stop || (hasVerifiedOrder && !(error instanceof EnviadoOrdersLoadError))) return;
+        setLoadError(
+          error instanceof EnviadoOrdersLoadError && error.code === 'missing_order_ids'
+            ? 'Não encontrei um pedido para confirmar. Volte ao pedido e tente novamente.'
+            : error instanceof EnviadoOrdersLoadError && error.code === 'order_not_sent'
+              ? 'O pedido ainda não aparece como enviado para a cozinha. Tente novamente ou volte ao pedido.'
+              : 'Não consegui confirmar o envio do pedido. Verifique sua conexão e tente novamente.',
+        );
+        setLoadState('error');
       }
     };
-    load();
+    void load();
     const timer = setInterval(load, 15000);
     return () => {
       stop = true;
       clearInterval(timer);
     };
-  }, [orderIdsKey, slug]);
+  }, [orderIdsKey, slug, reloadNonce]);
 
-  const currentIndex = order ? (STATUS_INDEX[order.status] ?? 0) : 0;
+  if (loadState !== 'ready' || !order) {
+    const failed = loadState === 'error';
+    return (
+      <AppShell
+        slug={slug}
+        restaurantName=""
+        tableLabel={tableLabel || ''}
+        activeHref={`/${slug}/pedido/enviado`}
+        onBack={() => push(`/${slug}/pedido`)}
+      >
+        <div className="flex flex-1 items-center justify-center px-6 text-center">
+          <div className="max-w-[320px]">
+            <div className="text-[11px] font-bold uppercase tracking-[1.5px] text-mute">
+              {failed ? 'Envio não confirmado' : 'Confirmando envio'}
+            </div>
+            <h1 className="mt-2 text-[22px] font-semibold tracking-[-0.02em] text-ink">
+              {failed ? 'Ainda não consegui validar seu pedido' : 'Só um instante…'}
+            </h1>
+            <p
+              className="mt-2 text-[13px] leading-[1.5] text-mute"
+              role={failed ? 'alert' : undefined}
+            >
+              {failed ? loadError : 'Estamos consultando a cozinha antes de confirmar o envio.'}
+            </p>
+            {failed && (
+              <div className="mt-5 flex flex-col gap-2.5">
+                <PillButton variant="filled" fullWidth onClick={() => setReloadNonce((n) => n + 1)}>
+                  Tentar novamente
+                </PillButton>
+                <PillButton fullWidth onClick={() => push(`/${slug}/pedido`)}>
+                  Voltar ao pedido
+                </PillButton>
+              </div>
+            )}
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
+  const currentIndex = STATUS_INDEX[order.status] ?? 0;
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
   // ETA real do backend (fila + prioridade + estágio) — o fallback
   // hardcoded "22–28 minutos" saiu; antes do primeiro fetch mostra
   // "calculando…" e pedido entregue mostra "—".
   const eta =
-    order?.etaMinutesMin != null && order?.etaMinutesMax != null
+    order.etaMinutesMin != null && order.etaMinutesMax != null
       ? order.etaMinutesMax <= 3
         ? `~${order.etaMinutesMax} min`
         : `${order.etaMinutesMin}–${order.etaMinutesMax} minutos`
-      : order
-        ? '—'
-        : 'calculando…';
-  const items = order?.items ?? [];
-  const totalCents = order?.totalCents ?? 0;
+      : '—';
+  const items = order.items;
+  const totalCents = order.totalCents;
 
   const summaryLine = items.map((it) => `${it.quantity}× ${it.name}`).join(' · ');
 

@@ -8,6 +8,7 @@ import { ContinuationHome } from '../../components/ui/ContinuationHome';
 import { SuggestionChip } from '../../components/ui/SuggestionChip';
 import { apiPost } from '../../lib/api';
 import { clearDeliveredContinuationHint } from '../../lib/continuationHints';
+import { tenantNavigationDestination } from '../../lib/customer-navigation';
 
 interface ContinuationChip {
   id: string;
@@ -25,7 +26,7 @@ interface ContinuationGetResponse {
   rendered: string | null;
   chips?: ContinuationChip[];
   subtitle?: string | null;
-  primary_cta?: { label: string; action: string; payload: string } | null;
+  primary_cta?: { label: string; action: ContinuationChip['action']; payload: string } | null;
 }
 
 interface ContinuationPostResponse {
@@ -44,10 +45,10 @@ function primaryCta(value: unknown): ContinuationGetResponse['primary_cta'] {
   const label = typeof record.label === 'string' ? record.label : '';
   const action = typeof record.action === 'string' ? record.action : '';
   const payload = typeof record.payload === 'string' ? record.payload : '';
-  if (!label || !action) return null;
+  if (!label || !['send', 'navigate', 'expand'].includes(action)) return null;
   return {
     label,
-    action,
+    action: action as ContinuationChip['action'],
     payload,
   };
 }
@@ -113,6 +114,18 @@ export default function SlugIndex() {
     draftItems.length,
   ]);
 
+  if (!session.hydrated) {
+    return (
+      <div
+        className="grid min-h-dvh place-items-center bg-bg"
+        role="status"
+        aria-label="Carregando sessão"
+      >
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-ink border-t-transparent" />
+      </div>
+    );
+  }
+
   // Customer novo · sem session · copy clássico de QR
   if (!session.customerId) {
     return (
@@ -151,8 +164,7 @@ export default function SlugIndex() {
                 onTap={(c) => {
                   const txt = chipPayloadText(c as ContinuationChip);
                   if (c.action === 'navigate') {
-                    const dest = txt.startsWith('/') ? txt : `/${params?.slug}/${txt}`;
-                    router.push(dest);
+                    router.push(tenantNavigationDestination(params.slug, txt));
                   } else {
                     // send / expand → vai pro chat com prefill
                     router.push(`/${params?.slug}/assistente?prefill=${encodeURIComponent(txt)}`);
@@ -169,10 +181,10 @@ export default function SlugIndex() {
           onClick={() => {
             const cta = cont.primary_cta!;
             if (cta.action === 'navigate') {
-              const dest = cta.payload?.startsWith('/')
-                ? cta.payload
-                : `/${params?.slug}/${cta.payload}`;
-              router.push(dest);
+              router.push(tenantNavigationDestination(params.slug, cta.payload));
+            } else {
+              const text = cta.payload || cta.label;
+              router.push(`/${params.slug}/assistente?prefill=${encodeURIComponent(text)}`);
             }
           }}
           className="mt-2 self-start rounded-full bg-ink px-4 py-2 text-[13px] font-medium text-white"

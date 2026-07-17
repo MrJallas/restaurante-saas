@@ -106,7 +106,9 @@ function makeService(initialStatus: string) {
   const emitKitchenPriorityCancel = jest.fn();
   const gateway = { emitKitchenPriorityCancel } as unknown as EventsGateway;
   // getKitchenQueue é chamado pela hidratação — evita tocar no DB real.
-  const kdsQuery = { getKitchenQueue: jest.fn().mockResolvedValue([]) } as unknown as KdsQueryService;
+  const kdsQuery = {
+    getKitchenQueue: jest.fn().mockResolvedValue([]),
+  } as unknown as KdsQueryService;
   const service = new OrdersService(
     db.conn,
     {} as unknown as RedisService,
@@ -120,7 +122,10 @@ function makeService(initialStatus: string) {
   );
   // sweepAutoConfirmThrottled é chamado por getKitchenQueue no service; no-op.
   jest
-    .spyOn(service as unknown as { sweepAutoConfirmThrottled: () => Promise<void> }, 'sweepAutoConfirmThrottled')
+    .spyOn(
+      service as unknown as { sweepAutoConfirmThrottled: () => Promise<void> },
+      'sweepAutoConfirmThrottled',
+    )
     .mockResolvedValue(undefined);
   return { service, db, emitKitchenPriorityCancel };
 }

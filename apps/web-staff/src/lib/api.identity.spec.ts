@@ -35,7 +35,6 @@ function assertEqual(actual: unknown, expected: unknown, label: string): void {
   }
 }
 
-/* eslint-disable no-console */
 export function runStaffApiIdentityAssertions(): void {
   const managerStorage = fakeStorage();
   assertEqual(

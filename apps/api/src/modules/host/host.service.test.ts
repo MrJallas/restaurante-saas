@@ -487,7 +487,7 @@ describe('HostService.liberateTable — invalida a sessão no Redis (A04)', () =
   const CLOSED_SESSION_ID = 'sess-closed-9';
 
   function fakeLiberateDb() {
-    const query = async (sql: string, params: unknown[] = []): Promise<unknown> => {
+    const query = async (sql: string, _params: unknown[] = []): Promise<unknown> => {
       const s = sql.replace(/\s+/g, ' ').trim();
       if (s.startsWith('SELECT id, code FROM tables WHERE')) {
         return [{ id: 'table-9', code: '9' }];
@@ -495,7 +495,10 @@ describe('HostService.liberateTable — invalida a sessão no Redis (A04)', () =
       if (s.startsWith("SELECT id FROM table_sessions WHERE table_id = $1 AND status = 'active'")) {
         return [{ id: CLOSED_SESSION_ID }];
       }
-      if (s.startsWith('UPDATE table_sessions SET status = \'closed\'') || s.includes("SET status = 'closed'")) {
+      if (
+        s.startsWith("UPDATE table_sessions SET status = 'closed'") ||
+        s.includes("SET status = 'closed'")
+      ) {
         return [{ id: CLOSED_SESSION_ID }];
       }
       if (s.startsWith('INSERT INTO table_qr_releases')) {
@@ -546,7 +549,11 @@ describe('HostService — não vaza credencial de sessão do cliente nos DTOs de
         return (params[0] as string) === 'table-5' ? [{ id: SESSION_TOKEN }] : [];
       }
       // destino livre check
-      if (s.startsWith("SELECT id FROM table_sessions WHERE table_id = $1 AND status = 'active' LIMIT 1")) {
+      if (
+        s.startsWith(
+          "SELECT id FROM table_sessions WHERE table_id = $1 AND status = 'active' LIMIT 1",
+        )
+      ) {
         return [];
       }
       if (s.startsWith('INSERT INTO table_swap_requests')) {
@@ -573,10 +580,10 @@ describe('HostService — não vaza credencial de sessão do cliente nos DTOs de
 
   it('RED: createSwapRequest NÃO devolve o token de sessão do cliente no DTO', async () => {
     const svc = makeService(fakeSwapDbForLeak());
-    const res = (await svc.createSwapRequest({ fromTable: 5, toTable: 9 }, 'slug')) as unknown as Record<
-      string,
-      unknown
-    >;
+    const res = (await svc.createSwapRequest(
+      { fromTable: 5, toTable: 9 },
+      'slug',
+    )) as unknown as Record<string, unknown>;
     // O token do cliente não pode aparecer em NENHUM valor do payload de staff.
     expect(JSON.stringify(res)).not.toContain(SESSION_TOKEN);
     expect(res.sessionId).toBeUndefined();
@@ -586,7 +593,7 @@ describe('HostService — não vaza credencial de sessão do cliente nos DTOs de
     // Mesma família A07: o controller `POST tables/:n/vip` devolve o retorno de
     // toggleVip direto pro staff. Ele carregava `sessionId: activeSession.id`
     // (= x-session-token do cliente). O FE do TableMenu só usa `flags`.
-    const query = async (sql: string, params: unknown[] = []): Promise<unknown> => {
+    const query = async (sql: string, _params: unknown[] = []): Promise<unknown> => {
       const s = sql.replace(/\s+/g, ' ').trim();
       if (s.startsWith('SELECT id, code FROM tables WHERE')) {
         return [{ id: 'table-5', code: '5' }];
@@ -600,14 +607,17 @@ describe('HostService — não vaza credencial de sessão do cliente nos DTOs de
       throw new Error(`fake leak-vip: SQL não roteado: ${s}`);
     };
     const svc = makeService({ query } as unknown as TenantConnectionProvider);
-    const res = (await svc.toggleVip(5, { flag: true }, 'slug')) as unknown as Record<string, unknown>;
+    const res = (await svc.toggleVip(5, { flag: true }, 'slug')) as unknown as Record<
+      string,
+      unknown
+    >;
     expect(JSON.stringify(res)).not.toContain(SESSION_TOKEN);
     expect(res.sessionId).toBeUndefined();
     expect(res.flags).toEqual(['vip']);
   });
 
   it('RED: liberateTable NÃO devolve o token de sessão do cliente no DTO', async () => {
-    const query = async (sql: string, params: unknown[] = []): Promise<unknown> => {
+    const query = async (sql: string, _params: unknown[] = []): Promise<unknown> => {
       const s = sql.replace(/\s+/g, ' ').trim();
       if (s.startsWith('SELECT id, code FROM tables WHERE')) {
         return [{ id: 'table-9', code: '9' }];
@@ -642,7 +652,7 @@ describe('HostService — não vaza credencial de sessão do cliente nos DTOs de
  */
 describe('HostService.liberateTable — propaga partySize do stepper (Bug 1)', () => {
   function fakeLiberateDb() {
-    const query = async (sql: string, params: unknown[] = []): Promise<unknown> => {
+    const query = async (sql: string, _params: unknown[] = []): Promise<unknown> => {
       const s = sql.replace(/\s+/g, ' ').trim();
       if (s.startsWith('SELECT id, code FROM tables WHERE')) {
         return [{ id: 'table-9', code: '9' }];
@@ -660,10 +670,11 @@ describe('HostService.liberateTable — propaga partySize do stepper (Bug 1)', (
 
   it('RED: partySize informado volta no payload (chega e é usado, não descartado)', async () => {
     const svc = makeService(fakeLiberateDb());
-    const res = (await svc.liberateTable(9, { mode: 'auto', partySize: 6 }, 'slug')) as unknown as Record<
-      string,
-      unknown
-    >;
+    const res = (await svc.liberateTable(
+      9,
+      { mode: 'auto', partySize: 6 },
+      'slug',
+    )) as unknown as Record<string, unknown>;
     expect(res.partySize).toBe(6);
   });
 });

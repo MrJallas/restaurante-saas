@@ -1,6 +1,6 @@
 /**
  * BUG P1 (re-scan · dashboard.service.ts:loadRevenueChart): a janela de receita
- * tinha off-by-one. `created_at >= CURRENT_DATE - $1::int` com days=1 devolvia
+ * tinha off-by-one. Uma janela com `- $1::int` e days=1 devolvia
  * HOJE + ONTEM (2 datas), não só hoje; days=7 devolvia 8 datas. Consequências
  * no financeiro do manager:
  *   (a) a "Receita" (soma do /revenue?days=1) divergia do "Faturamento" (overview
@@ -8,7 +8,7 @@
  *   (b) o drill-down detalhe/[kind] inflava ~2x;
  *   (c) o gráfico "7 dias" mostrava 8 barras.
  *
- * FIX: `CURRENT_DATE - $1::int` → `CURRENT_DATE - ($1 - 1)::int`, de forma que
+ * FIX: `$1::int` → `($1 - 1)::int`, de forma que
  * days=N devolve EXATAMENTE N datas terminando HOJE (days=1 = só hoje).
  *
  * Estes testes modelam um banco ciente do SQL: `orders` espalhados por várias
@@ -41,15 +41,15 @@ function daysAgo(back: number): string {
  *
  * Modela `orders` com uma data (`daysBack`, 0 = hoje) e um valor. Para a query
  * de revenue, extrai do texto do SQL o multiplicador da janela: se o WHERE usa
- * `CURRENT_DATE - ($1 - 1)` (fix) a janela é `days - 1` dias atrás; se usa
- * `CURRENT_DATE - $1` (bug) a janela é `days` dias atrás. Depois filtra
+ * `($1 - 1)` (fix) a janela é `days - 1` dias atrás; se usa `$1` (bug) a
+ * janela é `days` dias atrás. Depois filtra
  * `daysBack <= janela`, agrupa por data e devolve linhas ordenadas — igual ao
  * `GROUP BY DATE(created_at) ORDER BY date ASC` do Postgres.
  *
  * Para a query de overview (só-hoje), soma apenas os pedidos com daysBack === 0.
  */
 function fakeRevenueDb(opts: {
-  orders: Array<{ daysBack: number; revenueCents: number }>;
+  orders: Array<{ daysBack: number; revenueCents: number; settled?: boolean }>;
   todayCustomers?: number;
   avgRating?: number | null;
   pendingOrders?: number;
@@ -60,17 +60,17 @@ function fakeRevenueDb(opts: {
     const s = sql.replace(/\s+/g, ' ').trim();
 
     // --- revenue chart: GROUP BY DATE(created_at) com janela parametrizada ---
-    if (s.includes('GROUP BY DATE(created_at)')) {
+    if (s.includes('WITH settled AS') && s.includes('FROM payments')) {
       const days = Number((params ?? [])[0]);
       if (!Number.isFinite(days)) {
         throw new Error(`fake revenue: $1 (days) ausente/inválido: ${String((params ?? [])[0])}`);
       }
       // Extrai a janela do TEXTO do SQL (não confia só no param): quantos dias
-      // atrás o filtro `created_at >= CURRENT_DATE - <expr>` alcança.
+      // atrás o filtro de fronteira civil alcança.
       let windowBack: number;
-      if (/CURRENT_DATE\s*-\s*\(\s*\$1\s*-\s*1\s*\)/.test(s)) {
+      if (/-\s*\(\s*\$1\s*-\s*1\s*\)::int/.test(s)) {
         windowBack = days - 1; // FIX: N datas terminando hoje
-      } else if (/CURRENT_DATE\s*-\s*\$1/.test(s)) {
+      } else if (/-\s*\$1::int/.test(s)) {
         windowBack = days; // BUG: N+1 datas (hoje + N dias atrás)
       } else {
         throw new Error(`fake revenue: janela não reconhecida no WHERE: ${s}`);
@@ -78,6 +78,7 @@ function fakeRevenueDb(opts: {
       // Agrega por data dentro da janela [hoje .. hoje-windowBack].
       const byDate = new Map<string, { revenue: number; orders: number }>();
       for (const o of orders) {
+        if (o.settled === false) continue;
         if (o.daysBack < 0 || o.daysBack > windowBack) continue;
         const date = daysAgo(o.daysBack);
         const cur = byDate.get(date) ?? { revenue: 0, orders: 0 };
@@ -94,11 +95,19 @@ function fakeRevenueDb(opts: {
         }));
     }
 
-    // --- overview "hoje": COUNT/SUM de orders com created_at >= CURRENT_DATE ---
-    if (s.includes('FROM orders') && s.includes('created_at >= CURRENT_DATE') && s.includes('SUM(total_cents)')) {
+    // --- overview "hoje": pedidos lançados e caixa liquidado são fontes separadas ---
+    if (
+      s.includes('FROM orders') &&
+      s.includes("status != 'cancelled'") &&
+      s.includes('COUNT(*)')
+    ) {
       const todays = orders.filter((o) => o.daysBack === 0);
+      return [{ count: String(todays.length) }];
+    }
+    if (s.includes('FROM payments') && s.includes("status IN ('confirmed', 'paid')")) {
+      const todays = orders.filter((o) => o.daysBack === 0 && o.settled !== false);
       const revenue = todays.reduce((sum, o) => sum + o.revenueCents, 0);
-      return [{ count: String(todays.length), revenue: String(revenue) }];
+      return [{ revenue: String(revenue) }];
     }
     // overview: distinct customers hoje
     if (s.includes('COUNT(DISTINCT customer_id)') && s.includes('FROM visits')) {
@@ -174,5 +183,21 @@ describe('DashboardService — reconciliação Faturamento (overview só-hoje) =
     expect(receitaCents).toBe(2500); // Receita days=1 == Faturamento
     // e a série de days=1 é uma única barra (hoje), não duas.
     expect(revenue).toHaveLength(1);
+  });
+
+  it('pedido aberto/não pago não aumenta faturamento', async () => {
+    const svc = new DashboardService(
+      fakeRevenueDb({
+        orders: [
+          { daysBack: 0, revenueCents: 5000, settled: false },
+          { daysBack: 0, revenueCents: 1200, settled: true },
+        ],
+      }),
+      noCacheRedis,
+    );
+
+    const overview = await svc.getOverview();
+    expect(overview.today.orders).toBe(2);
+    expect(overview.today.revenueCents).toBe(1200);
   });
 });

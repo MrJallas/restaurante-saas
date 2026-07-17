@@ -14,8 +14,9 @@
  * `visits` tem 1 row.
  *
  * FIX congelado aqui: o INSERT em `visits ... ON CONFLICT DO NOTHING RETURNING
- * id` roda PRIMEIRO; `total_visits + 1` só quando uma row foi REALMENTE
- * retornada (visita nova pra essa sessão). `last_visit_at` continua carimbado a
+ * id` roda PRIMEIRO e o contador é reconciliado pelo COUNT da fonte canônica.
+ * Isso cobre reload e também dois cadastros concorrentes cujo perdedor consiga
+ * inserir a visita antes do vencedor. `last_visit_at` continua carimbado a
  * cada call ("visto por último", não "contagem"). Simétrico em welcome +
  * recognize. `isReturning`/`identify` intactos.
  *
@@ -55,6 +56,7 @@ const EXISTING_CUSTOMER = {
  */
 function fakeDb(startVisits = 3) {
   let totalVisits = startVisits;
+  const historicalVisits = startVisits;
   const visitRows = new Set<string>(); // `${sessionId}::${customerId}`
   let visitSeq = 0;
 
@@ -126,9 +128,9 @@ function fakeDb(startVisits = 3) {
       return visitRows.has(key) ? [{ id: `visit-existing` }] : [];
     }
 
-    // UPDATE total_visits + 1 → TUPLA [rows, affected] (imita pg em UPDATE).
-    if (s.startsWith('UPDATE customers SET total_visits = total_visits + 1')) {
-      totalVisits += 1;
+    // Reconciliação com a fonte canônica → TUPLA [rows, affected].
+    if (s.startsWith('UPDATE customers SET total_visits = (')) {
+      totalVisits = historicalVisits + visitRows.size;
       return [[{ total_visits: totalVisits }], 1];
     }
 
@@ -138,7 +140,7 @@ function fakeDb(startVisits = 3) {
       s.startsWith('UPDATE customers SET last_visit_at') ||
       (s.startsWith('UPDATE customers SET') &&
         s.includes('last_visit_at') &&
-        !s.includes('total_visits = total_visits + 1'))
+        !s.includes('total_visits = ('))
     ) {
       return [[], 1];
     }
@@ -201,8 +203,16 @@ describe('CustomersService.recognize — total_visits gated na visita NOVA (P1 s
     const svc = makeService(db.conn);
     const sessionId = 'sess-reload';
 
-    const first = await svc.recognize(EXISTING_CUSTOMER.recognition_token, sessionId, GRANTED_LOCATION);
-    const second = await svc.recognize(EXISTING_CUSTOMER.recognition_token, sessionId, GRANTED_LOCATION);
+    const first = await svc.recognize(
+      EXISTING_CUSTOMER.recognition_token,
+      sessionId,
+      GRANTED_LOCATION,
+    );
+    const second = await svc.recognize(
+      EXISTING_CUSTOMER.recognition_token,
+      sessionId,
+      GRANTED_LOCATION,
+    );
 
     // Fonte-da-verdade: 1 row em visits pra essa sessão.
     expect(db.getVisitCount()).toBe(1);

@@ -27,8 +27,17 @@ import {
   MAvatar,
   MQuickActionsBar,
 } from '../../components/manager';
-import { manager, type AlertRow, type FunnelStage } from '../../lib/api/manager';
+import {
+  manager,
+  type AlertActionDescriptor,
+  type AlertRow,
+  type FunnelStage,
+  type WaiterWorkloadSnapshot,
+} from '../../lib/api/manager';
+import { normalizeAlertActions, resolveManagerAlertRoute } from '../../lib/alert-actions';
 import { listTablesOverview } from '../../lib/api/waiter';
+import { buildManagerOpsMapTables, type ManagerOpsMapTable } from '../../lib/manager-ops-map';
+import { waitersOnShift } from '../../lib/manager-waiter-workload';
 
 export type OpsTab = 'alerts' | 'map' | 'funnel';
 
@@ -49,7 +58,7 @@ interface OpsAlert {
   msg: string;
   sub: string;
   ts: string;
-  actions: string[];
+  actions: AlertActionDescriptor[];
 }
 
 function relativeTs(iso: string): string {
@@ -66,16 +75,8 @@ function toOpsAlert(row: AlertRow): OpsAlert {
     msg: row.title,
     sub: row.sub ?? '',
     ts: relativeTs(row.created_at),
-    actions: (row.actions ?? []).map((a) => a.label).slice(0, 2),
+    actions: normalizeAlertActions(row.actions),
   };
-}
-
-interface MapTable {
-  n: number;
-  st: 'ok' | 'warn' | 'crit' | 'free';
-  wait?: number;
-  waiter?: string;
-  val?: number;
 }
 
 const WAITER_PALETTE: Record<string, string> = {
@@ -96,34 +97,39 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
   const api = useMemo(() => manager(tenantSlug), [tenantSlug]);
 
   const [alerts, setAlerts] = useState<OpsAlert[]>([]);
-  const [tables, setTables] = useState<MapTable[]>([]);
+  const [tables, setTables] = useState<ManagerOpsMapTable[]>([]);
+  const [waiterWorkload, setWaiterWorkload] = useState<WaiterWorkloadSnapshot | null>(null);
   const [funnel, setFunnel] = useState<FunnelStage[]>([]);
   const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     let stop = false;
-    Promise.all([
-      api.alerts.list({ status: 'open' }),
-      listTablesOverview(tenantSlug),
-      api.funnel.get(),
-    ])
-      .then(([alertRows, tableRows, funnelRes]) => {
-        if (stop) return;
-        setAlerts(alertRows.map(toOpsAlert));
-        setTables(
-          tableRows.map((t) => ({
-            n: t.number,
-            st: t.occupied ? ('ok' as const) : ('free' as const),
-          })),
-        );
-        setFunnel(funnelRes.stages);
-        setLoadError(false);
-      })
-      .catch(() => {
-        if (!stop) setLoadError(true);
-      });
+    const load = () => {
+      Promise.all([
+        api.alerts.list({ status: 'open' }),
+        listTablesOverview(tenantSlug),
+        api.activeTables.get(),
+        api.teamKpis.get(),
+        api.funnel.get(),
+      ])
+        .then(([alertRows, tableRows, activeTables, teamKpis, funnelRes]) => {
+          if (stop) return;
+          setAlerts(alertRows.map(toOpsAlert));
+          setTables(buildManagerOpsMapTables(tableRows, activeTables, teamKpis.waiterWorkload));
+          setWaiterWorkload(teamKpis.waiterWorkload);
+          setFunnel(funnelRes.stages);
+          setLoadError(false);
+        })
+        .catch(() => {
+          if (!stop) setLoadError(true);
+        });
+    };
+
+    load();
+    const refresh = window.setInterval(load, 10_000);
     return () => {
       stop = true;
+      window.clearInterval(refresh);
     };
   }, [api, tenantSlug]);
 
@@ -137,21 +143,8 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
       setLoadError(true);
     });
   };
-  const handleAlertAction = (action: string) => {
-    const qs = `?slug=${tenantSlug}`;
-    if (/cozinha|fila|entregar/i.test(action)) {
-      router.push(`/manager/kitchen-reorder${qs}`);
-      return;
-    }
-    if (/realocar/i.test(action)) {
-      router.push(`/manager/equipe/sobrecarga${qs}`);
-      return;
-    }
-    if (/pausar/i.test(action)) {
-      router.push(`/manager/pausa-zona${qs}`);
-      return;
-    }
-    router.push(`/manager/mensagens/nova${qs}`);
+  const handleAlertAction = (action: AlertActionDescriptor) => {
+    router.push(resolveManagerAlertRoute(action, tenantSlug));
   };
   const [pauseRemaining, setPauseRemaining] = useState<number | null>(null);
 
@@ -251,7 +244,7 @@ export function ScreenManagerOps({ dark, tenantSlug, tab = 'alerts' }: ScreenMan
             onAction={handleAlertAction}
           />
         )}
-        {active === 'map' && <OpsMap dark={dark} tables={tables} />}
+        {active === 'map' && <OpsMap dark={dark} tables={tables} waiterWorkload={waiterWorkload} />}
         {active === 'funnel' && <OpsFunnel dark={dark} stages={funnel} />}
 
         <style jsx global>{`
@@ -291,7 +284,7 @@ function OpsAlerts({
   high: number;
   med: number;
   onDismiss?: (id: string) => void;
-  onAction?: (label: string) => void;
+  onAction?: (action: AlertActionDescriptor) => void;
 }) {
   const C = useG(!!dark);
   const router = useRouter();
@@ -337,7 +330,7 @@ function OpsAlerts({
           fontFamily: MONO_FONT,
         }}
       >
-        Cada alerta · 2 ações inline · X dispensa
+        Cada alerta · ações disponíveis · X dispensa
       </div>
 
       <div style={{ padding: '4px 16px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -453,47 +446,36 @@ function OpsAlerts({
                   {a.sub}
                 </div>
 
-                <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
-                  <button
-                    type="button"
-                    onClick={() => onAction?.(a.actions[0])}
-                    style={{
-                      all: 'unset',
-                      cursor: 'pointer',
-                      padding: '0 10px',
-                      height: 32,
-                      borderRadius: 8,
-                      background: '#1d1c19',
-                      color: '#fff',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                    }}
-                  >
-                    {a.actions[0]}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onAction?.(a.actions[1])}
-                    style={{
-                      all: 'unset',
-                      cursor: 'pointer',
-                      padding: '0 10px',
-                      height: 32,
-                      borderRadius: 8,
-                      background: 'transparent',
-                      color: '#1d1c19',
-                      border: `1px solid ${C.borderSoft}`,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                    }}
-                  >
-                    {a.actions[1]}
-                  </button>
-                </div>
+                {a.actions.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
+                    {a.actions.map((action, index) => {
+                      const primary = action.kind === 'primary' || (!action.kind && index === 0);
+                      return (
+                        <button
+                          key={`${action.label}:${index}`}
+                          type="button"
+                          onClick={() => onAction?.(action)}
+                          style={{
+                            all: 'unset',
+                            cursor: 'pointer',
+                            padding: '0 10px',
+                            height: 32,
+                            borderRadius: 8,
+                            background: primary ? '#1d1c19' : 'transparent',
+                            color: primary ? '#fff' : '#1d1c19',
+                            border: primary ? undefined : `1px solid ${C.borderSoft}`,
+                            fontSize: 12,
+                            fontWeight: primary ? 700 : 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                          }}
+                        >
+                          {action.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })
@@ -504,7 +486,15 @@ function OpsAlerts({
 }
 
 // ─── MAPA sub-tab ────────────────────────────────────────────────
-function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
+function OpsMap({
+  dark,
+  tables,
+  waiterWorkload,
+}: {
+  dark?: boolean;
+  tables: ManagerOpsMapTable[];
+  waiterWorkload: WaiterWorkloadSnapshot | null;
+}) {
   const C = useG(!!dark);
   const router = useRouter();
   const occupied = tables.filter((t) => t.st !== 'free').length;
@@ -513,7 +503,7 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
   const warn = tables.filter((t) => t.st === 'warn').length;
 
   const stColors: Record<
-    MapTable['st'],
+    ManagerOpsMapTable['st'],
     { bg: string; border: string; fg: string; dot: string | null }
   > = {
     ok: { bg: C.bg, border: C.borderSoft, fg: C.ink, dot: '#1E8C5A' },
@@ -522,25 +512,8 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
     free: { bg: 'transparent', border: C.borderSoft, fg: C.faint, dot: null },
   };
 
-  // Carga por garçom — derived from tables.
-  const waiterLoad = useMemo(() => {
-    const buckets: Record<string, { load: number; val: number }> = {};
-    for (const t of tables) {
-      if (t.st === 'free' || !t.waiter) continue;
-      buckets[t.waiter] = buckets[t.waiter] || { load: 0, val: 0 };
-      buckets[t.waiter].load += 1;
-      buckets[t.waiter].val += t.val ?? 0;
-    }
-    // Limpeza de demo (decisão #5): o rótulo é o próprio valor vindo da API
-    // (nome real do garçom) — o dicionário de personas fake foi removido.
-    return Object.entries(buckets).map(([init, b]) => ({
-      init,
-      name: init,
-      load: b.load,
-      total: 7,
-      val: b.val,
-    }));
-  }, [tables]);
+  const waiterLoad = waitersOnShift(waiterWorkload);
+  const highestScore = Math.max(1, ...waiterLoad.map((row) => row.loadScore));
 
   return (
     <div>
@@ -683,13 +656,14 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
                   </div>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                  {t.waiter && (
+                  {t.waiterInitials && (
                     <div
+                      title={t.waiterName}
                       style={{
                         width: 14,
                         height: 14,
                         borderRadius: '50%',
-                        background: WAITER_PALETTE[t.waiter ?? ''] ?? '#777',
+                        background: WAITER_PALETTE[t.waiterInitials] ?? '#777',
                         color: '#fff',
                         fontSize: 8,
                         fontWeight: 800,
@@ -698,7 +672,7 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
                         justifyContent: 'center',
                       }}
                     >
-                      {t.waiter}
+                      {t.waiterInitials}
                     </div>
                   )}
                   <div
@@ -723,11 +697,17 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
         <MSection dark={dark} title="Carga por garçom · em turno">
           <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {waiterLoad.map((row) => {
-              const pct = (row.load / row.total) * 100;
-              const overload = pct >= 80;
+              const pct = (row.loadScore / highestScore) * 100;
+              const overload = waiterWorkload?.imbalance?.highestWaiterId === row.staffId;
+              const init = row.name
+                .split(/\s+/)
+                .slice(0, 2)
+                .map((part) => part[0] ?? '')
+                .join('')
+                .toUpperCase();
               return (
                 <div
-                  key={row.init}
+                  key={row.staffId}
                   style={{
                     padding: 10,
                     border: `1px solid ${C.borderSoft}`,
@@ -738,10 +718,13 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
                     gap: 10,
                   }}
                 >
-                  <MAvatar init={row.init} color={WAITER_PALETTE[row.init]} size={32} />
+                  <MAvatar init={init} color={WAITER_PALETTE[init]} size={32} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700 }}>{row.name}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>
+                        {row.name}
+                        {row.paused ? ' · em pausa' : ''}
+                      </div>
                       <div
                         style={{
                           fontSize: 12,
@@ -750,7 +733,7 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
                           fontVariantNumeric: 'tabular-nums',
                         }}
                       >
-                        {row.load}/{row.total} mesas
+                        {row.tables} {row.tables === 1 ? 'mesa' : 'mesas'} · carga {row.loadScore}
                       </div>
                     </div>
                     <div
@@ -769,6 +752,10 @@ function OpsMap({ dark, tables }: { dark?: boolean; tables: MapTable[] }) {
                           background: overload ? '#C43A3A' : C.ink,
                         }}
                       />
+                    </div>
+                    <div style={{ fontSize: 10.5, color: C.faint, marginTop: 4 }}>
+                      {row.people} pessoas · {row.activeOrders} pedidos · {row.pendingWaiterCalls}{' '}
+                      chamados
                     </div>
                   </div>
                 </div>

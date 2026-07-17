@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ScreenWaiterScanQr } from '../../../screens/waiter/ScreenWaiterScanQr';
+import { waiterDirectOrderPath } from '../../../lib/waiter-navigation';
 
 function WaiterScanQrPageInner() {
   const router = useRouter();
@@ -12,12 +13,8 @@ function WaiterScanQrPageInner() {
   return (
     <ScreenWaiterScanQr
       onClose={() => router.back()}
-      onManualEntry={() => router.push(`/waiter/scan-qr/picker?tenant=${tenantSlug}`)}
-      onScanned={(code) =>
-        router.push(
-          `/waiter/scan-qr/delivery-confirm?tenant=${tenantSlug}&table=${encodeURIComponent(code)}`,
-        )
-      }
+      onManualEntry={() => router.push(`/waiter/scan-qr/picker?tenant=${tenantSlug}&direct=1`)}
+      onScanned={(code) => router.push(waiterDirectOrderPath(tenantSlug, code))}
     />
   );
 }

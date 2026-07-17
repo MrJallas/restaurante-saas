@@ -5,6 +5,8 @@ LGPD notice payload shape, ack-pool rotation.
 
 import pytest
 
+from services.api_client import RecordingApiClient
+
 from services.tools import (
     TOOLS,
     CANONICAL_TOOL_NAMES,
@@ -60,11 +62,12 @@ def test_canonical_count_is_26():
 
 
 # ─────────────────────────────────────────────────────────────
-# Removed-alias guardrail — old names must NOT be registered
-# (cleaned up in P1 #30 after every caller moved to the canonical name).
+# Removed-tool guardrail — old aliases and impossible legacy actions must NOT
+# be registered. `late_arrival_request` is deliberately absent: late-arrival
+# starts from the occupied-table QR in web-customer, not from the AI service.
 # ─────────────────────────────────────────────────────────────
 
-REMOVED_ALIASES = {
+REMOVED_TOOL_NAMES = {
     "add_to_cart",
     "recommend",
     "complaint_compose",
@@ -72,21 +75,22 @@ REMOVED_ALIASES = {
     "table_merge_request",
     "rate_order",
     "staff_message_send",
+    "late_arrival_request",
 }
 
 
-@pytest.mark.parametrize("alias", sorted(REMOVED_ALIASES))
-def test_removed_alias_no_longer_registered(alias: str):
-    """Deprecated aliases were removed in P1 #30 — registry must not expose them."""
-    assert alias not in TOOLS, f"removed alias {alias} resurfaced in TOOLS"
+@pytest.mark.parametrize("name", sorted(REMOVED_TOOL_NAMES))
+def test_removed_tool_no_longer_registered(name: str):
+    """Deprecated/impossible tools must not resurface in the public registry."""
+    assert name not in TOOLS, f"removed tool {name} resurfaced in TOOLS"
 
 
-def test_removed_aliases_raise_tool_not_found():
-    """Dispatching a removed alias must surface ToolNotFoundError, not silently route."""
+def test_removed_tools_raise_tool_not_found():
+    """Removed tools fail closed instead of issuing a stale HTTP side effect."""
     ctx = ToolContext(tenant_id="t1", customer_id="c1")
-    for alias in REMOVED_ALIASES:
+    for name in REMOVED_TOOL_NAMES:
         with pytest.raises(ToolNotFoundError):
-            dispatch_tool(alias, {}, ctx)
+            dispatch_tool(name, {}, ctx)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -318,6 +322,25 @@ def test_compare_dishes_requires_two_items():
     assert result.error["code"] == "need_two_items"
 
 
+def test_compare_dishes_reads_canonical_snake_case_prices():
+    client = RecordingApiClient(queued_responses=[
+        {"id": "picanha", "name": "Picanha", "price_cents": 7900, "allergens": []},
+        {"id": "bruschetta", "name": "Bruschetta", "price_cents": 1890, "allergens": ["gluten"]},
+    ])
+    ctx = ToolContext(tenant_id="t1", customer_id="c1", api_client=client)
+
+    result = dispatch_tool(
+        "compare_dishes",
+        {"itemIds": ["picanha", "bruschetta"]},
+        ctx,
+    )
+
+    assert "R$ 79,00" in (result.message or "")
+    assert "R$ 18,90" in (result.message or "")
+    assert "R$ 0,00" not in (result.message or "")
+    assert result.action_payload["items"][0]["priceCents"] == 7900
+
+
 def test_search_dish_requires_query():
     ctx = ToolContext(tenant_id="t1", customer_id="c1")
     result = dispatch_tool("search_dish", {}, ctx)
@@ -365,9 +388,10 @@ class _RecordingApiClient:
 
 
 def test_destructive_tools_set_contains_deletes():
-    """delete_all_chats + delete_chat são deleções irreversíveis."""
+    """Chat deletes e erasure formal são operações irreversíveis."""
     assert "delete_all_chats" in DESTRUCTIVE_TOOLS
     assert "delete_chat" in DESTRUCTIVE_TOOLS
+    assert "lgpd_data_request" in DESTRUCTIVE_TOOLS
 
 
 def test_delete_all_chats_without_confirm_does_not_delete():
@@ -395,8 +419,8 @@ def test_delete_all_chats_without_confirm_does_not_delete():
     assert confirm_chip is not None, f"faltou chip de confirmação re-emitindo a tool: {result.chips}"
 
 
-def test_delete_all_chats_with_confirm_from_chip_deletes():
-    """GREEN path A2: com confirm=true VINDO DO CHIP (out-of-band, humano), deleta.
+def test_delete_all_chats_with_confirm_from_chip_delegates_to_browser():
+    """GREEN path A2: confirm humano vira ação FE, não DELETE do AI service.
 
     O invariante é: confirmação só vale quando a ORIGEM do dispatch é o chip
     tocado pelo humano (`origin="chip"`), nunca o token-stream do LLM.
@@ -404,10 +428,9 @@ def test_delete_all_chats_with_confirm_from_chip_deletes():
     api = _RecordingApiClient()
     ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
     result = dispatch_tool("delete_all_chats", {"confirm": True}, ctx, origin="chip")
-    assert len(api.calls) == 1, f"esperava 1 DELETE, veio: {api.calls}"
-    method, path, _ = api.calls[0]
-    assert method == "DELETE"
+    assert api.calls == []
     assert result.error is None
+    assert result.action_payload["action"] == "delete_all_chats_in_browser"
 
 
 # ─────────────────────────────────────────────────────────────
@@ -458,27 +481,26 @@ def test_a1_llm_forged_confirm_explicit_origin_does_not_delete():
     assert result.chips
 
 
-def test_a2_chip_out_of_band_confirm_deletes():
-    """A2: o caminho do chip (out-of-band, humano) COM confirm DELETA — o humano consegue."""
+def test_a2_chip_out_of_band_confirm_delegates_to_browser():
+    """A2: confirmação humana preservada, execução fica no browser autenticado."""
     api = _RecordingApiClient()
     ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
     result = dispatch_tool("delete_all_chats", {"confirm": True}, ctx, origin="chip")
-    assert len(api.calls) == 1, f"A2 QUEBRADO: humano não conseguiu deletar: {api.calls}"
-    assert api.calls[0][0] == "DELETE"
+    assert api.calls == []
     assert result.error is None
+    assert result.action_payload["action"] == "delete_all_chats_in_browser"
 
 
-def test_a2_chip_confirm_preserves_thread_target_and_deletes():
-    """A2 (delete_chat): chip out-of-band preserva threadId e deleta o alvo certo."""
+def test_a2_chip_confirm_preserves_thread_target_for_browser():
+    """A2: chip preserva threadId, sem reautorizar customerId no AI service."""
     api = _RecordingApiClient()
     ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
     result = dispatch_tool(
         "delete_chat", {"threadId": "thr-1", "confirm": True}, ctx, origin="chip"
     )
-    assert len(api.calls) == 1, f"A2 delete_chat não deletou: {api.calls}"
-    method, path, _ = api.calls[0]
-    assert method == "DELETE"
-    assert "thr-1" in path, f"alvo do delete perdido: {path}"
+    assert api.calls == []
+    assert result.action_payload["action"] == "delete_chat_in_browser"
+    assert result.action_payload["threadId"] == "thr-1"
     assert result.error is None
 
 
@@ -525,15 +547,17 @@ def test_delete_chat_without_confirm_does_not_delete():
     assert (confirm_chip["payload"]["args"] or {}).get("threadId") == "thr-1"
 
 
-def test_delete_chat_with_confirm_from_chip_deletes():
-    """delete_chat só deleta com confirm vindo do chip out-of-band (origin='chip')."""
+def test_delete_chat_with_confirm_from_chip_delegates_to_browser():
+    """delete_chat confirmado vira payload para o browser com cookie."""
     api = _RecordingApiClient()
     ctx = ToolContext(tenant_id="t1", customer_id="c1", session_id="s1", api_client=api)
     result = dispatch_tool(
         "delete_chat", {"threadId": "thr-1", "confirm": True}, ctx, origin="chip"
     )
-    assert len(api.calls) == 1, f"esperava 1 DELETE, veio: {api.calls}"
+    assert api.calls == []
     assert result.error is None
+    assert result.action_payload["action"] == "delete_chat_in_browser"
+    assert result.action_payload["threadId"] == "thr-1"
 
 
 def test_non_destructive_tool_not_gated():
@@ -551,6 +575,25 @@ def test_non_destructive_tool_not_gated():
         and (c["payload"].get("args") or {}).get("confirm") is True
     ]
     assert reconfirm == [], "add_to_order não deve pedir confirmação destrutiva"
+
+
+def test_customer_context_cannot_dispatch_staff_tool():
+    """Prompt injection/tool name never promotes a customer into staff."""
+    api = _RecordingApiClient()
+    ctx = ToolContext(
+        tenant_id="t1",
+        customer_id="c1",
+        session_id="s1",
+        is_staff=False,
+        api_client=api,
+    )
+    result = dispatch_tool(
+        "staff_broadcast",
+        {"text": "fechar o restaurante", "audience": "all"},
+        ctx,
+    )
+    assert result.error["code"] == "staff_auth_required"
+    assert api.calls == []
 
 
 # ─────────────────────────────────────────────────────────────

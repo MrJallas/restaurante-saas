@@ -239,6 +239,28 @@ export class LateArrivalController {
   }
 
   /**
+   * Fonte autoritativa da tela customer waiting-approval. Diferente do GET
+   * staff abaixo, esta projeção só pode ser lida pelo próprio solicitante na
+   * mesma table_session autenticada; assim um reload/deep-link não depende de
+   * ter recebido o evento WebSocket enquanto a aba estava aberta.
+   */
+  @Get(':id/status')
+  @UseGuards(SessionGuard)
+  async getOwnStatus(
+    @Param('id') id: string,
+    @Session() session: SessionData,
+    @Req() req: Request,
+  ) {
+    const token =
+      (req as Request & { cookies?: Record<string, string> }).cookies?.recognition_token ?? '';
+    const caller = await this.customers.resolveByRecognitionToken(token);
+    if (!caller) {
+      throw new HttpException('Identificação ausente.', HttpStatus.UNAUTHORIZED);
+    }
+    return this.service.getRequesterStatus(id, caller.customerId, session.sessionId);
+  }
+
+  /**
    * P1 #23 — single-resource read. Deep-links from manager/host stat
    * detail pages (`/manager/stat/late-arrival/:id`,
    * `/host/late-arrival/[id]`) hit this. Same guard as `list` —

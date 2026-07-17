@@ -43,11 +43,7 @@ export class OrderRatingsController {
    */
   @Post()
   @UseGuards(SessionGuard)
-  async submit(
-    @Body() dto: SubmitRatingDto,
-    @Req() req: Request,
-    @Session() session: SessionData,
-  ) {
+  async submit(@Body() dto: SubmitRatingDto, @Req() req: Request, @Session() session: SessionData) {
     const callerCustomerId = await this.callerResolver.requireCustomerId(req);
     return this.service.submit({
       orderId: dto.orderId,

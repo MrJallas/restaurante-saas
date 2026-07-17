@@ -61,11 +61,16 @@ export function liberateTable(
   // Bug 1: partySize vem do stepper "QUANTAS PESSOAS?" do
   // ScreenHostTableLiberate. Opcional — outros callers (ex. manager) liberam
   // sem escolher grupo e omitem.
-  opts?: { partySize?: number },
+  opts?: { partySize?: number; reservationId?: string; waitlistId?: string },
 ): Promise<{ ok: true; partySize?: number | null }> {
   return staffPost<{ ok: true; partySize?: number | null }>(
     `/${tenantSlug}/host/tables/${tableNumber}/liberate`,
-    { mode: 'auto', ...(opts?.partySize != null ? { partySize: opts.partySize } : {}) },
+    {
+      mode: 'auto',
+      ...(opts?.partySize != null ? { partySize: opts.partySize } : {}),
+      ...(opts?.reservationId ? { reservationId: opts.reservationId } : {}),
+      ...(opts?.waitlistId ? { waitlistId: opts.waitlistId } : {}),
+    },
   );
 }
 
@@ -140,8 +145,9 @@ export function updateReservation(
   return staffPatch<ReservationEntry>(`/${tenantSlug}/host/reservations/${id}`, body);
 }
 
-// ─── Late-arrival approvals (host fallback when host_customer_id is null
-// or didn't respond in 60s — per docs/features/customer-host-model.md) ───
+// ─── Late-arrival awareness ───
+// A equipe apenas acompanha. Aprovar/rejeitar exige a sessão do customer-host
+// e não deve ser exposto como operação staff.
 // P1 #22 — backend `ListQueryDto` whitelists ['pending','approved','rejected',
 // 'expired']. The old `staff_pending` value silently filtered to nothing.
 // `pending` matches the actual DB enum on `late_arrival_requests.status`.
@@ -153,35 +159,13 @@ export function getLateArrival(tenantSlug: string, id: string): Promise<LateArri
   return staffGet<LateArrivalRequestDto>(`/${tenantSlug}/late-arrival-requests/${id}`);
 }
 
-export function approveLateArrival(
-  tenantSlug: string,
-  id: string,
-  body: { reason?: string } = {},
-): Promise<LateArrivalRequestDto> {
-  return staffPost<LateArrivalRequestDto>(
-    `/${tenantSlug}/late-arrival-requests/${id}/approve`,
-    body,
-  );
-}
-
-export function rejectLateArrival(
-  tenantSlug: string,
-  id: string,
-  body: { reason?: string } = {},
-): Promise<LateArrivalRequestDto> {
-  return staffPost<LateArrivalRequestDto>(
-    `/${tenantSlug}/late-arrival-requests/${id}/reject`,
-    body,
-  );
-}
-
 // ─── Physical QR scan verification ───
 export function listPendingScanVerifications(
   tenantSlug: string,
 ): Promise<ScanVerificationRequestDto[]> {
   return staffGet<ScanVerificationRequestDto[]>(
     `/${tenantSlug}/scan-verification-requests?status=pending`,
-  );
+  ).then((rows) => rows.filter((row) => row.currentAssigneeRole === 'host'));
 }
 
 export function getScanVerification(

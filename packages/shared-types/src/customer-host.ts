@@ -10,7 +10,13 @@
  * already-occupied table and the host (customer A) must approve. Auto-times-out
  * 60s after creation if host doesn't respond.
  */
-export type LateArrivalStatus = 'pending' | 'approved' | 'rejected' | 'timeout' | 'cancelled';
+export type LateArrivalStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'timeout'
+  | 'expired'
+  | 'cancelled';
 
 /**
  * Domain entity mirroring `late_arrival_requests` table.
@@ -64,7 +70,13 @@ export interface LateArrivalApproveDto {
 // Table merge
 // ─────────────────────────────────────────────────────────────
 
-export type TableMergeStatus = 'pending' | 'approved' | 'rejected' | 'timeout' | 'cancelled';
+export type TableMergeStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'timeout'
+  | 'expired'
+  | 'cancelled';
 
 /**
  * Domain entity for the in-flight merge request (escalation_chains row).

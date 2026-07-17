@@ -28,6 +28,7 @@ import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
 import { useTableMerge } from '../../../hooks/useTableMerge';
+import { isServerResolvedAssistantTool } from '../../../lib/assistant-tool-policy';
 import { useTableSocket } from '../../../hooks/useTableSocket';
 import { useActiveOrderStatus, type ActiveOrderStatus } from '../../../hooks/useActiveOrderStatus';
 import { useDraftOrder } from '../../../providers/DraftOrderProvider';
@@ -49,6 +50,7 @@ import { ScreenCustomerMergeCooldown } from '../../../screens/customer-host-flow
 import { ScreenCustomerPostMergeApproved } from '../../../screens/customer-host-flows/ScreenCustomerPostMergeApproved';
 import { ScreenCustomerPostMergeRejected } from '../../../screens/customer-host-flows/ScreenCustomerPostMergeRejected';
 import { createLgpdRequest } from '../../../lib/api/feedback';
+import { tenantNavigationDestination } from '../../../lib/customer-navigation';
 
 interface LinkedItem {
   id: string;
@@ -672,12 +674,15 @@ function chipNavigationDestination(slug: string, payload: string): string {
   const raw = payload.trim();
   const ratingMatch = raw.match(/^avaliar[:/](.+)$/);
   if (ratingMatch?.[1]) {
-    return `/${slug}/orders/${encodeURIComponent(ratingMatch[1])}/rating`;
+    return tenantNavigationDestination(
+      slug,
+      `/${slug}/orders/${encodeURIComponent(ratingMatch[1])}/rating`,
+    );
   }
   if (raw === 'avaliar' || raw === '/avaliar') {
-    return `/${slug}/pagamento/feedback`;
+    return tenantNavigationDestination(slug, `/${slug}/pagamento/feedback`);
   }
-  return raw.startsWith('/') ? raw : `/${slug}/${raw}`;
+  return tenantNavigationDestination(slug, raw);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -935,13 +940,6 @@ const SILENT_PATH_TOOLS = new Set<string>([
  * mas o `dispatchToolCall` skipa o stub bubble "OK" extra — sem isso, "qual o
  * horário?" criava DOIS bubbles: a resposta certa + "OK" duplicado embaixo.
  */
-const TEXT_ONLY_TOOLS = new Set<string>([
-  'ask_about_restaurant',
-  'search_dish',
-  'check_allergens',
-  'compare_dishes',
-]);
-
 function categorizeToolName(name: string): ToolCategory {
   if (
     name === 'view_menu' ||
@@ -1754,7 +1752,7 @@ export default function AssistentePage() {
 
     try {
       if (confirm.tool === 'delete_all_chats') {
-        const res = await deleteAllThreads(slug, session.customerId);
+        const res = await deleteAllThreads(slug);
         const count = res?.deletedCount ?? 0;
         appendToolFeedback(
           count > 0
@@ -1773,7 +1771,7 @@ export default function AssistentePage() {
           setSuggestions(DEFAULT_SUGGESTIONS);
           return true;
         }
-        await deleteThread(slug, threadId, session.customerId);
+        await deleteThread(slug, threadId);
         appendToolFeedback('Conversa apagada. Não tem volta.');
       }
     } catch {
@@ -2042,6 +2040,13 @@ export default function AssistentePage() {
     });
   };
 
+  // A tentativa disparada pela URL deve reagir apenas à entrada/reidratação,
+  // não à identidade deste handler (que muda junto com o estado do chat).
+  // O ref mantém a implementação mais recente sem transformar o efeito em um
+  // loop de novas tentativas a cada render.
+  const tryAnotherTableMergeRef = useRef(tryAnotherTableMerge);
+  tryAnotherTableMergeRef.current = tryAnotherTableMerge;
+
   const dismissMergeOutcome = () => {
     setMessages((prev) => {
       const next = prev.filter(
@@ -2058,13 +2063,11 @@ export default function AssistentePage() {
     setSuggestions(DEFAULT_SUGGESTIONS);
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- dispara uma vez
-  // por entrada com ?mergeRetry=1; handlers são estáveis o suficiente aqui.
+  // Dispara uma vez por entrada com ?mergeRetry=1.
   useEffect(() => {
     if (!mergeRetryParam || !session.sessionId) return;
     window.history.replaceState(null, '', `/${slug}/assistente`);
-    void tryAnotherTableMerge();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void tryAnotherTableMergeRef.current();
   }, [mergeRetryParam, session.sessionId, slug]);
 
   const createTableMergeFromToolCall = async (call: AssistantToolCall): Promise<void> => {
@@ -2209,14 +2212,8 @@ export default function AssistentePage() {
    *  - `lgpd_data_request`, `show_lgpd_notice` → handled inline above via
    *    `toolHint`/chips (canonical text comes from `lgpd_messages.py`)
    *
-   * Tools stubbed (logged + generic OK bubble — no crash):
-   *  - `view_menu`, `search_dish`, `check_allergens`, `compare_dishes`,
-   *    `view_order`, `split_bill`, `pay_individual`, `pay_full`,
-   *    `open_payment_screen`, `delete_chat`, `delete_all_chats`,
-   *    `view_courtesy`, `ask_about_restaurant`
-   *
-   * The stubs exist so an unexpected tool name doesn't break the chat — F4
-   * fixes the contract; C5/C6 will fill the UX for each tool individually.
+   * Server-resolved tools already return their honest result in
+   * `res.response`; the client must not append a second generic bubble.
    */
   const dispatchToolCall = async (call: AssistantToolCall): Promise<void> => {
     const name = call.name;
@@ -2225,7 +2222,7 @@ export default function AssistentePage() {
     // Não precisamos do stub bubble "OK" nem de side-effect; early-return
     // mantém o transcript limpo (só o bubble texto + eyebrow `··· USANDO X ···`
     // que vem do `eyebrowTool` em sendMessage, sem stub duplicado).
-    if (TEXT_ONLY_TOOLS.has(name)) return;
+    if (isServerResolvedAssistantTool(name)) return;
     // Round D (chat UX polish) — para tools silent-path (overlay/route sem
     // bubble texto como resposta principal), esperamos 1.5s ANTES de disparar
     // o efeito. O `setMessages` em `sendMessage` já enfileirou o aiMsg com
@@ -2502,34 +2499,9 @@ export default function AssistentePage() {
       return;
     }
 
-    // 2) Tools whose UX isn't fully designed yet — render a generic "OK"
-    //    bubble so the chat doesn't crash, log a warning so devs see the
-    //    gap. Per F4 brief.
-    const stubbedTools = new Set<string>([
-      'search_dish',
-      'check_allergens',
-      'compare_dishes',
-      'delete_chat',
-      'delete_all_chats',
-      'ask_about_restaurant',
-    ]);
-    if (stubbedTools.has(name)) {
-      console.warn('[chat] tool not implemented in client:', name);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `tool-stub-${Date.now()}`,
-          role: 'ai',
-          content: 'OK',
-          toolCall: { name, category: 'info' },
-        },
-      ]);
-      return;
-    }
-
-    // 3) Tools handled by other flows (lgpd handled via toolHint above; rest
+    // Tools handled by other flows (LGPD via toolHint above; the rest
     //    of the canonical set is text-only and arrives as `res.response`).
-    //    Log unknown-but-not-stubbed names for visibility.
+    //    Log unknown names for visibility without inventing a success bubble.
     console.debug('[chat] tool resolved server-side, no FE dispatch:', name);
   };
 
@@ -3243,7 +3215,11 @@ export default function AssistentePage() {
                         'Assistente · agora'
                       )}
                     </span>
-                    <ToolCallIndicator name={msg.toolCall.name} category={msg.toolCall.category} />
+                    <ToolCallIndicator
+                      name={msg.toolCall.name}
+                      category={msg.toolCall.category}
+                      completed
+                    />
                   </>
                 )}
                 <Bubble role={msg.role}>{msg.content}</Bubble>

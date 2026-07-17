@@ -46,7 +46,10 @@ describe('GET /:slug/staff roster — StaffOnlyGuard enforcement (regression)', 
         // Deps das rotas de zone-assignments (2026-07-04) — stubs pro DI;
         // este teste cobre só o guard do roster.
         { provide: ZoneAssignmentsService, useValue: {} },
-        { provide: TenantConnectionProvider, useValue: { query: async () => [] } },
+        {
+          provide: TenantConnectionProvider,
+          useValue: { query: async () => [], getTenantSlug: () => 'acme-bistro' },
+        },
         { provide: CallerResolverService, useValue: {} },
       ],
     }).compile();
@@ -86,13 +89,12 @@ describe('GET /:slug/staff roster — StaffOnlyGuard enforcement (regression)', 
     expect(list).not.toHaveBeenCalled();
   });
 
-  it('list: x-staff-key correto → 200 (contrato preservado pros consumidores autenticados)', async () => {
-    const res = await request(app.getHttpServer())
+  it('list: chave compartilhada sem identidade individual não abre o roster gerencial', async () => {
+    await request(app.getHttpServer())
       .get('/acme-bistro/staff')
       .set('x-staff-key', STAFF_KEY)
-      .expect(200);
-    expect(res.body.staff).toHaveLength(1);
-    expect(list).toHaveBeenCalledTimes(1);
+      .expect(401);
+    expect(list).not.toHaveBeenCalled();
   });
 
   it('getById: sem credencial → 403', async () => {
@@ -133,7 +135,10 @@ describe('GET /:slug/staff/:id/performance — StaffOnlyGuard enforcement (IDOR-
         { provide: RedisService, useValue: { get: redisGet } },
         { provide: DataSource, useValue: { query: async () => [] } },
         { provide: ZoneAssignmentsService, useValue: {} },
-        { provide: TenantConnectionProvider, useValue: { query: async () => [] } },
+        {
+          provide: TenantConnectionProvider,
+          useValue: { query: async () => [], getTenantSlug: () => 'acme-bistro' },
+        },
         { provide: CallerResolverService, useValue: {} },
       ],
     }).compile();
@@ -173,9 +178,7 @@ describe('GET /:slug/staff/:id/performance — StaffOnlyGuard enforcement (IDOR-
   });
 
   it('sem credencial → 403 e o service não é chamado', async () => {
-    await request(app.getHttpServer())
-      .get('/acme-bistro/staff/staff-uuid/performance')
-      .expect(403);
+    await request(app.getHttpServer()).get('/acme-bistro/staff/staff-uuid/performance').expect(403);
     expect(getPerformance).not.toHaveBeenCalled();
   });
 
@@ -187,14 +190,12 @@ describe('GET /:slug/staff/:id/performance — StaffOnlyGuard enforcement (IDOR-
     expect(getPerformance).not.toHaveBeenCalled();
   });
 
-  it('caller STAFF (x-staff-key correto) → 200 (consumidor manager preservado)', async () => {
-    const res = await request(app.getHttpServer())
+  it('chave compartilhada sem identidade manager não abre KPIs individuais', async () => {
+    await request(app.getHttpServer())
       .get('/acme-bistro/staff/staff-uuid/performance?period=30d')
       .set('x-staff-key', STAFF_KEY)
-      .expect(200);
-    expect(res.body.totalRevenue).toBe(999999);
-    expect(getPerformance).toHaveBeenCalledTimes(1);
-    expect(getPerformance).toHaveBeenCalledWith('staff-uuid', '30d');
+      .expect(401);
+    expect(getPerformance).not.toHaveBeenCalled();
   });
 });
 

@@ -11,15 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import {
-  IsBoolean,
-  IsIn,
-  IsObject,
-  IsOptional,
-  IsString,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsBoolean, IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
@@ -37,18 +29,6 @@ class PatchPreferencesDto {
   @IsOptional()
   @IsBoolean()
   twoFactorEnabled?: boolean;
-}
-
-class ChangePinDto {
-  @IsString()
-  @MinLength(4)
-  @MaxLength(6)
-  currentPin!: string;
-
-  @IsString()
-  @MinLength(4)
-  @MaxLength(6)
-  nextPin!: string;
 }
 
 class ShiftHistoryQueryDto {
@@ -92,22 +72,25 @@ export class ManagerAccountController {
     return this.service.updatePreferences(slug, staffId, dto);
   }
 
-  @Post('security/change-pin')
-  changePin(@Body() dto: ChangePinDto, @Req() req: Request) {
-    const staffId = this.callerResolver.requireStaffId(req);
-    return this.service.changePin(staffId, dto);
-  }
-
   @Get('security/sessions')
-  sessions(@Req() req: Request) {
+  sessions(@Param('slug') slug: string, @Req() req: Request) {
     const staffId = this.callerResolver.requireStaffId(req);
-    return this.service.listSessions(staffId, req);
+    return this.service.listSessions(slug, staffId, this.staffToken(req));
   }
 
   @Delete('security/sessions/:sessionId')
-  revokeSession(@Param('sessionId') sessionId: string, @Req() req: Request) {
+  revokeSession(
+    @Param('slug') slug: string,
+    @Param('sessionId') sessionId: string,
+    @Req() req: Request,
+  ) {
     const staffId = this.callerResolver.requireStaffId(req);
-    return this.service.revokeSession(staffId, sessionId);
+    return this.service.revokeSession(slug, staffId, sessionId, this.staffToken(req));
+  }
+
+  private staffToken(req: Request): string | undefined {
+    const raw = req.headers['x-staff-token'];
+    return Array.isArray(raw) ? raw[0] : raw;
   }
 
   @Post('shift-logs/end')

@@ -1,24 +1,16 @@
 /**
- * BUG P1 (re-scan · dashboard.service.ts): o KPI "Em alerta" / late-order e o
- * `minutes_in_prep` derivavam de `orders.updated_at`. Mas o reorder da cozinha
- * (applyKitchenRanksInTx) faz `SET priority_rank=..., updated_at = now()` em
- * pedidos in_progress. Resultado: toda vez que o gerente vê um pedido atrasado,
- * abre "Ver fila" e reordena, o `updated_at` é bumpado e TODOS os alertas somem
- * (minutes_in_prep → 0, e o pedido some do filtro `updated_at < now()-eta`). O
- * sinal central "o que está atrasado" quebrava logo depois de agir sobre ele.
+ * Regressões do read-model operacional de atraso.
  *
- * FIX: o "tempo em preparo" deriva do momento REAL em que o pedido entrou em
- * preparo — a transição pra `in_progress` gravada na order_status_history (a
- * MESMA fonte que a query irmã getOrderFunnel já usa) — NÃO de updated_at, que
- * qualquer UPDATE (inclusive reorder) bumpa.
+ * Contrato vigente:
+ * - o único SLA configurável é o da cozinha (`kitchen_eta_max_minutes`);
+ * - estação vem de `menu_items.kind` (`drink` = bar; demais = cozinha);
+ * - somente itens de cozinha realmente `in_progress` entram no alerta;
+ * - o relógio nasce em `order_items.prep_started_at`, não no pedido;
+ * - carga exibida é a soma das quantidades ainda em preparo.
  *
- * Estes testes modelam o banco com DUAS fontes independentes por pedido:
- *   - prepStartedMinAgo → order_status_history.created_at (to_status in_progress)
- *   - updatedMinAgo     → orders.updated_at (bumpado pelo reorder)
- * O fake resolve a query de late-order pela fonte que o SQL de fato referencia:
- * se o SQL toca order_status_history, usa prepStartedMinAgo (correto); se ainda
- * depende só de o.updated_at, usa updatedMinAgo (quebra sob reorder). Assim o
- * teste FALHA contra o código bugado e PASSA depois do fix.
+ * Isso impede três falsos positivos importantes: pedido só de bebida, bar que
+ * começou antes da cozinha num pedido misto e cozinha já pronta enquanto o bar
+ * continua trabalhando.
  */
 
 import { DashboardService } from './dashboard.service';
@@ -30,103 +22,210 @@ const noCacheRedis = {
   set: async () => {},
 } as unknown as RedisService;
 
+type StationItem = {
+  kind: 'food' | 'drink';
+  status: 'received' | 'in_progress' | 'ready';
+  quantity: number;
+  prepStartedMinAgo: number | null;
+};
+
 type OrderModel = {
   order_id: string;
   table_label: string;
-  item_count: number;
-  /** Minutos desde a transição REAL pra in_progress (order_status_history). */
-  prepStartedMinAgo: number;
-  /** Minutos desde o último UPDATE em orders (bumpado pelo reorder). */
-  updatedMinAgo: number;
+  table_number: number;
+  items: StationItem[];
 };
 
-/**
- * Banco fake ciente de SQL: modela orders + order_status_history e resolve a
- * query de late-order pela FONTE de tempo que o SQL referencia. O filtro de
- * "atrasado" (idade em preparo > eta) e o minutes_in_prep saem da MESMA fonte.
- */
 function fakeDb(opts: { orders: OrderModel[]; kitchenEtaMax: number | null }) {
-  const query = async (sql: string): Promise<unknown[]> => {
+  let lateQueryCount = 0;
+  const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
     const s = sql.replace(/\s+/g, ' ').trim();
     if (s.includes('kitchen_eta_max_minutes')) {
       return [{ kitchen_eta_max_minutes: opts.kitchenEtaMax }];
     }
-    // active tables (não exercitado aqui)
-    if (s.includes('FROM table_sessions') && !s.includes("status = 'in_progress'")) return [];
-    // late-order query — identificável pelo filtro de status.
-    if (s.includes("status = 'in_progress'")) {
-      // Fonte CORRETA: se o SQL deriva o relógio da order_status_history
-      // (transição pra in_progress), o minutes_in_prep = prepStartedMinAgo.
-      // Fonte BUGADA (fallback): se ainda depende de o.updated_at, o relógio
-      // = updatedMinAgo (que o reorder zera).
-      const usesHistory = s.includes('order_status_history');
-      const ageOf = (o: OrderModel) => (usesHistory ? o.prepStartedMinAgo : o.updatedMinAgo);
-      const eta = opts.kitchenEtaMax ?? 0;
+    if (s.includes('FROM table_sessions ts')) return [];
+    if (s.includes('JOIN order_items oi')) {
+      lateQueryCount += 1;
+      // O fake recusa uma query que volte a usar o status/relógio agregado do
+      // pedido. Assim os casos abaixo não passam apenas porque o fake devolveu
+      // o resultado esperado independentemente do SQL.
+      expect(s).toContain("oi.status = 'in_progress'");
+      expect(s).toContain("mi.kind <> 'drink'");
+      expect(s).toContain('oi.prep_started_at');
+      expect(s).toMatch(/SUM\(oi\.quantity\)/i);
+      expect(params).toEqual([opts.kitchenEtaMax]);
+
+      const target = Number(params[0]);
       return opts.orders
-        .filter((o) => ageOf(o) > eta) // mesmo filtro do WHERE ... < now()-eta
-        .sort((a, b) => ageOf(b) - ageOf(a)) // mais antigo primeiro
-        .map((o) => ({
-          order_id: o.order_id,
-          table_label: o.table_label,
-          minutes_in_prep: String(ageOf(o)),
-          item_count: String(o.item_count),
-        }));
+        .flatMap((order) => {
+          const activeFood = order.items.filter(
+            (item) =>
+              item.kind === 'food' &&
+              item.status === 'in_progress' &&
+              item.prepStartedMinAgo != null,
+          );
+          if (activeFood.length === 0) return [];
+          const minutes = Math.max(...activeFood.map((item) => item.prepStartedMinAgo!));
+          if (minutes <= target) return [];
+          return [
+            {
+              order_id: order.order_id,
+              table_label: order.table_label,
+              table_number: String(order.table_number),
+              station: 'kitchen',
+              minutes_in_prep: String(minutes),
+              item_count: String(activeFood.reduce((sum, item) => sum + item.quantity, 0)),
+              target_minutes: String(target),
+            },
+          ];
+        })
+        .sort((a, b) => Number(b.minutes_in_prep) - Number(a.minutes_in_prep));
     }
     throw new Error(`fake dashboard: SQL não roteado: ${s}`);
   };
-  return { query, getTenantSlug: () => 'restaurant_dev' } as unknown as TenantConnectionProvider;
+  return {
+    conn: { query, getTenantSlug: () => 'restaurant_dev' } as unknown as TenantConnectionProvider,
+    getLateQueryCount: () => lateQueryCount,
+  };
 }
 
-describe('DashboardService.getActiveTables — relógio de preparo à prova de reorder', () => {
-  it('pedido em preparo há 25min cujo updated_at foi bumpado (reorder → 0min) continua contando 25min', async () => {
-    const service = new DashboardService(
-      fakeDb({
-        kitchenEtaMax: 16,
-        orders: [
-          {
-            order_id: 'o1',
-            table_label: 'Mesa 12',
-            item_count: 2,
-            // Entrou em preparo há 25min (order_status_history) — está atrasado.
-            prepStartedMinAgo: 25,
-            // Gerente acabou de reordenar: updated_at bumpado → 0min atrás.
-            updatedMinAgo: 0,
-          },
-        ],
-      }),
-      noCacheRedis,
-    );
+function item(
+  kind: StationItem['kind'],
+  status: StationItem['status'],
+  prepStartedMinAgo: number | null,
+  quantity = 1,
+): StationItem {
+  return { kind, status, prepStartedMinAgo, quantity };
+}
 
-    const res = await service.getActiveTables();
+async function load(opts: { orders: OrderModel[]; kitchenEtaMax: number | null }) {
+  const db = fakeDb(opts);
+  const service = new DashboardService(db.conn, noCacheRedis);
+  return { result: await service.getActiveTables(), db };
+}
 
-    // O pedido NÃO pode sumir do alerta só porque foi reordenado.
-    expect(res.lateOrders).toHaveLength(1);
-    // O relógio conta desde o preparo real (25min), não desde o reorder (0min).
-    expect(res.lateOrders[0]).toEqual({
-      orderId: 'o1',
-      tableLabel: 'Mesa 12',
-      minutesInPrep: 25,
-      itemCount: 2,
+describe('DashboardService.getActiveTables — atraso real da estação cozinha', () => {
+  it('inclui food em preparo além da meta e expõe target/estação/carga em unidades', async () => {
+    const { result } = await load({
+      kitchenEtaMax: 16,
+      orders: [
+        {
+          order_id: 'food-late',
+          table_label: 'Mesa 12',
+          table_number: 12,
+          items: [item('food', 'in_progress', 25, 3), item('food', 'in_progress', 20, 1)],
+        },
+      ],
     });
+
+    expect(result.lateOrders).toEqual([
+      {
+        orderId: 'food-late',
+        tableLabel: 'Mesa 12',
+        tableNumber: 12,
+        station: 'kitchen',
+        minutesInPrep: 25,
+        itemCount: 4,
+        targetMinutes: 16,
+      },
+    ]);
   });
 
-  it('pedido dentro da meta (prep há 5min) não aparece mesmo sem bump de updated_at', async () => {
-    const service = new DashboardService(
-      fakeDb({
-        kitchenEtaMax: 16,
-        orders: [
-          {
-            order_id: 'o2',
-            table_label: 'Mesa 3',
-            item_count: 1,
-            prepStartedMinAgo: 5,
-            updatedMinAgo: 5,
-          },
-        ],
-      }),
-      noCacheRedis,
-    );
-    const res = await service.getActiveTables();
-    expect(res.lateOrders).toEqual([]);
+  it('não chama pedido somente de bebida de atraso da cozinha', async () => {
+    const { result } = await load({
+      kitchenEtaMax: 16,
+      orders: [
+        {
+          order_id: 'bar-only',
+          table_label: 'Mesa 2',
+          table_number: 2,
+          items: [item('drink', 'in_progress', 40, 6)],
+        },
+      ],
+    });
+
+    expect(result.lateOrders).toEqual([]);
+  });
+
+  it('pedido misto bar-first não inicia o relógio da cozinha antes de food entrar em preparo', async () => {
+    const { result } = await load({
+      kitchenEtaMax: 16,
+      orders: [
+        {
+          order_id: 'mixed-bar-first',
+          table_label: 'Mesa 3',
+          table_number: 3,
+          items: [item('drink', 'in_progress', 30, 2), item('food', 'received', null, 3)],
+        },
+      ],
+    });
+
+    expect(result.lateOrders).toEqual([]);
+  });
+
+  it('pedido misto usa o início real da cozinha, não o início mais antigo do bar', async () => {
+    const { result } = await load({
+      kitchenEtaMax: 16,
+      orders: [
+        {
+          order_id: 'mixed-independent-clocks',
+          table_label: 'Mesa 4',
+          table_number: 4,
+          items: [item('drink', 'in_progress', 30), item('food', 'in_progress', 5)],
+        },
+      ],
+    });
+
+    expect(result.lateOrders).toEqual([]);
+  });
+
+  it('cozinha pronta e bar em preparo não permanece como falso atraso da cozinha', async () => {
+    const { result } = await load({
+      kitchenEtaMax: 16,
+      orders: [
+        {
+          order_id: 'food-ready-bar-working',
+          table_label: 'Mesa 5',
+          table_number: 5,
+          items: [item('food', 'ready', 20, 2), item('drink', 'in_progress', 35, 2)],
+        },
+      ],
+    });
+
+    expect(result.lateOrders).toEqual([]);
+  });
+
+  it('exatamente na meta ainda não passou do limite', async () => {
+    const { result } = await load({
+      kitchenEtaMax: 16,
+      orders: [
+        {
+          order_id: 'at-boundary',
+          table_label: 'Mesa 6',
+          table_number: 6,
+          items: [item('food', 'in_progress', 16)],
+        },
+      ],
+    });
+
+    expect(result.lateOrders).toEqual([]);
+  });
+
+  it('sem meta não executa julgamento nem usa prep_time do cardápio como SLA implícito', async () => {
+    const { result, db } = await load({
+      kitchenEtaMax: null,
+      orders: [
+        {
+          order_id: 'no-target',
+          table_label: 'Mesa 7',
+          table_number: 7,
+          items: [item('food', 'in_progress', 90)],
+        },
+      ],
+    });
+
+    expect(result.lateOrders).toEqual([]);
+    expect(result.kitchenEtaMaxMinutes).toBeNull();
+    expect(db.getLateQueryCount()).toBe(0);
   });
 });

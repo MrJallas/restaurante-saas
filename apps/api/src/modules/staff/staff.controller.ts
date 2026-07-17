@@ -45,7 +45,9 @@ const PIN_IP_LOCK_SECONDS = 15 * 60;
 class CreateStaffDto {
   @IsString() @IsNotEmpty() @MaxLength(80) name!: string;
   @IsIn(['waiter', 'cook', 'manager', 'host', 'bartender', 'cashier']) role!: string;
-  @Matches(/^\d{4,6}$/, { message: 'PIN deve ter 4-6 digitos.' }) pin!: string;
+  // Compatibilidade de payload apenas. O servidor ignora qualquer PIN
+  // escolhido pelo browser e gera um segredo temporário seguro.
+  @IsOptional() @Matches(/^\d{4,6}$/, { message: 'PIN deve ter 4-6 digitos.' }) pin?: string;
   // Round 18 (Onda 1 wiring): campos do canvas StaffForm. Todos
   // opcionais — backend nao quebra se FE legacy mandar so name/role/pin.
   @IsOptional() @IsString() @MaxLength(20) cpf?: string;
@@ -110,7 +112,7 @@ export class StaffController {
   ) {}
 
   @Get()
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async list(@Query('role') role?: string, @Query('activeOnly') activeOnly?: string) {
     const staff = await this.staffService.list(role, activeOnly === 'true');
     return { staff };
@@ -130,10 +132,16 @@ export class StaffController {
   @Get('my-tables')
   @UseGuards(StaffOrSessionGuard)
   async myTables(
-    @Req() req: { actorType?: 'staff' | 'session'; sessionData?: { sessionId: string } },
+    @Req()
+    req: Request & {
+      actorType?: 'staff' | 'session';
+      sessionData?: { sessionId: string };
+    },
   ) {
     const sessionId = req.actorType === 'session' ? (req.sessionData?.sessionId ?? null) : null;
-    return this.staffService.listActiveTables(sessionId);
+    const staffId =
+      req.actorType === 'staff' ? await this.callerResolver.requireActiveStaffId(req) : null;
+    return this.staffService.listActiveTables(sessionId, staffId);
   }
 
   @Get('tables/:tableRef/detail')
@@ -204,7 +212,7 @@ export class StaffController {
    * `staffGet` (credencial de staff), então o caso legítimo não quebra.
    */
   @Get(':id/performance')
-  @UseGuards(StaffOnlyGuard)
+  @UseGuards(StaffOnlyGuard, ManagerOnlyGuard)
   async getPerformance(@Param('id') id: string, @Query('period') period?: string) {
     const p =
       period === '7d' || period === '30d' || period === 'today'

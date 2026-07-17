@@ -235,7 +235,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     ),
     _function(
         "lgpd_data_request",
-        "Cria uma requisição LGPD formal (apagar dados, com protocolo). Use SOMENTE após o cliente confirmar via chip ou texto livre afirmativo.",
+        "Handoff reservado ao botão confirmado do aplicativo. O modelo não executa exclusão; para qualquer intenção LGPD, use show_lgpd_notice.",
         {
             "type": {
                 "type": "string",
@@ -245,7 +245,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     ),
     _function(
         "show_lgpd_notice",
-        "Mostra o aviso LGPD canônico + 2 chips de consentimento. SEMPRE chame esta tool ANTES de lgpd_data_request quando o cliente puxar assunto de LGPD/exclusão de dados.",
+        "Mostra o aviso LGPD canônico + 2 chips de consentimento. Use para toda intenção LGPD; somente o botão do aplicativo pode executar a exclusão.",
         {},
     ),
 

@@ -22,6 +22,7 @@ import {
   scanRequests,
   staffByRole,
   staffFetch,
+  type StaffRow,
   waitFor,
 } from '../helpers/physical-qr';
 
@@ -40,6 +41,7 @@ interface MenuItemRow {
   id: string;
   name: string;
   price_cents: number;
+  kind: 'food' | 'drink';
 }
 
 interface OrderResponse {
@@ -111,24 +113,30 @@ async function newMobileCustomer(browser: Browser, label: string): Promise<Runti
 
 async function newStaffSurface(
   browser: Browser,
-  staff: { id: string; role: string },
   viewport: { width: number; height: number },
 ): Promise<RuntimePage> {
   const context = await browser.newContext({
     viewport,
     extraHTTPHeaders: { 'x-forwarded-for': nextIp(22) },
   });
-  await context.addInitScript(
-    ({ staffId, role }) => {
-      window.localStorage.setItem('staffId', staffId);
-      window.localStorage.setItem('staffRole', role);
-    },
-    { staffId: staff.id, role: staff.role },
-  );
   const page = await context.newPage();
   await page.setDefaultTimeout(15_000);
   await routeStaffApiToLocalhost(page);
   return { context, page };
+}
+
+async function loginStaffSurface(runtime: RuntimePage, staff: { cpf: string }): Promise<void> {
+  await runtime.page.goto(`${STAFF_BASE_URL}/login`, { waitUntil: 'domcontentloaded' });
+  await runtime.page.getByPlaceholder('90000000001').fill(staff.cpf);
+  await runtime.page.getByPlaceholder('1234').fill(process.env.E2E_STAFF_PIN ?? '1234');
+  await runtime.page.getByRole('button', { name: 'Entrar' }).click();
+  await expect(runtime.page).not.toHaveURL(/\/login(?:\?|$)/, { timeout: 15_000 });
+}
+
+async function readOpaqueSessionToken(context: BrowserContext): Promise<string> {
+  const token = (await context.cookies()).find((cookie) => cookie.name === 'session_token')?.value;
+  if (!token) throw new Error('Customer context did not receive opaque session_token cookie');
+  return token;
 }
 
 function cleanupNightTables(): void {
@@ -164,22 +172,23 @@ function cleanupNightTables(): void {
   `);
 }
 
-function pickMenuItems(): MenuItemRow[] {
+function pickKitchenMenuItems(): MenuItemRow[] {
   const items = psqlJson<MenuItemRow>(
-    `SELECT id, name, price_cents
+    `SELECT id, name, price_cents, kind
        FROM restaurant_dev.menu_items
       WHERE is_available = true
+        AND kind <> 'drink'
       ORDER BY sort_order, name
       LIMIT 6`,
   );
   if (items.length < 3) {
-    throw new Error('Menu fixture precisa de pelo menos 3 itens disponiveis.');
+    throw new Error('Menu fixture precisa de pelo menos 3 comidas disponiveis.');
   }
   return items;
 }
 
 async function createAndConfirmOrder(input: {
-  sessionId: string;
+  sessionToken: string;
   item: MenuItemRow;
   quantity: number;
   notes: string;
@@ -188,7 +197,7 @@ async function createAndConfirmOrder(input: {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-session-token': input.sessionId,
+      'x-session-token': input.sessionToken,
     },
     body: JSON.stringify({
       billingMode: 'table',
@@ -215,7 +224,7 @@ async function createAndConfirmOrder(input: {
     method: 'PATCH',
     headers: {
       'content-type': 'application/json',
-      'x-session-token': input.sessionId,
+      'x-session-token': input.sessionToken,
     },
     body: JSON.stringify({}),
   });
@@ -232,9 +241,10 @@ async function createAndConfirmOrder(input: {
   };
 }
 
-async function updateOrderStatus(orderId: string, status: string): Promise<void> {
+async function updateOrderStatus(orderId: string, status: string, staff: StaffRow): Promise<void> {
   const response = await staffFetch(`/${DEFAULT_SLUG}/orders/${orderId}/status`, {
     method: 'PATCH',
+    staff,
     body: JSON.stringify({ status, changedBy: 'night-e2e' }),
   });
   expect(
@@ -243,12 +253,12 @@ async function updateOrderStatus(orderId: string, status: string): Promise<void>
   ).toContain(response.status);
 }
 
-async function createWaiterCall(sessionId: string, reason: string): Promise<WaiterCallResponse> {
+async function createWaiterCall(sessionToken: string, reason: string): Promise<WaiterCallResponse> {
   const response = await fetch(`${API_BASE_URL}/${DEFAULT_SLUG}/waiter-calls`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-session-token': sessionId,
+      'x-session-token': sessionToken,
     },
     body: JSON.stringify({ reason }),
   });
@@ -275,30 +285,37 @@ test('noite realista: 3 clientes iOS + recepcao + garcom + gerente + cozinha + h
   browser,
 }) => {
   cleanupNightTables();
-  const [hostStaff, waiterStaff, managerStaff] = await Promise.all([
+  const [hostStaff, waiterStaff, managerStaff, cookStaff] = await Promise.all([
     staffByRole('host'),
     staffByRole('waiter'),
     staffByRole('manager'),
+    staffByRole('cook'),
   ]);
-  const menuItems = pickMenuItems();
+  const menuItems = pickKitchenMenuItems();
 
   const opened: RuntimePage[] = [];
   const customerA = await newMobileCustomer(browser, 'ios-sim-1-host');
   const customerB = await newMobileCustomer(browser, 'ios-sim-2-guest');
   const customerC = await newMobileCustomer(browser, 'ios-sim-3-table-92');
-  const reception = await newStaffSurface(browser, hostStaff, { width: 430, height: 932 });
-  const waiter = await newStaffSurface(browser, waiterStaff, { width: 430, height: 932 });
-  const manager = await newStaffSurface(browser, managerStaff, { width: 1280, height: 900 });
-  const kitchen = await newStaffSurface(browser, managerStaff, { width: 1440, height: 920 });
-  const tableHistory = await newStaffSurface(browser, managerStaff, { width: 430, height: 932 });
+  const reception = await newStaffSurface(browser, { width: 430, height: 932 });
+  const waiter = await newStaffSurface(browser, { width: 430, height: 932 });
+  const manager = await newStaffSurface(browser, { width: 1280, height: 900 });
+  const kitchen = await newStaffSurface(browser, { width: 1440, height: 920 });
+  const tableHistory = await newStaffSurface(browser, { width: 430, height: 932 });
   opened.push(customerA, customerB, customerC, reception, waiter, manager, kitchen, tableHistory);
 
   try {
+    await loginStaffSurface(reception, hostStaff);
+    await loginStaffSurface(waiter, waiterStaff);
+    await loginStaffSurface(manager, managerStaff);
+    await loginStaffSurface(kitchen, cookStaff);
+    await loginStaffSurface(tableHistory, managerStaff);
+
     await reception.page.goto(
       `${STAFF_BASE_URL}/host?tenant=${DEFAULT_SLUG}&hostId=${hostStaff.id}`,
       { waitUntil: 'domcontentloaded' },
     );
-    await expect(reception.page.getByText(/Salão/i)).toBeVisible();
+    await expect(reception.page.getByText('Salão', { exact: true }).first()).toBeVisible();
 
     await openCustomerViaQr(customerA.page, 'QRTEST91');
     await fillWelcome(customerA.page, 'Noite Host Mesa 91', freshCpf());
@@ -380,15 +397,17 @@ test('noite realista: 3 clientes iOS + recepcao + garcom + gerente + cozinha + h
 
     const session92 = activeSessions('QRTEST92')[0];
     expect(session92?.id).toBeTruthy();
+    const session91Token = await readOpaqueSessionToken(customerA.context);
+    const session92Token = await readOpaqueSessionToken(customerC.context);
     const [order91, order92] = await Promise.all([
       createAndConfirmOrder({
-        sessionId: session91.id,
+        sessionToken: session91Token,
         item: menuItems[0],
         quantity: 2,
         notes: 'noite e2e mesa 91',
       }),
       createAndConfirmOrder({
-        sessionId: session92.id,
+        sessionToken: session92Token,
         item: menuItems[1],
         quantity: 1,
         notes: 'noite e2e mesa 92',
@@ -404,15 +423,15 @@ test('noite realista: 3 clientes iOS + recepcao + garcom + gerente + cozinha + h
       .toBeGreaterThan(0);
     expect(await kitchen.page.getByText(menuItems[1].name).count()).toBeGreaterThan(0);
 
-    await updateOrderStatus(order91.id, 'in_progress');
-    await updateOrderStatus(order92.id, 'in_progress');
+    await updateOrderStatus(order91.id, 'in_progress', cookStaff);
+    await updateOrderStatus(order92.id, 'in_progress', cookStaff);
     await kitchen.page.reload({ waitUntil: 'domcontentloaded' });
     await expect(kitchen.page.getByText(/PREPARANDO/i)).toBeVisible({ timeout: 20_000 });
 
     const calls = await Promise.all([
-      createWaiterCall(session91.id, 'serve_drink'),
-      createWaiterCall(session91.id, 'ask_bill'),
-      createWaiterCall(session92.id, 'other'),
+      createWaiterCall(session91Token, 'serve_drink'),
+      createWaiterCall(session91Token, 'ask_bill'),
+      createWaiterCall(session92Token, 'other'),
     ]);
     expect(calls.map((call) => call.status)).toEqual(['pending', 'pending', 'pending']);
     const uniqueCalls = [...new Map(calls.map((call) => [call.id, call])).values()];
@@ -444,9 +463,9 @@ test('noite realista: 3 clientes iOS + recepcao + garcom + gerente + cozinha + h
       ).toContain(response.status);
     }
 
-    await updateOrderStatus(order91.id, 'ready');
-    await updateOrderStatus(order91.id, 'delivered');
-    await updateOrderStatus(order92.id, 'ready');
+    await updateOrderStatus(order91.id, 'ready', cookStaff);
+    await updateOrderStatus(order91.id, 'delivered', waiterStaff);
+    await updateOrderStatus(order92.id, 'ready', cookStaff);
 
     await manager.page.goto(
       `${STAFF_BASE_URL}/manager/operacoes/mesas-ativas?slug=${DEFAULT_SLUG}`,
@@ -479,5 +498,6 @@ test('noite realista: 3 clientes iOS + recepcao + garcom + gerente + cozinha + h
     );
   } finally {
     await closeRuntimePages(opened);
+    cleanupNightTables();
   }
 });

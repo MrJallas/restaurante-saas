@@ -40,6 +40,8 @@ export interface ScanVerificationRequestDto {
   radiusMeters: number | null;
   escalationLevel: number;
   escalationChainId?: string | null;
+  /** Papel que pode decidir a etapa atual da cascata. Manager/owner têm override. */
+  currentAssigneeRole: 'host' | 'manager' | 'waiter' | null;
   expiresAt: string;
   ttlExpiresAt: string;
   decidedAt: string | null;

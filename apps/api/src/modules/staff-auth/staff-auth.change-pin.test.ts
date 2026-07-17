@@ -339,4 +339,22 @@ describe('StaffAuthService.login — must_change_pin', () => {
     expect(result.mustChangePin).toBe(false);
     expect(result.nextPath).toBe('/waiter');
   });
+
+  it('login de bartender abre o KDS individual /bar', async () => {
+    const redis = new FakeRedis();
+    const { service } = makeService(redis, staffRow({ role: 'bartender', must_change_pin: false }));
+
+    const result = await service.login({ cpf: '39053344705', pin: CURRENT_PIN }, '10.0.0.1');
+
+    expect(result.nextPath).toBe('/bar');
+  });
+
+  it('login de cashier abre a superfície segura /cashier', async () => {
+    const redis = new FakeRedis();
+    const { service } = makeService(redis, staffRow({ role: 'cashier', must_change_pin: false }));
+
+    const result = await service.login({ cpf: '39053344705', pin: CURRENT_PIN }, '10.0.0.1');
+
+    expect(result.nextPath).toBe('/cashier');
+  });
 });

@@ -26,6 +26,7 @@ import type { RedisService } from '../../infra/redis/redis.service';
 /** Default de DEV — público (está no source). Em prod é fail-fast (ver
  * `assertSessionSecretConfigured`). */
 export const DEV_SESSION_TOKEN_SECRET = 'dev-session-token-secret-CHANGE-IN-PROD';
+export const COMPROMISED_COMPOSE_SESSION_SECRET = 'dev-staging-session-secret-set-in-prod';
 
 const SESSION_TOKEN_SECRET = process.env.SESSION_TOKEN_SECRET || DEV_SESSION_TOKEN_SECRET;
 
@@ -42,17 +43,18 @@ export function assertSessionSecretConfigured(
   const secret = env.SESSION_TOKEN_SECRET;
   const isProd = env.NODE_ENV === 'production';
 
+  if (secret === DEV_SESSION_TOKEN_SECRET || secret === COMPROMISED_COMPOSE_SESSION_SECRET) {
+    throw new Error(
+      'SESSION_TOKEN_SECRET usa um default público comprometido. Rotacione para um segredo único.',
+    );
+  }
+
   if (!secret) {
     if (isProd) {
       throw new Error('SESSION_TOKEN_SECRET nao configurada — obrigatoria em producao (A07).');
     }
     logger.warn('SESSION_TOKEN_SECRET vazia — usando default de dev. NUNCA em producao.');
     return;
-  }
-  if (isProd && secret === DEV_SESSION_TOKEN_SECRET) {
-    throw new Error(
-      'SESSION_TOKEN_SECRET usa o default committado de dev (publico). Rotacione para um segredo unico.',
-    );
   }
 }
 

@@ -281,8 +281,7 @@ export const ScreenHostProfile: React.FC<ScreenHostProfileProps> = ({
                 }}
               >
                 Só o que você liberou {shiftStartedAt ? `desde ${shiftStartedAt}` : 'neste turno'}.
-                Histórico do dia inteiro fica em
-                Avisos &gt; resumo.
+                Histórico do dia inteiro fica em Avisos &gt; resumo.
               </div>
             </div>
           </div>

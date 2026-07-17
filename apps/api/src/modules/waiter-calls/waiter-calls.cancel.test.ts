@@ -33,7 +33,9 @@ function makeService(opts: { status?: string; sessionId?: string; call?: boolean
     const s = sql.replace(/\s+/g, ' ').trim();
     if (s.startsWith('SELECT id, status, table_session_id FROM waiter_calls')) {
       if (opts.call === false) return [];
-      return [{ id: CALL, status: opts.status ?? 'pending', table_session_id: opts.sessionId ?? SESSION }];
+      return [
+        { id: CALL, status: opts.status ?? 'pending', table_session_id: opts.sessionId ?? SESSION },
+      ];
     }
     if (s.startsWith('UPDATE waiter_calls SET status')) {
       updateCalls.push(s);

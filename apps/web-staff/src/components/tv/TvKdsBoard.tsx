@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KdsCounter } from './KdsCounter';
 import { KdsOrderCard } from './KdsOrderCard';
 import { C, FONT, TV_KEYFRAMES } from './styles';
+import { staffApi } from '../../lib/api';
 import {
   countActiveDrinks,
   deriveStatus,
@@ -40,6 +41,15 @@ async function tvApi<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+type KdsAuthMode = 'tv' | 'staff';
+
+function kdsApi<T>(authMode: KdsAuthMode, path: string, options: RequestInit = {}): Promise<T> {
+  // Display compartilhado usa o contrato TV/PIN. A estação individual usa o
+  // client de staff: além do staff_token httpOnly, ele envia o staffId local
+  // apenas como pista; o backend sempre prefere/revalida a identidade do token.
+  return authMode === 'staff' ? staffApi<T>(path, options) : tvApi<T>(path, options);
+}
+
 interface TvKdsBoardProps {
   station: KdsStation;
   // Header config — preserva o estilo do handoff (Cozinha tem logo
@@ -50,6 +60,8 @@ interface TvKdsBoardProps {
   iconIsEmoji?: boolean;
   // Grid colunas: cozinha 4, bar 3 (handoff).
   gridColumns: number;
+  /** `staff` para KDS individual autenticado; `tv` mantém o display por PIN. */
+  authMode?: KdsAuthMode;
 }
 
 export function TvKdsBoard({
@@ -59,6 +71,7 @@ export function TvKdsBoard({
   iconLabel,
   iconIsEmoji,
   gridColumns,
+  authMode = 'tv',
 }: TvKdsBoardProps) {
   const [orders, setOrders] = useState<KdsOrder[]>([]);
   const [now, setNow] = useState<Date | null>(null);
@@ -76,7 +89,10 @@ export function TvKdsBoard({
 
   const loadOrders = useCallback(async () => {
     try {
-      const res = await tvApi<KdsResponse>(`/${TENANT_SLUG}/orders/_kds?station=${station}`);
+      const res = await kdsApi<KdsResponse>(
+        authMode,
+        `/${TENANT_SLUG}/orders/_kds?station=${station}`,
+      );
       const list = res.orders ?? [];
 
       // Detecta novos pedidos (id que nao existia no fetch anterior)
@@ -101,7 +117,7 @@ export function TvKdsBoard({
     } finally {
       setIsInitialLoad(false);
     }
-  }, [station, isInitialLoad]);
+  }, [authMode, station, isInitialLoad]);
 
   // Polling. Deliberadamente SEM useTableSocket aqui — o
   // events.gateway atual emite events scoped por session e por
@@ -135,12 +151,12 @@ export function TvKdsBoard({
       });
       try {
         if (action.kind === 'call_waiter') {
-          await tvApi(`/${TENANT_SLUG}/orders/${order.id}/call-waiter`, {
+          await kdsApi(authMode, `/${TENANT_SLUG}/orders/${order.id}/call-waiter`, {
             method: 'POST',
             body: JSON.stringify({}),
           });
         } else {
-          await tvApi(`/${TENANT_SLUG}/orders/${order.id}/status`, {
+          await kdsApi(authMode, `/${TENANT_SLUG}/orders/${order.id}/status`, {
             method: 'PATCH',
             body: JSON.stringify({
               status: action.status,
@@ -174,7 +190,7 @@ export function TvKdsBoard({
         });
       }
     },
-    [station],
+    [authMode, station],
   );
 
   const decorated = useMemo(() => {

@@ -207,9 +207,11 @@ describe('TtlTickService.sweepEscalations — P1-S: sem double-emit sob concorr�
     );
 
     // Acesso ao método privado via cast — testamos a unidade do bug direto.
-    const sweep = (service as unknown as {
-      sweepEscalations: (slug: string, schema: string) => Promise<void>;
-    }).sweepEscalations.bind(service);
+    const sweep = (
+      service as unknown as {
+        sweepEscalations: (slug: string, schema: string) => Promise<void>;
+      }
+    ).sweepEscalations.bind(service);
 
     // Dois ticks batendo ao mesmo tempo no mesmo schema.
     await Promise.all([sweep('demo', 'demo_schema'), sweep('demo', 'demo_schema')]);
@@ -354,7 +356,7 @@ function makeCrossSweepDb() {
   // sweepLateArrivals concorrente encontra pending vazio.
   let lateArrivalPending = true;
 
-  const query = async (sql: string, params: unknown[] = []): Promise<unknown> => {
+  const query = async (sql: string, _params: unknown[] = []): Promise<unknown> => {
     const s = sql.replace(/\s+/g, ' ').trim();
 
     if (s.startsWith('SET search_path')) return [];
@@ -553,8 +555,7 @@ describe('LateArrivalService.respond — Resíduo 2: chain não vira zumbi', () 
     );
 
     const chainClose = calls.find(
-      (c) =>
-        c.sql.startsWith('UPDATE escalation_chains') && c.sql.includes('completed_at = now()'),
+      (c) => c.sql.startsWith('UPDATE escalation_chains') && c.sql.includes('completed_at = now()'),
     );
     expect(chainClose).toBeDefined();
     // A chain fechada é exatamente a vinculada à request.
@@ -574,8 +575,7 @@ describe('LateArrivalService.respond — Resíduo 2: chain não vira zumbi', () 
     );
 
     const chainClose = calls.find(
-      (c) =>
-        c.sql.startsWith('UPDATE escalation_chains') && c.sql.includes('completed_at = now()'),
+      (c) => c.sql.startsWith('UPDATE escalation_chains') && c.sql.includes('completed_at = now()'),
     );
     expect(chainClose).toBeDefined();
     expect(chainClose!.params).toContain(CHAIN_ID);

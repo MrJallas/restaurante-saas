@@ -84,7 +84,11 @@ def test_openai_provider_forwards_tools_kwarg():
     _openai_or_skip()
     from services.llm.providers.openai_provider import OpenAIProvider
 
-    provider = OpenAIProvider(api_key="test", base_url="http://localhost:1234/v1")
+    provider = OpenAIProvider(
+        api_key="test",
+        base_url="http://localhost:1234/v1",
+        reasoning_effort="none",
+    )
 
     fake_response = MagicMock()
     fake_response.choices = [MagicMock()]
@@ -108,6 +112,7 @@ def test_openai_provider_forwards_tools_kwarg():
     assert "tools" in kwargs, "tools kwarg MUST be forwarded to LM Studio"
     assert kwargs["tools"] == schemas
     assert kwargs.get("tool_choice") == "auto"
+    assert kwargs.get("reasoning_effort") == "none"
 
 
 def test_openai_provider_omits_tools_when_none():
@@ -134,6 +139,26 @@ def test_openai_provider_omits_tools_when_none():
 
     kwargs = create_mock.await_args.kwargs
     assert "tools" not in kwargs
+    assert "reasoning_effort" not in kwargs
+
+
+def test_openai_provider_forwards_reasoning_effort_to_classifier():
+    """O classificador local também não pode gastar o budget inteiro em reasoning oculto."""
+    _openai_or_skip()
+    from services.llm.providers.openai_provider import OpenAIProvider
+
+    provider = OpenAIProvider(api_key="test", reasoning_effort="none")
+    fake_response = MagicMock()
+    fake_response.choices = [MagicMock()]
+    fake_response.choices[0].message.content = '{"allowed": true}'
+    fake_response.usage.prompt_tokens = 10
+    fake_response.usage.completion_tokens = 5
+    create_mock = AsyncMock(return_value=fake_response)
+    provider.client.chat.completions.create = create_mock
+
+    _run(provider.classify("classifique", model="gemma"))
+
+    assert create_mock.await_args.kwargs["reasoning_effort"] == "none"
 
 
 def test_openai_provider_parses_tool_calls_back():

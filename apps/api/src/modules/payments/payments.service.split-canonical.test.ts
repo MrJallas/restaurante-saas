@@ -81,7 +81,12 @@ function fakeSplitDb(opts: {
 }
 
 function fakeRedis(): RedisService {
-  return { setNX: async () => true, del: async () => 1, get: async () => null } as never;
+  return {
+    setNX: async () => true,
+    compareAndDelete: async () => true,
+    del: async () => 1,
+    get: async () => null,
+  } as never;
 }
 
 function makeService(opts: Parameters<typeof fakeSplitDb>[0]) {
@@ -294,5 +299,81 @@ describe('requestPayment — split CUSTOM é table-canônico (soma = total da me
         ],
       }),
     ).rejects.toThrow(/participante|sua parte/i);
+  });
+
+  it('rejeita o exploit caller=1 centavo + allocation duplicada que preserva a soma', async () => {
+    const { service } = makeService(baseOpts);
+    await expect(
+      service.requestPayment(SESSION, null, 'individual', 'pix', {
+        callerCustomerId: ANA,
+        splitMode: 'custom',
+        // Soma = 11000 e length = 3, mas ANA aparece duas vezes e CARLA some.
+        // O código antigo usava find(ANA) => 1 centavo e aceitava a duplicata.
+        allocations: [
+          { customerId: ANA, amountCents: 1 },
+          { customerId: ANA, amountCents: 6_999 },
+          { customerId: BETO, amountCents: 4_000 },
+        ],
+      }),
+    ).rejects.toThrow(/uma allocation|exatamente/i);
+  });
+
+  it('rejeita customerId sintaticamente falso mesmo quando a soma fecha', async () => {
+    const { service } = makeService(baseOpts);
+    await expect(
+      service.computeSplit(
+        SESSION,
+        'custom',
+        [],
+        [
+          { customerId: ANA, amountCents: 7_000 },
+          { customerId: BETO, amountCents: 2_000 },
+          { customerId: 'fake-customer', amountCents: 2_000 },
+        ],
+      ),
+    ).rejects.toThrow(/UUID/i);
+  });
+
+  it('rejeita UUID válido que não pertence ao conjunto aprovado da sessão', async () => {
+    const OUTSIDER = 'dddddddd-0000-4000-8000-00000000000d';
+    const { service } = makeService(baseOpts);
+    await expect(
+      service.computeSplit(
+        SESSION,
+        'custom',
+        [],
+        [
+          { customerId: ANA, amountCents: 7_000 },
+          { customerId: BETO, amountCents: 2_000 },
+          { customerId: OUTSIDER, amountCents: 2_000 },
+        ],
+      ),
+    ).rejects.toThrow(/aprovados/i);
+  });
+
+  it('exige soma exata em centavos; não aceita a antiga tolerância por participante', async () => {
+    const { service } = makeService(baseOpts);
+    await expect(
+      service.computeSplit(
+        SESSION,
+        'custom',
+        [],
+        [
+          { customerId: ANA, amountCents: 6_999 },
+          { customerId: BETO, amountCents: 2_000 },
+          { customerId: CARLA, amountCents: 2_000 },
+        ],
+      ),
+    ).rejects.toThrow(/Soma das aloca/i);
+  });
+
+  it('não aceita metadata custom em pagamento integral de mesa', async () => {
+    const { service } = makeService(baseOpts);
+    await expect(
+      service.requestPayment(SESSION, null, 'table', 'pix', {
+        splitMode: 'custom',
+        allocations: customAllocations,
+      }),
+    ).rejects.toThrow(/parte individual/i);
   });
 });

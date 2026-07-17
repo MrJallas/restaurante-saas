@@ -1,5 +1,6 @@
 import { INestApplication, HttpException, HttpStatus, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { randomInt } from 'crypto';
 import request from 'supertest';
 import { StaffAuthService } from './staff-auth.service';
 import { StaffPinAdminController } from './staff-pin-admin.controller';
@@ -10,6 +11,11 @@ import {
   issueStaffSessionToken,
   verifyStaffSessionToken,
 } from '../../common/auth/staff-session-token';
+
+jest.mock('crypto', () => {
+  const actual = jest.requireActual<typeof import('crypto')>('crypto');
+  return { ...actual, randomInt: jest.fn(actual.randomInt) };
+});
 
 /**
  * Pacote TROCAR-PIN (decisões Caleb 2026-07-04) — POST /:slug/staff/:staffId/reset-pin.
@@ -68,6 +74,7 @@ const SLUG = 'acme-reset-pin';
 interface TargetRow {
   id: string;
   name: string;
+  role?: 'owner' | 'manager' | 'host' | 'waiter' | 'cook' | 'bartender' | 'cashier';
 }
 
 function fakeTenantConn(target: TargetRow | null, updates: { sql: string; params: unknown[] }[]) {
@@ -85,6 +92,7 @@ function fakeTenantConn(target: TargetRow | null, updates: { sql: string; params
       if (/SELECT role FROM staff/i.test(sql)) {
         if (params[0] === MANAGER_ID) return [{ role: 'manager' }];
         if (params[0] === WAITER_ID) return [{ role: 'waiter' }];
+        if (target && params[0] === target.id) return [{ role: target.role ?? 'waiter' }];
         return [];
       }
       return [];
@@ -163,6 +171,36 @@ describe('StaffAuthService.managerResetPin', () => {
       expect((err as HttpException).getStatus()).toBe(HttpStatus.NOT_FOUND);
     }
     expect(updates).toHaveLength(0);
+  });
+
+  it('rejeita owner antes de gerar PIN, atualizar a row ou revogar suas sessões', async () => {
+    const randomIntMock = randomInt as unknown as jest.Mock;
+    randomIntMock.mockClear();
+    const { service, redis, updates } = makeService({
+      id: TARGET_ID,
+      name: 'Dona Marina',
+      role: 'owner',
+    });
+    const ownerSession = await issueStaffSessionToken(redis as unknown as RedisService, {
+      staffId: TARGET_ID,
+      role: 'owner',
+      slug: SLUG,
+    });
+
+    try {
+      await service.managerResetPin(TARGET_ID);
+      throw new Error('esperava 403');
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpException);
+      expect((err as HttpException).getStatus()).toBe(HttpStatus.FORBIDDEN);
+      expect((err as HttpException).getResponse()).toMatchObject({ code: 'OWNER_PROTECTED' });
+    }
+
+    expect(randomIntMock).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(0);
+    expect(
+      await verifyStaffSessionToken(redis as unknown as RedisService, ownerSession.token, SLUG),
+    ).not.toBeNull();
   });
 });
 

@@ -111,6 +111,6 @@ export class AppModule {
     consumer
       .apply(TenantMiddleware)
       .exclude({ path: 'qr/:token', method: RequestMethod.ALL })
-      .forRoutes({ path: ':slug/*', method: RequestMethod.ALL });
+      .forRoutes({ path: ':slug/{*splat}', method: RequestMethod.ALL });
   }
 }

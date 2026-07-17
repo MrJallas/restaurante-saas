@@ -1,0 +1,75 @@
+{
+  "audit": "customer-night-close",
+  "date": "2026-07-11",
+  "tenant": "restaurant_dev",
+  "tableCode": "QRTEST92",
+  "browser": {
+    "engine": "webkit",
+    "deviceEmulation": "iPhone 14",
+    "physicalDeviceValidated": false,
+    "consoleErrorsFinal": 0
+  },
+  "status": "clean",
+  "findings": {
+    "fixed": 7,
+    "open": 0,
+    "items": [
+      "split-ui-exposed-individual-orders",
+      "stale-session-bundle-masked-401-after-rescan",
+      "feedback-route-fabricated-payment-confirmation",
+      "chat-thread-id-double-encoding",
+      "lgpd-left-local-pii-and-auth-cookies",
+      "by-item-rounding-summary-differed-from-charge",
+      "qr-bootstrap-secrets-remained-in-history"
+    ]
+  },
+  "moneyProof": {
+    "subtotalCents": 10570,
+    "serviceFeeCents": 1057,
+    "totalCents": 11627,
+    "allocationsCents": [9113, 2514],
+    "allocationSumCents": 11627,
+    "hostUiCents": 9113,
+    "hostPaymentCents": 9113,
+    "notificationMatchesPaymentAllocations": true,
+    "clientConfirmMarkedPaid": false,
+    "concurrentDuplicateRows": 1,
+    "crossScopeRaceRows": 1
+  },
+  "privacyProof": {
+    "lgpdStatus": "fulfilled",
+    "postgresPiiScrubbed": true,
+    "mongoThreadsAfterErasure": 0,
+    "mongoMessagesAfterErasure": 0,
+    "authCookiesAfterLogout": 0,
+    "personalStorageKeysAfterErasure": 0,
+    "profileAfterReload": "unidentified",
+    "qrSecretsAfterReplace": 0,
+    "qrSecretsAfterBack": 0
+  },
+  "verification": {
+    "focusedPaymentSuites": 6,
+    "focusedPaymentTests": 51,
+    "finalApiSuites": 15,
+    "finalApiTests": 79,
+    "finalWebSuites": 7,
+    "finalWebTests": 20,
+    "apiTypecheck": "pass",
+    "webTypecheck": "pass",
+    "prettier": "pass",
+    "diffCheck": "pass"
+  },
+  "cleanup": {
+    "postgresFixtureRows": 0,
+    "redisFixtureKeys": 0,
+    "mongoFixtureRows": 0,
+    "activeQr92Sessions": 0,
+    "openQr92Releases": 0
+  },
+  "artifacts": {
+    "screenshotsCreated": 0,
+    "videosCreated": 0,
+    "tracesCreated": 0,
+    "rawAuthTokensLogged": false
+  }
+}

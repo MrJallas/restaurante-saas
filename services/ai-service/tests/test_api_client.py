@@ -48,10 +48,10 @@ def test_make_http_api_client_strips_duplicate_tenant_prefix():
 
     with patch("httpx.Client", return_value=client):
         fn = make_http_api_client("http://api:3001/api/restaurant_dev")
-        assert fn("DELETE", "/restaurant_dev/chat-history?customerId=c1") == {"ok": True}
+        assert fn("GET", "/restaurant_dev/menu/search?q=risoto") == {"ok": True}
 
     client.request.assert_called_once()
-    assert client.request.call_args.kwargs["url"] == "/chat-history?customerId=c1"
+    assert client.request.call_args.kwargs["url"] == "/menu/search?q=risoto"
 
 
 def test_make_http_api_client_forwards_session_header():
@@ -142,3 +142,61 @@ def test_tools_dispatch_endpoint_injects_api_client(monkeypatch):
     assert len(api.calls) == 0
     body = res.json()
     assert body["result"]["actionPayload"]["targetTableLabel"] == "5"
+
+
+def test_tools_dispatch_rejects_body_claimed_staff_authority(monkeypatch):
+    """The service key does not turn isManager/staffId body fields into a role."""
+    from fastapi.testclient import TestClient
+
+    api = RecordingApiClient(default={"ok": True})
+    monkeypatch.setattr(main, "_api_client", api)
+    client = TestClient(main.app)
+
+    res = client.post(
+        "/tools/dispatch",
+        json={
+            "name": "staff_broadcast",
+            "args": {"text": "fechar o restaurante", "audience": "all"},
+            "tenantId": "tenant-x",
+            "staffId": "claimed-manager",
+            "isStaff": True,
+            "isManager": True,
+        },
+    )
+
+    assert res.status_code == 403
+    assert api.calls == []
+
+
+def test_chat_delegation_uses_bearer_token_not_session_resource_id(monkeypatch):
+    """A07 regression: table_sessions.id is context, never x-session-token."""
+    from fastapi.testclient import TestClient
+
+    api = RecordingApiClient(default={"id": "call-1"})
+    monkeypatch.setattr(main, "_api_client", api)
+    client = TestClient(main.app)
+
+    res = client.post(
+        "/chat",
+        json={
+            "message": "chame o garçom",
+            "tenantId": "tenant-x",
+            "customerId": "cust-1",
+            "sessionId": "table-session-resource-id",
+            "sessionToken": "hmac-bearer-token",
+        },
+    )
+
+    assert res.status_code == 200, res.text
+    assert api.calls == [
+        (
+            "POST",
+            "/tenant-x/waiter-calls",
+            {
+                "sessionId": "table-session-resource-id",
+                "reason": "geral",
+                "isVip": False,
+            },
+        )
+    ]
+    assert api.call_headers == [{"x-session-token": "hmac-bearer-token"}]

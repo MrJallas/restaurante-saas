@@ -22,6 +22,9 @@ export interface WaiterCallSummary {
   created_at: string;
   table_label: string | null;
   table_code: string | null;
+  assigned_waiter_name?: string | null;
+  /** UUID canônico de quem aceitou; ownership nunca deve depender do nome. */
+  acknowledged_by?: string | null;
   /** Optional reason hint as the API exposes more channels. */
   reason?: string | null;
   note?: string | null;

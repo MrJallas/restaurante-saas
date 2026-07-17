@@ -87,9 +87,7 @@ function fakeDb(opts: {
       // Filtro NÃO discrimina split_mode → contamina os modos. Sinaliza o bug
       // devolvendo a SOMA dos dois escopos de visita (o que o código antigo
       // fazia implicitamente ao somar tudo do visit_id).
-      return [
-        { paid: String((opts.settledForIndividual ?? 0) + (opts.settledForSplit ?? 0)) },
-      ];
+      return [{ paid: String((opts.settledForIndividual ?? 0) + (opts.settledForSplit ?? 0)) }];
     }
     if (s.startsWith('SELECT id FROM visits')) {
       const v = opts.visitForCustomer?.[params[1] as string];
@@ -119,7 +117,12 @@ function fakeDb(opts: {
 }
 
 function fakeRedis(): RedisService {
-  return { setNX: async () => true, del: async () => 1, get: async () => null } as never;
+  return {
+    setNX: async () => true,
+    compareAndDelete: async () => true,
+    del: async () => 1,
+    get: async () => null,
+  } as never;
 }
 
 function make(opts: Parameters<typeof fakeDb>[0]) {

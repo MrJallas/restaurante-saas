@@ -90,6 +90,9 @@ function buildFakeCollection<T extends Record<string, unknown>>(): Collection<T>
       }
       return { deletedCount: count };
     },
+    async countDocuments(filter: Record<string, unknown>) {
+      return docs.filter((d) => matches(d, filter)).length;
+    },
     async findOne(filter: Record<string, unknown>) {
       return docs.find((d) => matches(d, filter)) ?? null;
     },
@@ -259,7 +262,7 @@ export async function runCustomerStaffMessagesContract(): Promise<void> {
 
   // 2d. getThreadMessages — owner sees 2 messages.
   const threadId = threads[0].threadId;
-  const messages = await service.getThreadMessages(threadId, customerId);
+  const messages = await service.getThreadMessages(threadId, customerId, tenantId);
   if (messages.length !== 2) {
     throw new Error(`staff-messages: expected 2 messages, got ${messages.length}.`);
   }
@@ -269,7 +272,7 @@ export async function runCustomerStaffMessagesContract(): Promise<void> {
 
   // 2e. Ownership check — wrong customerId 404s.
   try {
-    await service.getThreadMessages(threadId, otherCustomerId);
+    await service.getThreadMessages(threadId, otherCustomerId, tenantId);
     throw new Error('staff-messages: cross-customer read did NOT 404.');
   } catch (err) {
     if (!(err instanceof HttpException) || err.getStatus() !== 404) {
@@ -278,13 +281,13 @@ export async function runCustomerStaffMessagesContract(): Promise<void> {
   }
 
   // 2f. markRead — every staff message stamped readAt.
-  const markRes = await service.markRead(threadId, customerId);
+  const markRes = await service.markRead(threadId, customerId, tenantId);
   if (markRes.markedCount !== 2) {
     throw new Error(
       `staff-messages: markRead expected to flip 2 messages, flipped ${markRes.markedCount}.`,
     );
   }
-  const afterRead = await service.getThreadMessages(threadId, customerId);
+  const afterRead = await service.getThreadMessages(threadId, customerId, tenantId);
   if (afterRead.some((m) => m.fromRole === 'staff' && !m.readAt)) {
     throw new Error('staff-messages: some staff messages remain unread after markRead.');
   }
@@ -301,7 +304,7 @@ export async function runCustomerStaffMessagesContract(): Promise<void> {
       `staff-messages: outbound reply opened a NEW thread (${replyRes.threadId}) instead of reusing ${threadId}.`,
     );
   }
-  const afterReply = await service.getThreadMessages(threadId, customerId);
+  const afterReply = await service.getThreadMessages(threadId, customerId, tenantId);
   if (afterReply.length !== 3) {
     throw new Error(`staff-messages: after reply expected 3 messages, got ${afterReply.length}.`);
   }
@@ -310,7 +313,7 @@ export async function runCustomerStaffMessagesContract(): Promise<void> {
   }
 
   // 2h. deleteThread — single thread soft-deleted + messages purged.
-  const del = await service.deleteThread(threadId, customerId);
+  const del = await service.deleteThread(threadId, customerId, tenantId);
   if (del.messagesDeleted !== 3) {
     throw new Error(
       `staff-messages: deleteThread expected 3 messages, dropped ${del.messagesDeleted}.`,
@@ -338,7 +341,7 @@ export async function runCustomerStaffMessagesContract(): Promise<void> {
   }
 
   // 2j. deleteAll — bulk wipe.
-  const bulkDel = await service.deleteAll(customerId);
+  const bulkDel = await service.deleteAll(customerId, tenantId);
   if (!bulkDel.mongoAvailable) {
     throw new Error('staff-messages: bulk delete reported mongoAvailable=false in fake.');
   }

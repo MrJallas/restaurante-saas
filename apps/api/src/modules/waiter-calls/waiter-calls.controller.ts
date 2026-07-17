@@ -70,8 +70,9 @@ export class WaiterCallsController {
   // era publico (qualquer um listava todos os chamados de todas as mesas).
   @Get('pending')
   @UseGuards(StaffOnlyGuard)
-  async getPendingCalls() {
-    return this.waiterCallsService.getPendingCalls();
+  async getPendingCalls(@Req() req: Request) {
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
+    return this.waiterCallsService.getPendingCalls(staffId);
   }
 
   /**
@@ -102,8 +103,9 @@ export class WaiterCallsController {
    */
   @Get(':callId/staff-detail')
   @UseGuards(StaffOnlyGuard)
-  async getCallStaffDetail(@Param('callId') callId: string) {
-    return this.waiterCallsService.getCallStaffDetail(callId);
+  async getCallStaffDetail(@Param('callId') callId: string, @Req() req: Request) {
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
+    return this.waiterCallsService.getCallStaffDetail(callId, staffId);
   }
 
   /**
@@ -147,7 +149,12 @@ export class WaiterCallsController {
 
   @Post(':callId/resolve')
   @UseGuards(StaffOnlyGuard)
-  async resolveCall(@Param('callId') callId: string, @Param('slug') slug: string) {
-    return this.waiterCallsService.resolveCall(callId, slug);
+  async resolveCall(
+    @Param('callId') callId: string,
+    @Param('slug') slug: string,
+    @Req() req: Request,
+  ) {
+    const staffId = await this.callerResolver.requireActiveStaffId(req);
+    return this.waiterCallsService.resolveCall(callId, slug, staffId);
   }
 }

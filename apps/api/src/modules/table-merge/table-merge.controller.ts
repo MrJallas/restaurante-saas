@@ -166,7 +166,26 @@ export class TableMergeController {
     @Req() req: Request,
   ) {
     const callerCustomerId = await this.callerResolver.requireCustomerId(req);
-    return this.stripSessionTokens(await this.service.reject(id, callerCustomerId, dto.reason, slug));
+    return this.stripSessionTokens(
+      await this.service.reject(id, callerCustomerId, dto.reason, slug),
+    );
+  }
+
+  /**
+   * Status autoritativo para reload/deep-link do cliente. O service cruza o
+   * caller reconhecido com a sessão e com os hosts/solicitante antes de ler.
+   */
+  @Get(':id/status')
+  @UseGuards(SessionGuard)
+  async getOwnStatus(
+    @Param('id') id: string,
+    @Session() session: SessionData,
+    @Req() req: Request,
+  ) {
+    const callerCustomerId = await this.callerResolver.requireCustomerId(req);
+    return this.stripSessionTokens(
+      await this.service.getCustomerStatus(id, session.sessionId, callerCustomerId),
+    );
   }
 
   /**

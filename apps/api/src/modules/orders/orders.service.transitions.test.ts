@@ -21,7 +21,7 @@ const ORDER = 'aaaaaaa3-0000-4000-8000-000000000001';
 const SESSION = 'bbbbbbb3-0000-4000-8000-000000000001';
 
 function fakeOrdersDb(initialStatus: string) {
-  const state = { status: initialStatus, history: [] as string[] };
+  const state = { status: initialStatus, history: [] as string[], historyActors: [] as string[] };
   const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
     const s = sql.replace(/\s+/g, ' ').trim();
     if (s.startsWith('SELECT id, status, table_session_id FROM orders')) {
@@ -37,6 +37,7 @@ function fakeOrdersDb(initialStatus: string) {
     }
     if (s.startsWith('INSERT INTO order_status_history')) {
       state.history.push(`${params[1]}->${params[2]}`);
+      state.historyActors.push(String(params[3]));
       return [];
     }
     throw new Error(`fake orders: SQL não roteado: ${s}`);
@@ -155,5 +156,16 @@ describe('updateStatus — characterization da matriz de transições (staff)', 
     const result = await service.updateStatus(ORDER, 'in_progress', 'system');
     expect(result.newStatus).toBe('in_progress');
     expect(db.state.status).toBe('in_progress');
+  });
+
+  it('ignora changedBy forjado e persiste o staffId derivado server-side', async () => {
+    const { service, db } = makeService('received');
+    await service.updateStatus(ORDER, 'in_progress', 'uuid-do-owner-forjado', 'restaurant_dev', {
+      actorType: 'staff',
+      sessionTableId: null,
+      staffId: 'uuid-do-cozinheiro-autenticado',
+      staffRole: 'cook',
+    });
+    expect(db.state.historyActors).toEqual(['uuid-do-cozinheiro-autenticado']);
   });
 });

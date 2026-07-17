@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -13,4 +15,22 @@
   display: none;
   width: 0;
   height: 0;
+}
+
+/* Vários componentes mobile usam `all: unset` para controlar o visual. A
+   regra global mantém a navegação por teclado perceptível mesmo nesses casos. */
+:where(button, a, input, select, textarea, [role='button']):focus-visible {
+  outline: 3px solid #2563eb !important;
+  outline-offset: 2px !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

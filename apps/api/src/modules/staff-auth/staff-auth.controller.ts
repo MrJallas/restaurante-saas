@@ -69,7 +69,10 @@ export class StaffAuthController {
   @Post('login')
   @HttpCode(200)
   login(@Body() dto: LoginDto, @Req() req: Request) {
-    return this.staffAuth.login(dto, this.clientIp(req));
+    return this.staffAuth.login(dto, {
+      ip: this.clientIp(req),
+      userAgent: String(req.headers['user-agent'] ?? 'Navegador'),
+    });
   }
 
   @Post('forgot')

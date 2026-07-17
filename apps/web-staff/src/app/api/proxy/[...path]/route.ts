@@ -34,6 +34,14 @@ const TV_ROUTES: { method: string; re: RegExp }[] = [
 ];
 const LOGIN_RE = /^[\w-]+\/staff-auth\/login$/;
 const LOGOUT_RE = /^[\w-]+\/staff-auth\/logout$/;
+// Recuperacao acontece ANTES de existir uma sessao. A allowlist e exata para
+// nao transformar `staff-auth/*` inteiro em rota publica; change-pin e qualquer
+// endpoint futuro continuam passando pelo cookie de staff.
+const PUBLIC_RECOVERY_ROUTES: { method: string; re: RegExp }[] = [
+  { method: 'POST', re: /^[\w-]+\/staff-auth\/forgot$/ },
+  { method: 'POST', re: /^[\w-]+\/staff-auth\/forgot\/verify$/ },
+  { method: 'POST', re: /^[\w-]+\/staff-auth\/reset-pin$/ },
+];
 // Rotas que EMITEM staffToken novo no body (login e change-pin — a troca de
 // PIN revoga todas as sessões e devolve um token novo pra sessão corrente
 // não morrer junto). O proxy captura o token, seta o cookie httpOnly e
@@ -104,15 +112,25 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   const isTv = TV_ROUTES.some((r) => r.method === method && r.re.test(pathWithSearch));
   const isLogin = method === 'POST' && LOGIN_RE.test(pathWithSearch);
   const isLogout = method === 'POST' && LOGOUT_RE.test(pathWithSearch);
+  const isPublicRecovery = PUBLIC_RECOVERY_ROUTES.some(
+    (route) => route.method === method && route.re.test(pathWithSearch),
+  );
   const issuesToken = method === 'POST' && TOKEN_ISSUING_RE.test(pathWithSearch);
   const sessionToken = req.cookies.get(STAFF_TOKEN_COOKIE)?.value;
 
   // Autorização por tipo de rota.
   if (isTv) {
-    if (!tvPinValid(req)) {
+    // O mesmo endpoint KDS atende dois clientes distintos:
+    // - display /bar/tv ou /cozinha/tv: sem staff individual, exige tv_pin;
+    // - KDS individual /bar: staff_token httpOnly do login dispensa TV PIN.
+    // O token não é aceito cegamente: segue para apps/api como
+    // x-staff-token e os guards revalidam Redis, tenant, PIN obrigatório e
+    // papel. Um cookie forjado só troca este 401 pelo 401/403 autoritativo do
+    // backend, nunca recebe x-staff-key sem a sessão também ser enviada.
+    if (!sessionToken && !tvPinValid(req)) {
       return NextResponse.json({ error: 'TV nao desbloqueada' }, { status: 401 });
     }
-  } else if (!isLogin && !isLogout && !sessionToken) {
+  } else if (!isLogin && !isLogout && !isPublicRecovery && !sessionToken) {
     // Rota de staff autenticado sem cookie de sessão → 401 antes de bater
     // no backend (não injeta a key pra quem não fez login).
     return NextResponse.json(

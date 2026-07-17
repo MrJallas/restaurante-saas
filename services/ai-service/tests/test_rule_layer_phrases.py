@@ -59,6 +59,9 @@ def _first_tool(body) -> str | None:
 # (frase, layer esperado, tool esperada ou None, args parciais esperados)
 # ─────────────────────────────────────────────────────────────
 POSITIVE_CASES = [
+    # Late-arrival: não é merge/tool. O QR da mesa ocupada inicia o fluxo real.
+    ("cheguei atrasado, como entro na mesa?", "rule-late-arrival-guidance", None, {}),
+    ("quero entrar na mesa 5", "rule-late-arrival-guidance", None, {}),
     # Ver cardápio (chips: "Ver cardápio" / comandos diretos)
     ("quero ver o cardápio", "rule-view-menu", "view_menu", {}),
     ("ver cardápio", "rule-view-menu", "view_menu", {}),
@@ -145,6 +148,55 @@ def test_manager_intent_reply_keeps_followup_contract(chat_client):
     body = _post(client, "quero falar com o gerente")
     assert provider.chat.await_count == 0
     assert main._MANAGER_MESSAGE_PROMPT_RE.search(body["response"]) is not None
+
+
+def test_late_arrival_guidance_is_honest_and_has_no_tool(chat_client):
+    client, provider = chat_client
+    body = _post(client, "cheguei atrasado e quero entrar na mesa 5")
+
+    assert provider.chat.await_count == 0
+    assert body["layer"] == "rule-late-arrival-guidance"
+    assert body["tool_calls"] == []
+    assert body["response"] == main._LATE_ARRIVAL_GUIDANCE
+    assert "QR Code" in body["response"]
+    assert "avisei" not in body["response"].lower()
+    assert "esperando a confirmação" not in body["response"].lower()
+
+
+def test_late_arrival_guidance_does_not_replace_host_pending_decision(chat_client):
+    client, provider = chat_client
+    res = client.post(
+        "/chat",
+        json={
+            "message": "pode entrar na mesa",
+            "tenantId": "t1",
+            "customer_context": {
+                "pending_join_request": {
+                    "targetCustomerId": "12345678-1234-4234-8234-123456789012",
+                    "joinerName": "Bianca",
+                }
+            },
+        },
+    )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["layer"] != "rule-late-arrival-guidance"
+    assert body["response"] != main._LATE_ARRIVAL_GUIDANCE
+    assert provider.chat.await_count == 1
+
+
+@pytest.mark.parametrize("compact", [False, True])
+def test_system_prompt_separates_late_arrival_from_table_merge(monkeypatch, compact):
+    monkeypatch.setattr(main.settings, "LLM_COMPACT_PROMPT", compact)
+    prompt = main.build_system_prompt(
+        {"restaurant_name": "Cantina", "menu_summary": "", "categories": ""},
+        None,
+    )
+
+    assert main._LATE_ARRIVAL_PROMPT_POLICY in prompt
+    assert "Não chame `request_table_merge`" in prompt
+    assert "escanear o QR Code da mesa ocupada" in prompt
 
 
 def test_manager_intent_then_followup_sends_without_llm(chat_client):

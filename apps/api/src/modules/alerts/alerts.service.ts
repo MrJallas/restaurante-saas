@@ -33,6 +33,26 @@ export interface AlertRow {
   created_at: string;
 }
 
+export interface SingletonAlertInput {
+  sev: AlertSeverity;
+  kind: string;
+  title: string;
+  sub?: string;
+  ttlAt?: Date | string;
+  actions?: AlertActionDescriptor[];
+  /**
+   * Após um alerta ser dispensado, resolvido ou expirar, evita recriá-lo a
+   * cada polling do dashboard. O alerta aberto ainda é atualizado normalmente.
+   */
+  cooldownSeconds?: number;
+}
+
+export interface SingletonAlertResult {
+  alert: AlertRow;
+  created: boolean;
+  suppressed: boolean;
+}
+
 const VALID_SEV: AlertSeverity[] = ['crítica', 'atenção', 'info'];
 const MANAGEMENT_ROLES = new Set(['manager', 'owner']);
 const ROLE_ALERT_PATTERNS: Record<string, string[]> = {
@@ -265,6 +285,144 @@ export class AlertsService {
     }
 
     return alert;
+  }
+
+  /**
+   * Reconcilia um alerta operacional singleton por `kind`.
+   *
+   * O advisory lock serializa refreshes concorrentes do mesmo tenant/kind.
+   * Se já existe um alerta aberto, seus dados e TTL são atualizados sem novo
+   * evento. Se o operador acabou de tratá-lo, o cooldown respeita essa ação e
+   * impede que o polling do dashboard o recrie imediatamente.
+   */
+  async createOrRefreshSingleton(data: SingletonAlertInput): Promise<SingletonAlertResult> {
+    if (!VALID_SEV.includes(data.sev)) {
+      throw new BadRequestException(`Severidade invalida. Use: ${VALID_SEV.join(', ')}.`);
+    }
+    if (!data.kind?.trim() || data.kind.length > 200) {
+      throw new BadRequestException('Kind obrigatorio (max 200 chars).');
+    }
+    if (!data.title || data.title.length > 500) {
+      throw new BadRequestException('Title obrigatorio (max 500 chars).');
+    }
+
+    const cooldownSeconds = Math.min(Math.max(data.cooldownSeconds ?? 900, 60), 86_400);
+    const lockKey = `${this.tenantConn.getTenantSlug() ?? 'unknown'}:alert:${data.kind}`;
+    const result = await this.tenantConn.transaction(async (tx) => {
+      await tx.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
+
+      const open = (await tx.query(
+        `SELECT id, sev, kind, title, sub, ttl_at, actions,
+                dismissed_at, resolved_at, created_at
+           FROM alerts
+          WHERE kind = $1
+            AND dismissed_at IS NULL
+            AND resolved_at IS NULL
+            AND (ttl_at IS NULL OR ttl_at > now())
+          ORDER BY created_at DESC
+          LIMIT 1
+          FOR UPDATE`,
+        [data.kind],
+      )) as AlertRow[];
+
+      if (open.length) {
+        const refreshed = unwrapRows<AlertRow>(
+          await tx.query(
+            `UPDATE alerts
+                SET sev = $2,
+                    title = $3,
+                    sub = $4,
+                    ttl_at = $5,
+                    actions = $6::jsonb
+              WHERE id = $1
+              RETURNING id, sev, kind, title, sub, ttl_at, actions,
+                        dismissed_at, resolved_at, created_at`,
+            [
+              open[0].id,
+              data.sev,
+              data.title,
+              data.sub ?? null,
+              data.ttlAt ?? null,
+              JSON.stringify(data.actions ?? []),
+            ],
+          ),
+        );
+        if (!refreshed.length) {
+          throw new BadRequestException('Falha ao atualizar alerta singleton.');
+        }
+        return { alert: refreshed[0], created: false, suppressed: false };
+      }
+
+      const recent = (await tx.query(
+        `SELECT id, sev, kind, title, sub, ttl_at, actions,
+                dismissed_at, resolved_at, created_at
+          FROM alerts
+          WHERE kind = $1
+            AND COALESCE(dismissed_at, resolved_at, ttl_at, created_at)
+                  > now() - ($2::int * interval '1 second')
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [data.kind, cooldownSeconds],
+      )) as AlertRow[];
+      if (recent.length) {
+        return { alert: recent[0], created: false, suppressed: true };
+      }
+
+      const inserted = unwrapRows<AlertRow>(
+        await tx.query(
+          `INSERT INTO alerts (sev, kind, title, sub, ttl_at, actions)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+           RETURNING id, sev, kind, title, sub, ttl_at, actions,
+                     dismissed_at, resolved_at, created_at`,
+          [
+            data.sev,
+            data.kind,
+            data.title,
+            data.sub ?? null,
+            data.ttlAt ?? null,
+            JSON.stringify(data.actions ?? []),
+          ],
+        ),
+      );
+      if (!inserted.length) {
+        throw new BadRequestException('Falha ao criar alerta singleton.');
+      }
+      return { alert: inserted[0], created: true, suppressed: false };
+    });
+
+    if (result.created) {
+      const tenantSlug = this.tenantConn.getTenantSlug();
+      if (this.events && tenantSlug) {
+        this.events.emitAlertCreated(
+          tenantSlug,
+          result.alert as unknown as Record<string, unknown>,
+        );
+      }
+    }
+    return result;
+  }
+
+  /** Resolve todos os alertas ainda abertos do kind sem falhar se não houver nenhum. */
+  async resolveOpenByKind(kind: string): Promise<number> {
+    if (!kind?.trim() || kind.length > 200) {
+      throw new BadRequestException('Kind obrigatorio (max 200 chars).');
+    }
+    const lockKey = `${this.tenantConn.getTenantSlug() ?? 'unknown'}:alert:${kind}`;
+    return this.tenantConn.transaction(async (tx) => {
+      await tx.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
+      const resolved = unwrapRows<Pick<AlertRow, 'id'>>(
+        await tx.query(
+          `UPDATE alerts
+              SET resolved_at = now()
+            WHERE kind = $1
+              AND dismissed_at IS NULL
+              AND resolved_at IS NULL
+            RETURNING id`,
+          [kind],
+        ),
+      );
+      return resolved.length;
+    });
   }
 
   async dismiss(id: string): Promise<AlertRow> {

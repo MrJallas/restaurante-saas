@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
+import { RESTAURANT_LOCAL_DATE_SQL } from '../../common/utils/restaurant-local-time';
 
 /**
  * Atribuição explícita garçom→zona por dia (decisão Caleb 2026-07-04,
@@ -25,9 +26,11 @@ export class ZoneAssignmentsService {
          FROM zones z
          LEFT JOIN waiter_zone_assignments a
                 ON a.zone_id = z.id
-               AND a.work_date = current_date
+               AND a.work_date = ${RESTAURANT_LOCAL_DATE_SQL}
                AND a.removed_at IS NULL
-         LEFT JOIN staff s ON s.id = a.staff_id AND s.is_active = true
+         LEFT JOIN staff s ON s.id = a.staff_id
+                          AND s.is_active = true
+                          AND s.role = 'waiter'
         WHERE z.is_active = true
         ORDER BY z.sort_order, z.name, s.name`,
     )) as Array<{
@@ -74,7 +77,8 @@ export class ZoneAssignmentsService {
   /** Atribui garçom à zona HOJE (idempotente via unique parcial). */
   async assign(staffId: string, zoneId: string, assignedBy: string) {
     const staffRows = (await this.tenantConn.query(
-      `SELECT id FROM staff WHERE id = $1 AND is_active = true`,
+      `SELECT id FROM staff
+        WHERE id = $1 AND is_active = true AND role = 'waiter'`,
       [staffId],
     )) as Array<{ id: string }>;
     if (!staffRows.length) {
@@ -82,7 +86,7 @@ export class ZoneAssignmentsService {
     }
     const rows = (await this.tenantConn.query(
       `INSERT INTO waiter_zone_assignments (staff_id, zone_id, work_date, assigned_by)
-       VALUES ($1, $2, current_date, $3)
+       VALUES ($1, $2, ${RESTAURANT_LOCAL_DATE_SQL}, $3)
        ON CONFLICT (staff_id, zone_id, work_date) WHERE removed_at IS NULL
        DO UPDATE SET assigned_by = EXCLUDED.assigned_by
        RETURNING id`,

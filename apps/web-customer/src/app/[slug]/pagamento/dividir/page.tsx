@@ -2,26 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { apiGet, apiPost } from '../../../../lib/api';
+import { ApiRequestError, apiGet, apiPost } from '../../../../lib/api';
 import { useSession } from '../../../../hooks/useSession';
 import { useNav } from '../../../../hooks/useNav';
 import { AppShell } from '../../../../components/layout/AppShell';
 import { PillButton } from '../../../../components/ui/PillButton';
 import { Avatar } from '../../../../components/ui/Avatar';
-
-interface ApiOrderItem {
-  id: string;
-  name: string;
-  quantity: number;
-  subtotalCents: number;
-  customerId?: string | null;
-}
-
-interface ApiOrder {
-  id: string;
-  status: string;
-  items: ApiOrderItem[];
-}
+import { sendSplitSummary } from './sendSummary';
+import { tableSplitScope, type TableSplitOrder } from './tableSplitScope';
 
 interface Participant {
   customerId: string;
@@ -41,18 +29,22 @@ export default function PagamentoDividirPage() {
   const params = useParams();
   const router = useRouter();
   const { push } = useNav();
-  const { tableLabel, customerId, participants: sessionParticipants } = useSession();
+  const { hydrated, tableLabel, customerId, participants: sessionParticipants } = useSession();
   const slug = params.slug as string;
 
   const [mode, setMode] = useState<Mode>('by_item');
-  const [orders, setOrders] = useState<ApiOrder[]>([]);
+  const [orders, setOrders] = useState<TableSplitOrder[]>([]);
   const [participants, setParticipants] = useState<Participant[]>(sessionParticipants ?? []);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   // Taxa vem do backend (settings.service_fee_pct via GET /orders/bill) —
   // preview local usa o MESMO pct que o POST /payments cobra.
   const [serviceFeePct, setServiceFeePct] = useState(10);
   const [submitting, setSubmitting] = useState(false);
+  const [summarySending, setSummarySending] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   // Total da mesa COM taxa (canônico do backend) — alvo que a soma do split
   // 'custom' precisa fechar. Vem do compute (equal/by_item retornam totalCents).
   const [totalDueCents, setTotalDueCents] = useState(0);
@@ -64,21 +56,28 @@ export default function PagamentoDividirPage() {
   const [customSeeded, setCustomSeeded] = useState(false);
 
   useEffect(() => {
-    if (!slug) return;
+    if (!slug || !hydrated) return;
     let stop = false;
     const load = async () => {
       try {
         const [oRes, pRes, bRes] = await Promise.all([
-          apiGet<{ orders: ApiOrder[] }>(`/${slug}/orders?scope=table`),
+          apiGet<{ orders: TableSplitOrder[] }>(`/${slug}/orders?scope=table`),
           apiGet<{ participants: Participant[] }>(`/${slug}/table/participants`),
           apiGet<{ serviceFeePct?: number }>(`/${slug}/orders/bill?mode=table`),
         ]);
         if (stop) return;
         setOrders(oRes.orders);
+        setLoadError(null);
         if (pRes.participants?.length) setParticipants(pRes.participants);
         if (typeof bRes.serviceFeePct === 'number') setServiceFeePct(bRes.serviceFeePct);
-      } catch {
-        /* ignore */
+      } catch (error) {
+        if (!stop) {
+          setLoadError(
+            error instanceof ApiRequestError && error.statusCode === 401
+              ? 'Sua sessão expirou. Escaneie o QR da mesa novamente.'
+              : 'Não consegui carregar a divisão da conta. Verifique a conexão e tente de novo.',
+          );
+        }
       } finally {
         if (!stop) setLoading(false);
       }
@@ -87,15 +86,9 @@ export default function PagamentoDividirPage() {
     return () => {
       stop = true;
     };
-  }, [slug]);
+  }, [hydrated, slug, retryNonce]);
 
-  const items = useMemo(
-    () =>
-      orders
-        .filter((o) => o.status !== 'cancelled' && o.status !== 'pending_confirmation')
-        .flatMap((o) => o.items),
-    [orders],
-  );
+  const { items, excludedIndividualItemCount } = useMemo(() => tableSplitScope(orders), [orders]);
 
   const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 
@@ -106,6 +99,7 @@ export default function PagamentoDividirPage() {
   // (alvo que a soma manual precisa fechar) e semear os campos com uma
   // divisão igual — as allocations em si vêm do editor, não do backend.
   useEffect(() => {
+    if (!hydrated) return;
     let stop = false;
     const computeMode = mode === 'custom' ? 'equal' : mode;
     apiPost<{
@@ -139,7 +133,7 @@ export default function PagamentoDividirPage() {
       stop = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, slug, participants.length, items.length]);
+  }, [hydrated, mode, slug, participants.length, items.length]);
 
   // Em 'custom' as allocations são derivadas do editor (customCents), cobrindo
   // todos os participantes; nos demais modos vêm do backend.
@@ -194,14 +188,20 @@ export default function PagamentoDividirPage() {
   };
 
   const handleSendSummary = async () => {
-    if (mode === 'custom' && !customBalanced) return;
+    if (summarySending || (mode === 'custom' && !customBalanced)) return;
+    setSummarySending(true);
+    setSummaryError(null);
     try {
-      await apiPost(`/${slug}/payments/bill/split/notify`, {
-        mode,
-        allocations: effectiveAllocations,
-      });
+      await sendSplitSummary(() =>
+        apiPost<{ ok?: boolean }>(`/${slug}/payments/bill/split/notify`, {
+          mode,
+          allocations: effectiveAllocations,
+        }),
+      );
     } catch {
-      /* ignore */
+      setSummaryError('Não consegui enviar o resumo agora. Tente novamente.');
+      setSummarySending(false);
+      return;
     }
     router.back();
   };
@@ -216,6 +216,36 @@ export default function PagamentoDividirPage() {
       >
         <div className="flex flex-1 items-center justify-center">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-ink border-t-transparent" />
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (loadError && orders.length === 0) {
+    return (
+      <AppShell
+        slug={slug}
+        restaurantName=""
+        tableLabel={tableLabel || ''}
+        activeHref={`/${slug}/pagamento`}
+      >
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+          <h1 className="text-[20px] font-semibold tracking-[-0.02em] text-ink">
+            Não consegui abrir a divisão
+          </h1>
+          <p role="alert" className="max-w-[290px] text-[13px] leading-[1.5] text-mute">
+            {loadError}
+          </p>
+          <PillButton
+            variant="filled"
+            onClick={() => {
+              setLoading(true);
+              setRetryNonce((value) => value + 1);
+            }}
+          >
+            Tentar novamente
+          </PillButton>
+          <PillButton onClick={() => push(`/${slug}`)}>Voltar</PillButton>
         </div>
       </AppShell>
     );
@@ -239,7 +269,11 @@ export default function PagamentoDividirPage() {
         </div>
 
         <div className="shrink-0 px-[22px] pb-3.5">
-          <div className="flex gap-0.5 rounded-full border border-border-soft bg-surface p-1">
+          <div
+            className="flex gap-0.5 rounded-full border border-border-soft bg-surface p-1"
+            role="group"
+            aria-label="Modo de divisão"
+          >
             {(
               [
                 { key: 'equal', label: 'Igual' },
@@ -253,7 +287,8 @@ export default function PagamentoDividirPage() {
                   key={m.key}
                   type="button"
                   onClick={() => setMode(m.key)}
-                  className={`flex-1 rounded-full px-2.5 py-2 text-center text-[12px] transition-colors ${
+                  aria-pressed={active}
+                  className={`min-h-11 flex-1 rounded-full px-2.5 py-2 text-center text-[12px] transition-colors ${
                     active ? 'bg-ink font-semibold text-white' : 'font-medium text-mute'
                   }`}
                 >
@@ -266,8 +301,20 @@ export default function PagamentoDividirPage() {
 
         <div className="flex-1 overflow-auto px-[22px] pb-5">
           <div className="mb-2.5 text-[11px] font-semibold uppercase tracking-[1.5px] text-mute">
-            Itens da mesa
+            Itens da conta da mesa
           </div>
+          {excludedIndividualItemCount > 0 && (
+            <div
+              role="note"
+              className="mb-3 rounded-[12px] border border-border-soft bg-surface px-3.5 py-2.5 text-[12px] leading-[1.45] text-mute"
+            >
+              {excludedIndividualItemCount}{' '}
+              {excludedIndividualItemCount === 1
+                ? 'item de comanda individual fica'
+                : 'itens de comandas individuais ficam'}{' '}
+              fora deste rateio e são pagos separadamente em Minha comanda.
+            </div>
+          )}
           {items.map((it) => {
             const person = participants.find((p) => p.customerId === it.customerId);
             const shared = !it.customerId;
@@ -387,22 +434,29 @@ export default function PagamentoDividirPage() {
           </div>
         </div>
 
-        <div className="flex shrink-0 gap-2.5 px-[22px] pb-safe pb-6 pt-2.5">
-          <PillButton
-            onClick={handleSendSummary}
-            disabled={mode === 'custom' && !customBalanced}
-            className="flex-1"
-          >
-            Enviar resumo
-          </PillButton>
-          <PillButton
-            variant="filled"
-            onClick={handlePayMine}
-            disabled={submitting || mineAmount === 0 || !customBalanced}
-            className="flex-1"
-          >
-            {submitting ? 'Gerando…' : `Pagar ${fmt(mineAmount)}`}
-          </PillButton>
+        <div className="shrink-0 px-[22px] pb-safe pb-6 pt-2.5">
+          {summaryError && (
+            <div role="alert" className="mb-2 text-center text-[12px] text-red-600">
+              {summaryError}
+            </div>
+          )}
+          <div className="flex gap-2.5">
+            <PillButton
+              onClick={handleSendSummary}
+              disabled={summarySending || (mode === 'custom' && !customBalanced)}
+              className="flex-1"
+            >
+              {summarySending ? 'Enviando…' : 'Enviar resumo'}
+            </PillButton>
+            <PillButton
+              variant="filled"
+              onClick={handlePayMine}
+              disabled={submitting || mineAmount === 0 || !customBalanced}
+              className="flex-1"
+            >
+              {submitting ? 'Gerando…' : `Pagar ${fmt(mineAmount)}`}
+            </PillButton>
+          </div>
         </div>
       </div>
     </AppShell>

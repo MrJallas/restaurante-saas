@@ -79,7 +79,8 @@ export function ScreenManagerAlertsAll({
   // outro dia) ficam de fora. (P2 re-scan)
   const todayKey = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local
   const resolvedToday = resolved.filter(
-    (r) => r.resolved_at != null && new Date(r.resolved_at).toLocaleDateString('en-CA') === todayKey,
+    (r) =>
+      r.resolved_at != null && new Date(r.resolved_at).toLocaleDateString('en-CA') === todayKey,
   );
 
   const filtered =

@@ -11,6 +11,8 @@ import { RedisService } from '../../infra/redis/redis.service';
 import { safeJsonParse } from '../utils/safe-json';
 import type { SessionData, SessionRequest } from './session.guard';
 import { revalidateSessionOrThrow } from './session-revalidation';
+import { verifyStaffSessionToken } from '../auth/staff-session-token';
+import type { StaffAuthRequest } from '../auth/staff-auth-request';
 
 /**
  * Guarda os endpoints que aceitam ate dois tipos de chamador:
@@ -46,7 +48,32 @@ export class StaffOrSessionGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<SessionRequest & { actorType?: ActorType }>();
+    const request = context
+      .switchToHttp()
+      .getRequest<
+        SessionRequest & StaffAuthRequest & { actorType?: ActorType; params?: { slug?: string } }
+      >();
+
+    const staffToken = request.headers['x-staff-token'];
+    if (staffToken) {
+      const payload = await verifyStaffSessionToken(
+        this.redis,
+        staffToken,
+        request.params?.slug ?? 'unknown',
+      );
+      if (!payload) {
+        throw new HttpException('Sessão de equipe inválida.', HttpStatus.FORBIDDEN);
+      }
+      if (payload.mustChangePin) {
+        throw new HttpException(
+          'Troca de PIN obrigatória antes de continuar.',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+      request.staffAuth = payload;
+      request.actorType = 'staff';
+      return true;
+    }
 
     const staffKeyHeader = request.headers['x-staff-key'];
     const expected = process.env.STAFF_API_KEY;

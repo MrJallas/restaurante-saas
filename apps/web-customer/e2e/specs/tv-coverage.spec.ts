@@ -213,7 +213,7 @@ test.describe('P2-4 — TRIM unicode station filtering', () => {
     const menuIds = psqlAll(`SELECT id FROM menu_items WHERE name = 'QA-Unicode-Drink'`);
 
     const session = '0d324208-01ce-4d5e-b95e-1acba080304c';
-    for (const mid of menuIds) {
+    for (let i = 0; i < menuIds.length; i++) {
       psql(
         `INSERT INTO orders (table_session_id, billing_mode, status, total_cents, created_by, notes) ` +
           `VALUES ('${session}', 'table', 'received', 100, 'qa-test', 'QA-unicode-trim') RETURNING id`,

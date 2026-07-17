@@ -68,7 +68,7 @@ export function DrinkDetail({ drink, onBack, onAdd, isAdding }: DrinkDetailProps
           type="button"
           onClick={onBack}
           aria-label="Voltar"
-          className="mb-4 mt-2 flex h-9 w-9 items-center justify-center rounded-full border-[1.2px] border-ink"
+          className="mb-4 mt-2 flex h-11 w-11 items-center justify-center rounded-full border-[1.2px] border-ink"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
             <path
@@ -186,7 +186,7 @@ export function DrinkDetail({ drink, onBack, onAdd, isAdding }: DrinkDetailProps
             <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-[1px] text-mute">
               Tamanho
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2" role="group" aria-label="Tamanho da bebida">
               {drink.sizes.map((s, i) => {
                 const sel = sizeIndex === i;
                 return (
@@ -194,6 +194,7 @@ export function DrinkDetail({ drink, onBack, onAdd, isAdding }: DrinkDetailProps
                     key={s.label}
                     type="button"
                     onClick={() => setSizeIndex(i)}
+                    aria-pressed={sel}
                     className={`flex-1 rounded-[14px] border-[1.3px] bg-bg px-3.5 py-3 text-left ${
                       sel ? 'border-ink' : 'border-border-soft'
                     }`}
@@ -214,7 +215,7 @@ export function DrinkDetail({ drink, onBack, onAdd, isAdding }: DrinkDetailProps
             <div className="mb-2.5 text-[10px] font-semibold uppercase tracking-[1px] text-mute">
               Preferências
             </div>
-            <div>
+            <div role="group" aria-label="Preferências da bebida">
               {drink.preferences.map((p, i) => {
                 const sel = Boolean(prefs[p.id]);
                 const last = i === (drink.preferences?.length ?? 0) - 1;
@@ -223,7 +224,8 @@ export function DrinkDetail({ drink, onBack, onAdd, isAdding }: DrinkDetailProps
                     key={p.id}
                     type="button"
                     onClick={() => togglePref(p.id)}
-                    className={`flex w-full items-center gap-3 py-2.5 text-left ${
+                    aria-pressed={sel}
+                    className={`flex min-h-11 w-full items-center gap-3 py-2.5 text-left ${
                       last ? '' : 'border-b border-border-soft'
                     }`}
                   >
@@ -261,7 +263,7 @@ export function DrinkDetail({ drink, onBack, onAdd, isAdding }: DrinkDetailProps
               type="button"
               aria-label="Diminuir"
               onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-              className="flex h-10 w-10 items-center justify-center rounded-full border-[1.3px] border-ink bg-bg text-[18px] font-semibold"
+              className="flex h-11 w-11 items-center justify-center rounded-full border-[1.3px] border-ink bg-bg text-[18px] font-semibold"
             >
               −
             </button>
@@ -272,7 +274,7 @@ export function DrinkDetail({ drink, onBack, onAdd, isAdding }: DrinkDetailProps
               type="button"
               aria-label="Aumentar"
               onClick={() => setQuantity((q) => q + 1)}
-              className="flex h-10 w-10 items-center justify-center rounded-full border-[1.3px] border-ink bg-ink text-[18px] font-semibold text-white"
+              className="flex h-11 w-11 items-center justify-center rounded-full border-[1.3px] border-ink bg-ink text-[18px] font-semibold text-white"
             >
               +
             </button>

@@ -46,10 +46,6 @@ import type {
 
 export const lateArrivalApi = (slug: string) => ({
   list: () => staffGet<LateArrivalRequestDto[]>(`/${slug}/late-arrival-requests`),
-  approve: (id: string) =>
-    staffPost<LateArrivalRequestDto>(`/${slug}/late-arrival-requests/${id}/approve`, {}),
-  reject: (id: string) =>
-    staffPost<LateArrivalRequestDto>(`/${slug}/late-arrival-requests/${id}/reject`, {}),
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -316,7 +312,6 @@ function staticSmartSuggestionsFallback(): SmartSuggestionsResponse {
 export interface AssistantStaffToCustomerDto {
   tableSessionId: string;
   message: string;
-  fromStaffId: string;
   /**
    * Destinatário (obrigatório desde 2026-06-11): a resposta do gerente é
    * privada por cliente — backend emite WS só no room `customer:<id>`.
@@ -432,12 +427,75 @@ export interface TeamKpiEntry {
   ratingsCount: number;
 }
 
+export interface WaiterAssignedTableWorkload {
+  sessionId: string;
+  tableId: string;
+  tableCode: string;
+  tableLabel: string;
+  tableNumber: number;
+  zoneId: string | null;
+  zoneName: string | null;
+  people: number;
+  activeOrders: number;
+  lateOrders: number;
+  pendingWaiterCalls: number;
+  pendingDeliveries: number;
+  loadScore: number;
+}
+
+export interface WaiterWorkloadEntry {
+  staffId: string;
+  name: string;
+  onShift: boolean;
+  paused: boolean;
+  availableForAssignment: boolean;
+  zones: Array<{ zoneId: string; zoneName: string }>;
+  tables: number;
+  people: number;
+  activeOrders: number;
+  lateOrders: number;
+  pendingWaiterCalls: number;
+  pendingDeliveries: number;
+  loadScore: number;
+  assignedTables: WaiterAssignedTableWorkload[];
+}
+
+export interface WaiterWorkloadSnapshot {
+  generatedAt: string;
+  strategy: 'zone_candidate_round_robin_v1';
+  weights: {
+    table: number;
+    person: number;
+    activeOrder: number;
+    lateOrder: number;
+    pendingWaiterCall: number;
+    pendingDelivery: number;
+  };
+  activeSessions: number;
+  assignedSessions: number;
+  unassignedSessions: WaiterAssignedTableWorkload[];
+  totalLoadScore: number;
+  waiters: WaiterWorkloadEntry[];
+  imbalance: null | {
+    reason: 'unassigned_sessions' | 'load_score_skew';
+    severity: 'crítica' | 'atenção';
+    highestWaiterId: string | null;
+    lowestWaiterId: string | null;
+    scoreDelta: number;
+    tableDelta: number;
+    unassignedSessions: number;
+  };
+}
+
 /**
  * KPIs por funcionário HOJE — só métricas com fonte real
  * (waiter_calls acknowledged + order_deliveries claimed).
  */
 export const teamKpisApi = (slug: string) => ({
-  get: () => staffGet<{ team: TeamKpiEntry[] }>(`/${slug}/dashboard/team-kpis`),
+  get: () =>
+    staffGet<{ team: TeamKpiEntry[]; waiterWorkload: WaiterWorkloadSnapshot | null }>(
+      `/${slug}/dashboard/team-kpis`,
+    ),
 });
 
 export interface ActiveTableRow {
@@ -452,8 +510,14 @@ export interface ActiveTableRow {
 export interface LateOrderRow {
   orderId: string;
   tableLabel: string;
+  tableNumber: number;
+  /** O contrato atual detecta atraso apenas da cozinha; bar ainda não tem SLA configurável. */
+  station: 'kitchen';
   minutesInPrep: number;
+  /** Soma das quantidades dos itens food ainda em preparo, não nº de linhas. */
   itemCount: number;
+  /** Snapshot da meta que classificou esta linha; evita o front recalcular com outro SLA. */
+  targetMinutes: number;
 }
 
 export interface ActiveTablesResponse {
@@ -463,7 +527,7 @@ export interface ActiveTablesResponse {
   kitchenEtaMaxMinutes: number | null;
 }
 
-/** Mesas com sessão aberta + pedidos acima da meta da cozinha (dados reais). */
+/** Mesas com sessão aberta + trabalho real da cozinha acima da meta. */
 export const activeTablesApi = (slug: string) => ({
   get: () => staffGet<ActiveTablesResponse>(`/${slug}/dashboard/active-tables`),
 });
@@ -490,9 +554,7 @@ export const alertsApi = (slug: string) => ({
 // ─────────────────────────────────────────────────────────────
 
 export interface ManagerPreferences {
-  notifications: Record<string, boolean>;
   theme: 'light' | 'dark' | 'auto';
-  twoFactorEnabled: boolean;
   updatedAt: string | null;
 }
 
@@ -523,13 +585,16 @@ export interface ManagerShiftLog {
 
 export const managerAccountApi = (slug: string) => ({
   getPreferences: () => staffGet<ManagerPreferences>(`/${slug}/manager/preferences`),
-  updatePreferences: (body: Partial<ManagerPreferences>) =>
+  updatePreferences: (body: Pick<ManagerPreferences, 'theme'>) =>
     staffApi<ManagerPreferences>(`/${slug}/manager/preferences`, {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
   changePin: (body: { currentPin: string; nextPin: string }) =>
-    staffPost<{ message_user: string; code: string }>(`/${slug}/manager/security/change-pin`, body),
+    staffPost<{ message_user: string; code: string; nextPath: string }>(
+      `/${slug}/staff-auth/change-pin`,
+      { currentPin: body.currentPin, newPin: body.nextPin },
+    ),
   sessions: () =>
     staffGet<{ sessions: ManagerSecuritySession[] }>(`/${slug}/manager/security/sessions`),
   revokeSession: (sessionId: string) =>
@@ -713,11 +778,17 @@ export interface StaffRosterEntry {
 export interface CreateStaffPayload {
   name: string;
   role: 'waiter' | 'cook' | 'manager' | 'host' | 'bartender' | 'cashier';
-  pin: string; // 4-6 digits
+  /** Legado: a API ignora; o PIN temporário é sempre gerado no servidor. */
+  pin?: string;
   cpf?: string;
   phone?: string;
   email?: string;
   default_shift?: 'Manhã' | 'Tarde' | 'Noite';
+}
+
+export interface CreateStaffResponse extends StaffRosterEntry {
+  tempPin: string;
+  mustChangePin: true;
 }
 
 export interface UpdateStaffPayload extends Partial<CreateStaffPayload> {
@@ -762,7 +833,8 @@ export const staffRosterApi = (slug: string) => ({
     staffGet<StaffPerformance>(
       `/${slug}/staff/${id}/performance?period=${encodeURIComponent(period)}`,
     ),
-  create: (payload: CreateStaffPayload) => staffPost<StaffRosterEntry>(`/${slug}/staff`, payload),
+  create: (payload: CreateStaffPayload) =>
+    staffPost<CreateStaffResponse>(`/${slug}/staff`, payload),
   update: (id: string, payload: UpdateStaffPayload) =>
     staffApi<StaffRosterEntry>(`/${slug}/staff/${id}`, {
       method: 'PATCH',
