@@ -1,11 +1,13 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
   Optional,
   Logger,
 } from '@nestjs/common';
+import { createHash, randomUUID } from 'crypto';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { BillingService } from '../billing/billing.service';
 import { planTransition } from './order-state-machine';
@@ -25,6 +27,73 @@ import { safeJsonParse } from '../../common/utils/safe-json';
 // Curto suficiente pra que o slot da chave libere antes do TTL natural
 // das sessoes de mesa.
 const IDEMPOTENCY_TTL_SECONDS = 5 * 60;
+
+interface OrderIdempotencyRecord {
+  orderId?: string;
+  inflight?: boolean;
+  fingerprint?: string;
+  lockOwner?: string;
+}
+
+interface DurableOrderIdempotencyRow {
+  id: string;
+  status: string;
+  billing_mode: 'table' | 'individual';
+  total_cents: number;
+  created_at: string;
+  auto_confirm_at: string | null;
+  idempotency_fingerprint: string;
+  item_count: number | string;
+}
+
+export interface CreateOrderResult {
+  id: string;
+  orderId: string;
+  status: string;
+  billingMode: 'table' | 'individual';
+  totalCents: number;
+  itemCount: number;
+  createdAt: string;
+  autoConfirmAt: string | null;
+  idempotent?: boolean;
+}
+
+interface OrderStatusActor {
+  actorType: 'staff' | 'session';
+  sessionTableId: string | null;
+  staffId?: string | null;
+  staffRole?: string | null;
+  station?: 'kitchen' | 'bar' | null;
+}
+
+/**
+ * Assina somente os campos que mudam a semântica do pedido. O hash não é uma
+ * credencial; serve para impedir que a mesma idempotencyKey seja reciclada com
+ * outro carrinho enquanto o primeiro request está em voo ou cacheado.
+ */
+function orderIdempotencyFingerprint(input: {
+  visitId: string | null;
+  billingMode: 'table' | 'individual';
+  items: CreateOrderItemDto[];
+  notes?: string;
+  defaultCustomerId?: string | null;
+}): string {
+  const canonical = {
+    visitId: input.visitId,
+    billingMode: input.billingMode,
+    notes: input.notes || null,
+    defaultCustomerId: input.defaultCustomerId ?? null,
+    items: input.items.map((item) => ({
+      menuItemId: item.menuItemId,
+      quantity: item.quantity,
+      notes: item.notes || null,
+      extraIds: [...(item.extraIds ?? [])].sort(),
+      customerId: item.customerId ?? null,
+      size: item.size?.trim().toLowerCase() || null,
+    })),
+  };
+  return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+}
 
 // Valid order status transitions. `pending_confirmation` is the transient state
 // entered by POST /orders before the kitchen sees it. Auto-confirmed after the
@@ -70,17 +139,30 @@ interface MenuItemSize {
  * desconhecido) cai no `price_cents` base. Preço sempre do banco, nunca do
  * cliente.
  */
-function resolveSizePriceCents(
+/**
+ * Resolve o tamanho escolhido contra `menu_items.sizes`: devolve o PREÇO (do
+ * banco) e o LABEL CANÔNICO do tamanho que casou (case-insensitive, trim).
+ * Sem match — sem size, item sem tamanhos, ou size desconhecido — cai no preço
+ * base e label `null`. Preço E label vêm SEMPRE do banco, nunca do cliente
+ * (mesmo trust model dos extras): o KDS/bar nunca cobra nem rotula um tamanho
+ * que o cardápio não tem.
+ */
+function resolveSize(
   basePriceCents: number,
   sizes: MenuItemSize[] | null | undefined,
   size: string | undefined,
-): number {
-  if (!size || !Array.isArray(sizes) || sizes.length === 0) return basePriceCents;
+): { priceCents: number; label: string | null } {
+  if (!size || !Array.isArray(sizes) || sizes.length === 0) {
+    return { priceCents: basePriceCents, label: null };
+  }
   const wanted = size.trim().toLowerCase();
   const match = sizes.find(
     (s) => typeof s?.label === 'string' && s.label.trim().toLowerCase() === wanted,
   );
-  return match && typeof match.price_cents === 'number' ? match.price_cents : basePriceCents;
+  if (match && typeof match.price_cents === 'number') {
+    return { priceCents: match.price_cents, label: match.label };
+  }
+  return { priceCents: basePriceCents, label: null };
 }
 
 export interface KitchenQueueItem {
@@ -174,6 +256,74 @@ export class OrdersService {
     @Optional() private readonly orderRatings?: OrderRatingsService,
   ) {}
 
+  /**
+   * O PostgreSQL e a fonte de verdade da idempotencia. Esta leitura acontece
+   * antes de qualquer lock Redis e tambem depois de uma corrida de UNIQUE, de
+   * modo que retries sobrevivem a TTL, restart e falha de cache pos-commit.
+   */
+  private async findDurableIdempotencyResult(
+    tableSessionId: string,
+    idempotencyKey: string,
+    fingerprint: string,
+  ): Promise<CreateOrderResult | null> {
+    const rows = (await this.tenantConn.query(
+      `SELECT o.id, o.status, o.billing_mode, o.total_cents,
+              o.created_at, o.auto_confirm_at, o.idempotency_fingerprint,
+              COUNT(oi.id)::int AS item_count
+         FROM orders o
+         LEFT JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.table_session_id = $1
+          AND o.idempotency_key = $2::uuid
+        GROUP BY o.id
+        LIMIT 1`,
+      [tableSessionId, idempotencyKey],
+    )) as DurableOrderIdempotencyRow[];
+
+    const existing = rows[0];
+    if (!existing) return null;
+
+    if (existing.idempotency_fingerprint !== fingerprint) {
+      throw new ConflictException({
+        message: 'Esta chave de idempotencia ja foi usada com outro pedido.',
+        error_code: 'ORDER_IDEMPOTENCY_KEY_REUSED',
+        retryable: false,
+      });
+    }
+
+    return {
+      id: existing.id,
+      orderId: existing.id,
+      status: existing.status,
+      billingMode: existing.billing_mode,
+      totalCents: existing.total_cents,
+      itemCount: Number(existing.item_count),
+      createdAt: existing.created_at,
+      autoConfirmAt: existing.auto_confirm_at,
+      idempotent: true,
+    };
+  }
+
+  /** Redis e apenas uma aceleracao. O pedido ja comitado nunca vira HTTP 500
+   * porque o cache ficou indisponivel. */
+  private async cacheIdempotencyResult(
+    redisKey: string,
+    orderId: string,
+    fingerprint: string,
+  ): Promise<void> {
+    try {
+      await this.redis.set(
+        redisKey,
+        JSON.stringify({ orderId, fingerprint }),
+        IDEMPOTENCY_TTL_SECONDS,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.ordersLogger.warn(
+        `Pedido ${orderId} comitado, mas o cache de idempotencia falhou: ${message}`,
+      );
+    }
+  }
+
   async createOrder(
     tableSessionId: string,
     visitId: string | null,
@@ -194,42 +344,100 @@ export class OrdersService {
       );
     }
 
-    // Idempotencia: dois POSTs com mesma idempotencyKey dentro do TTL
-    // retornam o orderId ja criado. Resolve double-tap do botao
-    // "Confirmar" virando 2 pedidos com items duplicados (bug-hunter
-    // race condition). Round 10 (B-NEW-46): agora REALMENTE atomico
-    // via Redis SET NX EX — o primeiro POST ganha o lock com payload
-    // sentinela `{inflight:true}`, processa o INSERT, sobrescreve com
-    // `{orderId}`. POSTs concorrentes com mesma key veem `false` no
-    // setNX, fazem polling do GET até ver o orderId final ou timeout.
-    //
-    // Antes (round 5 fix incompleto): GET-then-INSERT-then-SET plain.
-    // Concurrent: ambos GET=null, ambos INSERT, ambos SET (último vence)
-    // → 2 orders idênticos no DB, customer cobrado 2x.
+    if (visitId) {
+      await this.assertCustomerOwnsVisit(tableSessionId, visitId, defaultCustomerId ?? null);
+    }
+
+    // O Redis reduz trabalho duplicado enquanto uma request esta em voo, mas
+    // o PostgreSQL e a autoridade: migration 075 persiste key+fingerprint no
+    // mesmo INSERT e aplica UNIQUE(table_session_id, idempotency_key).
+    // Assim, retries continuam corretos depois do TTL, restart ou falha do SET
+    // pos-commit, e uma corrida que atravessa o lease ainda converge no DB.
     const idemKey = idempotencyKey ? `order_idem:${tableSessionId}:${idempotencyKey}` : null;
+    const idemFingerprint = idemKey
+      ? orderIdempotencyFingerprint({
+          visitId,
+          billingMode,
+          items,
+          notes,
+          defaultCustomerId,
+        })
+      : null;
+
+    if (idempotencyKey && idemFingerprint) {
+      const durable = await this.findDurableIdempotencyResult(
+        tableSessionId,
+        idempotencyKey,
+        idemFingerprint,
+      );
+      if (durable) return durable;
+    }
+    // O owner aleatório torna a liberação segura mesmo se o TTL vencer e
+    // outro request readquirir a mesma key com o mesmo payload/fingerprint.
+    const idemLockValue = idemKey
+      ? JSON.stringify({
+          inflight: true,
+          fingerprint: idemFingerprint,
+          lockOwner: randomUUID(),
+        })
+      : null;
     let idemLockOwner = false;
     if (idemKey) {
       // Tenta ganhar o lock atomicamente. Se já existe, faz fallback
       // pro GET/poll. Sentinela `inflight` distingue "ainda processando"
       // de "pronto" (orderId presente).
-      idemLockOwner = await this.redis.setNX(
-        idemKey,
-        JSON.stringify({ inflight: true }),
-        IDEMPOTENCY_TTL_SECONDS,
-      );
+      let redisLockAvailable = true;
+      try {
+        idemLockOwner = await this.redis.setNX(idemKey, idemLockValue!, IDEMPOTENCY_TTL_SECONDS);
+      } catch (error) {
+        redisLockAvailable = false;
+        const message = error instanceof Error ? error.message : String(error);
+        this.ordersLogger.warn(
+          `Lock Redis de idempotencia indisponivel; usando UNIQUE do banco: ${message}`,
+        );
+      }
 
-      if (!idemLockOwner) {
-        // Outro caller ganhou. Poll até ver orderId ou timeout (~3s).
+      if (redisLockAvailable && !idemLockOwner) {
+        // Outro caller ganhou. Poll até ver orderId ou estourar o prazo
+        // (~3s). Se o Redis falhar durante a espera, a UNIQUE do PostgreSQL
+        // continua sendo a barreira final contra INSERT duplicado.
         const pollDeadline = Date.now() + 3000;
-        while (Date.now() < pollDeadline) {
-          const existing = await this.redis.get(idemKey);
+        let keepPolling = true;
+        let redisReadFailed = false;
+        while (keepPolling) {
+          // Se o owner comitou mas o SET do cache falhou, o registro duravel
+          // encerra a espera sem depender da sentinela Redis.
+          if (idempotencyKey && idemFingerprint) {
+            const durable = await this.findDurableIdempotencyResult(
+              tableSessionId,
+              idempotencyKey,
+              idemFingerprint,
+            );
+            if (durable) return durable;
+          }
+
+          let existing: string | null = null;
+          try {
+            existing = await this.redis.get(idemKey);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.ordersLogger.warn(
+              `Leitura do lock Redis falhou; corrida sera resolvida pelo banco: ${message}`,
+            );
+            redisReadFailed = true;
+            break;
+          }
           if (existing) {
             // Round 16 (B-NEW-53): safeJsonParse — corrompido cai em null
             // e o poll continua (no-op até timeout).
-            const cached = safeJsonParse<{
-              orderId?: string;
-              inflight?: boolean;
-            }>(existing);
+            const cached = safeJsonParse<OrderIdempotencyRecord>(existing);
+            if (cached?.fingerprint && idemFingerprint && cached.fingerprint !== idemFingerprint) {
+              throw new ConflictException({
+                message: 'Esta chave de idempotencia ja foi usada com outro pedido.',
+                error_code: 'ORDER_IDEMPOTENCY_KEY_REUSED',
+                retryable: false,
+              });
+            }
             if (cached?.orderId) {
               const existingOrder = await this.getOrderById(tableSessionId, cached.orderId);
               if (existingOrder) {
@@ -247,204 +455,273 @@ export class OrdersService {
               }
             }
           }
-          await new Promise((r) => setTimeout(r, 100));
+          keepPolling = Date.now() < pollDeadline;
+          if (keepPolling) await new Promise((r) => setTimeout(r, 100));
         }
-        // Timeout — assumir que o outro caller falhou. Tentar como nova request.
+        if (!redisReadFailed) {
+          throw new ConflictException({
+            message: 'Pedido ainda sendo processado. Tente novamente em instantes.',
+            error_code: 'ORDER_IDEMPOTENCY_IN_PROGRESS',
+            retryable: true,
+          });
+        }
       }
     }
 
-    const itemIds = items.map((i) => i.menuItemId);
-    const uniqueItemIds = Array.from(new Set(itemIds));
-    const menuItems = (await this.tenantConn.query(
-      `SELECT id, price_cents, name, sizes FROM menu_items WHERE id = ANY($1) AND is_available = true`,
-      [uniqueItemIds],
-    )) as { id: string; price_cents: number; name: string; sizes: MenuItemSize[] | null }[];
+    let orderCommitted = false;
+    try {
+      const itemIds = items.map((i) => i.menuItemId);
+      const uniqueItemIds = Array.from(new Set(itemIds));
+      const menuItems = (await this.tenantConn.query(
+        `SELECT id, price_cents, name, sizes FROM menu_items WHERE id = ANY($1) AND is_available = true`,
+        [uniqueItemIds],
+      )) as { id: string; price_cents: number; name: string; sizes: MenuItemSize[] | null }[];
 
-    // Compara contra o set unique para nao falsificar "indisponivel"
-    // quando o cliente repete o mesmo menuItemId em line-items distintos
-    // (cardapio com modificadores diferentes, ou simples bug do cliente).
-    if (menuItems.length !== uniqueItemIds.length) {
-      throw new BadRequestException('Um ou mais itens nao estao disponiveis.');
-    }
+      // Compara contra o set unique para nao falsificar "indisponivel"
+      // quando o cliente repete o mesmo menuItemId em line-items distintos
+      // (cardapio com modificadores diferentes, ou simples bug do cliente).
+      if (menuItems.length !== uniqueItemIds.length) {
+        throw new BadRequestException('Um ou mais itens nao estao disponiveis.');
+      }
 
-    const menuItemMap = new Map(menuItems.map((mi) => [mi.id, mi]));
+      const menuItemMap = new Map(menuItems.map((mi) => [mi.id, mi]));
 
-    const allExtraIds = items.flatMap((i) => i.extraIds || []);
-    let extraMap = new Map<string, number>();
+      const allExtraIds = items.flatMap((i) => i.extraIds || []);
+      let extraMap = new Map<string, number>();
 
-    if (allExtraIds.length > 0) {
-      const extras = (await this.tenantConn.query(
-        `SELECT id, price_cents FROM menu_item_extras WHERE id = ANY($1) AND is_available = true`,
-        [allExtraIds],
-      )) as { id: string; price_cents: number }[];
-      extraMap = new Map(extras.map((e) => [e.id, e.price_cents]));
-    }
+      if (allExtraIds.length > 0) {
+        const extras = (await this.tenantConn.query(
+          `SELECT id, price_cents FROM menu_item_extras WHERE id = ANY($1) AND is_available = true`,
+          [allExtraIds],
+        )) as { id: string; price_cents: number }[];
+        extraMap = new Map(extras.map((e) => [e.id, e.price_cents]));
+      }
 
-    let effectiveDefaultCustomerId = defaultCustomerId ?? null;
-    if (!effectiveDefaultCustomerId && visitId) {
-      const visitRows = (await this.tenantConn.query(
-        `SELECT customer_id
+      let effectiveDefaultCustomerId = defaultCustomerId ?? null;
+      if (!effectiveDefaultCustomerId && visitId) {
+        const visitRows = (await this.tenantConn.query(
+          `SELECT customer_id
            FROM visits
           WHERE id = $1
             AND table_session_id = $2
           LIMIT 1`,
-        [visitId, tableSessionId],
-      )) as Array<{ customer_id: string | null }>;
-      effectiveDefaultCustomerId = visitRows[0]?.customer_id ?? null;
-    }
+          [visitId, tableSessionId],
+        )) as Array<{ customer_id: string | null }>;
+        effectiveDefaultCustomerId = visitRows[0]?.customer_id ?? null;
+      }
 
-    if (billingMode === 'individual' && !effectiveDefaultCustomerId) {
-      throw new BadRequestException(
-        'Nao foi possivel identificar o cliente desta comanda individual.',
-      );
-    }
+      if (billingMode === 'individual' && !effectiveDefaultCustomerId) {
+        throw new BadRequestException(
+          'Nao foi possivel identificar o cliente desta comanda individual.',
+        );
+      }
 
-    let totalCents = 0;
-    const orderItemsData = items.map((item) => {
-      const menuItem = menuItemMap.get(item.menuItemId)!;
-      const extrasTotal = (item.extraIds || []).reduce(
-        (sum, eid) => sum + (extraMap.get(eid) || 0),
-        0,
-      );
-      // Preço-base do line-item = preço do TAMANHO escolhido (ou base, se sem
-      // tamanho). Resolvido do banco — o cliente nunca manda o preço.
-      const basePrice = resolveSizePriceCents(menuItem.price_cents, menuItem.sizes, item.size);
-      const unitPrice = basePrice + extrasTotal;
-      const subtotal = unitPrice * item.quantity;
-      totalCents += subtotal;
+      let totalCents = 0;
+      const orderItemsData = items.map((item) => {
+        const menuItem = menuItemMap.get(item.menuItemId)!;
+        const extrasTotal = (item.extraIds || []).reduce(
+          (sum, eid) => sum + (extraMap.get(eid) || 0),
+          0,
+        );
+        // Preço-base do line-item = preço do TAMANHO escolhido (ou base, se sem
+        // tamanho). Resolvido do banco — o cliente nunca manda o preço nem o label.
+        const resolved = resolveSize(menuItem.price_cents, menuItem.sizes, item.size);
+        const unitPrice = resolved.priceCents + extrasTotal;
+        const subtotal = unitPrice * item.quantity;
+        totalCents += subtotal;
 
-      return {
-        menuItemId: item.menuItemId,
-        quantity: item.quantity,
-        unitPriceCents: unitPrice,
-        subtotalCents: subtotal,
-        notes: item.notes || null,
-        extraIds: item.extraIds || [],
-        // Individual bills: always attribute to the customer who created it
-        // (so split-by-item can group correctly later). Table orders default to
-        // shared (null) unless the caller passes a customerId per-item.
-        customerId:
-          billingMode === 'individual' ? effectiveDefaultCustomerId : (item.customerId ?? null),
-      };
-    });
+        return {
+          menuItemId: item.menuItemId,
+          quantity: item.quantity,
+          unitPriceCents: unitPrice,
+          subtotalCents: subtotal,
+          notes: item.notes || null,
+          extraIds: item.extraIds || [],
+          // Label canônico do tamanho (ou null) — o KDS/bar renderiza o badge a
+          // partir daqui; espelha o preço já resolvido, nunca diverge.
+          size: resolved.label,
+          // Individual bills: always attribute to the customer who created it
+          // (so split-by-item can group correctly later). Table orders default to
+          // shared (null) unless the caller passes a customerId per-item.
+          customerId:
+            billingMode === 'individual' ? effectiveDefaultCustomerId : (item.customerId ?? null),
+        };
+      });
 
-    const distinctCustomerIds = [
-      ...new Set(orderItemsData.map((i) => i.customerId).filter((id): id is string => id != null)),
-    ];
-    if (distinctCustomerIds.length > 0) {
-      const validParticipants = (await this.tenantConn.query(
-        `SELECT customer_id FROM session_participants
+      const distinctCustomerIds = [
+        ...new Set(
+          orderItemsData.map((i) => i.customerId).filter((id): id is string => id != null),
+        ),
+      ];
+      if (distinctCustomerIds.length > 0) {
+        const validParticipants = (await this.tenantConn.query(
+          `SELECT customer_id FROM session_participants
          WHERE table_session_id = $1 AND customer_id = ANY($2::uuid[])
            AND status = 'approved' AND left_at IS NULL`,
-        [tableSessionId, distinctCustomerIds],
-      )) as { customer_id: string }[];
-      const validIds = new Set(validParticipants.map((p) => p.customer_id));
-      const invalid = distinctCustomerIds.filter((id) => !validIds.has(id));
-      if (invalid.length > 0) {
-        throw new BadRequestException({
-          message: `Cliente(s) nao fazem parte desta mesa: ${invalid.join(', ')}`,
-          message_user:
-            'Sua entrada nesta mesa ainda nao esta aprovada. Volte para a tela da mesa ou peca ajuda ao garcom.',
-          error_code: 'CUSTOMER_NOT_APPROVED_FOR_TABLE',
-        });
+          [tableSessionId, distinctCustomerIds],
+        )) as { customer_id: string }[];
+        const validIds = new Set(validParticipants.map((p) => p.customer_id));
+        const invalid = distinctCustomerIds.filter((id) => !validIds.has(id));
+        if (invalid.length > 0) {
+          throw new BadRequestException({
+            message: `Cliente(s) nao fazem parte desta mesa: ${invalid.join(', ')}`,
+            message_user:
+              'Sua entrada nesta mesa ainda nao esta aprovada. Volte para a tela da mesa ou peca ajuda ao garcom.',
+            error_code: 'CUSTOMER_NOT_APPROVED_FOR_TABLE',
+          });
+        }
       }
-    }
 
-    const order = await this.tenantConn.transaction(async (tx) => {
-      const orderRows = (await tx.query(
-        `INSERT INTO orders (table_session_id, visit_id, billing_mode, status, notes, total_cents, created_by, auto_confirm_at)
-         VALUES ($1, $2, $3, 'pending_confirmation', $4, $5, 'customer', now() + ($6 || ' seconds')::interval)
-         RETURNING id, status, created_at, auto_confirm_at`,
-        [
-          tableSessionId,
-          visitId,
-          billingMode,
-          notes || null,
-          totalCents,
-          String(PENDING_CONFIRMATION_WINDOW_SECONDS),
-        ],
-      )) as {
+      let order: {
         id: string;
         status: string;
         created_at: string;
         auto_confirm_at: string | null;
-      }[];
-      const ord = orderRows[0];
+      };
+      try {
+        order = await this.tenantConn.transaction(async (tx) => {
+          const orderRows = (await tx.query(
+            `INSERT INTO orders (
+               table_session_id, visit_id, billing_mode, status, notes,
+               total_cents, created_by, auto_confirm_at,
+               idempotency_key, idempotency_fingerprint
+             )
+         VALUES ($1, $2, $3, 'pending_confirmation', $4, $5, 'customer', now() + ($6 || ' seconds')::interval, $7::uuid, $8)
+         RETURNING id, status, created_at, auto_confirm_at`,
+            [
+              tableSessionId,
+              visitId,
+              billingMode,
+              notes || null,
+              totalCents,
+              String(PENDING_CONFIRMATION_WINDOW_SECONDS),
+              idempotencyKey ?? null,
+              idemFingerprint,
+            ],
+          )) as {
+            id: string;
+            status: string;
+            created_at: string;
+            auto_confirm_at: string | null;
+          }[];
+          const ord = orderRows[0];
 
-      for (const item of orderItemsData) {
-        const itemRows = (await tx.query(
-          `INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_cents, subtotal_cents, notes, customer_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+          for (const item of orderItemsData) {
+            const itemRows = (await tx.query(
+              `INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_cents, subtotal_cents, notes, customer_id, size)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING id`,
-          [
-            ord.id,
-            item.menuItemId,
-            item.quantity,
-            item.unitPriceCents,
-            item.subtotalCents,
-            item.notes,
-            item.customerId,
-          ],
-        )) as { id: string }[];
+              [
+                ord.id,
+                item.menuItemId,
+                item.quantity,
+                item.unitPriceCents,
+                item.subtotalCents,
+                item.notes,
+                item.customerId,
+                item.size,
+              ],
+            )) as { id: string }[];
 
-        if (item.extraIds.length > 0) {
-          for (const extraId of item.extraIds) {
-            const priceCents = extraMap.get(extraId) || 0;
-            await tx.query(
-              `INSERT INTO order_item_extras (order_item_id, menu_item_extra_id, price_cents)
+            if (item.extraIds.length > 0) {
+              for (const extraId of item.extraIds) {
+                const priceCents = extraMap.get(extraId) || 0;
+                await tx.query(
+                  `INSERT INTO order_item_extras (order_item_id, menu_item_extra_id, price_cents)
                VALUES ($1, $2, $3)`,
-              [itemRows[0].id, extraId, priceCents],
-            );
+                  [itemRows[0].id, extraId, priceCents],
+                );
+              }
+            }
+          }
+
+          await tx.query(
+            `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
+         VALUES ($1, NULL, 'pending_confirmation', 'customer')`,
+            [ord.id],
+          );
+
+          await tx.query(
+            `UPDATE menu_items SET total_orders = total_orders + 1 WHERE id = ANY($1)`,
+            [uniqueItemIds],
+          );
+
+          return ord;
+        });
+      } catch (error) {
+        // Um lease Redis pode expirar ou ficar indisponivel entre o pre-check
+        // e o INSERT. A UNIQUE do banco escolhe um vencedor; o perdedor le o
+        // pedido ja comitado e devolve exatamente o mesmo resultado.
+        if (
+          idempotencyKey &&
+          idemFingerprint &&
+          (error as { code?: string } | null)?.code === '23505'
+        ) {
+          const raced = await this.findDurableIdempotencyResult(
+            tableSessionId,
+            idempotencyKey,
+            idemFingerprint,
+          );
+          if (raced) {
+            if (idemKey) {
+              await this.cacheIdempotencyResult(idemKey, raced.orderId, idemFingerprint);
+            }
+            return raced;
           }
         }
+        throw error;
+      }
+      orderCommitted = true;
+
+      // Marca a chave de idempotencia DEPOIS do commit — se a transacao
+      // falhar, queremos que o cliente possa retry com a mesma chave.
+      if (idemKey && idemFingerprint) {
+        await this.cacheIdempotencyResult(idemKey, order.id, idemFingerprint);
       }
 
-      await tx.query(
-        `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
-         VALUES ($1, NULL, 'pending_confirmation', 'customer')`,
-        [ord.id],
-      );
+      // Notifica os outros customers na mesma mesa em tempo real. Antes
+      // ficavam esperando ate 15s o polling buscar — multi-user nunca
+      // conseguia coordenar pedidos. NAO emite pra kitchen aqui (wait
+      // confirm() pra respeitar o 15s cancel window).
+      if (this.eventsGateway) {
+        this.eventsGateway.emitToSession(tableSessionId, 'order:created', {
+          orderId: order.id,
+          status: order.status,
+          billingMode,
+          totalCents,
+          createdAt: order.created_at,
+          // M2 (timeline): correlação explícita pro event-store (aditivo).
+          tableSessionId,
+          timestamp: new Date().toISOString(),
+        });
+      }
 
-      await tx.query(`UPDATE menu_items SET total_orders = total_orders + 1 WHERE id = ANY($1)`, [
-        uniqueItemIds,
-      ]);
-
-      return ord;
-    });
-
-    // Marca a chave de idempotencia DEPOIS do commit — se a transacao
-    // falhar, queremos que o cliente possa retry com a mesma chave.
-    if (idemKey) {
-      await this.redis.set(idemKey, JSON.stringify({ orderId: order.id }), IDEMPOTENCY_TTL_SECONDS);
-    }
-
-    // Notifica os outros customers na mesma mesa em tempo real. Antes
-    // ficavam esperando ate 15s o polling buscar — multi-user nunca
-    // conseguia coordenar pedidos. NAO emite pra kitchen aqui (wait
-    // confirm() pra respeitar o 15s cancel window).
-    if (this.eventsGateway) {
-      this.eventsGateway.emitToSession(tableSessionId, 'order:created', {
+      return {
+        id: order.id,
         orderId: order.id,
         status: order.status,
         billingMode,
         totalCents,
+        itemCount: items.length,
         createdAt: order.created_at,
-        // M2 (timeline): correlação explícita pro event-store (aditivo).
-        tableSessionId,
-        timestamp: new Date().toISOString(),
-      });
+        autoConfirmAt: order.auto_confirm_at,
+      };
+    } catch (error) {
+      // Validação/consulta/transação falhou antes do commit: libera somente a
+      // sentinela que ainda pertence a ESTE request para que o mesmo draft
+      // possa ser reenviado imediatamente. Depois do commit nunca apagamos a
+      // sentinela: permitir um novo INSERT nesse ponto duplicaria a cobrança.
+      if (idemKey && idemLockOwner && idemLockValue && !orderCommitted) {
+        try {
+          await this.redis.compareAndDelete(idemKey, idemLockValue);
+        } catch (cleanupError) {
+          this.ordersLogger.warn(
+            `Falha ao liberar idempotency lock de pedido: ${(cleanupError as Error).message}`,
+          );
+        }
+      }
+      throw error;
     }
-
-    return {
-      id: order.id,
-      orderId: order.id,
-      status: order.status,
-      billingMode,
-      totalCents,
-      itemCount: items.length,
-      createdAt: order.created_at,
-      autoConfirmAt: order.auto_confirm_at,
-    };
   }
 
   async createStaffDirectOrder(input: {
@@ -470,7 +747,7 @@ export class OrdersService {
     if (!staff) {
       throw new ForbiddenException('Sessão de equipe inválida.');
     }
-    if (staff.role !== 'waiter' && staff.role !== 'manager') {
+    if (staff.role !== 'waiter' && staff.role !== 'manager' && staff.role !== 'owner') {
       throw new ForbiddenException('Apenas garçom pode lançar pedido direto.');
     }
 
@@ -506,8 +783,8 @@ export class OrdersService {
         (sum, eid) => sum + (extraMap.get(eid) || 0),
         0,
       );
-      const basePrice = resolveSizePriceCents(menuItem.price_cents, menuItem.sizes, item.size);
-      const unitPrice = basePrice + extrasTotal;
+      const resolved = resolveSize(menuItem.price_cents, menuItem.sizes, item.size);
+      const unitPrice = resolved.priceCents + extrasTotal;
       const subtotal = unitPrice * item.quantity;
       totalCents += subtotal;
       return {
@@ -517,6 +794,8 @@ export class OrdersService {
         subtotalCents: subtotal,
         notes: item.notes || null,
         extraIds: item.extraIds || [],
+        // Label canônico do tamanho (ou null) — mesmo destino do path do cliente.
+        size: resolved.label,
       };
     });
 
@@ -536,8 +815,8 @@ export class OrdersService {
 
       for (const item of orderItemsData) {
         const itemRows = (await tx.query(
-          `INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_cents, subtotal_cents, notes, customer_id)
-           VALUES ($1, $2, $3, $4, $5, $6, NULL)
+          `INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_cents, subtotal_cents, notes, customer_id, size)
+           VALUES ($1, $2, $3, $4, $5, $6, NULL, $7)
            RETURNING id`,
           [
             ord.id,
@@ -546,6 +825,7 @@ export class OrdersService {
             item.unitPriceCents,
             item.subtotalCents,
             item.notes,
+            item.size,
           ],
         )) as { id: string }[];
 
@@ -667,13 +947,46 @@ export class OrdersService {
     return rows[0];
   }
 
+  /**
+   * Cerca intra-mesa dos pedidos.
+   *
+   * Pedidos `table` sao colaborativos por decisao de produto: qualquer pessoa
+   * que possua a sessao da mesa pode confirmar/cancelar durante a janela. Um
+   * pedido `individual`, por outro lado, so pode ser alterado pelo customer da
+   * visita que originou a comanda.
+   *
+   * `undefined` fica reservado ao sweep/callers internos. Controllers customer
+   * sempre passam `string | null`, derivado do recognition token server-side.
+   */
+  private assertOrderCallerOwnership(
+    order: {
+      billing_mode: string;
+      visit_id: string | null;
+      owner_customer_id: string | null;
+    },
+    callerCustomerId: string | null | undefined,
+  ): void {
+    if (callerCustomerId === undefined || order.billing_mode === 'table') return;
+    if (!callerCustomerId || !order.visit_id || order.owner_customer_id !== callerCustomerId) {
+      throw new ForbiddenException('Este pedido pertence a outra comanda desta mesa.');
+    }
+  }
+
   /** Promote a pending_confirmation order to `received`. Idempotent. */
-  async confirmOrder(orderId: string, tableSessionId: string, slug?: string) {
+  async confirmOrder(
+    orderId: string,
+    tableSessionId: string,
+    slug?: string,
+    callerCustomerId?: string | null,
+  ) {
     // Filtra por table_session_id pra que cliente de outra mesa nao
     // possa confirmar pedido alheio (P1 ownership do bug-hunt).
     const rows = (await this.tenantConn.query(
-      `SELECT id, status, table_session_id, billing_mode, total_cents
-       FROM orders WHERE id = $1 AND table_session_id = $2`,
+      `SELECT o.id, o.status, o.table_session_id, o.billing_mode, o.total_cents,
+              o.visit_id, v.customer_id AS owner_customer_id
+       FROM orders o
+       LEFT JOIN visits v ON v.id = o.visit_id
+       WHERE o.id = $1 AND o.table_session_id = $2`,
       [orderId, tableSessionId],
     )) as {
       id: string;
@@ -681,10 +994,13 @@ export class OrdersService {
       table_session_id: string;
       billing_mode: string;
       total_cents: number;
+      visit_id: string | null;
+      owner_customer_id: string | null;
     }[];
 
     if (!rows.length) throw new NotFoundException('Pedido nao encontrado.');
     const order = rows[0];
+    this.assertOrderCallerOwnership(order, callerCustomerId);
 
     if (order.status === 'received' || order.status === 'in_progress') {
       return { orderId, status: order.status };
@@ -747,9 +1063,9 @@ export class OrdersService {
       });
       this.eventsGateway.emitOrderStatusUpdate(slug, orderId, 'received', undefined, {
         tableSessionId: order.table_session_id,
-        // Actor server-side: rota SessionGuard — quem confirma é o customer
-        // da sessão; não há customer_id resolvido no escopo (id fica null).
-        changedBy: { type: 'customer', id: null },
+        // Actor server-side: identidade vem do recognition token; callers
+        // internos (sweep) continuam sem customer id.
+        changedBy: { type: 'customer', id: callerCustomerId ?? null },
         // FIX convergência de id: pk da row osh 'received' recém-inserida.
         ...(historyId ? { historyId } : {}),
       });
@@ -758,7 +1074,7 @@ export class OrdersService {
         status: 'received',
         // M2 (timeline): correlação + actor server-side (aditivo).
         tableSessionId: order.table_session_id,
-        changedBy: { type: 'customer', id: null },
+        changedBy: { type: 'customer', id: callerCustomerId ?? null },
         timestamp: new Date().toISOString(),
       });
     }
@@ -767,16 +1083,32 @@ export class OrdersService {
   }
 
   /** Cancel a pending_confirmation order. Only valid within the 15s window. */
-  async cancelOrder(orderId: string, tableSessionId: string, slug?: string) {
+  async cancelOrder(
+    orderId: string,
+    tableSessionId: string,
+    slug?: string,
+    callerCustomerId?: string | null,
+  ) {
     // Mesma logica de ownership/CAS do confirmOrder.
     const rows = (await this.tenantConn.query(
-      `SELECT id, status, table_session_id FROM orders
-       WHERE id = $1 AND table_session_id = $2`,
+      `SELECT o.id, o.status, o.table_session_id, o.billing_mode, o.visit_id,
+              v.customer_id AS owner_customer_id
+       FROM orders o
+       LEFT JOIN visits v ON v.id = o.visit_id
+       WHERE o.id = $1 AND o.table_session_id = $2`,
       [orderId, tableSessionId],
-    )) as { id: string; status: string; table_session_id: string }[];
+    )) as Array<{
+      id: string;
+      status: string;
+      table_session_id: string;
+      billing_mode: string;
+      visit_id: string | null;
+      owner_customer_id: string | null;
+    }>;
 
     if (!rows.length) throw new NotFoundException('Pedido nao encontrado.');
     const order = rows[0];
+    this.assertOrderCallerOwnership(order, callerCustomerId);
 
     if (order.status === 'cancelled') {
       return { orderId, status: 'cancelled' };
@@ -821,14 +1153,14 @@ export class OrdersService {
         // M2 (timeline): correlação + actor server-side (aditivo). Rota
         // SessionGuard — cancel é do customer da sessão (id não resolvido).
         tableSessionId: order.table_session_id,
-        changedBy: { type: 'customer', id: null },
+        changedBy: { type: 'customer', id: callerCustomerId ?? null },
         timestamp: new Date().toISOString(),
       });
     }
     if (slug && this.eventsGateway) {
       this.eventsGateway.emitOrderStatusUpdate(slug, orderId, 'cancelled', undefined, {
         tableSessionId: order.table_session_id,
-        changedBy: { type: 'customer', id: null },
+        changedBy: { type: 'customer', id: callerCustomerId ?? null },
         // FIX convergência de id: pk da row osh 'cancelled' recém-inserida.
         ...(historyId ? { historyId } : {}),
       });
@@ -898,6 +1230,7 @@ export class OrdersService {
                   'id', oi.id,
                   'menuItemId', oi.menu_item_id,
                   'name', mi.name,
+                  'kind', mi.kind,
                   'quantity', oi.quantity,
                   'unitPriceCents', oi.unit_price_cents,
                   'subtotalCents', oi.subtotal_cents,
@@ -926,6 +1259,7 @@ export class OrdersService {
         id: string;
         menuItemId: string;
         name: string;
+        kind: string;
         quantity: number;
         unitPriceCents: number;
         subtotalCents: number;
@@ -1100,6 +1434,7 @@ export class OrdersService {
                  'id', oi.id,
                  'menuItemId', oi.menu_item_id,
                  'name', mi.name,
+                 'kind', mi.kind,
                  'quantity', oi.quantity,
                  'unitPriceCents', oi.unit_price_cents,
                  'subtotalCents', oi.subtotal_cents,
@@ -1564,8 +1899,40 @@ export class OrdersService {
   // Conta do cliente (GET /orders/bill) movida pro CustomerBillQueryService
   // (FASE 2 · decomposição) — delegate fino preserva o caller
   // (orders.controller).
-  async getBill(tableSessionId: string, mode: 'table' | 'individual', visitId?: string) {
+  async getBill(
+    tableSessionId: string,
+    mode: 'table' | 'individual',
+    visitId?: string,
+    callerCustomerId?: string | null,
+  ) {
+    if (mode === 'individual') {
+      if (!visitId) {
+        throw new BadRequestException('visitId necessario para comanda individual.');
+      }
+      await this.assertCustomerOwnsVisit(tableSessionId, visitId, callerCustomerId ?? null);
+    }
     return this.customerBillQuery.getBill(tableSessionId, mode, visitId);
+  }
+
+  private async assertCustomerOwnsVisit(
+    tableSessionId: string,
+    visitId: string,
+    callerCustomerId: string | null,
+  ): Promise<void> {
+    if (!callerCustomerId) {
+      throw new ForbiddenException('Identificação individual obrigatória para esta comanda.');
+    }
+    const rows = (await this.tenantConn.query(
+      `SELECT id FROM visits
+        WHERE id = $1
+          AND table_session_id = $2
+          AND customer_id = $3
+        LIMIT 1`,
+      [visitId, tableSessionId, callerCustomerId],
+    )) as Array<{ id: string }>;
+    if (!rows.length) {
+      throw new ForbiddenException('Comanda não pertence ao cliente autenticado.');
+    }
   }
 
   /**
@@ -1575,11 +1942,13 @@ export class OrdersService {
    * inteiro — então o bar marcar a bebida "Pronto" virava o `orders.status`
    * pra 'ready' e a comida SUMIA da fila da cozinha sem ter sido preparada.
    *
-   * Agora o avanço marca só os ITENS DA ESTAÇÃO (cozinha `mi.kind <> 'drink'`,
-   * bar `mi.kind = 'drink'` — o mesmo predicado autoritativo do
-   * KdsQueryService, migration 016). `order_items.status` (migration 071)
-   * rastreia o preparo por item. Depois de marcar os itens, o `orders.status`
-   * é RECONCILIADO a partir do agregado:
+   * Agora o avanço marca os ITENS DA ESTAÇÃO (cozinha
+   * `mi.kind <> 'drink'`, bar `mi.kind = 'drink'` — o mesmo predicado
+   * autoritativo do KdsQueryService, migration 016). Para manager/owner
+   * legado sem estação, marca os itens de TODAS as estações, preservando a
+   * semântica antiga sem quebrar o novo invariante. `order_items.status`
+   * (migration 071) rastreia o preparo por item. Depois de marcá-los, o
+   * `orders.status` é RECONCILIADO a partir do agregado:
    *   - TODOS os itens 'ready'      → order avança pra 'ready';
    *   - algum item 'in_progress'    → order avança pra 'in_progress' (se ainda
    *                                    estiver 'received'), pra a TV/timeline
@@ -1587,17 +1956,17 @@ export class OrdersService {
    * A reconciliação REUSA `updateStatus` (mesma máquina de estados, CAS,
    * history e eventos WS) — nenhuma transição do PEDIDO é inventada aqui.
    *
-   * `targetItemStatus`: 'in_progress' (a partir de 'received') ou 'ready' (a
-   * partir de 'in_progress'). Idempotente: se nenhum item da estação está no
+   * `targetPreparationStatus`: 'in_progress'/'preparing' (item vira
+   * 'in_progress') ou 'ready'. Idempotente: se nenhum item da estação está no
    * status esperado, o UPDATE não toca nada e só reconciliamos o order.
    */
   async advanceStationItems(
     orderId: string,
-    station: 'kitchen' | 'bar',
-    targetItemStatus: 'in_progress' | 'ready',
+    station: 'kitchen' | 'bar' | null,
+    targetPreparationStatus: 'in_progress' | 'preparing' | 'ready',
     changedBy: string,
     slug?: string,
-    actor?: { actorType: 'staff' | 'session'; sessionTableId: string | null },
+    actor?: OrderStatusActor,
   ) {
     // Customer não avança preparo — só staff/estação. Mantém a mesma barreira
     // do updateStatus (session só pode 'cancelled').
@@ -1613,9 +1982,51 @@ export class OrdersService {
       throw new NotFoundException('Pedido nao encontrado.');
     }
 
+    const currentOrderStatus = orderRows[0].status;
+    const targetItemStatus =
+      targetPreparationStatus === 'ready' ? ('ready' as const) : ('in_progress' as const);
+
+    // O status agregado não diz em que etapa CADA estação está. Uma segunda
+    // estação pode começar quando o pedido global já está `in_progress`, mas
+    // não pode iniciar/terminar preparo depois de cancelado/entregue nem pular
+    // a máquina global (ex.: received -> ready). Validamos ANTES do UPDATE dos
+    // itens para uma transição inválida nunca deixar estado parcial.
+    if (targetItemStatus === 'ready') {
+      if (currentOrderStatus !== 'ready') {
+        planTransition({
+          currentStatus: currentOrderStatus,
+          newStatus: 'ready',
+          orderTableSessionId: orderRows[0].table_session_id,
+          actor,
+        });
+      }
+    } else if (currentOrderStatus === 'received' || currentOrderStatus === 'confirmed') {
+      planTransition({
+        currentStatus: currentOrderStatus,
+        newStatus: targetPreparationStatus,
+        orderTableSessionId: orderRows[0].table_session_id,
+        actor,
+      });
+    } else if (currentOrderStatus !== 'in_progress' && currentOrderStatus !== 'preparing') {
+      // Reusa tipo e mensagem canônicos para open/cancelled/delivered/etc.
+      planTransition({
+        currentStatus: currentOrderStatus,
+        newStatus: targetPreparationStatus,
+        orderTableSessionId: orderRows[0].table_session_id,
+        actor,
+      });
+    }
+
     // Predicado de estação IDÊNTICO ao KdsQueryService: rota pelo FLAG
-    // `menu_items.kind`, NUNCA pelo nome da categoria.
-    const stationPredicate = station === 'bar' ? `mi.kind = 'drink'` : `mi.kind <> 'drink'`;
+    // `menu_items.kind`, NUNCA pelo nome da categoria. `station = null` é o
+    // contrato de compatibilidade do caller legado: avança TODAS as estações,
+    // agora sincronizando os itens em vez de alterar só o pedido agregado.
+    const stationPredicate =
+      station === 'bar'
+        ? `mi.kind = 'drink'`
+        : station === 'kitchen'
+          ? `mi.kind <> 'drink'`
+          : `TRUE`;
     // Passo esperado: só avança um item que esteja no status anterior canônico
     // (received → in_progress → ready), pra o botão da TV ser idempotente e não
     // "pular" received quando o pedido acabou de chegar.
@@ -1623,7 +2034,11 @@ export class OrdersService {
 
     await this.tenantConn.query(
       `UPDATE order_items oi
-          SET status = $1
+          SET status = $1::varchar,
+              prep_started_at = CASE
+                WHEN $1::varchar = 'in_progress' THEN now()
+                ELSE oi.prep_started_at
+              END
          FROM menu_items mi
         WHERE oi.order_id = $2
           AND mi.id = oi.menu_item_id
@@ -1647,7 +2062,6 @@ export class OrdersService {
     const ready = Number(agg.ready);
     const inProgress = Number(agg.in_progress);
 
-    const currentOrderStatus = orderRows[0].status;
     // Order vira 'ready' SÓ com todos os itens prontos. Se ainda tem trabalho
     // mas já começou (algum in_progress OU algum ready parcial), reflete
     // 'in_progress' no pedido pra a timeline/TV (sem escondê-lo de nenhuma
@@ -1655,8 +2069,14 @@ export class OrdersService {
     let reconciledTo: string | null = null;
     if (total > 0 && ready === total) {
       reconciledTo = 'ready';
-    } else if ((inProgress > 0 || ready > 0) && currentOrderStatus === 'received') {
-      reconciledTo = 'in_progress';
+    } else if (
+      (inProgress > 0 || ready > 0) &&
+      (currentOrderStatus === 'received' || currentOrderStatus === 'confirmed')
+    ) {
+      reconciledTo =
+        currentOrderStatus === 'confirmed' && targetPreparationStatus === 'preparing'
+          ? 'preparing'
+          : 'in_progress';
     }
 
     if (reconciledTo && reconciledTo !== currentOrderStatus) {
@@ -1672,7 +2092,7 @@ export class OrdersService {
 
     return {
       orderId,
-      station,
+      station: station ?? 'all',
       targetItemStatus,
       orderStatus: reconciledTo ?? currentOrderStatus,
       allReady: total > 0 && ready === total,
@@ -1684,7 +2104,7 @@ export class OrdersService {
     newStatus: string,
     changedBy: string,
     slug?: string,
-    actor?: { actorType: 'staff' | 'session'; sessionTableId: string | null },
+    actor?: OrderStatusActor,
   ) {
     const orderRows = (await this.tenantConn.query(
       `SELECT id, status, table_session_id FROM orders WHERE id = $1`,
@@ -1737,6 +2157,13 @@ export class OrdersService {
       };
     }
 
+    const persistedChangedBy =
+      actor?.actorType === 'staff'
+        ? (actor.staffId ?? (actor.station ? `station:${actor.station}` : 'staff'))
+        : actor?.actorType === 'session'
+          ? 'customer'
+          : changedBy;
+
     // FIX convergência de id: captura o pk da row osh pra correlacionar o
     // evento live (tap M4) com o backfill (M5) — ambos gravam `osh:<pk>`.
     const historyRows = unwrapRows<{ id: string }>(
@@ -1744,7 +2171,7 @@ export class OrdersService {
         `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by)
        VALUES ($1, $2, $3, $4)
        RETURNING id`,
-        [orderId, currentStatus, newStatus, changedBy],
+        [orderId, currentStatus, newStatus, persistedChangedBy],
       ),
     );
     const historyId = historyRows[0]?.id;
@@ -1776,15 +2203,12 @@ export class OrdersService {
       }
     }
 
-    // M2 (timeline): actor SEMPRE derivado server-side — o guard carimba
-    // req.actorType; `changedBy` (param) é INPUT DO CLIENT e por isso NÃO
-    // vira id do ator (vai só pro order_status_history como antes). O staff
-    // desta rota autentica via chave compartilhada (TV/estação) — sem id de
-    // pessoa server-side, id fica null.
+    // Actor sempre derivado server-side. Estação sem pessoa usa id nulo;
+    // sessão individual de staff carrega o UUID reconfirmado no banco.
     const changedByActor = actor
       ? {
           type: actor.actorType === 'session' ? ('customer' as const) : ('staff' as const),
-          id: null,
+          id: actor.actorType === 'staff' ? (actor.staffId ?? null) : null,
         }
       : undefined;
 
