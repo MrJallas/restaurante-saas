@@ -47,3 +47,11 @@ qa-reports/**/playwright/*.log
 
 # Screenshots no root (debug/contextualizacao de sessao — nao versionar)
 /*.png
+
+# === backups de .env — NUNCA versionar (contem JWT_SECRET, ENCRYPTION_MASTER_KEY) ===
+.env.bak*
+.env.backup*
+*.env.bak
+
+# === saida de teste E2E (109 MB de screenshots) ===
+qa-reports/

@@ -1,0 +1,34 @@
+{
+  "index_path": ".rag/index.sqlite3",
+  "max_file_bytes": 1000000,
+  "chunk_lines": 60,
+  "chunk_overlap_lines": 10,
+  "include": [
+    "MEMORY.md",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "docs/audits/**/*.md",
+    "docs/rag/**/*.md",
+    "qa-reports/SUPER-PROMPT*.md",
+    "prompts-codex/**/*.md",
+    "docs/design-canvas-final/**/*.md",
+    "docs/design-canvas/handoff/**/*.md",
+    "apps/api/src/**/*.ts",
+    "apps/web-customer/src/**/*.ts",
+    "apps/web-customer/src/**/*.tsx",
+    "apps/web-staff/src/**/*.ts",
+    "apps/web-staff/src/**/*.tsx",
+    "services/ai-service/**/*.py"
+  ],
+  "exclude": [
+    "**/node_modules/**",
+    "**/.next/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/__pycache__/**",
+    ".rag/**",
+    "qa-reports/**/screenshots/**",
+    "qa-reports/**/traces/**"
+  ]
+}
