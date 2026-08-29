@@ -10,12 +10,14 @@ import { captureCustomerLocationSignal } from '../../../../lib/location';
 import { tenantNavigationDestination } from '../../../../lib/customer-navigation';
 import { createQrBootstrapDeadline } from '../../../../lib/qr-bootstrap-deadline';
 import {
+  hasFreshQrBootstrapCredentials,
   shouldExitPendingQrApproval,
   shouldRebootstrapQrSession,
   stripQrBootstrapSecretsFromHistory,
 } from '../../../../lib/qr-session-recovery';
 import {
   participantGateDestination,
+  participantGateRecoveryDestination,
   type ParticipantGateStatus,
 } from '../../../../lib/waiting-approval-state';
 import { setSessionToken } from '../../../../lib/storage';
@@ -261,6 +263,10 @@ export default function MesaPage() {
   } = useSession();
   const [pageState, setPageState] = useState<PageState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
+  // Rejeição de participante é decisão terminal do servidor: recarregar a
+  // mesma URL nunca muda o resultado. Nesses casos o CTA "Tentar novamente"
+  // (reload) é mentiroso — só um novo scan físico destrava.
+  const [errorRequiresRescan, setErrorRequiresRescan] = useState(false);
   const [homeData, setHomeData] = useState<HomeData | null>(null);
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [inputValue, setInputValue] = useState('');
@@ -407,9 +413,27 @@ export default function MesaPage() {
       try {
         const participantStatus = await checkParticipantStatus(customerId);
         if (cancelled) return;
-        const destination = participantGateDestination(participantStatus);
+        // O strip das credenciais só roda mais abaixo, depois da revalidação
+        // completa — então um re-scan físico na MESMA aba ainda carrega
+        // hmac/ts aqui. Rejeição/indisponibilidade sobre bundle reidratado com
+        // scan fresco na URL não é beco: descarta o cache e deixa o bootstrap
+        // do QR decidir com o servidor (o init re-exibe o erro autoritativo se
+        // a rejeição ainda valer).
+        const destination = participantGateRecoveryDestination(
+          participantStatus,
+          hasFreshQrBootstrapCredentials(window.location.search),
+        );
         if (destination === 'pending_approval') {
           setPageState('pending_approval');
+          return;
+        }
+        if (destination === 'rebootstrap') {
+          initialIsValidRef.current = false;
+          clearSession();
+          setHomeData(null);
+          setSettings(null);
+          setPageState('loading');
+          setSessionResetNonce((nonce) => nonce + 1);
           return;
         }
         if (destination === 'error') {
@@ -418,6 +442,7 @@ export default function MesaPage() {
               ? 'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.'
               : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
           );
+          setErrorRequiresRescan(participantStatus === 'rejected');
           setPageState('error');
           return;
         }
@@ -468,6 +493,7 @@ export default function MesaPage() {
         }
         console.error('[mesa] não foi possível revalidar a sessão/home:', err);
         setErrorMessage('Não foi possível carregar os dados da mesa. Tente novamente.');
+        setErrorRequiresRescan(false);
         setPageState('error');
       }
     })();
@@ -508,6 +534,7 @@ export default function MesaPage() {
       if (cancelled || transitioned) return;
       transitioned = true;
       setErrorMessage('Conexão lenta. Toque para tentar novamente.');
+      setErrorRequiresRescan(false);
       setPageState('error');
     }, SPLASH_MAX_MS);
 
@@ -554,6 +581,7 @@ export default function MesaPage() {
               // concede no retry — a sessão precisa sobreviver pra isso funcionar. Só
               // scan de QR de OUTRA mesa justifica clearSession, o que não é o caso.
               setErrorMessage('Permita o acesso à localização para entrar no app do restaurante.');
+              setErrorRequiresRescan(false);
               transitionTo('error');
               return;
             }
@@ -621,6 +649,9 @@ export default function MesaPage() {
                   ? 'Sua entrada não foi autorizada. Tente outra mesa ou peça ao garçom.'
                   : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
               );
+              // O init acabou de gastar as credenciais do QR e o servidor
+              // manteve a rejeição — recarregar não muda a decisão.
+              setErrorRequiresRescan(status === 'rejected');
               transitionTo('error');
               return;
             }
@@ -639,6 +670,7 @@ export default function MesaPage() {
               // (401 → re-scan do QR físico, P1-L). O bloqueio de entrada é preservado
               // via setErrorMessage + transitionTo('error'); a sessão sobrevive pro retry.
               setErrorMessage(err.message);
+              setErrorRequiresRescan(false);
               transitionTo('error');
               return;
             }
@@ -650,6 +682,7 @@ export default function MesaPage() {
       } catch (err) {
         if (cancelled || transitioned) return;
         setErrorMessage(humanizeInitError(err));
+        setErrorRequiresRescan(false);
         transitionTo('error');
       }
     }
@@ -779,6 +812,7 @@ export default function MesaPage() {
               ? 'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.'
               : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
           );
+          setErrorRequiresRescan(status === 'rejected');
           setPageState('error');
           return;
         }
@@ -794,6 +828,7 @@ export default function MesaPage() {
       } catch (error) {
         console.error('[mesa] welcome completion failed', error);
         setErrorMessage('Não foi possível carregar os dados da mesa. Tente novamente.');
+        setErrorRequiresRescan(false);
         setPageState('error');
       }
     },
@@ -831,6 +866,7 @@ export default function MesaPage() {
             ? 'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.'
             : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
         );
+        setErrorRequiresRescan(status === 'rejected');
         setPageState('error');
       }
     })();
@@ -880,14 +916,24 @@ export default function MesaPage() {
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-bg px-6 text-center">
         <p className="text-[15px] text-danger">{errorMessage}</p>
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          className="rounded-full border-[1.3px] border-ink bg-bg px-6 py-2.5 text-[14px] font-semibold text-ink"
-        >
-          Tentar novamente
-        </button>
-        <p className="text-[12px] text-mute">Ou escaneie o QR Code novamente.</p>
+        {errorRequiresRescan ? (
+          // Decisão terminal do servidor: reload repete o mesmo resultado.
+          // O único caminho real é um novo scan físico — o CTA diz só isso.
+          <p className="text-[12px] text-mute">
+            Escaneie o QR Code da mesa para tentar de novo.
+          </p>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="rounded-full border-[1.3px] border-ink bg-bg px-6 py-2.5 text-[14px] font-semibold text-ink"
+            >
+              Tentar novamente
+            </button>
+            <p className="text-[12px] text-mute">Ou escaneie o QR Code novamente.</p>
+          </>
+        )}
       </main>
     );
   }
@@ -917,6 +963,7 @@ export default function MesaPage() {
                   ? 'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.'
                   : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
               );
+              setErrorRequiresRescan(status === 'rejected');
               setPageState('error');
               return;
             }
@@ -927,6 +974,7 @@ export default function MesaPage() {
           } catch (error) {
             console.error('[mesa] approved participant home load failed', error);
             setErrorMessage('Não foi possível carregar os dados da mesa. Tente novamente.');
+            setErrorRequiresRescan(false);
             setPageState('error');
           }
         }}
@@ -934,6 +982,7 @@ export default function MesaPage() {
           setErrorMessage(
             'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.',
           );
+          setErrorRequiresRescan(true);
           setPageState('error');
         }}
         onExpired={() => {
@@ -941,6 +990,7 @@ export default function MesaPage() {
           setErrorMessage(
             'O tempo de verificação acabou ou a mesa foi encerrada. Escaneie novamente o QR da mesa.',
           );
+          setErrorRequiresRescan(true);
           setPageState('error');
         }}
         onCancel={async () => {
@@ -958,6 +1008,7 @@ export default function MesaPage() {
           setErrorMessage(
             'Você cancelou o pedido de entrada. Escaneie o QR de novo quando quiser tentar.',
           );
+          setErrorRequiresRescan(true);
           setPageState('error');
         }}
       />

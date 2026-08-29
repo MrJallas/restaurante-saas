@@ -21,6 +21,20 @@ export function shouldExitPendingQrApproval(error: unknown): boolean {
 
 const QR_BOOTSTRAP_SECRET_PARAMS = ['hmac', 'ts', 'accessToken'] as const;
 
+/**
+ * Um gate de participante rejeitado/indisponível sobre um bundle reidratado só
+ * é destravável por um novo scan físico. hmac+ts na URL são a assinatura desse
+ * scan (o backend valida ambos no /session/init); quando presentes, o bundle
+ * antigo é descartável e o bootstrap decide de novo com o servidor. accessToken
+ * é opcional no init e não conta como credencial.
+ */
+export function hasFreshQrBootstrapCredentials(search: string): boolean {
+  const params = new URLSearchParams(search);
+  const hmac = params.get('hmac')?.trim() ?? '';
+  const ts = params.get('ts')?.trim() ?? '';
+  return hmac.length > 0 && ts.length > 0;
+}
+
 /** Remove só as credenciais efêmeras, preservando query funcional e hash. */
 export function qrUrlWithoutBootstrapSecrets(currentUrl: string): string {
   const url = new URL(currentUrl, 'http://localhost');

@@ -1,5 +1,6 @@
 import { ApiRequestError } from './api';
 import {
+  hasFreshQrBootstrapCredentials,
   qrUrlWithoutBootstrapSecrets,
   shouldExitPendingQrApproval,
   shouldRebootstrapQrSession,
@@ -35,6 +36,22 @@ describe('shouldExitPendingQrApproval', () => {
   it('não transforma falha transitória em rejeição do cliente', () => {
     expect(shouldExitPendingQrApproval(new ApiRequestError(500, 'Falha temporária.'))).toBe(false);
     expect(shouldExitPendingQrApproval(new Error('offline'))).toBe(false);
+  });
+});
+
+describe('hasFreshQrBootstrapCredentials', () => {
+  it('reconhece um scan físico fresco (hmac + ts na URL)', () => {
+    expect(hasFreshQrBootstrapCredentials('?hmac=secret&ts=123')).toBe(true);
+    expect(hasFreshQrBootstrapCredentials('?hmac=secret&ts=123&accessToken=daily')).toBe(true);
+  });
+
+  it('não trata URL sem credenciais completas como scan fresco', () => {
+    expect(hasFreshQrBootstrapCredentials('')).toBe(false);
+    expect(hasFreshQrBootstrapCredentials('?campaign=mesa')).toBe(false);
+    expect(hasFreshQrBootstrapCredentials('?hmac=secret')).toBe(false);
+    expect(hasFreshQrBootstrapCredentials('?ts=123')).toBe(false);
+    expect(hasFreshQrBootstrapCredentials('?hmac=&ts=123')).toBe(false);
+    expect(hasFreshQrBootstrapCredentials('?hmac=%20&ts=123')).toBe(false);
   });
 });
 

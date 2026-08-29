@@ -25,6 +25,25 @@ export function participantGateDestination(
   return 'error';
 }
 
+export type ParticipantGateRecovery = ParticipantGateDestination | 'rebootstrap';
+
+/**
+ * Variante do gate para o bundle reidratado do sessionStorage. Rejeição e
+ * indisponibilidade continuam fail-closed (nunca viram home), mas quando a URL
+ * ainda carrega credenciais frescas de um scan físico, o beco é falso: o bundle
+ * é só cache — descartá-lo e re-bootstrapar deixa o servidor decidir de novo
+ * (mesa livre → primeiro participante; ocupada → novo join request; rejeição
+ * ainda vigente → o próprio init re-exibe o erro autoritativo).
+ */
+export function participantGateRecoveryDestination(
+  status: ParticipantGateStatus,
+  hasFreshQrCredentials: boolean,
+): ParticipantGateRecovery {
+  const destination = participantGateDestination(status);
+  if (destination === 'error' && hasFreshQrCredentials) return 'rebootstrap';
+  return destination;
+}
+
 /** Mapeamento único do lifecycle persistido para o estado visível. */
 export function approvalUiState(status: ApprovalServerStatus): ApprovalUiState {
   switch (status) {
