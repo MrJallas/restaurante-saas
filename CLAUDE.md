@@ -15,15 +15,21 @@ Codex, Claude Code and future local RAG tooling.
 2. Keep `MEMORY.md` updated in the same branch/commit when work changes product
    behavior, source priority, prompt state, validation commands, known risks,
    open questions, persona routes or backend/frontend contracts.
-3. When `docs/rag/` and local vector scripts are present, read
-   `docs/rag/README.md`, use the local retrieval flow before broad exploration,
-   and update/reindex the RAG corpus whenever source files changed enough to
-   make retrieval stale.
+3. Retrieval has two surfaces, and they are not interchangeable:
+   - **Why a decision was made** → the canonical vault RAG:
+     `bash '/Users/calebmedeiros/obsidian/memorias de caleb/rag/recall.sh' "question" --project restaurante-saas`.
+     It indexes the reasoning about this codebase, not the codebase.
+   - **Where something lives in the code** → Grep/Glob, which always read the
+     current tree.
+   The repo-local vector index was retired on 2026-08-31: it had drifted to 55%
+   correct and was serving stale `CLAUDE.md`/`MEMORY.md` chunks as if current.
+   If semantic search over repo docs is ever wanted again, ingest the selected
+   docs into the vault — do not stand up a second index.
 4. Do not commit vector databases, embeddings, trace dumps, browser videos or
-   heavy screenshot packs. Commit text-first memory/RAG docs and small evidence
-   manifests; keep local indexes under `.rag/`.
-5. Keep this file aligned with `MEMORY.md` and `docs/rag/README.md`. If product
-   behavior is unclear, ask Caleb before inventing rules.
+   heavy screenshot packs. Commit text-first memory docs and small evidence
+   manifests.
+5. Keep this file aligned with `MEMORY.md`. If product behavior is unclear, ask
+   Caleb before inventing rules.
 
 ---
 

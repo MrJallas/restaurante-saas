@@ -74,6 +74,12 @@ backend aplica `SET search_path` por request (`modules/tenant/tenant-connection.
 5. **Achado sobre o RAG:** `docs/rag/README.md` descreve um RAG *repo-local* (`.rag/`, `scripts/rag/`)
    que **nunca foi construído**. O RAG real é o do vault e não indexa o código. Indexar o código é uma
    melhoria em aberto (não pedida).
+   > **Fechado em 2026-08-31.** O repo-local chegou a existir (índice de 10/jul, 756 arquivos), mas
+   > derivou para 55% correto e servia `CLAUDE.md`/`MEMORY.md` desatualizados com aparência de
+   > autoridade. Auditado e aposentado: `.rag/`, `scripts/rag/` e `docs/rag/` removidos. Nada se
+   > perdeu — todo chunk era cópia derivada de arquivo versionado. Busca hoje: vault para "por quê",
+   > Grep/Glob para "onde". Se a busca semântica sobre o repo voltar a ser desejada, o caminho é
+   > ingerir os docs no vault, não levantar um segundo índice.
 
 **Estado verde confirmado nesta sessão:** `nest build` OK; `jest` do api **67/67**; `format:check`
 verde após `npm run format`.

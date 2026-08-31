@@ -15,8 +15,6 @@ __pycache__/
 coverage/
 .nyc_output/
 
-# Local vector RAG cache/indexes
-.rag/
 
 # Playwright E2E artifacts
 test-results/
@@ -35,9 +33,9 @@ artifacts/
 .playwright-cli/
 output/
 
-# Midia pesada de QA — regeneravel. Evidencia textual (md/json/txt) FICA versionada:
-# CLAUDE.md manda ler qa-reports/loop-audit-2026-07-11/FINAL-REPORT.md, e
-# docs/rag/sources.json indexa qa-reports/SUPER-PROMPT*.md.
+# Midia pesada de QA — regeneravel. Evidencia textual (md/json/txt) FICA
+# versionada: o CLAUDE.md manda ler qa-reports/loop-audit-2026-07-11/FINAL-REPORT.md
+# antes de reabrir achados, e os SUPER-PROMPT*.md sao insumo de sessao.
 qa-reports/**/*.png
 qa-reports/**/*.jpg
 qa-reports/**/*.jpeg

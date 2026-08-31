@@ -27,9 +27,12 @@ matriz de testes. Ele nao substitui o codigo, o canvas nem os superprompts.
   de comportamento do produto.
 - `CLAUDE.md` deve permanecer alinhado com este arquivo para que Claude Code
   siga o mesmo protocolo de memoria e RAG.
-- `docs/rag/README.md` define o contrato do RAG local com vector DB. O banco
-  vetorial, embeddings, manifests locais e caches devem ficar em `.rag/`, fora
-  do Git.
+- O RAG local do repo foi APOSENTADO em 2026-08-31 (auditoria: indice de 10/jul,
+  so 501 dos 905 arquivos na versao correta, servindo `CLAUDE.md`/`MEMORY.md`
+  desatualizados com aparencia de autoridade). Nada se perdeu: todo chunk era
+  copia derivada de arquivo versionado em git. Busca hoje: o RAG canonico do
+  vault para "por que decidimos X" (`rag/recall.sh ... --project restaurante-saas`)
+  e Grep/Glob para "onde esta X no codigo". Nao levantar um segundo indice.
 - Sempre que uma rodada mudar comportamento de produto, prioridade das fontes,
   rotas/personas, contratos backend/frontend, validacoes, riscos conhecidos ou
   perguntas abertas, atualize este arquivo no mesmo branch/commit.
