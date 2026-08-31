@@ -35,10 +35,19 @@ artifacts/
 .playwright-cli/
 output/
 
-# Local audit media/network captures (keep lightweight Markdown/JSON manifests only)
-qa-reports/**/playwright/*.png
-qa-reports/**/playwright/*.trace
-qa-reports/**/playwright/*.network
+# Midia pesada de QA — regeneravel. Evidencia textual (md/json/txt) FICA versionada:
+# CLAUDE.md manda ler qa-reports/loop-audit-2026-07-11/FINAL-REPORT.md, e
+# docs/rag/sources.json indexa qa-reports/SUPER-PROMPT*.md.
+qa-reports/**/*.png
+qa-reports/**/*.jpg
+qa-reports/**/*.jpeg
+qa-reports/**/*.gif
+qa-reports/**/*.webm
+qa-reports/**/*.mp4
+qa-reports/**/*.zip
+qa-reports/**/*.trace
+qa-reports/**/*.network
+qa-reports/**/*.har
 qa-reports/**/playwright/*.log
 
 # Worktrees criadas por agentes Claude (cada sessao do harness gera uma) —
@@ -47,3 +56,15 @@ qa-reports/**/playwright/*.log
 
 # Screenshots no root (debug/contextualizacao de sessao — nao versionar)
 /*.png
+/*.jpg
+/*.jpeg
+/*.webp
+/*.gif
+
+# === backups de .env — NUNCA versionar (contem JWT_SECRET, ENCRYPTION_MASTER_KEY) ===
+.env.bak*
+.env.backup*
+*.env.bak
+
+# Rascunhos locais de mapeamento (insumo de sessao, nao doutrina)
+.rag-drafts/
