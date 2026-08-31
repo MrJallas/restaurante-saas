@@ -3,6 +3,7 @@ import {
   approvalUiState,
   mergeApprovalUiState,
   participantGateDestination,
+  participantGateErrorReason,
   participantGateRecoveryDestination,
   parseWaitingMode,
 } from './waiting-approval-state';
@@ -45,6 +46,7 @@ describe('waiting approval usa lifecycle autoritativo', () => {
     ['approved', 'home'],
     ['pending', 'pending_approval'],
     ['rejected', 'error'],
+    ['cancelled', 'error'],
     ['unavailable', 'error'],
   ] as const)('gate de participante %s leva a %s', (status, expected) => {
     expect(participantGateDestination(status)).toBe(expected);
@@ -52,6 +54,7 @@ describe('waiting approval usa lifecycle autoritativo', () => {
 
   it.each([
     ['rejected', 'rebootstrap'],
+    ['cancelled', 'rebootstrap'],
     ['unavailable', 'rebootstrap'],
   ] as const)(
     'gate %s com QR fresco na URL descarta o bundle e re-bootstrapa',
@@ -62,9 +65,33 @@ describe('waiting approval usa lifecycle autoritativo', () => {
 
   it.each([
     ['rejected', 'error'],
+    ['cancelled', 'error'],
     ['unavailable', 'error'],
   ] as const)('gate %s sem QR fresco permanece na tela de erro', (status, expected) => {
     expect(participantGateRecoveryDestination(status, false)).toBe(expected);
+  });
+
+  // Migration 080 · o cliente que apertou "Cancelar pedido" não pode ler que o
+  // host recusou a entrada dele: ninguém recusou nada. Os dois continuam
+  // fail-closed no destino; o que muda é a explicação (e, com ela, se faz
+  // sentido dizer "escaneie o QR de novo" — pra quem cancelou, faz).
+  it.each([
+    ['rejected', 'host_rejected'],
+    ['cancelled', 'self_cancelled'],
+    ['unavailable', 'unavailable'],
+  ] as const)('gate %s explica o beco como %s', (status, expected) => {
+    expect(participantGateErrorReason(status)).toBe(expected);
+  });
+
+  it('cancelamento próprio nunca é lido como recusa do host', () => {
+    expect(participantGateErrorReason('cancelled')).not.toBe('host_rejected');
+    // E cancelar tampouco vira "não sei o que houve": o cliente sabe o que fez.
+    expect(participantGateErrorReason('cancelled')).not.toBe('unavailable');
+  });
+
+  it('cancelar não libera a mesa por tabela — o gate segue fail-closed', () => {
+    expect(participantGateDestination('cancelled')).not.toBe('home');
+    expect(participantGateRecoveryDestination('cancelled', true)).not.toBe('home');
   });
 
   it('QR fresco nunca pula a espera nem inventa aprovação', () => {

@@ -1,7 +1,19 @@
 import type { LateArrivalStatus, TableMergeStatus } from '@restaurant/shared-types';
 
 export type ApprovalServerStatus = LateArrivalStatus | TableMergeStatus;
-export type ParticipantGateStatus = 'approved' | 'pending' | 'rejected' | 'unavailable';
+/**
+ * `rejected` (o HOST recusou) e `cancelled` (o próprio cliente desistiu) são
+ * estados distintos desde a migration 080. Os dois são fail-closed no gate —
+ * nenhum libera a mesa — mas a mensagem terminal não pode ser a mesma: acusar
+ * de "o host não autorizou" quem apertou "Cancelar pedido" foi exatamente o bug
+ * reproduzido em iPhone real.
+ */
+export type ParticipantGateStatus =
+  | 'approved'
+  | 'pending'
+  | 'rejected'
+  | 'cancelled'
+  | 'unavailable';
 export type ParticipantGateDestination = 'home' | 'pending_approval' | 'error';
 export type ApprovalUiState =
   | 'checking'
@@ -23,6 +35,26 @@ export function participantGateDestination(
   if (status === 'approved') return 'home';
   if (status === 'pending') return 'pending_approval';
   return 'error';
+}
+
+/**
+ * Por que o gate parou no `error`. O destino já é fail-closed; isto só escolhe
+ * o que o cliente lê e se faz sentido oferecer "escaneie o QR de novo".
+ *  - `host_rejected`  → o host recusou. Re-escanear não adianta enquanto a
+ *    sessão viver (o backend rebarra), mas outra mesa/o garçom resolve.
+ *  - `self_cancelled` → o próprio cliente desistiu. Escanear de novo funciona:
+ *    o backend cria um pedido de entrada novo e o host recebe.
+ *  - `unavailable`    → não sabemos (transporte caiu, participante ausente).
+ *    Não afirma nada sobre a decisão do host nem manda re-escanear.
+ */
+export type ParticipantGateErrorReason = 'host_rejected' | 'self_cancelled' | 'unavailable';
+
+export function participantGateErrorReason(
+  status: ParticipantGateStatus,
+): ParticipantGateErrorReason {
+  if (status === 'rejected') return 'host_rejected';
+  if (status === 'cancelled') return 'self_cancelled';
+  return 'unavailable';
 }
 
 export type ParticipantGateRecovery = ParticipantGateDestination | 'rebootstrap';

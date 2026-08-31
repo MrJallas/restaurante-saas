@@ -36,7 +36,10 @@ export default function PedidoRevisarPage() {
     }
     try {
       const res = await apiGet<{
-        participants: { customerId: string; status: 'pending' | 'approved' | 'rejected' }[];
+        participants: {
+          customerId: string;
+          status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+        }[];
       }>(`/${slug}/table/participants`);
       const me = res.participants.find((p) => p.customerId === customerId);
       if (me?.status === 'approved') return true;

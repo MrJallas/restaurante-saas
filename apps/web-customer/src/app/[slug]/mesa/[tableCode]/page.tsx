@@ -17,6 +17,7 @@ import {
 } from '../../../../lib/qr-session-recovery';
 import {
   participantGateDestination,
+  participantGateErrorReason,
   participantGateRecoveryDestination,
   type ParticipantGateStatus,
 } from '../../../../lib/waiting-approval-state';
@@ -52,6 +53,31 @@ import type {
 const SPLASH_MAX_MS = 3000;
 const PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE =
   'Não foi possível confirmar sua autorização para esta mesa. Tente novamente.';
+const PARTICIPANT_HOST_REJECTED_MESSAGE =
+  'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.';
+const PARTICIPANT_SELF_CANCELLED_MESSAGE =
+  'Você cancelou o pedido de entrada. Escaneie o QR de novo quando quiser tentar.';
+
+/**
+ * Uma decisão só para os três finais possíveis do gate. Cancelar o próprio
+ * pedido não é ser recusado pelo host: quem desistiu re-escaneia e o backend
+ * abre um pedido novo (migration 080), então a mensagem convida a re-escanear
+ * em vez de mandar procurar outra mesa. `unavailable` continua não afirmando
+ * nada sobre a decisão do host nem oferecendo re-scan como solução.
+ */
+function participantGateError(status: ParticipantGateStatus): {
+  message: string;
+  requiresRescan: boolean;
+} {
+  switch (participantGateErrorReason(status)) {
+    case 'host_rejected':
+      return { message: PARTICIPANT_HOST_REJECTED_MESSAGE, requiresRescan: true };
+    case 'self_cancelled':
+      return { message: PARTICIPANT_SELF_CANCELLED_MESSAGE, requiresRescan: true };
+    default:
+      return { message: PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE, requiresRescan: false };
+  }
+}
 
 type PageState = 'loading' | 'welcome' | 'home' | 'error' | 'pending_approval';
 
@@ -89,7 +115,7 @@ interface ParticipantsResponse {
     name: string;
     initial: string;
     color: string;
-    status: 'pending' | 'approved' | 'rejected';
+    status: 'pending' | 'approved' | 'rejected' | 'cancelled';
     isHost: boolean;
   }[];
 }
@@ -437,12 +463,9 @@ export default function MesaPage() {
           return;
         }
         if (destination === 'error') {
-          setErrorMessage(
-            participantStatus === 'rejected'
-              ? 'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.'
-              : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
-          );
-          setErrorRequiresRescan(participantStatus === 'rejected');
+          const gateError = participantGateError(participantStatus);
+          setErrorMessage(gateError.message);
+          setErrorRequiresRescan(gateError.requiresRescan);
           setPageState('error');
           return;
         }
@@ -644,14 +667,11 @@ export default function MesaPage() {
               return;
             }
             if (destination === 'error') {
-              setErrorMessage(
-                status === 'rejected'
-                  ? 'Sua entrada não foi autorizada. Tente outra mesa ou peça ao garçom.'
-                  : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
-              );
               // O init acabou de gastar as credenciais do QR e o servidor
-              // manteve a rejeição — recarregar não muda a decisão.
-              setErrorRequiresRescan(status === 'rejected');
+              // devolveu o estado autoritativo — recarregar não muda a decisão.
+              const gateError = participantGateError(status);
+              setErrorMessage(gateError.message);
+              setErrorRequiresRescan(gateError.requiresRescan);
               transitionTo('error');
               return;
             }
@@ -807,12 +827,9 @@ export default function MesaPage() {
           return;
         }
         if (destination === 'error') {
-          setErrorMessage(
-            status === 'rejected'
-              ? 'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.'
-              : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
-          );
-          setErrorRequiresRescan(status === 'rejected');
+          const gateError = participantGateError(status);
+          setErrorMessage(gateError.message);
+          setErrorRequiresRescan(gateError.requiresRescan);
           setPageState('error');
           return;
         }
@@ -861,12 +878,9 @@ export default function MesaPage() {
       if (destination === 'pending_approval') {
         setPageState('pending_approval');
       } else if (destination === 'error') {
-        setErrorMessage(
-          status === 'rejected'
-            ? 'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.'
-            : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
-        );
-        setErrorRequiresRescan(status === 'rejected');
+        const gateError = participantGateError(status);
+        setErrorMessage(gateError.message);
+        setErrorRequiresRescan(gateError.requiresRescan);
         setPageState('error');
       }
     })();
@@ -958,12 +972,9 @@ export default function MesaPage() {
             const destination = participantGateDestination(status);
             if (destination === 'pending_approval') return;
             if (destination === 'error') {
-              setErrorMessage(
-                status === 'rejected'
-                  ? 'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.'
-                  : PARTICIPANT_STATUS_UNAVAILABLE_MESSAGE,
-              );
-              setErrorRequiresRescan(status === 'rejected');
+              const gateError = participantGateError(status);
+              setErrorMessage(gateError.message);
+              setErrorRequiresRescan(gateError.requiresRescan);
               setPageState('error');
               return;
             }
@@ -979,9 +990,15 @@ export default function MesaPage() {
           }
         }}
         onRejected={() => {
-          setErrorMessage(
-            'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.',
-          );
+          setErrorMessage(PARTICIPANT_HOST_REJECTED_MESSAGE);
+          setErrorRequiresRescan(true);
+          setPageState('error');
+        }}
+        onCancelledElsewhere={() => {
+          // O próprio cliente derrubou o pedido em OUTRA aba/dispositivo. Sai da
+          // espera com a mensagem de cancelamento — nunca acusando o host de ter
+          // recusado alguém que não recusou nada.
+          setErrorMessage(PARTICIPANT_SELF_CANCELLED_MESSAGE);
           setErrorRequiresRescan(true);
           setPageState('error');
         }}
@@ -1005,9 +1022,7 @@ export default function MesaPage() {
           if (result.cancelled !== true) {
             throw new Error('pending_join_not_cancelled');
           }
-          setErrorMessage(
-            'Você cancelou o pedido de entrada. Escaneie o QR de novo quando quiser tentar.',
-          );
+          setErrorMessage(PARTICIPANT_SELF_CANCELLED_MESSAGE);
           setErrorRequiresRescan(true);
           setPageState('error');
         }}
@@ -1210,6 +1225,7 @@ function PendingApprovalWrapper({
   hostName,
   onApproved,
   onRejected,
+  onCancelledElsewhere,
   onExpired,
   onCancel,
 }: {
@@ -1217,6 +1233,7 @@ function PendingApprovalWrapper({
   hostName: string | null;
   onApproved: () => void;
   onRejected: () => void;
+  onCancelledElsewhere: () => void;
   onExpired: () => void;
   onCancel: () => Promise<void>;
 }) {
@@ -1227,9 +1244,12 @@ function PendingApprovalWrapper({
     const payload = data as { customerId: string; status: string };
     if (payload.customerId !== customerId) return;
     if (payload.status === 'approved') onApproved();
-    // 'cancelled' = o próprio B derrubou o pedido (possivelmente em outra aba);
-    // trata como rejeição pra sair da tela de espera.
-    else if (payload.status === 'rejected' || payload.status === 'cancelled') onRejected();
+    else if (payload.status === 'rejected') onRejected();
+    // 'cancelled' = o próprio cliente derrubou o pedido (possivelmente em outra
+    // aba). Sai da espera igual, mas por um caminho separado: tratar como
+    // rejeição fazia a tela dizer que o host recusou uma entrada que ninguém
+    // chegou a avaliar.
+    else if (payload.status === 'cancelled') onCancelledElsewhere();
   });
 
   // Fallback poll: same 8s cadência do legacy PendingApprovalScreen.
@@ -1246,6 +1266,10 @@ function PendingApprovalWrapper({
         const me = res.participants.find((p) => p.customerId === customerId);
         if (me?.status === 'approved') onApproved();
         else if (me?.status === 'rejected') onRejected();
+        // Defensivo: hoje a row cancelada carrega `left_at` e o roster a filtra,
+        // então o normal é cair no `!me`. Se algum dia um cancelamento sobreviver
+        // no roster, o cliente ainda lê "você cancelou", não "o host recusou".
+        else if (me?.status === 'cancelled') onCancelledElsewhere();
         else if (!me) onExpired();
       } catch (error) {
         if (!cancelled && shouldExitPendingQrApproval(error)) onExpired();
@@ -1257,7 +1281,7 @@ function PendingApprovalWrapper({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [slug, sessionId, customerId, onApproved, onRejected, onExpired]);
+  }, [slug, sessionId, customerId, onApproved, onRejected, onCancelledElsewhere, onExpired]);
 
   return (
     <ScreenCustomerWaitingApproval

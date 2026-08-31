@@ -52,12 +52,23 @@ export const PARTICIPANT_COLORS = [
   '#7a3ea8', // muted purple
 ] as const;
 
+/**
+ * Lifecycle de `session_participants.status` (migrations 017 + 080).
+ *
+ * `rejected` e `cancelled` são estados DIFERENTES e a diferença é de produto:
+ * `rejected` é o HOST recusando (barra o re-scan até a sessão fechar) e
+ * `cancelled` é o próprio solicitante desistindo (pode pedir entrada de novo).
+ * Antes da migration 080 o cancelamento gravava 'rejected' e o cliente que
+ * desistiu era acusado de ter sido recusado pelo host no scan seguinte.
+ */
+export type ParticipantStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
 export interface TableParticipantRow {
   customerId: string;
   name: string;
   initial: string;
   color: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: ParticipantStatus;
   isHost: boolean;
   requestedAt: string | null;
 }
@@ -255,16 +266,22 @@ export class TableSessionService {
   }
 
   /**
-   * Register a customer as present at the table. Idempotent — re-entry by
-   * the same customer resets `left_at` and keeps their original color so
-   * avatars stay stable across reconnects. Returns the participant's color
-   * so the caller can pass it straight back to the client.
+   * Register a customer as present at the table. Idempotent — um re-scan de
+   * quem ainda está ATIVO na mesa (`left_at IS NULL`) reaproveita a row e
+   * preserva a cor, então os avatares não pulam entre reconexões. Returns the
+   * participant's color so the caller can pass it straight back to the client.
    *
    * Host-of-the-table flow (migration 017): primeiro customer a entrar
    * na sessao vira host (`table_sessions.host_customer_id`) e e
    * automaticamente approved. Demais entram com status='pending' e
    * aguardam aprovacao do host. Sem isso, qualquer um que escaneava o
    * QR (incluindo gente fora do estabelecimento) entrava direto.
+   *
+   * Quem SAIU (`left_at` carimbado) não é reaproveitado: a row morta fica como
+   * histórico e o scan cai no ramo de INSERT, que decide de novo. Lá vale a
+   * separação da migration 080 — quem CANCELOU o próprio pedido vira 'pending'
+   * outra vez (o host recebe o pedido de novo), quem o HOST RECUSOU continua
+   * barrado enquanto a table_session viver.
    */
   async upsertParticipant(
     tableSessionId: string,
@@ -290,22 +307,34 @@ export class TableSessionService {
     let currentHostId = sessionRows[0].host_customer_id;
     const tableId = sessionRows[0].table_id;
 
+    // `AND left_at IS NULL` alinha esta query com as duas irmãs (o
+    // `racedExisting` dentro da transação e o `refresh` pós-conflito). Sem ele,
+    // quem SAIU da mesa era reencontrado aqui, tinha o status morto preservado e
+    // era ressuscitado pelo `SET left_at = NULL` abaixo — foi assim que o
+    // cliente que cancelou o próprio pedido voltava barrado como se o host o
+    // tivesse recusado. Quem saiu (cancelou ou foi recusado) não é participante
+    // ativo; o caminho correto é o ramo de INSERT, que decide de novo.
     const existing = (await this.tenantConn.query(
       `SELECT color_index, status FROM session_participants
-       WHERE table_session_id = $1 AND customer_id = $2`,
+       WHERE table_session_id = $1 AND customer_id = $2 AND left_at IS NULL`,
       [tableSessionId, customerId],
     )) as { color_index: number; status: string }[];
 
     let colorIndex: number;
-    let status: 'pending' | 'approved' | 'rejected';
+    let status: ParticipantStatus;
 
     if (existing.length > 0) {
       colorIndex = existing[0].color_index;
-      status = existing[0].status as 'pending' | 'approved' | 'rejected';
+      status = existing[0].status as ParticipantStatus;
+      // O UPDATE também precisa do `left_at IS NULL`: um mesmo (session,
+      // customer) pode ter várias rows históricas (a que saiu + a ativa), e sem
+      // o filtro este `SET left_at = NULL` ressuscitaria as antigas junto,
+      // deixando duas rows ativas e estourando 23505 na UNIQUE parcial
+      // `session_participants_active_unique`.
       await this.tenantConn.query(
         `UPDATE session_participants
-         SET visit_id = COALESCE($3, visit_id), left_at = NULL
-         WHERE table_session_id = $1 AND customer_id = $2`,
+         SET visit_id = COALESCE($3, visit_id)
+         WHERE table_session_id = $1 AND customer_id = $2 AND left_at IS NULL`,
         [tableSessionId, customerId, visitId ?? null],
       );
     } else {
@@ -328,13 +357,35 @@ export class TableSessionService {
         if (racedExisting.length > 0) {
           await tx.query(
             `UPDATE session_participants
-             SET visit_id = COALESCE($3, visit_id), left_at = NULL
-             WHERE table_session_id = $1 AND customer_id = $2`,
+             SET visit_id = COALESCE($3, visit_id)
+             WHERE table_session_id = $1 AND customer_id = $2 AND left_at IS NULL`,
             [tableSessionId, customerId, visitId ?? null],
           );
           return {
             colorIndex: racedExisting[0].color_index,
-            status: racedExisting[0].status as 'pending' | 'approved' | 'rejected',
+            status: racedExisting[0].status as ParticipantStatus,
+            currentHostId: lockedHostId,
+          };
+        }
+
+        // Recusa do host é escopada à table_session e vale até a sessão fechar:
+        // o `AND left_at IS NULL` acima deixaria o REJEITADO reentrar como
+        // 'pending' e torrar a paciência do host a cada scan. Este SELECT roda
+        // sob o mesmo `FOR UPDATE` da sessão (nenhum scan concorrente escapa
+        // pela janela entre checar e inserir) e ignora `left_at` de propósito —
+        // não importa se a row recusada continua no roster ou já saiu, a recusa
+        // persiste. 'cancelled' não entra aqui: quem desistiu pode pedir de novo.
+        const hostRejected = (await tx.query(
+          `SELECT color_index FROM session_participants
+           WHERE table_session_id = $1 AND customer_id = $2 AND status = 'rejected'
+           ORDER BY joined_at DESC
+           LIMIT 1`,
+          [tableSessionId, customerId],
+        )) as { color_index: number }[];
+        if (hostRejected.length > 0) {
+          return {
+            colorIndex: hostRejected[0].color_index,
+            status: 'rejected' as ParticipantStatus,
             currentHostId: lockedHostId,
           };
         }
@@ -405,7 +456,7 @@ export class TableSessionService {
           )) as { color_index: number; status: string }[];
           return {
             colorIndex: refresh[0]?.color_index ?? 0,
-            status: (refresh[0]?.status as 'pending' | 'approved' | 'rejected') ?? 'pending',
+            status: (refresh[0]?.status as ParticipantStatus) ?? 'pending',
             currentHostId: lockedHostId,
           };
         }
@@ -421,7 +472,7 @@ export class TableSessionService {
 
         return {
           colorIndex: inserted[0].color_index,
-          status: inserted[0].status as 'pending' | 'approved' | 'rejected',
+          status: inserted[0].status as ParticipantStatus,
           currentHostId: lockedHostId,
         };
       });
@@ -430,9 +481,14 @@ export class TableSessionService {
       status = insertedParticipant.status;
       currentHostId = insertedParticipant.currentHostId;
 
-      if (this.eventsGateway && currentHostId) {
+      if (this.eventsGateway && currentHostId && status === 'pending') {
         // Notifica host de novo pedido pendente (ele vai ver modal).
         // Emite pra sala da sessao — host esta nela.
+        //
+        // `status === 'pending'` porque nem todo caminho deste ramo cria um
+        // pedido: o re-scan de quem o host JÁ RECUSOU sai antes do INSERT com
+        // status='rejected', e sem esse filtro cada scan dele reabriria o modal
+        // do host — exatamente a insistência que a recusa existe pra cortar.
         const customerRows = (await this.tenantConn.query(
           `SELECT name FROM customers WHERE id = $1`,
           [customerId],
@@ -557,10 +613,15 @@ export class TableSessionService {
    *
    * Soft-leave da própria row via CAS em status='pending' (idempotente — só
    * cancela quem ainda pende; approved/rejected/já-saído casa 0 linhas). Marca
-   * status='rejected' + left_at pra a row sumir do roster (getParticipants
+   * status='cancelled' + left_at pra a row sumir do roster (getParticipants
    * filtra left_at IS NULL) e o índice `session_participants_active_unique`
    * liberar B pra reentrar depois. Emite participant:decision(cancelled) pro
    * room da session pra o host tirar B dos pendentes ao vivo.
+   *
+   * Migration 080: o status gravado é 'cancelled', NÃO 'rejected'. Eram o mesmo
+   * valor, e o re-scan de B então o acusava de ter sido recusado pelo host. A
+   * distinção é o que deixa `upsertParticipant` liberar quem desistiu e barrar
+   * quem o host recusou.
    *
    * NÃO precisa de host: quem chama é o próprio B (customerId do cookie via
    * controller). Retorna { cancelled } pro caller distinguir cancelou-de-fato
@@ -573,7 +634,7 @@ export class TableSessionService {
     const rows = unwrapRows<{ customer_id: string }>(
       await this.tenantConn.query(
         `UPDATE session_participants
-            SET status = 'rejected',
+            SET status = 'cancelled',
                 left_at = now()
           WHERE table_session_id = $1
             AND customer_id = $2
@@ -623,7 +684,7 @@ export class TableSessionService {
       name: r.name,
       initial: (r.name.trim().charAt(0) || '?').toUpperCase(),
       color: PARTICIPANT_COLORS[r.color_index % PARTICIPANT_COLORS.length] ?? PARTICIPANT_COLORS[0],
-      status: r.status as 'pending' | 'approved' | 'rejected',
+      status: r.status as ParticipantStatus,
       isHost: r.customer_id === r.host_customer_id,
       requestedAt: r.joined_at ? new Date(r.joined_at).toISOString() : null,
     }));

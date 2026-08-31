@@ -467,6 +467,26 @@ Decisoes confirmadas por Caleb em 2026-06-09:
   cria `POST /:slug/late-arrival-requests`; o customer-host decide.
 - Table merge = juncao de mesas. Late-arrival e merge nao devem ir para staff
   como aprovacao ativa; staff recebe apenas mudancas de UI/notificacao passiva.
+
+Decisao confirmada por Caleb em 2026-08-31 (System A / session_participants):
+
+- "Eu cancelei" e "o host me rejeitou" sao estados DIFERENTES.
+  `session_participants.status` aceita 'cancelled' (migration 080, VARCHAR(16)
+  com CHECK nomeado `session_participants_status_check` — nao e enum PG).
+  `cancelOwnPendingJoin` grava 'cancelled' + `left_at`; a recusa do host segue
+  'rejected'. Quem CANCELOU pode re-escanear e abrir um pedido novo ('pending',
+  host avisado); quem o HOST RECUSOU fica barrado ate a table_session fechar.
+- `upsertParticipant` so reaproveita row com `left_at IS NULL` (as tres queries
+  irmas + os dois UPDATE do ramo de reuse). Sem esse filtro a row morta era
+  ressuscitada com o status preservado — era assim que quem cancelava voltava
+  acusado de recusa do host. O UPDATE tambem precisa do filtro: sem ele o
+  `SET left_at = NULL` reativava as rows historicas juntas e colidia 23505 na
+  UNIQUE parcial `session_participants_active_unique`.
+- A barragem do rejeitado vive no ramo de INSERT, sob o mesmo `FOR UPDATE` da
+  sessao, e ignora `left_at` de proposito. O `participant:join_request` so e
+  emitido quando o scan realmente termina em 'pending'.
+- Sem backfill: rows 'rejected' historicas (gravadas pelo bug) continuam
+  barradas — retroativamente nao da pra saber quem cancelou.
 - Ao aprovar merge, o mapa de mesas do staff deve mostrar visualmente as mesas
   mergeadas como um conjunto/par de mesas. Validacao atual: codigo ainda nao
   tem persistencia/campo de grupo mergeado suficiente para isso.
