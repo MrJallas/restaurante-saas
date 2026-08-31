@@ -6,13 +6,19 @@ import { expect, test } from '@playwright/test';
  * pageState 'error' SEM nunca consumir as credenciais frescas (hmac/ts) de um
  * re-scan do QR físico na mesma aba — só fechar a aba destravava.
  *
- * Este spec roda 100% mockado (page.route) contra o dev server da worktree:
- * nada aqui toca o Postgres compartilhado nem as mesas QRTEST91/92.
+ * Este spec roda 100% mockado (page.route): nada aqui toca o Postgres
+ * compartilhado nem as mesas QRTEST91/92.
+ *
+ * O padrão glob origin-agnóstico é obrigatório: no stack docker (modo canônico
+ * da suíte) o customer roda com NEXT_PUBLIC_API_URL=/api e o next.config.js
+ * reescreve /api/* para api:3001, então o browser busca same-origin em :3003.
+ * Uma origem absoluta aqui não casaria nenhum route e os testes bateriam no
+ * backend real.
  */
 
 const SLUG = 'restaurant_dev';
 const TABLE = 'M7';
-const API = 'http://localhost:3001/api';
+const API = '**/api';
 
 const REJECTED_CUSTOMER = '33333333-3333-4333-8333-333333333333';
 
