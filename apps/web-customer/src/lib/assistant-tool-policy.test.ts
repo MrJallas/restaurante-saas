@@ -1,4 +1,4 @@
-import { isServerResolvedAssistantTool } from './assistant-tool-policy';
+import { isDisambiguationAsk, isServerResolvedAssistantTool } from './assistant-tool-policy';
 
 describe('assistant tool dispatch policy', () => {
   it.each([
@@ -18,4 +18,37 @@ describe('assistant tool dispatch policy', () => {
       expect(isServerResolvedAssistantTool(name)).toBe(false);
     },
   );
+});
+
+describe('isDisambiguationAsk', () => {
+  it('reconhece a pergunta de desambiguação do add_to_order', () => {
+    expect(
+      isDisambiguationAsk({
+        needsDisambiguation: true,
+        query: 'suco',
+        candidates: [
+          { id: 'uuid-1', name: 'Suco de Laranja' },
+          { id: 'uuid-2', name: 'Suco de Uva' },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it('um add_to_order que de fato adicionou não é pergunta', () => {
+    expect(
+      isDisambiguationAsk({
+        itemId: '11111111-1111-4111-8111-111111111111',
+        quantity: 1,
+        orderUpdated: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('payload vazio não é pergunta', () => {
+    expect(isDisambiguationAsk({})).toBe(false);
+  });
+
+  it('não aceita valor truthy que não seja o booleano — evita falso positivo', () => {
+    expect(isDisambiguationAsk({ needsDisambiguation: 'sim' })).toBe(false);
+  });
 });

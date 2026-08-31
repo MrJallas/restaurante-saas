@@ -28,7 +28,10 @@ import { getSessionToken } from '../../../lib/storage';
 import { useSession } from '../../../hooks/useSession';
 import { useNav } from '../../../hooks/useNav';
 import { useTableMerge } from '../../../hooks/useTableMerge';
-import { isServerResolvedAssistantTool } from '../../../lib/assistant-tool-policy';
+import {
+  isDisambiguationAsk,
+  isServerResolvedAssistantTool,
+} from '../../../lib/assistant-tool-policy';
 import { useTableSocket } from '../../../hooks/useTableSocket';
 import { useActiveOrderStatus, type ActiveOrderStatus } from '../../../hooks/useActiveOrderStatus';
 import { useDraftOrder } from '../../../providers/DraftOrderProvider';
@@ -68,7 +71,12 @@ interface PendingJoinRequest {
 }
 
 interface JoinRequestChatState extends PendingJoinRequest {
-  decision?: 'approved' | 'rejected';
+  /**
+   * `cancelled` = o solicitante desistiu antes do host decidir (migration 080).
+   * Sem esse estado o card ficava com os botões vivos e o host "aprovava" um
+   * pedido que já não existia — o CAS em status='pending' casava 0 linhas.
+   */
+  decision?: 'approved' | 'rejected' | 'cancelled';
   busy?: boolean;
   error?: string | null;
 }
@@ -196,7 +204,7 @@ interface JoinRequestSocketPayload {
 
 interface JoinDecisionSocketPayload {
   customerId: string;
-  status: 'approved' | 'rejected';
+  status: 'approved' | 'rejected' | 'cancelled';
   decidedAt?: string;
 }
 
@@ -556,7 +564,7 @@ function isJoinDecisionSocketPayload(value: unknown): value is JoinDecisionSocke
   return (
     isRecord(value) &&
     typeof value.customerId === 'string' &&
-    (value.status === 'approved' || value.status === 'rejected')
+    (value.status === 'approved' || value.status === 'rejected' || value.status === 'cancelled')
   );
 }
 
@@ -737,7 +745,11 @@ const ADD_TO_ORDER_FAILURE_MESSAGE =
   'Não consegui localizar esse item no cardápio para atualizar seu pedido.';
 
 function addToOrderCallsIn(toolCalls: AssistantToolCall[]): AssistantToolCall[] {
-  return toolCalls.filter((tc) => tc.name === 'add_to_order');
+  // Uma call de desambiguação não é um pedido que falhou — é a tool
+  // perguntando qual item o cliente quis. Ver `isDisambiguationAsk`.
+  return toolCalls.filter(
+    (tc) => tc.name === 'add_to_order' && !isDisambiguationAsk(actionPayload(tc)),
+  );
 }
 
 function actionPayload(call: AssistantToolCall): Record<string, unknown> {
@@ -3090,7 +3102,11 @@ export default function AssistentePage() {
                   >
                     {decided ? (
                       <div className="inline-flex rounded-full border border-border-soft bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink">
-                        {decided === 'approved' ? 'Entrada aprovada' : 'Entrada recusada'}
+                        {decided === 'approved'
+                          ? 'Entrada aprovada'
+                          : decided === 'cancelled'
+                            ? 'Pedido cancelado'
+                            : 'Entrada recusada'}
                       </div>
                     ) : (
                       <div className="flex flex-wrap gap-2">
