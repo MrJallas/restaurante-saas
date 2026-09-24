@@ -5,7 +5,7 @@ restaurante de demonstração, ver [ambiente local](ambiente-local.md).
 
 | Suíte                | Onde                                                                                         | Runner                    | Precisa do stack no ar? |
 | -------------------- | -------------------------------------------------------------------------------------------- | ------------------------- | ----------------------- |
-| Unitários da API     | `apps/api/src/**/*.test.ts` (153 arquivos)                                                   | Jest + Supertest          | não (usa fakes)         |
+| Unitários da API     | `apps/api/src/**/*.test.ts` (156 arquivos)                                                   | Jest + Supertest          | não (usa fakes)         |
 | Unitários dos fronts | `apps/web-customer/src` (31), `apps/web-staff/src` (22)                                      | Jest (`next/jest`, jsdom) | não                     |
 | Serviço de IA        | `services/ai-service/tests/` (17 arquivos de teste)                                          | pytest                    | não (LLM simulado)      |
 | Ponta a ponta        | `apps/web-customer/e2e/specs/` (13 specs)                                                    | Playwright                | **sim, com o seed**     |
@@ -29,7 +29,7 @@ npm run format:check                          # Prettier no repositório inteiro
   (idem `@restaurant/web-customer` e `@restaurant/web-staff`).
 - `node_modules` desatualizado no host produz falhas falsas (ex.: módulo não encontrado). Rode
   `npm install` antes, ou rode dentro do container:
-  `docker exec restaurant-api sh -c "cd /repo/apps/api && npm test"` (930 de 930 no ensaio).
+  `docker exec restaurant-api sh -c "cd /repo/apps/api && npm test"` (958 de 958 no ensaio).
 
 ## Serviço de IA (pytest)
 
