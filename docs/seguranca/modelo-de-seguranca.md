@@ -90,8 +90,10 @@ desenvolvimento aos bancos é por `docker exec` nos containers.
 - **Troca obrigatória de PIN.** Sessão marcada para trocar o PIN recebe 403 em toda rota de equipe e
   é desconectada do WebSocket até a troca.
 - **Chave de serviço.** A `STAFF_API_KEY` sozinha também autentica como equipe (usada pelo proxy e
-  pelas TVs). Em produção, staging e preview, o token individual de sessão é obrigatório para rotas
-  que dependem de papel; em desenvolvimento, `STAFF_SESSION_REQUIRED=true` antecipa esse gate.
+  pelas TVs), mas não identifica ninguém. Em produção, staging e preview, o token individual de
+  sessão é obrigatório para rotas que dependem de papel, para registrar autoria (o `x-staff-id` sem
+  token é recusado) e para entrar nas salas de papel do WebSocket; em desenvolvimento,
+  `STAFF_SESSION_REQUIRED=true` antecipa esse gate.
 
 ## Limites nas entradas públicas
 
