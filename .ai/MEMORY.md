@@ -1137,8 +1137,10 @@ unless-stopped` + healthcheck de compose (visibilidade no docker ps).
   por chat-history e courtesies). Índice novo entra nos três com o mesmo nome. A
   API aceita o nome padrão do Mongo de volumes antigos e nunca derruba índice; o
   `npm run mongo:init` converge (drop + create) e é o remédio para volume antigo.
-- `/customer/welcome` e `/customer/identify` reservam a tentativa na chegada
-  (`RedisService.consumeAttempt`, um script Lua). Não volte ao padrão
-  checa-trava → processa → incrementa: rajada paralela estourava o limite (38
-  de 100 contra 30). Os limitadores de PIN da equipe (login, verify-pin,
-  change-pin) ainda usam esse padrão e contam só falhas.
+- Limite de tentativas é sempre `RedisService.reserveAttempt(...baldes)` na
+  chegada (um script Lua; a max-ésima passa e arma a trava) e, nos de PIN que
+  contam só falhas, `clearAttempts` no acerto. Não volte ao padrão checa-trava →
+  processa → incrementa: rajada paralela estourava o limite (38 de 100 welcomes
+  contra 30; 20 de 20 palpites de PIN contra 5). Vale para welcome, identify,
+  login, troca de PIN e verify-pin (o `StaffService` é dono dos dois baldes).
+  Fakes de teste delegam para `infra/redis/attempts-in-memory.testing.ts`.

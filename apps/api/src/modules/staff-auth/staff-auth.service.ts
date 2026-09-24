@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomInt, randomUUID, timingSafeEqual } from 'crypto';
-import { RedisService } from '../../infra/redis/redis.service';
+import { RedisService, type AttemptBucket } from '../../infra/redis/redis.service';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { hashPin, verifyPin, isLegacyPinHash } from '../staff/staff-pin.util';
@@ -101,34 +101,18 @@ export class StaffAuthService {
       throw this.authFailure();
     }
 
-    const throttleKey = this.loginThrottleKey(cpf, ip);
-    const cpfThrottleKey = this.loginCpfThrottleKey(cpf);
-    if (
-      (await this.redis.get(`${throttleKey}:lock`)) ||
-      (await this.redis.get(`${cpfThrottleKey}:lock`))
-    ) {
-      throw this.structuredError(
-        HttpStatus.TOO_MANY_REQUESTS,
-        'Muitas tentativas. Aguarde alguns minutos.',
-        'AUTH_THROTTLED',
-      );
-    }
+    // A tentativa é reservada ANTES de conferir o PIN; a falha fica contada e o
+    // sucesso zera. Contar só depois da conferência deixava uma rajada paralela
+    // de palpites passar inteira pela checagem da trava.
+    const throttle = this.loginBuckets(cpf, ip);
+    if (await this.redis.reserveAttempt(...throttle)) throw this.throttled();
 
     const staff = await this.findActiveByCpf(cpf);
     const expectedHash = staff?.pin_hash ?? DUMMY_PIN_HASH;
     const pinMatches = verifyPin(input.pin, expectedHash);
     const authenticated = Boolean(staff && pinMatches);
 
-    if (!authenticated) {
-      await this.recordLoginFailure(throttleKey, LOGIN_MAX_ATTEMPTS, LOGIN_LOCK_SECONDS);
-      await this.recordLoginFailure(
-        cpfThrottleKey,
-        LOGIN_CPF_MAX_ATTEMPTS,
-        LOGIN_CPF_LOCK_SECONDS,
-        LOGIN_CPF_WINDOW_SECONDS,
-      );
-      throw this.authFailure();
-    }
+    if (!authenticated) throw this.authFailure();
 
     // Backfill lazy do hash (OWASP A02): o login é o ÚNICO ponto onde o
     // plaintext do PIN existe junto com um hash que acabou de bater. Se o hash
@@ -139,10 +123,7 @@ export class StaffAuthService {
       await this.backfillPinHash(staff!.id, input.pin);
     }
 
-    await this.redis.del(`${throttleKey}:attempts`);
-    await this.redis.del(`${throttleKey}:lock`);
-    await this.redis.del(`${cpfThrottleKey}:attempts`);
-    await this.redis.del(`${cpfThrottleKey}:lock`);
+    await this.redis.clearAttempts(...throttle);
 
     // Reset pelo gerente (TROCAR-PIN 2026-07-04): staff entra com o PIN
     // temporário mas é FORÇADO pra troca — o FE lê a flag/nextPath e leva
@@ -214,14 +195,9 @@ export class StaffAuthService {
       );
     }
 
-    const throttleKey = this.changePinThrottleKey(payload.staffId);
-    if (await this.redis.get(`${throttleKey}:lock`)) {
-      throw this.structuredError(
-        HttpStatus.TOO_MANY_REQUESTS,
-        'Muitas tentativas. Aguarde alguns minutos.',
-        'AUTH_THROTTLED',
-      );
-    }
+    // currentPin errado é tentativa: reservada antes da conferência, como no login.
+    const throttle = this.changePinBucket(payload.staffId);
+    if (await this.redis.reserveAttempt(throttle)) throw this.throttled();
 
     // O staff vem do TOKEN verificado, nunca de body/header. Dummy hash pra
     // staff inexistente/desativado — comparação sempre roda (timing-safe).
@@ -233,13 +209,6 @@ export class StaffAuthService {
     const pinMatches = verifyPin(input.currentPin, expectedHash);
 
     if (!staff || !pinMatches) {
-      // currentPin errado é TENTATIVA — 5 falhas em 15min travam por 15min.
-      await this.recordLoginFailure(
-        throttleKey,
-        CHANGE_PIN_MAX_ATTEMPTS,
-        CHANGE_PIN_LOCK_SECONDS,
-        CHANGE_PIN_WINDOW_SECONDS,
-      );
       throw this.structuredError(
         HttpStatus.UNAUTHORIZED,
         'PIN atual incorreto.',
@@ -247,8 +216,7 @@ export class StaffAuthService {
       );
     }
 
-    await this.redis.del(`${throttleKey}:attempts`);
-    await this.redis.del(`${throttleKey}:lock`);
+    await this.redis.clearAttempts(throttle);
 
     const updated = unwrapRows<{ id: string; name: string; role: StaffRole }>(
       await this.tenantConn.query(
@@ -569,37 +537,34 @@ export class StaffAuthService {
     return rows[0] ?? null;
   }
 
-  private async recordLoginFailure(
-    throttleKey: string,
-    maxAttempts: number,
-    lockSeconds: number,
-    windowSeconds: number = LOGIN_WINDOW_SECONDS,
-  ): Promise<void> {
-    const attemptsKey = `${throttleKey}:attempts`;
-    const attempts = await this.redis.incr(attemptsKey);
-    if (attempts === 1) {
-      await this.redis.expire(attemptsKey, windowSeconds);
-    }
-    if (attempts >= maxAttempts) {
-      await this.redis.set(`${throttleKey}:lock`, '1', lockSeconds);
-      await this.redis.del(attemptsKey);
-    }
+  // Login: por (slug:cpf:ip) e, sem IP, por (slug:cpf) — este não é
+  // derrotado por rotação de IP (ver LOGIN_CPF_MAX_ATTEMPTS).
+  private loginBuckets(cpf: string, ip: string): AttemptBucket[] {
+    return [
+      {
+        key: `staff-auth:login:${this.tenantSlug()}:${cpf}:${ip}`,
+        max: LOGIN_MAX_ATTEMPTS,
+        windowSeconds: LOGIN_WINDOW_SECONDS,
+        lockSeconds: LOGIN_LOCK_SECONDS,
+      },
+      {
+        key: `staff-auth:login:cpf:${this.tenantSlug()}:${cpf}`,
+        max: LOGIN_CPF_MAX_ATTEMPTS,
+        windowSeconds: LOGIN_CPF_WINDOW_SECONDS,
+        lockSeconds: LOGIN_CPF_LOCK_SECONDS,
+      },
+    ];
   }
 
-  private loginThrottleKey(cpf: string, ip: string): string {
-    return `staff-auth:login:${this.tenantSlug()}:${cpf}:${ip}`;
-  }
-
-  // Chave de lockout por (slug:cpf), sem IP — não pode ser derrotada por
-  // rotação de IP (ver LOGIN_CPF_MAX_ATTEMPTS).
-  private loginCpfThrottleKey(cpf: string): string {
-    return `staff-auth:login:cpf:${this.tenantSlug()}:${cpf}`;
-  }
-
-  // Throttle da troca de PIN — por staffId (a rota exige sessão, então o
-  // sujeito já está identificado; cpf:ip não agrega aqui).
-  private changePinThrottleKey(staffId: string): string {
-    return `staff-auth:change-pin:${this.tenantSlug()}:${staffId}`;
+  // Troca de PIN: por staffId (a rota exige sessão, então o sujeito já está
+  // identificado; cpf:ip não agrega aqui).
+  private changePinBucket(staffId: string): AttemptBucket {
+    return {
+      key: `staff-auth:change-pin:${this.tenantSlug()}:${staffId}`,
+      max: CHANGE_PIN_MAX_ATTEMPTS,
+      windowSeconds: CHANGE_PIN_WINDOW_SECONDS,
+      lockSeconds: CHANGE_PIN_LOCK_SECONDS,
+    };
   }
 
   private recoveryKey(cpf: string): string {
@@ -662,6 +627,14 @@ export class StaffAuthService {
 
   private authFailure(): HttpException {
     return this.structuredError(HttpStatus.UNAUTHORIZED, 'CPF ou PIN inválidos.', 'AUTH_INVALID');
+  }
+
+  private throttled(): HttpException {
+    return this.structuredError(
+      HttpStatus.TOO_MANY_REQUESTS,
+      'Muitas tentativas. Aguarde alguns minutos.',
+      'AUTH_THROTTLED',
+    );
   }
 
   private recoveryThrottled(): HttpException {

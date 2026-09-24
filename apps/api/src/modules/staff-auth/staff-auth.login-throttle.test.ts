@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { StaffAuthService } from './staff-auth.service';
-import type { RedisService } from '../../infra/redis/redis.service';
+import type { AttemptBucket, RedisService } from '../../infra/redis/redis.service';
+import { networkHop, reserveAttemptInMemory } from '../../infra/redis/attempts-in-memory.testing';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 
 /**
@@ -22,32 +23,26 @@ class FakeRedis {
   store = new Map<string, string>();
   counters = new Map<string, number>();
 
-  async get(key: string): Promise<string | null> {
-    return this.store.get(key) ?? null;
-  }
-  async set(key: string, value: string): Promise<void> {
-    this.store.set(key, value);
-  }
-  async del(key: string): Promise<void> {
-    this.store.delete(key);
-    this.counters.delete(key);
-  }
-  async incr(key: string): Promise<number> {
-    const next = (this.counters.get(key) ?? 0) + 1;
-    this.counters.set(key, next);
-    return next;
-  }
-  async expire(): Promise<void> {
-    // TTL irrelevante para o teste em memória.
+  async reserveAttempt(...buckets: AttemptBucket[]): Promise<AttemptBucket | null> {
+    await networkHop();
+    return reserveAttemptInMemory(this, buckets);
   }
 }
 
-function makeService(redis: FakeRedis): StaffAuthService {
+function makeService(redis: FakeRedis) {
+  // Cada consulta ao staff é uma conferência de PIN que chegou a acontecer.
+  const pinChecks = jest.fn(async () => {
+    await networkHop();
+    return []; // nenhum staff → sempre falha de auth
+  });
   const tenantConn = {
     getTenantSlug: () => 'acme',
-    query: async () => [], // nenhum staff → sempre falha de auth
+    query: pinChecks,
   } as unknown as TenantConnectionProvider;
-  return new StaffAuthService(tenantConn, redis as unknown as RedisService);
+  return {
+    service: new StaffAuthService(tenantConn, redis as unknown as RedisService),
+    pinChecks,
+  };
 }
 
 const CPF = '39053344705';
@@ -55,7 +50,7 @@ const CPF = '39053344705';
 describe('StaffAuthService login brute-force lockout', () => {
   it('trava por (slug:cpf) mesmo com IP diferente a cada tentativa', async () => {
     const redis = new FakeRedis();
-    const service = makeService(redis);
+    const { service } = makeService(redis);
 
     // 20 tentativas erradas, cada uma vindo de um IP distinto (simula rotação
     // de IP / botnet). Sob o bug antigo, nenhum contador chegaria a 5.
@@ -83,7 +78,7 @@ describe('StaffAuthService login brute-force lockout', () => {
 
   it('trava o par cpf:ip após 5 falhas do mesmo IP', async () => {
     const redis = new FakeRedis();
-    const service = makeService(redis);
+    const { service } = makeService(redis);
 
     for (let i = 0; i < 5; i++) {
       await expect(service.login({ cpf: CPF, pin: '1234' }, '198.51.100.7')).rejects.toBeInstanceOf(
@@ -102,5 +97,33 @@ describe('StaffAuthService login brute-force lockout', () => {
         code: 'AUTH_THROTTLED',
       });
     }
+  });
+
+  it('rajada paralela do mesmo IP: só 5 palpites chegam à conferência do PIN', async () => {
+    const { service, pinChecks } = makeService(new FakeRedis());
+
+    const statuses = await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        service
+          .login({ cpf: CPF, pin: String(1000 + i) }, '198.51.100.7')
+          .catch((err: HttpException) => err.getStatus()),
+      ),
+    );
+
+    expect(pinChecks).toHaveBeenCalledTimes(5);
+    expect(statuses.filter((s) => s === HttpStatus.UNAUTHORIZED)).toHaveLength(5);
+    expect(statuses.filter((s) => s === HttpStatus.TOO_MANY_REQUESTS)).toHaveLength(15);
+  });
+
+  it('rajada paralela com IP rotativo: o balde por CPF segura em 20', async () => {
+    const { service, pinChecks } = makeService(new FakeRedis());
+
+    await Promise.all(
+      Array.from({ length: 60 }, (_, i) =>
+        service.login({ cpf: CPF, pin: String(1000 + i) }, `10.0.${i}.1`).catch(() => undefined),
+      ),
+    );
+
+    expect(pinChecks).toHaveBeenCalledTimes(20);
   });
 });

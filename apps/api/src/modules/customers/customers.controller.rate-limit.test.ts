@@ -29,7 +29,8 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { CustomersController } from './customers.controller';
 import { CustomersService } from './customers.service';
-import { RedisService } from '../../infra/redis/redis.service';
+import { RedisService, type AttemptBucket } from '../../infra/redis/redis.service';
+import { networkHop, reserveAttemptInMemory } from '../../infra/redis/attempts-in-memory.testing';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { SessionGuard } from '../../common/guards/session.guard';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
@@ -37,54 +38,17 @@ import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 
 // Redis em memória com TTL ignorado — só o comportamento de contador/lock
 // importa aqui. Registra as chaves usadas pra provar que o XFF forjado NÃO
-// fragmenta o bucket. Cada operação cede um macrotask, como o round-trip de
-// rede do Redis real: sem isso, uma rajada paralela nunca intercala e a
-// corrida check-then-increment não aparece.
-const networkHop = () => new Promise<void>((resolve) => setImmediate(resolve));
-
+// fragmenta o bucket. A reserva cede um macrotask como o round-trip do Redis
+// real, pra que uma rajada paralela intercale de verdade.
 class FakeRedis {
   store = new Map<string, string>();
   counters = new Map<string, number>();
   seenKeys = new Set<string>();
 
-  async get(key: string): Promise<string | null> {
+  async reserveAttempt(...buckets: AttemptBucket[]): Promise<AttemptBucket | null> {
     await networkHop();
-    return this.store.get(key) ?? null;
-  }
-  async set(key: string, value: string, _ttlSeconds?: number): Promise<void> {
-    await networkHop();
-    this.store.set(key, value);
-  }
-  async del(key: string): Promise<void> {
-    await networkHop();
-    this.store.delete(key);
-    this.counters.delete(key);
-  }
-  async incr(key: string): Promise<number> {
-    await networkHop();
-    this.seenKeys.add(key);
-    const next = (this.counters.get(key) ?? 0) + 1;
-    this.counters.set(key, next);
-    return next;
-  }
-  async expire(): Promise<void> {
-    await networkHop();
-  }
-  /** Mesma semântica do script Lua de RedisService.consumeAttempt, atômica. */
-  async consumeAttempt(bucketKey: string, max: number): Promise<boolean> {
-    await networkHop();
-    const attemptsKey = `${bucketKey}:attempts`;
-    const lockKey = `${bucketKey}:lock`;
-    this.seenKeys.add(attemptsKey);
-    if (this.store.has(lockKey)) return false;
-    const next = (this.counters.get(attemptsKey) ?? 0) + 1;
-    this.counters.set(attemptsKey, next);
-    if (next > max) {
-      this.store.set(lockKey, '1');
-      this.counters.delete(attemptsKey);
-      return false;
-    }
-    return true;
+    for (const bucket of buckets) this.seenKeys.add(`${bucket.key}:attempts`);
+    return reserveAttemptInMemory(this, buckets);
   }
 }
 

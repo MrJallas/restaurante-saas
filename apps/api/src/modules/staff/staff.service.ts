@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
-import { RedisService } from '../../infra/redis/redis.service';
+import { RedisService, type AttemptBucket } from '../../infra/redis/redis.service';
 import {
   generateTemporaryPin,
   hashPin,
@@ -27,11 +27,16 @@ import { RESTAURANT_LOCAL_DATE_SQL } from '../../common/utils/restaurant-local-t
 const VALID_ROLES = ['waiter', 'cook', 'manager', 'host', 'bartender', 'cashier'];
 const VALID_SHIFTS = ['Manhã', 'Tarde', 'Noite'];
 
-// Limite de tentativas falhas em verifyPin antes de bloquear o
-// staff_id por LOCKOUT_SECONDS. Sem isso o PIN de 4 digitos
+// Limites do verifyPin. Por funcionário: sem isso o PIN de 4 digitos
 // (10^4 combinacoes) era brute-forcavel em segundos. P1 do bug-hunt.
 const MAX_PIN_ATTEMPTS = 5;
 const LOCKOUT_SECONDS = 5 * 60; // 5 minutos
+// Round 8 (B-NEW-30) — e por IP: só por funcionário, quem tivesse a lista de
+// N staffIds tinha N*5 tentativas antes de qualquer lockout. Pra restaurante
+// com 10 staff e PIN de 4 digitos, 50 tentativas = 0.5% de chance por rodada.
+const PIN_IP_RATE_MAX = 20;
+const PIN_IP_RATE_WINDOW_SECONDS = 15 * 60;
+const PIN_IP_LOCK_SECONDS = 15 * 60;
 
 @Injectable()
 export class StaffService {
@@ -792,17 +797,34 @@ export class StaffService {
     return { deleted: true };
   }
 
-  async verifyPin(id: string, pin: string): Promise<boolean> {
-    // Throttle: bloqueia por 5min apos 5 tentativas falhas. Conta
-    // por staffId — atacante rotativo de IPs ainda enfrenta o
-    // mesmo limite. 429 distinto de {valid:false} pra UI mostrar
-    // mensagem clara.
-    const attemptsKey = `staff:pin_attempts:${id}`;
-    const lockKey = `staff:pin_lock:${id}`;
-
-    if (await this.redis.get(lockKey)) {
+  /**
+   * PIN do verify-pin legado. A tentativa é reservada ANTES da conferência em
+   * dois baldes, por IP real e por funcionário; a falha fica contada (staff
+   * inexistente, desativado ou owner inclusive) e o acerto zera os dois. Contar
+   * só depois deixava uma rajada paralela de palpites passar pela checagem da
+   * trava. 429 distinto de {valid:false} pra UI mostrar mensagem clara.
+   *
+   * `clientIp` vem de `throttleClientIp` (peer TCP), nunca de X-Forwarded-For.
+   */
+  async verifyPin(id: string, pin: string, clientIp: string): Promise<boolean> {
+    const byIp: AttemptBucket = {
+      key: `staff:pin_ip:${clientIp}`,
+      max: PIN_IP_RATE_MAX,
+      windowSeconds: PIN_IP_RATE_WINDOW_SECONDS,
+      lockSeconds: PIN_IP_LOCK_SECONDS,
+    };
+    const byStaff: AttemptBucket = {
+      key: `staff:pin_staff:${id}`,
+      max: MAX_PIN_ATTEMPTS,
+      windowSeconds: LOCKOUT_SECONDS,
+      lockSeconds: LOCKOUT_SECONDS,
+    };
+    const refused = await this.redis.reserveAttempt(byIp, byStaff);
+    if (refused) {
       throw new HttpException(
-        'Muitas tentativas. Tente novamente em alguns minutos.',
+        refused === byIp
+          ? 'Muitas tentativas deste IP. Aguarde alguns minutos.'
+          : 'Muitas tentativas. Tente novamente em alguns minutos.',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -818,41 +840,26 @@ export class StaffService {
     // OWASP A02: detecta o formato do hash armazenado (bcrypt novo ou SHA-256
     // legado). O sal por-usuário do bcrypt embute no hash — não dá mais pra
     // comparar hashPin(pin) por igualdade.
-    const ok = verifyPinHash(pin, rows[0].pin_hash);
+    if (!verifyPinHash(pin, rows[0].pin_hash)) return false;
 
-    if (ok) {
-      // Sucesso reseta o contador.
-      await this.redis.del(attemptsKey);
-      // Backfill lazy: PIN certo + hash legado = migra pra bcrypt agora
-      // (plaintext só existe aqui). Best-effort — não derruba a verificação.
-      if (isLegacyPinHash(rows[0].pin_hash)) {
-        try {
-          await this.tenantConn.query(
-            `UPDATE staff
-                SET pin_hash = $1, updated_at = now()
-              WHERE id = $2
-                AND is_active = true
-                AND role <> 'owner'
-                AND pin_hash NOT LIKE '$2%'`,
-            [hashPin(pin), id],
-          );
-        } catch {
-          // Oportunístico — próxima verificação tenta de novo.
-        }
+    await this.redis.clearAttempts(byIp, byStaff);
+    // Backfill lazy: PIN certo + hash legado = migra pra bcrypt agora
+    // (plaintext só existe aqui). Best-effort — não derruba a verificação.
+    if (isLegacyPinHash(rows[0].pin_hash)) {
+      try {
+        await this.tenantConn.query(
+          `UPDATE staff
+              SET pin_hash = $1, updated_at = now()
+            WHERE id = $2
+              AND is_active = true
+              AND role <> 'owner'
+              AND pin_hash NOT LIKE '$2%'`,
+          [hashPin(pin), id],
+        );
+      } catch {
+        // Oportunístico — próxima verificação tenta de novo.
       }
-      return true;
     }
-
-    const attempts = await this.redis.incr(attemptsKey);
-    if (attempts === 1) {
-      // Primeira falha: TTL inicial pra que tentativas antigas nao
-      // contem indefinidamente.
-      await this.redis.expire(attemptsKey, LOCKOUT_SECONDS);
-    }
-    if (attempts >= MAX_PIN_ATTEMPTS) {
-      await this.redis.set(lockKey, '1', LOCKOUT_SECONDS);
-      await this.redis.del(attemptsKey);
-    }
-    return false;
+    return true;
   }
 }

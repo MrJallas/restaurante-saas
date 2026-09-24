@@ -79,7 +79,8 @@ desenvolvimento aos bancos é por `docker exec` nos containers.
   antigo, como o do seed de demonstração, ainda é aceito e é trocado por bcrypt no primeiro login bem
   sucedido.
 - **Bloqueio por tentativas** (`staff-auth.service.ts`): 5 falhas por CPF e IP em 15 min, ou 20 falhas
-  por CPF de qualquer IP, bloqueiam o login por 15 min. A recuperação de PIN tem limite próprio.
+  por CPF de qualquer IP, bloqueiam o login por 15 min. Na troca de PIN, 5 erros do PIN atual por
+  funcionário em 15 min bloqueiam a troca por 15 min. A recuperação de PIN tem limite próprio.
 - **Sessão no servidor.** O login gera um token opaco; o Redis guarda só os dados da sessão, pela
   hash do token, por 12 h (`STAFF_SESSION_TTL_SECONDS`). Troca ou redefinição de PIN e logout
   revogam as sessões do funcionário.
@@ -102,15 +103,17 @@ desenvolvimento aos bancos é por `docker exec` nos containers.
 | `POST /:slug/customer/welcome`     | 30 por janela de 15 min (`CUSTOMER_WELCOME_RATE_*`) | IP real + sessão da mesa |
 | `POST /:slug/customer/identify`    | 5 por 15 min                                        | IP real                  |
 | Login e recuperação de PIN         | ver "Equipe"                                        | CPF, IP real             |
-| `POST /:slug/staff/:id/verify-pin` | limite por IP e por funcionário                     | IP real                  |
+| `POST /:slug/staff/:id/verify-pin` | 20 por IP em 15 min; 5 por funcionário em 5 min     | IP real, funcionário     |
 | Handshake do WebSocket             | 30 por 60 s; handshake válido devolve a cota        | IP real                  |
 
 "IP real" é o endereço da conexão TCP (`common/utils/throttle-client-ip.ts`). Cabeçalhos como
 `X-Forwarded-For` são forjáveis e nunca entram na chave.
 
-No `welcome` e no `identify`, a tentativa é reservada na chegada, antes de processar, num único script
-no Redis (`RedisService.consumeAttempt`): sucesso e falha contam igual, e uma rajada paralela processa
-no máximo o limite. A seguinte recebe 429 e arma a trava de 15 min.
+Esses limites reservam a tentativa na chegada, antes de processar, num único script no Redis
+(`RedisService.reserveAttempt`), então uma rajada paralela processa no máximo o limite: a tentativa
+que chega a ele ainda passa e arma a trava, e as seguintes recebem 429. No `welcome` e no `identify`,
+sucesso e falha contam igual; nos de PIN (login, troca de PIN e `verify-pin`), o acerto zera a
+contagem e a trava.
 
 ## Cabeçalhos e CSP
 

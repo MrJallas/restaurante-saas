@@ -9,8 +9,6 @@ import {
   Query,
   Req,
   HttpCode,
-  HttpException,
-  HttpStatus,
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
@@ -26,21 +24,11 @@ import {
 } from 'class-validator';
 import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { StaffOrSessionGuard } from '../../common/guards/staff-or-session.guard';
-import { RedisService } from '../../infra/redis/redis.service';
 import { throttleClientIp } from '../../common/utils/throttle-client-ip';
 import { StaffService } from './staff.service';
 import { ZoneAssignmentsService } from './zone-assignments.service';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
-
-// Round 8 (B-NEW-30) — throttle GLOBAL por IP em verify-pin. Antes só
-// throttle por staffId (5/5min individual): atacante com lista de N
-// staffIds (vaza via GET /staff publico) tinha N*5 tentativas antes
-// de qualquer lockout. Pra restaurante com 10 staff e PIN 4-digit,
-// 50 tentativas = 0.5% chance/round, cumulativo eventually acerta.
-const PIN_IP_RATE_MAX = 20;
-const PIN_IP_RATE_WINDOW_SECONDS = 15 * 60;
-const PIN_IP_LOCK_SECONDS = 15 * 60;
 
 class CreateStaffDto {
   @IsString() @IsNotEmpty() @MaxLength(80) name!: string;
@@ -96,7 +84,8 @@ class VerifyPinDto {
  * exclusivamente staff (`x-staff-key`).
  *
  * verifyPin nao tem guard porque e o proprio mecanismo de login —
- * a defesa la e o throttle Redis no service (5 tentativas/5min lock).
+ * a defesa la sao os limites de tentativa do service (por IP e por
+ * funcionario).
  *
  * `my-tables` mantém StaffOrSessionGuard porque é a única rota onde
  * customer-side use case existe (cliente pode listar mesas ativas
@@ -106,7 +95,6 @@ class VerifyPinDto {
 export class StaffController {
   constructor(
     private readonly staffService: StaffService,
-    private readonly redis: RedisService,
     private readonly zoneAssignments: ZoneAssignmentsService,
     private readonly callerResolver: CallerResolverService,
   ) {}
@@ -280,42 +268,11 @@ export class StaffController {
     @Body() dto: VerifyPinDto,
     @Req() req: { ip?: string; socket?: { remoteAddress?: string } },
   ) {
-    // Round 8 (B-NEW-30): throttle global por IP ALÉM do throttle por
-    // staffId que já existe no service. Bloqueia atacante distribuindo
-    // attempts entre N staff IDs.
-    const ipKey = this.pinIpKey(req);
-    if (await this.redis.get(`${ipKey}:lock`)) {
-      throw new HttpException(
-        'Muitas tentativas deste IP. Aguarde alguns minutos.',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    const valid = await this.staffService.verifyPin(id, dto.pin);
-
-    // Sucesso reseta global counter; falha incrementa.
-    if (valid) {
-      await this.redis.del(`${ipKey}:attempts`);
-    } else {
-      const attempts = await this.redis.incr(`${ipKey}:attempts`);
-      if (attempts === 1) {
-        await this.redis.expire(`${ipKey}:attempts`, PIN_IP_RATE_WINDOW_SECONDS);
-      }
-      if (attempts >= PIN_IP_RATE_MAX) {
-        await this.redis.set(`${ipKey}:lock`, '1', PIN_IP_LOCK_SECONDS);
-        await this.redis.del(`${ipKey}:attempts`);
-      }
-    }
-
-    return { valid };
-  }
-
-  private pinIpKey(req: { ip?: string; socket?: { remoteAddress?: string } }): string {
-    // P1 OWASP API4: IP real do peer TCP, não XFF forjável. verify-pin é o
-    // mecanismo de login (sem guard); ler o header deixaria o atacante
-    // rotacioná-lo a cada tentativa e nunca armar o lock global por IP →
-    // brute-force distribuído de PIN 4-6 dígitos. Mesma disciplina do
+    // IP real do peer TCP, não XFF forjável: verify-pin é o mecanismo de login
+    // (sem guard); ler o header deixaria o atacante rotacioná-lo a cada
+    // tentativa e nunca armar o lock por IP. Mesma disciplina do
     // customers.identify e dos guards endurecidos.
-    return `staff:pin_ip:${throttleClientIp(req)}`;
+    const valid = await this.staffService.verifyPin(id, dto.pin, throttleClientIp(req));
+    return { valid };
   }
 }

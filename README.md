@@ -404,7 +404,7 @@ Resultados medidos num ambiente novo, com o stack do tutorial e **sem LLM**:
 
 | Suíte                                | Comando                                                                                                                | Resultado               |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| Unitários da API (Jest)              | `npm test --workspace @restaurant/api`                                                                                 | 958 de 958              |
+| Unitários da API (Jest)              | `npm test --workspace @restaurant/api`                                                                                 | 966 de 966              |
 | Unitários do app do cliente (Jest)   | `npm test --workspace @restaurant/web-customer`                                                                        | 180 de 180              |
 | Unitários do app da equipe (Jest)    | `npm test --workspace @restaurant/web-staff`                                                                           | 87 de 87                |
 | Serviço de IA (pytest, LLM simulado) | `docker exec restaurant-ai sh -c 'pip install -q -r requirements-dev.lock && env -i PATH="$PATH" python -m pytest -q'` | 435 de 435              |

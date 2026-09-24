@@ -31,7 +31,7 @@ import { StaffOnlyGuard } from '../../common/guards/staff-only.guard';
 import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 import { Session } from '../../common/decorators/session.decorator';
 import { SessionData } from '../../common/guards/session.guard';
-import { RedisService } from '../../infra/redis/redis.service';
+import { RedisService, type AttemptBucket } from '../../infra/redis/redis.service';
 import { CallerResolverService } from '../../common/services/caller-resolver.service';
 import { throttleClientIp } from '../../common/utils/throttle-client-ip';
 import { CustomersService } from './customers.service';
@@ -158,7 +158,7 @@ export class CustomersController {
    *    15min. Antes era unauth+sem throttle → bruteforce CPF de leak DB
    *    + auto-login viable. Conta tanto sucessos quanto falhas pra
    *    impedir bypass via CPFs inválidos. A tentativa é reservada antes
-   *    do lookup (consumeAttemptOr429), então rajada paralela não passa
+   *    do lookup (reserveOr429), então rajada paralela não passa
    *    de 5.
    *  - `recognitionToken` REMOVIDO do body de resposta — só vai pelo
    *    cookie HttpOnly. Mesmo que CSRF passasse ou logs vazassem o
@@ -179,11 +179,8 @@ export class CustomersController {
   ) {
     // A tentativa é consumida antes do lookup, sucesso ou falha: CPF em formato
     // inválido também conta, e uma rajada paralela não passa do limite.
-    await this.consumeAttemptOr429(
-      this.identifyClientKey(req),
-      IDENTIFY_RATE_MAX,
-      IDENTIFY_RATE_WINDOW_SECONDS,
-      IDENTIFY_RATE_LOCK_SECONDS,
+    await this.reserveOr429(
+      this.identifyBucket(req),
       'Muitas tentativas. Tente novamente em alguns minutos.',
     );
 
@@ -215,7 +212,7 @@ export class CustomersController {
     };
   }
 
-  private identifyClientKey(req: { ip?: string; socket?: { remoteAddress?: string } }): string {
+  private identifyBucket(req: { ip?: string; socket?: { remoteAddress?: string } }): AttemptBucket {
     // P1 OWASP API4: chave pelo IP REAL do peer TCP (`req.socket.remoteAddress`
     // via throttleClientIp), NÃO por `X-Forwarded-For`. /identify é rota
     // NÃO-autenticada e o throttle é a única barreira; a API é exposta direto
@@ -223,24 +220,23 @@ export class CustomersController {
     // atacante rotacioná-lo a cada request e nunca acumular na mesma chave,
     // burlando o lock → enumeração ilimitada de CPF. Mesma disciplina dos
     // guards endurecidos (RedisThrottleGuard / staff-auth.controller).
-    return `customers:identify:${throttleClientIp(req)}`;
+    return {
+      key: `customers:identify:${throttleClientIp(req)}`,
+      max: IDENTIFY_RATE_MAX,
+      windowSeconds: IDENTIFY_RATE_WINDOW_SECONDS,
+      lockSeconds: IDENTIFY_RATE_LOCK_SECONDS,
+    };
   }
 
   /**
-   * Reserva uma tentativa no bucket ANTES de processar (RedisService.
-   * consumeAttempt, atômico). Antes checava a trava, processava e só então
-   * incrementava: numa rajada paralela todas passavam pela checagem antes do
-   * primeiro incremento e o limite estourava (100 welcomes simultâneos contra
-   * limite 30 processavam 38; no /identify, cada extra era um CPF consultado).
+   * Reserva a tentativa no balde ANTES de processar (RedisService.reserveAttempt,
+   * atômico). Antes checava a trava, processava e só então contava: numa rajada
+   * paralela todas passavam pela checagem antes do primeiro incremento e o
+   * limite estourava (100 welcomes simultâneos contra limite 30 processavam 38;
+   * no /identify, cada extra era um CPF consultado).
    */
-  private async consumeAttemptOr429(
-    bucketKey: string,
-    max: number,
-    windowSeconds: number,
-    lockSeconds: number,
-    message: string,
-  ): Promise<void> {
-    if (!(await this.redis.consumeAttempt(bucketKey, max, windowSeconds, lockSeconds))) {
+  private async reserveOr429(bucket: AttemptBucket, message: string): Promise<void> {
+    if (await this.redis.reserveAttempt(bucket)) {
       throw new HttpException(message, HttpStatus.TOO_MANY_REQUESTS);
     }
   }
@@ -249,11 +245,16 @@ export class CustomersController {
   // compartilham o mesmo IP do Wi-Fi/NAT do restaurante. Portanto o bucket é
   // composto por IP real + table session: mantém XFF forjado fora da fronteira
   // de confiança, mas uma mesa movimentada não bloqueia as demais.
-  private welcomeClientKey(
+  private welcomeBucket(
     req: { ip?: string; socket?: { remoteAddress?: string } },
     tableSessionId: string,
-  ): string {
-    return `customers:welcome:${throttleClientIp(req)}:${tableSessionId}`;
+  ): AttemptBucket {
+    return {
+      key: `customers:welcome:${throttleClientIp(req)}:${tableSessionId}`,
+      max: this.welcomeRateMax,
+      windowSeconds: this.welcomeRateWindowSeconds,
+      lockSeconds: this.welcomeRateLockSeconds,
+    };
   }
 
   /**
@@ -305,13 +306,13 @@ export class CustomersController {
   }
 
   /**
-   * Round 9 (B-NEW-35): rate-limit por IP no mesmo padrão do `/identify`. A decisão vigente permite account takeover com um
-   * CPF conhecido; o limite reduz enumeração automatizada, mas não é tratado
-   * como autenticação forte.
+   * Round 9 (B-NEW-35): rate-limit por IP no mesmo padrão do `/identify`. A
+   * decisão vigente permite account takeover com um CPF conhecido; o limite
+   * reduz enumeração automatizada, mas não é tratado como autenticação forte.
    *
    * Regras:
    *  - 30 attempts em 15min por IP real + sessão de mesa (configurável).
-   *  - A 31ª leva 429 e arma o lock de 15min (configurável).
+   *  - A 30ª ainda passa e arma o lock de 15min (configurável); a 31ª leva 429.
    *  - A tentativa é reservada ao chegar: falhas (CPF inválido, name
    *    ausente) também contam, e 100 welcomes simultâneos processam 30.
    *
@@ -332,11 +333,8 @@ export class CustomersController {
     },
     @Res({ passthrough: true }) res: Response,
   ) {
-    await this.consumeAttemptOr429(
-      this.welcomeClientKey(req, session.sessionId),
-      this.welcomeRateMax,
-      this.welcomeRateWindowSeconds,
-      this.welcomeRateLockSeconds,
+    await this.reserveOr429(
+      this.welcomeBucket(req, session.sessionId),
       'Muitas tentativas de boas-vindas. Aguarde alguns minutos.',
     );
 

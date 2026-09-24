@@ -4,7 +4,11 @@ import { randomInt } from 'crypto';
 import request from 'supertest';
 import { StaffAuthService } from './staff-auth.service';
 import { StaffPinAdminController } from './staff-pin-admin.controller';
-import { RedisService } from '../../infra/redis/redis.service';
+import { RedisService, type AttemptBucket } from '../../infra/redis/redis.service';
+import {
+  clearAttemptsInMemory,
+  reserveAttemptInMemory,
+} from '../../infra/redis/attempts-in-memory.testing';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { verifyPin } from '../staff/staff-pin.util';
 import {
@@ -61,6 +65,12 @@ class FakeRedis {
   }
   async expire(): Promise<void> {
     /* TTL irrelevante em memória */
+  }
+  async reserveAttempt(...buckets: AttemptBucket[]): Promise<AttemptBucket | null> {
+    return reserveAttemptInMemory(this, buckets);
+  }
+  async clearAttempts(...buckets: AttemptBucket[]): Promise<void> {
+    clearAttemptsInMemory(this, buckets);
   }
 }
 

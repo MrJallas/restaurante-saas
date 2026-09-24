@@ -1,6 +1,11 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { StaffAuthService } from './staff-auth.service';
-import type { RedisService } from '../../infra/redis/redis.service';
+import type { AttemptBucket, RedisService } from '../../infra/redis/redis.service';
+import {
+  clearAttemptsInMemory,
+  networkHop,
+  reserveAttemptInMemory,
+} from '../../infra/redis/attempts-in-memory.testing';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { hashPin, verifyPin } from '../staff/staff-pin.util';
 import {
@@ -53,6 +58,13 @@ class FakeRedis {
   async expire(): Promise<void> {
     /* TTL irrelevante em memória */
   }
+  async reserveAttempt(...buckets: AttemptBucket[]): Promise<AttemptBucket | null> {
+    await networkHop();
+    return reserveAttemptInMemory(this, buckets);
+  }
+  async clearAttempts(...buckets: AttemptBucket[]): Promise<void> {
+    clearAttemptsInMemory(this, buckets);
+  }
 }
 
 const STAFF_ID = 'a3f1c2d4-0000-4000-8000-000000000001';
@@ -72,6 +84,8 @@ interface FakeStaffRow {
 
 function makeService(redis: FakeRedis, staffRow: FakeStaffRow | null) {
   const updates: { sql: string; params: unknown[] }[] = [];
+  // Cada leitura do staff pelo id é uma conferência do currentPin que aconteceu.
+  let pinChecks = 0;
   const tenantConn = {
     getTenantSlug: () => 'acme',
     query: async (sql: string, params: unknown[] = []) => {
@@ -84,6 +98,7 @@ function makeService(redis: FakeRedis, staffRow: FakeStaffRow | null) {
         return [[], 0];
       }
       if (/FROM staff/i.test(sql) && /WHERE id/i.test(sql)) {
+        pinChecks += 1;
         return staffRow && params[0] === staffRow.id ? [staffRow] : [];
       }
       if (/FROM staff/i.test(sql) && /WHERE cpf/i.test(sql)) {
@@ -93,7 +108,7 @@ function makeService(redis: FakeRedis, staffRow: FakeStaffRow | null) {
     },
   } as unknown as TenantConnectionProvider;
   const service = new StaffAuthService(tenantConn, redis as unknown as RedisService);
-  return { service, updates };
+  return { service, updates, pinChecks: () => pinChecks };
 }
 
 function staffRow(overrides: Partial<FakeStaffRow> = {}): FakeStaffRow {
@@ -190,6 +205,25 @@ describe('StaffAuthService.changePin', () => {
       HttpStatus.TOO_MANY_REQUESTS,
       'AUTH_THROTTLED',
     );
+    expect(updates).toHaveLength(0);
+  });
+
+  it('rajada paralela de currentPin errado: só 5 chegam à conferência do PIN', async () => {
+    const redis = new FakeRedis();
+    const { service, updates, pinChecks } = makeService(redis, staffRow());
+    const session = await issueFor(redis);
+
+    const statuses = await Promise.all(
+      Array.from({ length: 12 }, (_, i) =>
+        service
+          .changePin({ token: session.token, currentPin: String(1000 + i), newPin: '9876' })
+          .catch((err: HttpException) => err.getStatus()),
+      ),
+    );
+
+    expect(pinChecks()).toBe(5);
+    expect(statuses.filter((s) => s === HttpStatus.UNAUTHORIZED)).toHaveLength(5);
+    expect(statuses.filter((s) => s === HttpStatus.TOO_MANY_REQUESTS)).toHaveLength(7);
     expect(updates).toHaveLength(0);
   });
 

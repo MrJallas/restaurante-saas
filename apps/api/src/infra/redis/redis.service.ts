@@ -3,6 +3,39 @@ import Redis from 'ioredis';
 import { redisConfig } from '../../config/redis.config';
 import { recordRedisOperation } from '../../common/performance/request-timing';
 
+/**
+ * Balde de tentativas: `<key>:attempts` conta dentro da janela e `<key>:lock`
+ * recusa tudo enquanto existir.
+ */
+export interface AttemptBucket {
+  key: string;
+  max: number;
+  windowSeconds: number;
+  lockSeconds: number;
+}
+
+// KEYS: `<key>:attempts` e `<key>:lock` de cada balde; ARGV: max, janela e
+// trava de cada balde. Trava ativa em qualquer balde recusa sem contar em
+// nenhum e devolve o índice (1..n) dele. Senão, conta em todos; o balde que
+// chega a `max` arma a própria trava e zera o contador, e a tentativa que
+// chegou lá ainda passa (devolve 0).
+const RESERVE_ATTEMPT_SCRIPT = `
+local n = #KEYS / 2
+for i = 1, n do
+  if redis.call('exists', KEYS[2 * i]) == 1 then return i end
+end
+for i = 1, n do
+  local attempts = KEYS[2 * i - 1]
+  local c = redis.call('incr', attempts)
+  if c == 1 then redis.call('expire', attempts, ARGV[3 * i - 1]) end
+  if c >= tonumber(ARGV[3 * i - 2]) then
+    redis.call('set', KEYS[2 * i], '1', 'EX', ARGV[3 * i])
+    redis.call('del', attempts)
+  end
+end
+return 0
+`;
+
 @Injectable()
 export class RedisService implements OnModuleDestroy {
   private readonly client: Redis;
@@ -105,39 +138,43 @@ export class RedisService implements OnModuleDestroy {
   }
 
   /**
-   * Limite de tentativas com trava, consumido NA CHEGADA e num único script Lua
-   * (atômico no Redis). Chaves `<bucket>:attempts` e `<bucket>:lock`.
+   * Reserva uma tentativa em cada balde ANTES de processar, num único script
+   * Lua (atômico no Redis). Devolve o balde cuja trava recusou a chamada, ou
+   * `null` quando a tentativa foi reservada em todos.
    *
-   * O padrão anterior checava a trava, processava e só depois incrementava:
-   * uma rajada paralela passava inteira pela checagem antes do primeiro
-   * incremento (100 welcomes simultâneos contra limite 30 processavam 38).
-   * Aqui cada chamada reserva a vaga antes de processar: com a trava ativa ou
-   * acima de `max` na janela, devolve `false` e a chamada não é processada. A
-   * `max + 1`-ésima arma a trava por `lockSeconds` e zera o contador, então,
-   * vencida a trava, a janela recomeça do zero.
+   * O padrão anterior checava a trava, processava e só depois contava: uma
+   * rajada paralela passava inteira pela checagem antes do primeiro
+   * incremento (100 welcomes simultâneos contra limite 30 processavam 38; no
+   * login da equipe, cada requisição a mais era um palpite de PIN). Com a
+   * reserva, a `max`-ésima tentativa ainda passa e arma a trava, no mesmo
+   * ponto em que o padrão anterior armava; as seguintes são recusadas.
+   *
+   * Limite que conta só falhas: reserve na chegada e chame `clearAttempts` no
+   * sucesso.
    */
-  async consumeAttempt(
-    bucketKey: string,
-    max: number,
-    windowSeconds: number,
-    lockSeconds: number,
-  ): Promise<boolean> {
+  async reserveAttempt(...buckets: AttemptBucket[]): Promise<AttemptBucket | null> {
     return this.timed(async () => {
-      const result = await this.client.eval(
-        "if redis.call('exists', KEYS[2]) == 1 then return 0 end; " +
-          "local c = redis.call('incr', KEYS[1]); " +
-          "if c == 1 then redis.call('expire', KEYS[1], ARGV[2]) end; " +
-          "if c > tonumber(ARGV[1]) then redis.call('set', KEYS[2], '1', 'EX', ARGV[3]); redis.call('del', KEYS[1]); return 0 end; " +
-          'return 1',
-        2,
-        `${bucketKey}:attempts`,
-        `${bucketKey}:lock`,
-        String(max),
-        String(windowSeconds),
-        String(lockSeconds),
+      const refusedBy = Number(
+        await this.client.eval(
+          RESERVE_ATTEMPT_SCRIPT,
+          buckets.length * 2,
+          ...buckets.flatMap((b) => [`${b.key}:attempts`, `${b.key}:lock`]),
+          ...buckets.flatMap((b) => [
+            String(b.max),
+            String(b.windowSeconds),
+            String(b.lockSeconds),
+          ]),
+        ),
       );
-      return Number(result) === 1;
+      return refusedBy > 0 ? buckets[refusedBy - 1] : null;
     });
+  }
+
+  /** Zera contador e trava dos baldes: o sucesso num limite que conta só falhas. */
+  async clearAttempts(...buckets: AttemptBucket[]): Promise<void> {
+    await this.timed(() =>
+      this.client.del(...buckets.flatMap((b) => [`${b.key}:attempts`, `${b.key}:lock`])),
+    );
   }
 
   async lpop(key: string): Promise<string | null> {

@@ -11,10 +11,11 @@ npm test --workspace @restaurant/api      # jest --runInBand
 
 ## Convenção de nomes
 
-| Sufixo      | O que é                                                                                   | Quem roda  |
-| ----------- | ----------------------------------------------------------------------------------------- | ---------- |
-| `*.test.ts` | Teste Jest (unit ou HTTP/supertest). **Padrão novo.**                                     | `npm test` |
-| `*.spec.ts` | Spec ts-node legado (type-checked pelo `tsc`; executável via `node -r ts-node/register`). | manual     |
+| Sufixo         | O que é                                                                                   | Quem roda  |
+| -------------- | ----------------------------------------------------------------------------------------- | ---------- |
+| `*.test.ts`    | Teste Jest (unit ou HTTP/supertest). **Padrão novo.**                                     | `npm test` |
+| `*.spec.ts`    | Spec ts-node legado (type-checked pelo `tsc`; executável via `node -r ts-node/register`). | manual     |
+| `*.testing.ts` | Apoio compartilhado entre testes (fakes), fora do build de produção.                      | —          |
 
 O Jest só executa `*.test.ts` (ver `jest.config.js`) — specs legados não
 quebram a suíte enquanto não forem migrados.
@@ -67,3 +68,7 @@ Pontos de atenção:
   `providers: [{ provide: X, useValue: ... }]` (exemplos em
   `continuation.service.test.ts`: fake tenantConn roteado por substring
   de SQL + fake Redis em memória + `global.fetch` mockado).
+- Limites de tentativa (`RedisService.reserveAttempt`/`clearAttempts`): o fake
+  de Redis delega para `infra/redis/attempts-in-memory.testing.ts`, que
+  reproduz o script Lua. Para provar uma corrida de rajada paralela, cada
+  operação do fake cede um macrotask (`networkHop`).

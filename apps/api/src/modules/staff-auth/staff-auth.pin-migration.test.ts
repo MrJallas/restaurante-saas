@@ -1,6 +1,10 @@
 import { HttpException } from '@nestjs/common';
 import { StaffAuthService } from './staff-auth.service';
-import type { RedisService } from '../../infra/redis/redis.service';
+import type { AttemptBucket, RedisService } from '../../infra/redis/redis.service';
+import {
+  clearAttemptsInMemory,
+  reserveAttemptInMemory,
+} from '../../infra/redis/attempts-in-memory.testing';
 import type { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { hashPin, verifyPin, legacySha256Hash, isLegacyPinHash } from '../staff/staff-pin.util';
 import { verifyStaffSessionToken } from '../../common/auth/staff-session-token';
@@ -50,6 +54,12 @@ class FakeRedis {
   }
   async expire(): Promise<void> {
     /* TTL irrelevante em memória */
+  }
+  async reserveAttempt(...buckets: AttemptBucket[]): Promise<AttemptBucket | null> {
+    return reserveAttemptInMemory(this, buckets);
+  }
+  async clearAttempts(...buckets: AttemptBucket[]): Promise<void> {
+    clearAttemptsInMemory(this, buckets);
   }
 }
 

@@ -42,6 +42,8 @@ function harness() {
     expire: jest.fn(async () => undefined),
     set: jest.fn(async () => undefined),
     smembers: jest.fn(async () => []),
+    reserveAttempt: jest.fn(async () => null),
+    clearAttempts: jest.fn(async () => undefined),
   } as unknown as RedisService;
   const events = { disconnectStaff: jest.fn() } as unknown as EventsGateway;
   return { service: new StaffService(tenant, redis, events), query, redis, events };
@@ -104,13 +106,14 @@ describe('StaffService owner provisioning boundary', () => {
   it('verifyPin legado não autentica owner mesmo com o PIN correto', async () => {
     const { service, query, redis } = harness();
 
-    await expect(service.verifyPin(OWNER_ID, '123456')).resolves.toBe(false);
+    await expect(service.verifyPin(OWNER_ID, '123456', '198.51.100.7')).resolves.toBe(false);
 
     const pinSql = String(
       query.mock.calls.find(([sql]) => String(sql).includes('SELECT pin_hash'))?.[0] ?? '',
     ).replace(/\s+/g, ' ');
     expect(pinSql).toContain("role <> 'owner'");
-    expect(redis.del).not.toHaveBeenCalled();
-    expect(redis.incr).not.toHaveBeenCalled();
+    // A tentativa foi reservada e fica contada como falha; nada zera os baldes.
+    expect(redis.reserveAttempt).toHaveBeenCalledTimes(1);
+    expect(redis.clearAttempts).not.toHaveBeenCalled();
   });
 });

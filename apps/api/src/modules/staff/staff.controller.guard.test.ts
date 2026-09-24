@@ -37,7 +37,8 @@ describe('GET /:slug/staff roster — StaffOnlyGuard enforcement (regression)', 
       controllers: [StaffController],
       providers: [
         { provide: StaffService, useValue: { list, getById } },
-        // RedisService só é usado no verifyPin — stub mínimo pro DI.
+        // RedisService: dep do StaffOnlyGuard; sem token de sessão ele não é
+        // consultado — stub mínimo pro DI.
         { provide: RedisService, useValue: {} },
         // DataSource: dep nova do StaffOrSessionGuard (revalidação de sessão
         // A04). O roster autentica via x-staff-key, que não passa pela
