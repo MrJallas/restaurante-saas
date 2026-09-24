@@ -15,6 +15,18 @@
 -- === Clean previous demo content (keep schema/categories/settings) ===
 -- Order matters for FK integrity: children first, parents last.
 -- New feature tables (Phase-1): clean before parents.
+-- Operational tables that also point to staff, tables, zones, sessions or customers
+-- with no ON DELETE action. Without these, re-running the seed on a used database
+-- (courtesies, reservations, shifts, E2E runs...) fails on the parent DELETEs below.
+DELETE FROM staff_shift_end_requests WHERE TRUE;
+DELETE FROM table_swap_requests WHERE TRUE;
+DELETE FROM bill_split_notifications WHERE TRUE;
+DELETE FROM waiter_zone_assignments WHERE TRUE;
+DELETE FROM reservations WHERE TRUE;
+DELETE FROM waitlist_entries WHERE TRUE;
+DELETE FROM courtesies WHERE TRUE;
+DELETE FROM kitchen_reorder_requests WHERE TRUE;
+DELETE FROM manager_shift_logs WHERE TRUE;
 DELETE FROM session_flags WHERE TRUE;
 DELETE FROM staff_messages WHERE TRUE;
 DELETE FROM staff_message_thread_participants WHERE TRUE;
@@ -38,8 +50,9 @@ DELETE FROM feedbacks;
 DELETE FROM assistant_messages;
 DELETE FROM waiter_calls;
 DELETE FROM payments;
-DELETE FROM visits;
+-- session_participants.visit_id -> visits: participants go first.
 DELETE FROM session_participants;
+DELETE FROM visits;
 DELETE FROM table_sessions;
 DELETE FROM customer_consumption_summary;
 DELETE FROM customers;
