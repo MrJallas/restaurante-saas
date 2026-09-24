@@ -1,6 +1,8 @@
 -- Povoa o salao com uma "noite cheia" plausivel para demo ao vivo.
 -- Idempotente: limpa o que ele mesmo criou (marcado com o prefixo DEMO) antes de recriar.
--- Reverter: bash scripts/demo/limpar-salao.sh
+-- Reverter: rode só o bloco de limpeza abaixo (os DELETE do começo), que apaga apenas
+-- o que este script criou. Para só liberar as mesas: bash scripts/demo/reset-mesa.sh M01
+-- (idem M02, M03 e M04).
 SET search_path TO restaurant_dev;
 
 BEGIN;
