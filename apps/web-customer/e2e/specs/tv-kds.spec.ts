@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { STAFF_API_KEY } from '../helpers/staff-key';
 import { execSync } from 'node:child_process';
 import {
   countActiveDrinks,
@@ -28,7 +29,7 @@ import {
  */
 
 const API = 'http://localhost:3001/api/restaurant_dev';
-const STAFF_KEY = 'dev-staff-api-key-change-in-prod';
+const STAFF_KEY = STAFF_API_KEY;
 
 // HMAC secret real do tenant restaurant_dev (DB-backed, sincronizado
 // pela suite test infra). Reusado pelos describes que precisam de

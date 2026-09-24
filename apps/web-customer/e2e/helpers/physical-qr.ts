@@ -11,7 +11,7 @@ export const OTHER_SLUG = 'restaurant_e2e_other';
 export const API_BASE_URL = process.env.E2E_API_BASE_URL ?? 'http://localhost:3001/api';
 export const CUSTOMER_BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3003';
 export const STAFF_BASE_URL = process.env.E2E_STAFF_BASE_URL ?? 'http://localhost:3002';
-export const STAFF_API_KEY = process.env.E2E_STAFF_API_KEY ?? 'dev-staff-api-key-change-in-prod';
+export { STAFF_API_KEY } from './staff-key';
 
 const QR_SECRETS: Record<TableCode, string> = {
   QRTEST91: 'qrtest91-secret-fixed',

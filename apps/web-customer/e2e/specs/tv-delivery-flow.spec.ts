@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { STAFF_API_KEY } from '../helpers/staff-key';
 import { execSync } from 'node:child_process';
 import { newSession } from '../helpers/session';
 
@@ -20,7 +21,7 @@ import { newSession } from '../helpers/session';
 const SLUG = 'restaurant_dev';
 const API = `http://localhost:3001/api/${SLUG}`;
 const STAFF_APP = 'http://localhost:3002';
-const STAFF_KEY = 'dev-staff-api-key-change-in-prod';
+const STAFF_KEY = STAFF_API_KEY;
 const EVIDENCE_DIR = process.env.TV_DELIVERY_EVIDENCE_DIR || '/tmp/tv-delivery-e2e';
 
 function psql(query: string): string {

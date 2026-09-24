@@ -23,7 +23,8 @@ import { conferirGuarda, cpfNovo, escolherTurno, resetarEstado } from './prepara
  * diferentes desalinham o mosaico.
  */
 
-const OUT = process.env.DEMO_NOITE_DIR || '/Users/calebmedeiros/meus_projetos/.demo-videos/noite';
+// Padrão dentro de output/ (ignorado pelo git); DEMO_NOITE_DIR sobrescreve.
+const OUT = process.env.DEMO_NOITE_DIR || path.join(__dirname, '../../output/demo-noite');
 const STAFF = 'http://localhost:3002';
 const CLIENTE = 'http://localhost:3003';
 const API = 'http://localhost:3001/api';

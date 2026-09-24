@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { STAFF_API_KEY } from '../helpers/staff-key';
 import { execSync } from 'node:child_process';
 import {
   ensureTvFixtures,
@@ -11,7 +12,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 const API = 'http://localhost:3001/api/restaurant_dev';
 const STAFF = 'http://localhost:3002';
-const STAFF_KEY = 'dev-staff-api-key-change-in-prod';
+const STAFF_KEY = STAFF_API_KEY;
 const M01_SECRET = '38889aad-20d1-4778-b4ab-df35774c0398';
 const PROXY = `${STAFF}/api/proxy/restaurant_dev`;
 
