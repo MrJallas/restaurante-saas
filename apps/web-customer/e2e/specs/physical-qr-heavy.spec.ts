@@ -462,7 +462,17 @@ test('E2E 9: cascade staff completo sem resposta termina em timeout', async () =
     expect(participant?.status).toBe('rejected');
     expect(chainForRequest(request!.id)?.completed_at).toBeTruthy();
     expect(managerSocket.seen.some((e) => e.event === 'scan_verification.escalated')).toBe(true);
-    expect(waiterSocket.seen.some((e) => e.event === 'scan_verification.resolved')).toBe(true);
+    // O ttl-tick emite o `resolved` dentro da transação do sweep, e o polling
+    // acima usa psql síncrono (execFileSync): se o pacote WS chega durante a
+    // consulta que já enxerga `expired`, ele ainda está no buffer do socket.
+    // Checar `seen` na mesma volta do event loop dava falso negativo
+    // intermitente; esperar cede o loop e processa o que já chegou.
+    await waitFor(
+      () => waiterSocket.seen.some((e) => e.event === 'scan_verification.resolved'),
+      (received) => received,
+      5_000,
+      100,
+    );
 
     const mongoEvents = mongoFind<{ eventType: string }>(
       'scan_verification_events',
