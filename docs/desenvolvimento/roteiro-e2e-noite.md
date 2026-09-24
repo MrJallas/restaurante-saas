@@ -186,9 +186,9 @@ docker logs restaurant-api --since 2m 2>&1 | grep -E "ERROR|QueryFailedError|Exc
 ```
 
 Esperado: a noite completa passa, e nenhum `QueryFailedError` se repete no log. No `physical-qr-heavy`,
-o teste "Mongo fora do ar" para e religa o container do MongoDB. Hoje, sem mudança no código, o
-cenário 9 desse spec falha (espera `scan_verification.resolved` no socket do garçom no fim da escalada)
-e os 9 cenários seguintes não rodam; ver [resultado medido](testes.md#resultado-medido).
+o teste "Mongo fora do ar" para e religa o container do MongoDB, e o cenário 9 confere que o garçom,
+último papel da escalada, recebe `scan_verification.resolved` quando a verificação expira; ver
+[resultado medido](testes.md#resultado-medido).
 
 ## Critérios de falha
 

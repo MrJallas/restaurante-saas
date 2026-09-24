@@ -458,10 +458,25 @@ export class EventsEmitterService {
   }
 
   /**
-   * Routing: staff dashboards + requester customer + table session room.
+   * Routing: staff dashboards + salas de papel da cascata (host → manager →
+   * waiter) + requester customer + table session room.
+   *
+   * Desde o hardening de 2026-07-17 a room genérica `tenant:<slug>` é só de
+   * manager/owner; host e garçom ficam apenas em `tenant:<slug>:<papel>`.
+   * `created`/`escalated` já iam pras salas de papel, mas o `resolved` não —
+   * quem estava com a pendência na tela (host ou o garçom no fim da escalada)
+   * nunca recebia o desfecho. Um único `.to([...])` pra não duplicar o evento
+   * pro manager, que está em `tenant:<slug>` e em `tenant:<slug>:manager`.
    */
   emitScanVerificationResolved(slug: string, payload: WsScanVerificationResolved['payload']) {
-    this.server.to(`tenant:${slug}`).emit('scan_verification.resolved', payload);
+    this.server
+      .to([
+        `tenant:${slug}`,
+        `tenant:${slug}:host`,
+        `tenant:${slug}:manager`,
+        `tenant:${slug}:waiter`,
+      ])
+      .emit('scan_verification.resolved', payload);
     this.server
       .to(`customer:${payload.requesterCustomerId}`)
       .emit('scan_verification.resolved', payload);
