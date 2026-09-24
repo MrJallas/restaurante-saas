@@ -703,6 +703,19 @@ function cpfDigit(input: string): number {
   return mod === 10 ? 0 : mod;
 }
 
+/**
+ * Login real no web-staff (/login com CPF + PIN). O proxy do web-staff só
+ * injeta credencial quando existe o cookie httpOnly `staff_token` que esse
+ * login seta; `staffId` no localStorage sozinho não autentica nada.
+ */
+export async function loginStaffApp(page: Page, staff: Pick<StaffRow, 'cpf'>): Promise<void> {
+  await page.goto(`${STAFF_BASE_URL}/login`, { waitUntil: 'domcontentloaded' });
+  await page.getByPlaceholder('90000000001').fill(staff.cpf);
+  await page.getByPlaceholder('1234').fill(process.env.E2E_STAFF_PIN ?? '1234');
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  await expect(page).not.toHaveURL(/\/login(?:\?|$)/, { timeout: 15_000 });
+}
+
 export async function grantLocation(page: Page): Promise<void> {
   await page.context().grantPermissions(['geolocation']);
   await page.context().setGeolocation({ latitude: -23.561, longitude: -46.655 });
@@ -795,17 +808,43 @@ export async function ensureOtherTenant(): Promise<void> {
       applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  // Todas as migrations num ÚNICO psql (uma transação por arquivo, como o
+  // `-c` por arquivo fazia). Antes eram ~160 `docker exec` síncronos, ~20 s
+  // com o event loop do Playwright travado: nesse meio-tempo a API fecha as
+  // conexões keep-alive ociosas e o primeiro fetch seguinte reusava um socket
+  // morto ("fetch failed: other side closed" no E2E 17, logo após o E2E 16).
   const migrationsDir = join(__dirname, '../../../../packages/database/migrations/tenant-template');
   const migrationFiles = readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql'))
     .sort();
-  for (const file of migrationFiles) {
-    const sql = readFileSync(join(migrationsDir, file), 'utf8');
-    psql(`SET search_path TO ${OTHER_SLUG};\n${sql}`);
-    psql(
-      `INSERT INTO ${OTHER_SLUG}.__migrations__ (filename) VALUES (${sqlLiteral(file)}) ON CONFLICT DO NOTHING;`,
-    );
-  }
+  const migrationScript = [
+    `SET search_path TO ${OTHER_SLUG};`,
+    ...migrationFiles.map(
+      (file) =>
+        `BEGIN;\n${readFileSync(join(migrationsDir, file), 'utf8')}\n;\n` +
+        `INSERT INTO ${OTHER_SLUG}.__migrations__ (filename) VALUES (${sqlLiteral(file)}) ON CONFLICT DO NOTHING;\n` +
+        `COMMIT;`,
+    ),
+  ].join('\n');
+  execFileSync(
+    'docker',
+    [
+      'exec',
+      '-i',
+      'restaurant-postgres',
+      'psql',
+      '-U',
+      'postgres',
+      '-p',
+      '5434',
+      '-d',
+      'restaurant_saas',
+      '-q',
+      '-v',
+      'ON_ERROR_STOP=1',
+    ],
+    { input: migrationScript, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
+  );
 
   psql(`
     INSERT INTO ${OTHER_SLUG}.tables
@@ -834,7 +873,9 @@ export async function ensureOtherTenant(): Promise<void> {
       true,
       '91000000001'
     )
-    ON CONFLICT (cpf) DO UPDATE
+    -- staff_cpf_unique é parcial (migration 041): o alvo precisa repetir o
+    -- predicado, senão o Postgres recusa com 42P10 (mesmo padrão do seed).
+    ON CONFLICT (cpf) WHERE cpf IS NOT NULL DO UPDATE
       SET name = EXCLUDED.name,
           role = EXCLUDED.role,
           pin_hash = EXCLUDED.pin_hash,

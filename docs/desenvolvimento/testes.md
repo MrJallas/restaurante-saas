@@ -73,8 +73,8 @@ npx playwright show-report                                           # relatóri
 
 - **Nunca rode dois processos do Playwright ao mesmo tempo.** Os testes compartilham o banco e as mesas
   QRTEST91/92; em paralelo, o estado de um vaza para o outro.
-- Até `npx playwright test --list` exige o stack no ar: o `tv-kds.spec.ts` roda `psql` no container já
-  ao carregar o arquivo (um `describe` consulta a sessão da M01).
+- `npx playwright test --list` não precisa do stack: nenhum spec consulta o banco ao carregar o arquivo,
+  só dentro dos testes e dos `beforeAll`.
 - Variáveis opcionais: `E2E_BASE_URL`, `E2E_API_BASE_URL`, `E2E_STAFF_BASE_URL`, `E2E_WS_BASE_URL`,
   `E2E_HOST_CPF`, `E2E_STAFF_PIN`, `E2E_STAFF_API_KEY`, `E2E_EXPECT_LLM_MODEL` e
   `TV_DELIVERY_EVIDENCE_DIR`.
@@ -94,13 +94,30 @@ npx playwright show-report                                           # relatóri
 
 O roteiro equivalente para execução manual está em [roteiro da noite](roteiro-e2e-noite.md).
 
-### Chave de equipe nos testes que chamam a API
+### Credenciais nos testes que chamam a API
 
-Os specs de TV e o helper `e2e/helpers/physical-qr.ts` enviam `x-staff-key` direto para a API. A chave
-vem de `e2e/helpers/staff-key.ts`, nesta ordem: `E2E_STAFF_API_KEY`, `STAFF_API_KEY` do ambiente e
-`STAFF_API_KEY` do `.env` da raiz (o mesmo que o Compose lê). Sem nenhuma das três, a chave fica vazia
-e a API responde 401, o que aponta direto para a configuração. Com o `.env` do tutorial, não é
-preciso exportar nada.
+Os specs usam as mesmas credenciais que os apps usam:
+
+- **Cliente**: o `token` devolvido pelo `session/init` vai no `x-session-token` (é um HMAC do id da
+  sessão; o `sessionId` serve só para consultas no banco). Nos specs de TV, `initTvSession`
+  (`e2e/helpers/tv-fixtures.ts`) devolve os dois. Ação pessoal (feedback, decisão de anfitrião) exige
+  também o cliente identificado, pelo `x-recognition-token` que o `welcome` devolve em cookie.
+- **Pessoa da equipe**: `staffFetch` (`e2e/helpers/physical-qr.ts`) faz login real com CPF e PIN do seed
+  e manda o `x-staff-token`. A API autoriza por papel: o cozinheiro avança o preparo da cozinha, o garçom
+  entrega, o gerente e o dono fazem qualquer transição e abrem o painel. Telas do `web-staff` entram
+  pelo `/login` com `loginStaffApp`: o proxy só injeta credencial com o cookie `staff_token` desse login.
+- **Estação (TV)**: `x-staff-key`, a chave compartilhada que o proxy injeta. Não identifica ninguém: lê
+  a fila do KDS, chama o garçom e só avança preparo (`in_progress` ou `ready`) com `station`; qualquer
+  outra troca de status recebe 401 `AUTH_TOKEN_REQUIRED`.
+
+A chave vem de `e2e/helpers/staff-key.ts`, nesta ordem: `E2E_STAFF_API_KEY`, `STAFF_API_KEY` do
+ambiente e `STAFF_API_KEY` do `.env` da raiz (o mesmo que o Compose lê). Sem nenhuma das três, a chave
+fica vazia e a API responde 401, o que aponta direto para a configuração. Com o `.env` do tutorial, não
+é preciso exportar nada.
+
+O `GET /:slug/orders/_kds` tem cache de 3 s no Redis. Teste que insere pedido direto no banco chama
+`clearKdsCache()` antes de ler a fila; e a estação do item vem de `menu_items.kind` (`drink` vai para o
+bar), não do nome da categoria.
 
 ### Testes que dependem do LLM
 
@@ -121,6 +138,8 @@ O `chat-tool-delay.spec.ts` simula as respostas do assistente com `page.route` e
   Fixture)" disponível no cardápio, um pedido âncora na sessão da M01 e o cliente de `TV_MARIA_CPF`.
 - O `tv-kds` cria e apaga um cliente próprio (constante local `TEST_CPF`, diferente da de
   `e2e/helpers/session.ts`); a limpeza apaga antes verificações, participantes e visitas desse CPF.
+- O `tv-delivery-flow` abre e encerra um chamado de garçom na QRTEST91, atendido pelo garçom do seed
+  que tem login: a entrega vai para quem atendeu a mesa, e só esse garçom consegue entrar no app.
 - Os helpers de sessão usam `TEST_CPF` e `TEST_NAME` (`e2e/helpers/session.ts`) como cliente padrão.
 
 Recomendação: rode o E2E **depois** de qualquer roteiro manual. `bash scripts/demo/reset-mesa.sh M01` e

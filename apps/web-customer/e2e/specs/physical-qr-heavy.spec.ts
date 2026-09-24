@@ -16,6 +16,7 @@ import {
   grantLocation,
   initSession,
   latestScanRequest,
+  loginStaffApp,
   makeDailyAccessToken,
   makeHmac,
   mongoEval,
@@ -717,14 +718,11 @@ test('E2E 20: staff UI mostra pendencia fisica, detalhe e remove apos decisao', 
   await scanAndWelcome({ tableCode: 'QRTEST91', name: 'Cliente Staff UI', cpf: freshCpf() });
   const request = latestScanRequest('QRTEST91')!;
 
-  await page.addInitScript(
-    ({ staffId, role }) => {
-      window.localStorage.setItem('staffId', staffId);
-      window.localStorage.setItem('staffRole', role);
-    },
-    { staffId: manager.id, role: manager.role },
-  );
+  // Sessão real do gerente: o proxy do web-staff exige o cookie staff_token
+  // do /login (staffId no localStorage não autentica mais nada). A nova aba
+  // de rejeição, abaixo, herda o cookie do mesmo contexto.
   await routeStaffApiToLocalhost(page);
+  await loginStaffApp(page, manager);
   await page.goto(`${STAFF_BASE_URL}/host?tenant=${DEFAULT_SLUG}&hostId=${manager.id}`, {
     waitUntil: 'domcontentloaded',
   });
@@ -750,13 +748,6 @@ test('E2E 20: staff UI mostra pendencia fisica, detalhe e remove apos decisao', 
   const rejectRequest = latestScanRequest('QRTEST92')!;
   const rejectPage = await page.context().newPage();
   try {
-    await rejectPage.addInitScript(
-      ({ staffId, role }) => {
-        window.localStorage.setItem('staffId', staffId);
-        window.localStorage.setItem('staffRole', role);
-      },
-      { staffId: manager.id, role: manager.role },
-    );
     await routeStaffApiToLocalhost(rejectPage);
     await rejectPage.goto(
       `${STAFF_BASE_URL}/host/scan-verification/${rejectRequest.id}?tenant=${DEFAULT_SLUG}&hostId=${manager.id}`,

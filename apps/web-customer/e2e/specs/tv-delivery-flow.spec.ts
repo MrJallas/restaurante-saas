@@ -1,7 +1,7 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import { newSession } from '../helpers/session';
-import { STAFF_BASE_URL, staffByRole, staffFetch, type StaffRow } from '../helpers/physical-qr';
+import { STAFF_BASE_URL, loginStaffApp, staffByRole, staffFetch } from '../helpers/physical-qr';
 
 /**
  * Fluxo ponta a ponta da entrega TV → garçom → cliente (prompt 99 §6).
@@ -26,15 +26,6 @@ import { STAFF_BASE_URL, staffByRole, staffFetch, type StaffRow } from '../helpe
 const SLUG = 'restaurant_dev';
 const STAFF_APP = STAFF_BASE_URL;
 const EVIDENCE_DIR = process.env.TV_DELIVERY_EVIDENCE_DIR || '/tmp/tv-delivery-e2e';
-
-/** Login real no web-staff (mesmo fluxo do restaurant-night-simulation). */
-async function loginStaffApp(page: Page, staff: Pick<StaffRow, 'cpf'>): Promise<void> {
-  await page.goto(`${STAFF_APP}/login`, { waitUntil: 'domcontentloaded' });
-  await page.getByPlaceholder('90000000001').fill(staff.cpf);
-  await page.getByPlaceholder('1234').fill(process.env.E2E_STAFF_PIN ?? '1234');
-  await page.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page).not.toHaveURL(/\/login(?:\?|$)/, { timeout: 15_000 });
-}
 
 function psql(query: string): string {
   // restaurant-postgres não publica porta no host (hardening round 10) —
