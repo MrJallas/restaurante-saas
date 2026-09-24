@@ -184,6 +184,24 @@ INSERT INTO menu_items (category_id, name, short_description, price_cents, tags,
 SELECT c.id, 'Brownie com Sorvete', 'Chocolate quente + baunilha', 1890, ARRAY['doce','quente'], ARRAY['gluten','lactose','ovo'], ARRAY['chocolate','sorvete'], 8, 2
 FROM menu_categories c WHERE c.name = 'Sobremesas';
 
+
+-- === Fotos do cardapio ===
+-- Arquivos servidos pelo web-customer em /cardapio (apps/web-customer/public/cardapio).
+UPDATE menu_items mi SET image_url = '/cardapio/' || f.arquivo
+FROM (VALUES
+  ('Bruschetta de Tomate', 'bruschetta-de-tomate.webp'),
+  ('Bolinho de Bacalhau',  'bolinho-de-bacalhau.webp'),
+  ('Picanha na Brasa',     'picanha-na-brasa.webp'),
+  ('Risoto de Funghi',     'risoto-de-funghi.webp'),
+  ('Salmao Grelhado',      'salmao-grelhado.webp'),
+  ('Suco de Laranja',      'suco-de-laranja.webp'),
+  ('Caipirinha',           'caipirinha.webp'),
+  ('Agua Mineral',         'agua-mineral.webp'),
+  ('Pudim da Casa',        'pudim-da-casa.webp'),
+  ('Brownie com Sorvete',  'brownie-com-sorvete.webp')
+) AS f(nome, arquivo)
+WHERE mi.name = f.nome;
+
 -- === Promotions ===
 INSERT INTO promotions (title, description, discount_type, discount_value, min_order_cents, valid_until, is_active) VALUES
   ('Happy Hour 20% OFF', 'Descontao em bebidas de 17h as 19h', 'percentage', 20, NULL, now() + interval '60 days', true),
