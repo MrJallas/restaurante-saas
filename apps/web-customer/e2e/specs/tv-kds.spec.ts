@@ -12,9 +12,13 @@ import {
 } from '../../../web-staff/src/components/tv/types';
 import {
   ensureTvFixtures,
+  clearKdsCache,
   clearWelcomeAndThrottleLocks,
-  dailyAccessToken,
+  initTvSession,
+  resetTvAnchorOrder,
+  type TvSession,
 } from '../helpers/tv-fixtures';
+import { API_BASE_URL, staffByRole, staffFetch, type StaffRow } from '../helpers/physical-qr';
 
 /**
  * Suite de bugs P1+P2 das telas TV (Cozinha + Bar). Cada test cobre um
@@ -26,15 +30,21 @@ import {
  * expoe um proxy http pra rodar SQL ad-hoc no DB de dev, e adicionar
  * o `pg` package so pra os tests aumentaria o footprint. psql ja esta
  * no host (homebrew). Compromisso aceitavel pra suite local.
+ *
+ * Modelo de autenticação atual (2026-09):
+ *  - Cliente: `session/init` devolve `sessionId` (UUID, só pra SQL) e `token`
+ *    (HMAC do sessionId) — o `x-session-token` é o `token`.
+ *  - Pessoa da equipe: `x-staff-token` de login real (CPF+PIN), via
+ *    `staffFetch`. A transição de status é autorizada por papel: cook avança
+ *    preparo da cozinha, waiter entrega, manager/owner fazem qualquer uma.
+ *  - Estação (TV): `x-staff-key` compartilhada, injetada pelo proxy. Não é
+ *    pessoa: lê o KDS e só avança preparo (`in_progress`/`ready`) com
+ *    `station` explícito; o resto responde 401 AUTH_TOKEN_REQUIRED.
  */
 
-const API = 'http://localhost:3001/api/restaurant_dev';
+const SLUG = 'restaurant_dev';
+const API = `${API_BASE_URL}/${SLUG}`;
 const STAFF_KEY = STAFF_API_KEY;
-
-// HMAC secret real do tenant restaurant_dev (DB-backed, sincronizado
-// pela suite test infra). Reusado pelos describes que precisam de
-// session token de customer.
-const M01_SECRET = '38889aad-20d1-4778-b4ab-df35774c0398';
 
 // O /customer/welcome exige um objeto `location` (status granted) — sem ele
 // responde 403 "Permita o acesso à localização", mesmo com a geofence
@@ -46,28 +56,9 @@ const WELCOME_LOCATION = {
   accuracyMeters: 12,
 };
 
-async function getSessionToken(): Promise<string> {
-  const crypto = await import('node:crypto');
-  const ts = Date.now();
-  const sig = crypto.createHmac('sha256', M01_SECRET).update(`M01:${ts}`).digest('hex');
-  const res = await fetch(`${API}/session/init`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      tableCode: 'M01',
-      hmacSignature: sig,
-      timestamp: String(ts),
-      // Hardening do QR físico (2026-06-09/10) passou a exigir o token
-      // diário no session/init. ensureTvFixtures sincroniza o secret do
-      // DB com M01_SECRET, então este accessToken valida.
-      accessToken: dailyAccessToken('M01', M01_SECRET),
-    }),
-  });
-  if (res.status !== 201) {
-    throw new Error(`session/init falhou (${res.status})`);
-  }
-  const body = (await res.json()) as { sessionId: string };
-  return body.sessionId;
+/** Sessão real da mesa M01: `token` vai no header, `sessionId` fica pro SQL. */
+function m01Session(): Promise<TvSession> {
+  return initTvSession('M01');
 }
 
 // Setup determinístico da suite:
@@ -94,15 +85,22 @@ function psql(query: string): string {
 
 test.describe('P1-A — race condition em updateStatus', () => {
   const ORDER_ID = 'aaaaaaa1-0000-0000-0000-000000000001';
+  // Preparo exige sessão individual: o cook avança a cozinha. O autor
+  // gravado no history é o staff do TOKEN — o `changedBy` do body é ignorado.
+  let cook: StaffRow;
+
+  test.beforeAll(async () => {
+    cook = await staffByRole('cook');
+  });
 
   test.beforeEach(() => {
-    // Reset do pedido pra received e limpa history rows do teste anterior.
-    // Importante: NAO apagar todo o history do pedido — apenas as rows
-    // que este teste produz (received -> in_progress), pra nao corromper
-    // o seed inicial.
+    // Reset do pedido (e dos itens) pra received e limpa history rows do
+    // teste anterior. Importante: NAO apagar todo o history do pedido —
+    // apenas as rows que este teste produz (received -> in_progress pelo
+    // cook), pra nao corromper o seed inicial.
+    resetTvAnchorOrder();
     psql(
-      `UPDATE orders SET status='received' WHERE id='${ORDER_ID}'; ` +
-        `DELETE FROM order_status_history WHERE order_id='${ORDER_ID}' AND from_status='received' AND to_status='in_progress' AND changed_by='race-test';`,
+      `DELETE FROM order_status_history WHERE order_id='${ORDER_ID}' AND from_status='received' AND to_status='in_progress' AND changed_by='${cook.id}';`,
     );
   });
 
@@ -110,23 +108,21 @@ test.describe('P1-A — race condition em updateStatus', () => {
     // Dispara 5 transicoes received -> in_progress simultaneas. Sem CAS,
     // todas leem status='received', todas passam pela validacao JS, e
     // todas inserem history.
-    const calls = Array.from({ length: 5 }).map(() =>
-      fetch(`${API}/orders/${ORDER_ID}/status`, {
-        method: 'PATCH',
-        headers: {
-          'x-staff-key': STAFF_KEY,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ status: 'in_progress', changedBy: 'race-test' }),
-      }),
+    const responses = await Promise.all(
+      Array.from({ length: 5 }).map(() =>
+        staffFetch(`/${SLUG}/orders/${ORDER_ID}/status`, {
+          method: 'PATCH',
+          staff: cook,
+          body: JSON.stringify({ status: 'in_progress', station: 'kitchen' }),
+        }),
+      ),
     );
-    const responses = await Promise.all(calls);
 
     // Asserção primária: history nao pode duplicar. Sem CAS, as 5 calls
     // leem 'received' simultaneamente e todas inserem history.
     const count = Number(
       psql(
-        `SELECT count(*) FROM order_status_history WHERE order_id='${ORDER_ID}' AND from_status='received' AND to_status='in_progress' AND changed_by='race-test';`,
+        `SELECT count(*) FROM order_status_history WHERE order_id='${ORDER_ID}' AND from_status='received' AND to_status='in_progress' AND changed_by='${cook.id}';`,
       ),
     );
     expect(count, 'order_status_history deve ter exatamente 1 linha').toBe(1);
@@ -300,7 +296,7 @@ test.describe('P1-G — welcome de cliente recorrente preserva o nome canônico'
     const before = psql(`SELECT name FROM customers WHERE cpf = '${CPF}';`);
     expect(before).toBe('Maria Silva');
 
-    const token = await getSessionToken();
+    const { token } = await m01Session();
     const res = await fetch(`${API}/customer/welcome`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-session-token': token },
@@ -322,7 +318,7 @@ test.describe('P1-G — welcome de cliente recorrente preserva o nome canônico'
 
   test('welcome com nome identico nao toca DB (idempotente)', async () => {
     psql(`UPDATE customers SET name = 'Maria Silva' WHERE cpf = '${CPF}';`);
-    const token = await getSessionToken();
+    const { token } = await m01Session();
     const res = await fetch(`${API}/customer/welcome`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-session-token': token },
@@ -347,10 +343,9 @@ test.describe('SURPRESA — confirmOrder/cancelOrder usam CAS atomico (CTE+SELEC
   });
 
   test('5 PATCH /confirm concorrentes geram exatamente 1 row em order_status_history', async () => {
-    const token = await getSessionToken();
-    const sessionId = psql(
-      `SELECT id FROM table_sessions WHERE table_id = (SELECT id FROM tables WHERE code = 'M01') ORDER BY created_at DESC LIMIT 1;`,
-    );
+    // O pedido nasce na MESMA sessão que o token autentica (o confirm checa
+    // o dono da sessão) — sessionId e token vêm juntos do session/init.
+    const { sessionId, token } = await m01Session();
 
     psql(
       `INSERT INTO orders (id, table_session_id, billing_mode, status, notes, total_cents, created_by, auto_confirm_at, created_at, updated_at) VALUES ('${ORDER_ID}', '${sessionId}', 'table', 'pending_confirmation', 'CAS-confirm-test', 1000, 'qa', now() + interval '15 seconds', now(), now()); ` +
@@ -388,7 +383,7 @@ test.describe('SURPRESA — confirmOrder/cancelOrder usam CAS atomico (CTE+SELEC
 
 test.describe('P1-E — _kds rejeita customer session token (staff-only)', () => {
   test('GET _kds com session-token de customer (sem staff-key) retorna 401/403', async () => {
-    const token = await getSessionToken();
+    const { token } = await m01Session();
     const res = await fetch(`${API}/orders/_kds?station=kitchen`, {
       headers: { 'x-session-token': token },
     });
@@ -434,6 +429,8 @@ test.describe('P1-D — KDS nao retorna pedidos zumbis (>8h ou sessao fechada)',
   });
 
   test('pedido com 12h de idade nao aparece no _kds; pedido fresco aparece', async () => {
+    // Pedidos entraram via SQL: derruba o cache-aside de 3s do _kds.
+    clearKdsCache();
     const res = await fetch(`${API}/orders/_kds?station=kitchen`, {
       headers: { 'x-staff-key': STAFF_KEY },
     });
@@ -460,42 +457,56 @@ test.describe('P1-C — isAlertNote casa palavras com acento (PT-BR)', () => {
   });
 });
 
-test.describe('P1-B — filtro Bebidas case-insensitive', () => {
+test.describe('P1-B — bar × cozinha pelo menu_items.kind, não pelo nome da categoria', () => {
+  // O KDS roteia pelo FLAG autoritativo `menu_items.kind` (kds-query.service:
+  // bar = kind 'drink', cozinha = o resto). O antigo filtro por
+  // LOWER(TRIM(categoria)) = 'bebidas' saiu: mandava drink em categoria com
+  // outro nome pra cozinha. A categoria '  BEBIDAS  ' fica como isca: o nome
+  // não decide mais nada.
   // UUIDs do seed temporario. Prefixo bbbbbbbb pra deduplicar de outros tests.
   const CAT_ID = 'bbbbbbbb-aaaa-bbbb-cccc-000000000001';
   const ITEM_ID = 'bbbbbbbb-bbbb-bbbb-cccc-000000000001';
+  const FOOD_ITEM_ID = 'bbbbbbbb-bbbb-bbbb-cccc-000000000002';
   const ORDER_ID = 'bbbbbbbb-cccc-bbbb-cccc-000000000001';
+  const FOOD_ORDER_ID = 'bbbbbbbb-cccc-bbbb-cccc-000000000002';
   const SESSION_ID = '0d324208-01ce-4d5e-b95e-1acba080304c'; // M01
 
   test.beforeEach(() => {
-    // Categoria com nome 'BEBIDAS' (uppercase) deve ser tratada como bebida.
-    // Nao usamos lowercase pra exercitar tambem o flip do TRIM.
     psql(
       `INSERT INTO menu_categories (id, name, sort_order) VALUES ('${CAT_ID}', '  BEBIDAS  ', 99); ` +
-        `INSERT INTO menu_items (id, category_id, name, price_cents, is_available) VALUES ('${ITEM_ID}', '${CAT_ID}', 'Coca BugB', 500, true); ` +
+        `INSERT INTO menu_items (id, category_id, name, price_cents, kind, is_available) VALUES ('${ITEM_ID}', '${CAT_ID}', 'Coca BugB', 500, 'drink', true); ` +
+        `INSERT INTO menu_items (id, category_id, name, price_cents, kind, is_available) VALUES ('${FOOD_ITEM_ID}', '${CAT_ID}', 'Porcao BugB', 500, 'food', true); ` +
         `INSERT INTO orders (id, table_session_id, billing_mode, status, notes, total_cents, created_by, created_at, updated_at) VALUES ('${ORDER_ID}', '${SESSION_ID}', 'table', 'received', 'BUG-B', 500, 'qa', now(), now()); ` +
-        `INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_cents, subtotal_cents) VALUES ('${ORDER_ID}', '${ITEM_ID}', 1, 500, 500);`,
+        `INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_cents, subtotal_cents) VALUES ('${ORDER_ID}', '${ITEM_ID}', 1, 500, 500); ` +
+        `INSERT INTO orders (id, table_session_id, billing_mode, status, notes, total_cents, created_by, created_at, updated_at) VALUES ('${FOOD_ORDER_ID}', '${SESSION_ID}', 'table', 'received', 'BUG-B-food', 500, 'qa', now(), now()); ` +
+        `INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_cents, subtotal_cents) VALUES ('${FOOD_ORDER_ID}', '${FOOD_ITEM_ID}', 1, 500, 500);`,
     );
+    // Pedidos entraram via SQL: derruba o cache-aside de 3s do _kds.
+    clearKdsCache();
   });
 
   test.afterEach(() => {
     psql(
-      `DELETE FROM order_items WHERE order_id='${ORDER_ID}'; ` +
-        `DELETE FROM orders WHERE id='${ORDER_ID}'; ` +
-        `DELETE FROM menu_items WHERE id='${ITEM_ID}'; ` +
+      `DELETE FROM order_items WHERE order_id IN ('${ORDER_ID}', '${FOOD_ORDER_ID}'); ` +
+        `DELETE FROM orders WHERE id IN ('${ORDER_ID}', '${FOOD_ORDER_ID}'); ` +
+        `DELETE FROM menu_items WHERE id IN ('${ITEM_ID}', '${FOOD_ITEM_ID}'); ` +
         `DELETE FROM menu_categories WHERE id='${CAT_ID}';`,
     );
   });
 
-  test('item com categoria BEBIDAS (uppercase + trim) vai pro bar, nao pra cozinha', async () => {
+  test('kind=drink vai pro bar e kind=food vai pra cozinha, mesmo na categoria "  BEBIDAS  "', async () => {
     const kitchenRes = await fetch(`${API}/orders/_kds?station=kitchen`, {
       headers: { 'x-staff-key': STAFF_KEY },
     });
     const kitchen = (await kitchenRes.json()) as { orders: Array<{ id: string }> };
     expect(
       kitchen.orders.some((o) => o.id === ORDER_ID),
-      'kitchen NAO deve listar pedido com categoria BEBIDAS',
+      'kitchen NAO deve listar pedido de bebida (kind=drink)',
     ).toBe(false);
+    expect(
+      kitchen.orders.some((o) => o.id === FOOD_ORDER_ID),
+      'kitchen deve listar comida mesmo em categoria chamada BEBIDAS',
+    ).toBe(true);
 
     const barRes = await fetch(`${API}/orders/_kds?station=bar`, {
       headers: { 'x-staff-key': STAFF_KEY },
@@ -503,8 +514,12 @@ test.describe('P1-B — filtro Bebidas case-insensitive', () => {
     const bar = (await barRes.json()) as { orders: Array<{ id: string }> };
     expect(
       bar.orders.some((o) => o.id === ORDER_ID),
-      'bar deve listar pedido com categoria BEBIDAS',
+      'bar deve listar pedido de bebida (kind=drink)',
     ).toBe(true);
+    expect(
+      bar.orders.some((o) => o.id === FOOD_ORDER_ID),
+      'bar NAO deve listar comida so pelo nome da categoria',
+    ).toBe(false);
   });
 });
 
@@ -636,7 +651,14 @@ test.describe('TV-RESP — responsividade sem scroll horizontal', () => {
   }
 });
 
-test.describe('P0-1 — proxy allowlist blocks unauthorized paths', () => {
+// Contrato atual do proxy do web-staff (ciclo 2, 2026-07-04): sem cookie
+// `staff_token` só as 3 rotas de TV (GET _kds, PATCH status, POST
+// call-waiter) passam, e mesmo elas só com o gate de TV (tv_pin; no-op em dev
+// sem TV_ACCESS_PIN). Qualquer outra rota recebe 401 AUTH_MISSING ANTES de
+// chegar na API — o proxy nem injeta a key. Antes era uma allowlist que
+// devolvia 404; a proteção (anônimo não alcança rota fora da TV) é a mesma,
+// só mudou de forma.
+test.describe('P0-1 — proxy sem sessão de staff só abre as rotas de TV', () => {
   const PROXY = 'http://localhost:3002/api/proxy/restaurant_dev';
 
   test.beforeAll(() => {
@@ -650,25 +672,32 @@ test.describe('P0-1 — proxy allowlist blocks unauthorized paths', () => {
     }
   });
 
-  test('GET /dashboard/overview via proxy returns 404', async () => {
-    const res = await fetch(`${PROXY}/dashboard/overview`);
-    expect(res.status).toBe(404);
+  async function expectAuthMissing(res: Response) {
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { code?: string };
+    expect(body.code).toBe('AUTH_MISSING');
+  }
+
+  test('GET /dashboard/overview via proxy sem sessão → 401 AUTH_MISSING', async () => {
+    await expectAuthMissing(await fetch(`${PROXY}/dashboard/overview`));
   });
 
-  test('DELETE any path via proxy returns 404', async () => {
-    const res = await fetch(`${PROXY}/orders/aaaaaaa1-0000-0000-0000-000000000001`, {
-      method: 'DELETE',
-    });
-    expect(res.status).toBe(404);
+  test('DELETE via proxy sem sessão → 401 AUTH_MISSING', async () => {
+    await expectAuthMissing(
+      await fetch(`${PROXY}/orders/aaaaaaa1-0000-0000-0000-000000000001`, {
+        method: 'DELETE',
+      }),
+    );
   });
 
-  test('POST any path via proxy returns 404', async () => {
-    const res = await fetch(`${PROXY}/orders`, {
-      method: 'POST',
-      body: '{}',
-      headers: { 'content-type': 'application/json' },
-    });
-    expect(res.status).toBe(404);
+  test('POST fora da TV via proxy sem sessão → 401 AUTH_MISSING', async () => {
+    await expectAuthMissing(
+      await fetch(`${PROXY}/orders`, {
+        method: 'POST',
+        body: '{}',
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
   });
 
   test('GET _kds via proxy still works', async () => {
@@ -676,30 +705,53 @@ test.describe('P0-1 — proxy allowlist blocks unauthorized paths', () => {
     expect(res.status).toBe(200);
   });
 
-  test('PATCH orders/:id/status via proxy still works', async () => {
+  test('PATCH status via proxy com o contrato da TV (station) avança o preparo', async () => {
+    // Mesmo body que o TvKdsBoard manda: estação explícita + passo de preparo.
+    resetTvAnchorOrder();
+    const res = await fetch(`${PROXY}/orders/aaaaaaa1-0000-0000-0000-000000000001/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'in_progress', changedBy: 'kitchen', station: 'kitchen' }),
+    });
+    expect(res.status, `PATCH status via proxy (TV) deve passar (got ${res.status})`).toBe(200);
+  });
+
+  test('PATCH status via proxy sem station → 401 AUTH_TOKEN_REQUIRED (TV não é pessoa)', async () => {
     const res = await fetch(`${PROXY}/orders/aaaaaaa1-0000-0000-0000-000000000001/status`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ status: 'received', changedBy: 'proxy-test' }),
     });
-    expect(
-      [200, 400].includes(res.status),
-      `PATCH status via proxy should be allowed (got ${res.status})`,
-    ).toBe(true);
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { code?: string };
+    expect(body.code).toBe('AUTH_TOKEN_REQUIRED');
   });
 });
 
-test.describe('P0-2 — PATCH /:orderId/status requires staff-key (no session-token)', () => {
+// Contrato atual: a transição de status é autorizada por PAPEL da sessão
+// individual (x-staff-token). A key compartilhada representa a estação e só
+// avança preparo com `station`; sem isso responde 401 AUTH_TOKEN_REQUIRED.
+// Antes "staff-key basta" era o caminho feliz — hoje é exatamente o que a
+// API recusa, porque não diz QUEM fez a transição.
+test.describe('P0-2 — PATCH /:orderId/status exige sessão individual da equipe', () => {
   const ORDER_ID = 'aaaaaaa1-0000-0000-0000-000000000001';
+  let cook: StaffRow;
 
-  test.beforeEach(() => {
+  function cleanup() {
+    resetTvAnchorOrder();
     psql(
-      `UPDATE orders SET status='received' WHERE id='${ORDER_ID}'; DELETE FROM order_status_history WHERE order_id='${ORDER_ID}' AND changed_by IN ('cross-table-test','p0-test');`,
+      `DELETE FROM order_status_history WHERE order_id='${ORDER_ID}' AND changed_by IN ('${cook.id}','station:kitchen');`,
     );
+  }
+
+  test.beforeAll(async () => {
+    cook = await staffByRole('cook');
   });
 
+  test.beforeEach(() => cleanup());
+
   test('PATCH status with session-token (no staff-key) returns 401/403', async () => {
-    const token = await getSessionToken();
+    const { token } = await m01Session();
     const res = await fetch(`${API}/orders/${ORDER_ID}/status`, {
       method: 'PATCH',
       headers: { 'x-session-token': token, 'content-type': 'application/json' },
@@ -707,24 +759,32 @@ test.describe('P0-2 — PATCH /:orderId/status requires staff-key (no session-to
     });
     expect(
       [401, 403].includes(res.status),
-      `status update must require staff-key (got ${res.status})`,
+      `cliente nao pode avancar preparo (got ${res.status})`,
     ).toBe(true);
   });
 
-  test('PATCH status with staff-key still works', async () => {
+  test('PATCH status só com x-staff-key (sem station) → 401 AUTH_TOKEN_REQUIRED', async () => {
     const res = await fetch(`${API}/orders/${ORDER_ID}/status`, {
       method: 'PATCH',
       headers: { 'x-staff-key': STAFF_KEY, 'content-type': 'application/json' },
       body: JSON.stringify({ status: 'in_progress', changedBy: 'p0-test' }),
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { code?: string };
+    expect(body.code).toBe('AUTH_TOKEN_REQUIRED');
   });
 
-  test.afterAll(() => {
-    psql(
-      `UPDATE orders SET status='received' WHERE id='${ORDER_ID}'; DELETE FROM order_status_history WHERE order_id='${ORDER_ID}' AND changed_by IN ('cross-table-test','p0-test');`,
-    );
+  test('PATCH status com sessão individual do cook (cozinha) → 200', async () => {
+    const res = await staffFetch<{ orderStatus?: string }>(`/${SLUG}/orders/${ORDER_ID}/status`, {
+      method: 'PATCH',
+      staff: cook,
+      body: JSON.stringify({ status: 'in_progress', station: 'kitchen' }),
+    });
+    expect(res.status).toBe(200);
+    expect(psql(`SELECT status FROM orders WHERE id='${ORDER_ID}';`)).toBe('in_progress');
   });
+
+  test.afterAll(() => cleanup());
 });
 
 test.describe('P1-1 — welcome customer race (ON CONFLICT)', () => {
@@ -758,7 +818,7 @@ test.describe('P1-1 — welcome customer race (ON CONFLICT)', () => {
     }
   });
 
-  test('20 parallel POSTs with new CPF: zero 5xx, total_visits=20', async () => {
+  test('20 parallel POSTs with new CPF: zero 5xx, 1 customer e 1 visita por sessão', async () => {
     test.setTimeout(15_000);
     try {
       psql(
@@ -774,19 +834,18 @@ test.describe('P1-1 — welcome customer race (ON CONFLICT)', () => {
     } catch {
       /* no-op */
     }
-    const token = await getSessionToken();
-    const calls = Array.from({ length: 20 }).map((_, i) =>
+    // O /welcome limita 30 tentativas/15min por IP REAL + sessão da mesa
+    // (XFF é ignorado — rotacionar o header não abre bypass). As 20 cabem
+    // numa janela limpa; o alvo do teste é o dedup ON CONFLICT (cpf) sob
+    // concorrência, não o rate-limit, então zeramos a janela antes.
+    clearWelcomeAndThrottleLocks();
+    const { token } = await m01Session();
+    const calls = Array.from({ length: 20 }).map(() =>
       fetch(`${API}/customer/welcome`, {
         method: 'POST',
         headers: {
           'x-session-token': token,
           'content-type': 'application/json',
-          // IP sintético único por call: o /welcome tem rate-limit de 5/15min
-          // por IP (customers:welcome:<ip>, key = X-Forwarded-For). Sem
-          // rotacionar o XFF só 5 dos 20 passariam. O alvo do teste é o dedup
-          // ON CONFLICT (cpf) sob concorrência, não o rate-limit — então
-          // damos um IP distinto a cada request (mesma tática do physical-qr.ts).
-          'x-forwarded-for': `198.18.0.${i}`,
         },
         body: JSON.stringify({ name: 'Race Test', cpf: TEST_CPF, location: WELCOME_LOCATION }),
       }),
@@ -796,10 +855,18 @@ test.describe('P1-1 — welcome customer race (ON CONFLICT)', () => {
     const has5xx = statuses.some((s) => s >= 500);
     expect(has5xx, `zero 5xx expected, got: ${statuses.filter((s) => s >= 500)}`).toBe(false);
 
+    // Dedup ON CONFLICT (cpf): 20 cadastros concorrentes → 1 customer só.
+    const customerRows = Number(psql(`SELECT count(*) FROM customers WHERE cpf = '${TEST_CPF}';`));
+    expect(customerRows, 'ON CONFLICT (cpf) deve deixar 1 customer').toBe(1);
+
+    // Contrato atual (fix do super-count): `visits` é UNIQUE(table_session_id,
+    // customer_id) e total_visits é reconciliado por COUNT(visits). Os 20
+    // welcomes são na MESMA sessão de mesa → 1 visita. Antes o teste esperava
+    // 20, que era exatamente a contagem inflada por reload/re-submit.
     const totalVisits = Number(
       psql(`SELECT total_visits FROM customers WHERE cpf = '${TEST_CPF}';`),
     );
-    expect(totalVisits).toBe(20);
+    expect(totalVisits).toBe(1);
 
     const bodies = await Promise.all(
       responses.filter((r) => r.status === 201).map((r) => r.json()),
@@ -813,14 +880,16 @@ test.describe('P1-1 — welcome customer race (ON CONFLICT)', () => {
 
 test.describe('P1-2 — payments confirm/cancel race (CAS)', () => {
   const PAYMENT_ID = 'dddddddd-dddd-dddd-dddd-000000000001';
-  const SESSION_ID_M01 = psql(
-    `SELECT id FROM table_sessions WHERE table_id = (SELECT id FROM tables WHERE code = 'M01') ORDER BY created_at DESC LIMIT 1;`,
-  );
+  // O pagamento precisa nascer na MESMA sessão que o token autentica: o
+  // confirm/cancel checa o dono. Antes a sessão vinha de "a mais recente da
+  // M01" lida na coleta do arquivo (antes até do ensureTvFixtures).
+  let session: TvSession;
 
-  test.beforeEach(() => {
+  test.beforeEach(async () => {
+    session = await m01Session();
     psql(
       `DELETE FROM payments WHERE id = '${PAYMENT_ID}'; ` +
-        `INSERT INTO payments (id, table_session_id, amount_cents, status, method, created_at, updated_at) VALUES ('${PAYMENT_ID}', '${SESSION_ID_M01}', 5000, 'pending', 'pix', now(), now());`,
+        `INSERT INTO payments (id, table_session_id, amount_cents, status, method, created_at, updated_at) VALUES ('${PAYMENT_ID}', '${session.sessionId}', 5000, 'pending', 'pix', now(), now());`,
     );
   });
 
@@ -829,7 +898,7 @@ test.describe('P1-2 — payments confirm/cancel race (CAS)', () => {
   });
 
   test('5 confirm + 5 cancel parallel: no row with paid_at AND cancelled_at', async () => {
-    const token = await getSessionToken();
+    const { token } = session;
     const confirms = Array.from({ length: 5 }).map(() =>
       fetch(`${API}/payments/${PAYMENT_ID}/confirm`, {
         method: 'POST',
@@ -853,11 +922,18 @@ test.describe('P1-2 — payments confirm/cancel race (CAS)', () => {
     );
     expect(bothSet, 'paid_at AND cancelled_at must not both be set').toBe(0);
 
+    // Contrato atual (A04-PAY-01): o /confirm do CLIENTE não marca pago — só
+    // leva a 'awaiting_settlement' (sem paid_at) até webhook de PSP ou staff.
+    // 'confirmed' só aparece com a flag de mock PAYMENTS_ALLOW_CLIENT_CONFIRM.
     const status = psql(`SELECT status FROM payments WHERE id = '${PAYMENT_ID}';`);
     expect(
-      ['confirmed', 'cancelled'].includes(status),
-      `final status must be confirmed or cancelled, got ${status}`,
+      ['awaiting_settlement', 'confirmed', 'cancelled'].includes(status),
+      `final status must be awaiting_settlement, confirmed or cancelled, got ${status}`,
     ).toBe(true);
+    if (status === 'awaiting_settlement') {
+      const paidAt = psql(`SELECT paid_at FROM payments WHERE id = '${PAYMENT_ID}';`);
+      expect(paidAt, 'aguardando compensação não pode ter paid_at').toBe('');
+    }
   });
 });
 
@@ -878,7 +954,7 @@ test.describe('P1-3 — tv-unlock rate-limit', () => {
 
 test.describe('P1-5 — _sweep-auto-confirm requires staff-key', () => {
   test('POST _sweep-auto-confirm with session-token returns 401/403', async () => {
-    const token = await getSessionToken();
+    const { token } = await m01Session();
     const res = await fetch(`${API}/orders/_sweep-auto-confirm`, {
       method: 'POST',
       headers: { 'x-session-token': token },
@@ -921,6 +997,8 @@ test.describe('P1-6 — in_progress orders visible in KDS after session close', 
 
     psql(`UPDATE table_sessions SET status = 'closed' WHERE id = '${sessionId}';`);
 
+    // Pedido entrou via SQL: derruba o cache-aside de 3s do _kds.
+    clearKdsCache();
     const res = await fetch(`${API}/orders/_kds?station=kitchen`, {
       headers: { 'x-staff-key': STAFF_KEY },
     });
@@ -936,7 +1014,7 @@ test.describe('P1-6 — in_progress orders visible in KDS after session close', 
 
 test.describe('P2-6 — dashboard/staff/promotions require staff-key', () => {
   test('GET /dashboard/overview with session-token returns 401/403', async () => {
-    const token = await getSessionToken();
+    const { token } = await m01Session();
     const res = await fetch(`${API}/dashboard/overview`, {
       headers: { 'x-session-token': token },
     });
@@ -946,9 +1024,21 @@ test.describe('P2-6 — dashboard/staff/promotions require staff-key', () => {
     ).toBe(true);
   });
 
-  test('GET /dashboard/overview with staff-key returns 200', async () => {
+  // Contrato atual: dashboard é StaffOnly + ManagerOnly. A key compartilhada
+  // só abre o primeiro portão; sem identidade de gerente o ManagerOnly
+  // responde 401 AUTH_MISSING. Antes "staff-key → 200" era o caminho feliz.
+  test('GET /dashboard/overview só com x-staff-key → 401 AUTH_MISSING', async () => {
     const res = await fetch(`${API}/dashboard/overview`, {
       headers: { 'x-staff-key': STAFF_KEY },
+    });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { code?: string };
+    expect(body.code).toBe('AUTH_MISSING');
+  });
+
+  test('GET /dashboard/overview com sessão individual do gerente → 200', async () => {
+    const res = await staffFetch(`/${SLUG}/dashboard/overview`, {
+      staff: await staffByRole('manager'),
     });
     expect(res.status).toBe(200);
   });
@@ -963,7 +1053,7 @@ test.describe('P1-NEW-1 — deliveries endpoints require staff-key only', () => 
 
   for (const ep of ENDPOINTS) {
     test(`${ep.method} ${ep.path} with session-token returns 401/403`, async () => {
-      const token = await getSessionToken();
+      const { token } = await m01Session();
       const res = await fetch(`${API}${ep.path}`, {
         method: ep.method,
         headers: { 'x-session-token': token, 'content-type': 'application/json' },
@@ -999,7 +1089,7 @@ test.describe('P1-NEW-2 — idempotencyKey atomic SET NX', () => {
 
   test('5 parallel POSTs with same idempotencyKey produce exactly 1 orderId', async () => {
     const crypto = await import('node:crypto');
-    const token = await getSessionToken();
+    const { token } = await m01Session();
     const idempotencyKey = crypto.randomUUID();
     const payload = JSON.stringify({
       billingMode: 'table',

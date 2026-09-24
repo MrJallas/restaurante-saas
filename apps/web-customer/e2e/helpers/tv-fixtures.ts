@@ -76,11 +76,27 @@ export function dailyAccessToken(tableCode: string, secret: string, date = new D
 }
 
 /**
+ * Sessão de mesa como o cliente real recebe do `session/init`.
+ *
+ * - `sessionId`: UUID de `table_sessions.id` — só serve pra SQL/asserts.
+ * - `token`: bearer opaco `HMAC(SESSION_TOKEN_SECRET, sessionId)` que vai no
+ *   `x-session-token` (A07). Mandar o `sessionId` no header responde 401
+ *   AUTH_INVALID — os specs de TV foram escritos quando os dois eram iguais.
+ */
+export interface TvSession {
+  sessionId: string;
+  token: string;
+}
+
+/**
  * Faz `POST /:slug/session/init` para uma mesa de teste (M01/M02) com
- * HMAC + accessToken válidos e devolve o `sessionId`. Requer que
+ * HMAC + accessToken válidos e devolve `sessionId` + `token`. Requer que
  * `ensureTvFixtures()` já tenha rodado (sincroniza o secret no DB).
  */
-export async function initTvSession(tableCode: 'M01' | 'M02', secret: string): Promise<string> {
+export async function initTvSession(
+  tableCode: 'M01' | 'M02',
+  secret: string = tableCode === 'M01' ? TV_M01_SECRET : TV_M02_SECRET,
+): Promise<TvSession> {
   const ts = Date.now();
   const hmacSignature = createHmac('sha256', secret).update(`${tableCode}:${ts}`).digest('hex');
   const res = await fetch(`${API_BASE_URL}/${SLUG}/session/init`, {
@@ -96,7 +112,42 @@ export async function initTvSession(tableCode: 'M01' | 'M02', secret: string): P
   if (res.status !== 201) {
     throw new Error(`session/init (${tableCode}) falhou: ${res.status} ${await res.text()}`);
   }
-  return ((await res.json()) as { sessionId: string }).sessionId;
+  const body = (await res.json()) as { sessionId?: string; token?: string };
+  if (!body.sessionId || !body.token) {
+    throw new Error(`session/init (${tableCode}) sem sessionId/token: ${JSON.stringify(body)}`);
+  }
+  return { sessionId: body.sessionId, token: body.token };
+}
+
+/**
+ * Invalida o cache-aside do `_kds` (`cache:kds:<slug>:<station>`, TTL 3s).
+ * Os specs inserem pedidos direto via SQL, sem passar pelo write-side que
+ * mantém a TV em dia; sem isto a leitura seguinte pode vir do snapshot que o
+ * teste anterior acabou de popular e o pedido novo "não aparece".
+ */
+export function clearKdsCache(): void {
+  redisDelPattern(`cache:kds:${SLUG}:*`);
+}
+
+function redisDelPattern(pattern: string): void {
+  try {
+    execFileSync(
+      'docker',
+      [
+        'exec',
+        'restaurant-redis',
+        'redis-cli',
+        '--no-raw',
+        'EVAL',
+        "local keys = redis.call('keys', ARGV[1]); for i=1,#keys do redis.call('del', keys[i]) end; return #keys",
+        '0',
+        pattern,
+      ],
+      { stdio: 'pipe' },
+    );
+  } catch {
+    /* Em CI sem docker exec, vira no-op. */
+  }
 }
 
 /**
@@ -108,24 +159,7 @@ export async function initTvSession(tableCode: 'M01' | 'M02', secret: string): P
  */
 export function clearWelcomeAndThrottleLocks(): void {
   for (const pattern of ['customers:welcome:*', 'throttle:*']) {
-    try {
-      execFileSync(
-        'docker',
-        [
-          'exec',
-          'restaurant-redis',
-          'redis-cli',
-          '--no-raw',
-          'EVAL',
-          "local keys = redis.call('keys', ARGV[1]); for i=1,#keys do redis.call('del', keys[i]) end; return #keys",
-          '0',
-          pattern,
-        ],
-        { stdio: 'pipe' },
-      );
-    } catch {
-      /* Em CI sem docker exec, vira no-op. */
-    }
+    redisDelPattern(pattern);
   }
 }
 
@@ -153,6 +187,21 @@ export function purgeTvTestCustomers(cpfWhere: string): void {
     DELETE FROM visits WHERE customer_id IN (${sel});
     DELETE FROM customers WHERE ${cpfWhere};
   `);
+}
+
+/**
+ * Volta o pedido âncora pra `received` no PEDIDO e nos ITENS. O preparo
+ * anda por `order_items` (advanceStationItems só move item em `received` →
+ * `in_progress` → `ready`); resetar só `orders.status` deixaria os itens
+ * adiantados de uma rodada anterior e o teste não seria determinístico.
+ */
+export function resetTvAnchorOrder(): void {
+  psqlExec(`
+    UPDATE orders SET status = 'received', updated_at = now() WHERE id = '${TV_ANCHOR_ORDER_ID}';
+    UPDATE order_items SET status = 'received', prep_started_at = NULL
+     WHERE order_id = '${TV_ANCHOR_ORDER_ID}';
+  `);
+  clearKdsCache();
 }
 
 /**

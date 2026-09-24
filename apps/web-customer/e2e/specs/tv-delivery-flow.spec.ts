@@ -1,7 +1,7 @@
-import { test, expect } from '@playwright/test';
-import { STAFF_API_KEY } from '../helpers/staff-key';
+import { test, expect, type Page } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import { newSession } from '../helpers/session';
+import { STAFF_BASE_URL, staffByRole, staffFetch, type StaffRow } from '../helpers/physical-qr';
 
 /**
  * Fluxo ponta a ponta da entrega TV → garçom → cliente (prompt 99 §6).
@@ -13,16 +13,28 @@ import { newSession } from '../helpers/session';
  *  4. garçom marca "Estou levando" e depois "Confirmar entrega";
  *  5. app do cliente só muda pra "Entregue" depois do passo final do garçom.
  *
+ * Identidades reais (modelo atual): o preparo é avançado por um cook com
+ * sessão individual (x-staff-token) e o garçom entra no web-staff pelo
+ * /login com CPF+PIN — o proxy só injeta credencial com o cookie
+ * `staff_token` desse login. A TV continua sendo estação (sem pessoa).
+ *
  * Roda contra o stack docker-compose de pé (api 3001, customer 3003,
  * staff 3002). Serial — compartilha QRTEST91 com as outras suites
  * (não rodar em paralelo com outros specs, ver .ai/MEMORY.md).
  */
 
 const SLUG = 'restaurant_dev';
-const API = `http://localhost:3001/api/${SLUG}`;
-const STAFF_APP = 'http://localhost:3002';
-const STAFF_KEY = STAFF_API_KEY;
+const STAFF_APP = STAFF_BASE_URL;
 const EVIDENCE_DIR = process.env.TV_DELIVERY_EVIDENCE_DIR || '/tmp/tv-delivery-e2e';
+
+/** Login real no web-staff (mesmo fluxo do restaurant-night-simulation). */
+async function loginStaffApp(page: Page, staff: Pick<StaffRow, 'cpf'>): Promise<void> {
+  await page.goto(`${STAFF_APP}/login`, { waitUntil: 'domcontentloaded' });
+  await page.getByPlaceholder('90000000001').fill(staff.cpf);
+  await page.getByPlaceholder('1234').fill(process.env.E2E_STAFF_PIN ?? '1234');
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  await expect(page).not.toHaveURL(/\/login(?:\?|$)/, { timeout: 15_000 });
+}
 
 function psql(query: string): string {
   // restaurant-postgres não publica porta no host (hardening round 10) —
@@ -74,9 +86,34 @@ test.describe('TV → garçom → entregue → cliente', () => {
     // ── 1. Cliente abre sessão na QRTEST91 (zona Varanda) ──
     await newSession(page, { tableCode: 'QRTEST91' });
 
+    // ── 1b. Garçom com login atende um chamado da mesa ──
+    // O handoff vai pro "último garçom que atendeu a mesa" quando a zona não
+    // tem garçom escalado hoje (resolveTargetWaiter). Sem isto o round-robin
+    // pode escolher um garçom do seed sem CPF — que não tem como logar, e o
+    // spec antigo só "entrava" como ele injetando staffId no localStorage.
+    const loginWaiter = await staffByRole('waiter');
+    const callRes = await page.request.post(`/api/${SLUG}/waiter-calls`, {
+      data: { reason: 'other' },
+    });
+    expect(callRes.ok(), `POST /waiter-calls: ${callRes.status()}`).toBeTruthy();
+    const { callId } = (await callRes.json()) as { callId: string };
+    const ackRes = await staffFetch(`/${SLUG}/waiter-calls/${callId}/acknowledge`, {
+      method: 'POST',
+      staff: loginWaiter,
+      body: JSON.stringify({}),
+    });
+    expect(ackRes.status, `acknowledge: ${JSON.stringify(ackRes.body)}`).toBeLessThan(300);
+    const resolveRes = await staffFetch(`/${SLUG}/waiter-calls/${callId}/resolve`, {
+      method: 'POST',
+      staff: loginWaiter,
+      body: JSON.stringify({}),
+    });
+    expect(resolveRes.status, `resolve: ${JSON.stringify(resolveRes.body)}`).toBeLessThan(300);
+
     // ── 2. Cliente cria pedido (item de cozinha, não-bebida) e confirma ──
+    // Estação decidida por menu_items.kind (bebida = 'drink'), igual ao KDS.
     const menuItemId = psql(
-      `SELECT mi.id FROM menu_items mi JOIN menu_categories mc ON mc.id = mi.category_id WHERE LOWER(TRIM(mc.name)) <> 'bebidas' ORDER BY mi.name LIMIT 1`,
+      `SELECT mi.id FROM menu_items mi WHERE mi.kind <> 'drink' AND mi.is_available ORDER BY mi.name LIMIT 1`,
     );
     expect(menuItemId, 'menu_items precisa ter item de cozinha no seed').toMatch(/[0-9a-f-]{36}/);
 
@@ -108,14 +145,17 @@ test.describe('TV → garçom → entregue → cliente', () => {
       `UPDATE orders SET status='delivered', updated_at=now() WHERE status IN ('open','received','confirmed','preparing','in_progress','ready','in_transit') AND id != '${orderId}'`,
     );
 
-    // ── 3. Cozinha avança: received → in_progress → ready (staff real) ──
+    // ── 3. Cozinha avança: received → in_progress → ready (cook real) ──
+    // Preparo exige sessão individual: a key compartilhada sem `station`
+    // responde 401 AUTH_TOKEN_REQUIRED.
+    const cook = await staffByRole('cook');
     for (const status of ['in_progress', 'ready']) {
-      const r = await fetch(`${API}/orders/${orderId}/status`, {
+      const r = await staffFetch(`/${SLUG}/orders/${orderId}/status`, {
         method: 'PATCH',
-        headers: { 'x-staff-key': STAFF_KEY, 'content-type': 'application/json' },
-        body: JSON.stringify({ status, changedBy: 'e2e-kitchen' }),
+        staff: cook,
+        body: JSON.stringify({ status, station: 'kitchen' }),
       });
-      expect(r.status, `PATCH status → ${status}`).toBe(200);
+      expect(r.status, `PATCH status → ${status}: ${JSON.stringify(r.body)}`).toBe(200);
     }
 
     // Checkpoint A — cliente vê "Pronto para servir" (ainda não entregue).
@@ -147,16 +187,16 @@ test.describe('TV → garçom → entregue → cliente', () => {
       expect(st).toBe('pending');
     }).toPass({ timeout: 15_000 });
 
-    const feedRes = await fetch(`${API}/deliveries/pending`, {
-      headers: { 'x-staff-key': STAFF_KEY },
-    });
+    const feedRes = await staffFetch<
+      Array<{
+        order_id: string;
+        zone_name: string | null;
+        table_label: string;
+        delivery_status: string;
+      }>
+    >(`/${SLUG}/deliveries/pending`, { staff: await staffByRole('waiter') });
     expect(feedRes.status).toBe(200);
-    const feed = (await feedRes.json()) as Array<{
-      order_id: string;
-      zone_name: string | null;
-      table_label: string;
-      delivery_status: string;
-    }>;
+    const feed = feedRes.body;
     const feedRow = feed.find((d) => d.order_id === orderId);
     expect(feedRow, 'entrega no feed /deliveries/pending').toBeTruthy();
     expect(feedRow?.zone_name).toBe('Varanda');
@@ -174,15 +214,10 @@ test.describe('TV → garçom → entregue → cliente', () => {
     );
     expect(waiterIsActiveWaiter, 'alvo é garçom ativo').toBe('1');
 
+    expect(waiterId, 'handoff vai pro garçom que atendeu a mesa no passo 1b').toBe(loginWaiter.id);
     const waiterContext = await browser.newContext();
-    await waiterContext.addInitScript(
-      ([id]) => {
-        window.localStorage.setItem('staffId', id);
-        window.localStorage.setItem('staffRole', 'waiter');
-      },
-      [waiterId],
-    );
     const waiter = await waiterContext.newPage();
+    await loginStaffApp(waiter, loginWaiter);
     await waiter.goto(`${STAFF_APP}/waiter?tenant=${SLUG}`);
 
     const banner = waiter.getByTestId('waiter-delivery-alerts');

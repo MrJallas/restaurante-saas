@@ -3,17 +3,24 @@ import { STAFF_API_KEY } from '../helpers/staff-key';
 import { execSync } from 'node:child_process';
 import {
   ensureTvFixtures,
+  clearKdsCache,
   clearWelcomeAndThrottleLocks,
-  dailyAccessToken,
+  initTvSession,
   purgeTvTestCustomers,
+  type TvSession,
 } from '../helpers/tv-fixtures';
+import { API_BASE_URL, psqlJson, staffFetch, type StaffRow } from '../helpers/physical-qr';
 import { resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 
-const API = 'http://localhost:3001/api/restaurant_dev';
+// Modelo de autenticação atual: ver o cabeçalho do tv-kds.spec.ts. Resumo:
+// cliente usa o `token` HMAC do session/init (o `sessionId` fica só pro SQL),
+// pessoa da equipe usa `x-staff-token` de login real (staffFetch) e a key
+// compartilhada representa a estação/TV (lê o KDS, não identifica ninguém).
+const SLUG = 'restaurant_dev';
+const API = `${API_BASE_URL}/${SLUG}`;
 const STAFF = 'http://localhost:3002';
 const STAFF_KEY = STAFF_API_KEY;
-const M01_SECRET = '38889aad-20d1-4778-b4ab-df35774c0398';
 const PROXY = `${STAFF}/api/proxy/restaurant_dev`;
 
 // Caminhos de código-fonte PORTÁVEIS, relativos a este spec. Antes os
@@ -51,22 +58,9 @@ function redisExec(cmd: string): string {
   }
 }
 
-async function getSessionToken(): Promise<string> {
-  const crypto = await import('node:crypto');
-  const ts = Date.now();
-  const sig = crypto.createHmac('sha256', M01_SECRET).update(`M01:${ts}`).digest('hex');
-  const res = await fetch(`${API}/session/init`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      tableCode: 'M01',
-      hmacSignature: sig,
-      timestamp: String(ts),
-      accessToken: dailyAccessToken('M01', M01_SECRET),
-    }),
-  });
-  const body = (await res.json()) as { sessionId: string };
-  return body.sessionId;
+/** Sessão real da mesa M01: `token` vai no header, `sessionId` fica pro SQL. */
+function m01Session(): Promise<TvSession> {
+  return initTvSession('M01');
 }
 
 test.beforeAll(() => {
@@ -99,7 +93,7 @@ test.describe('P2-2 — waiter_calls ON CONFLICT dedup', () => {
 
   test('30 parallel POST /waiter-calls yield 1 pending row', async () => {
     psql(`DELETE FROM waiter_calls WHERE status IN ('pending','acknowledged')`);
-    const token = await getSessionToken();
+    const { token } = await m01Session();
     const results = await Promise.all(
       Array.from({ length: 30 }).map(() =>
         fetch(`${API}/waiter-calls`, {
@@ -124,34 +118,34 @@ test.describe('P2-3 — acknowledgeCall CAS race', () => {
 
   test('parallel acknowledges produce 1 acknowledged row with the authenticated staff name (CAS)', async () => {
     psql(`DELETE FROM waiter_calls WHERE status IN ('pending','acknowledged')`);
-    // Nesta branch o assigned_waiter_name vem do x-staff-id AUTENTICADO (NÃO do
-    // body — auditoria de QUEM atendeu; mais seguro que confiar no body). Usa
-    // staff ativos DISTINTOS: sob a corrida, o CAS (WHERE status='pending')
-    // deixa só 1 gravar — o nome final é o do garçom autenticado vencedor.
-    const staff = psqlAll(`SELECT id || '|' || name FROM staff WHERE is_active = true LIMIT 5`).map(
-      (row) => {
-        const sep = row.indexOf('|');
-        return { id: row.slice(0, sep), name: row.slice(sep + 1) };
-      },
+    // O assigned_waiter_name vem do staff AUTENTICADO (x-staff-token do login
+    // real — nunca do body nem de um x-staff-id solto). Usa staff ativos
+    // DISTINTOS, cada um com a própria sessão: sob a corrida, o CAS
+    // (WHERE status='pending') deixa só 1 gravar — o nome final é o do
+    // vencedor. Só o staff do seed (CPF 9000000000x, PIN de dev) faz login;
+    // o owner fica fora pra não depender das regras extras do perfil dono.
+    const staff = psqlJson<StaffRow>(
+      `SELECT id, name, role, cpf
+         FROM ${SLUG}.staff
+        WHERE is_active = true AND cpf LIKE '9000000000%' AND role <> 'owner'
+        ORDER BY cpf
+        LIMIT 5`,
     );
     expect(staff.length, 'precisa de ≥2 staff ativos pra exercitar a corrida').toBeGreaterThan(1);
-    const token = await getSessionToken();
+    const { token } = await m01Session();
     const createRes = await fetch(`${API}/waiter-calls`, {
       method: 'POST',
       headers: { 'x-session-token': token, 'content-type': 'application/json' },
       body: JSON.stringify({ reason: 'other' }),
     });
     const { callId } = (await createRes.json()) as { callId: string };
+    expect(callId, `waiter-call nao criado (status ${createRes.status})`).toBeTruthy();
 
     await Promise.all(
       staff.map((s) =>
-        fetch(`${API}/waiter-calls/${callId}/acknowledge`, {
+        staffFetch(`/${SLUG}/waiter-calls/${callId}/acknowledge`, {
           method: 'POST',
-          headers: {
-            'x-staff-key': STAFF_KEY,
-            'x-staff-id': s.id,
-            'content-type': 'application/json',
-          },
+          staff: s,
           body: JSON.stringify({}),
         }),
       ),
@@ -164,7 +158,11 @@ test.describe('P2-3 — acknowledgeCall CAS race', () => {
   });
 });
 
-// P2-4: TRIM unicode — categories with trailing whitespace/ZWSP match correctly
+// P2-4: variantes de nome de categoria ('Bebidas ', ' Bebidas', 'BEBIDAS') não
+// confundem o roteamento. Contrato atual: bar × cozinha é decidido pelo FLAG
+// `menu_items.kind` (kds-query.service), não mais por LOWER(TRIM(categoria)) —
+// então os itens de teste são `kind = 'drink'` e o nome esquisito da
+// categoria vira só ruído que não pode mandar nada pra cozinha.
 test.describe('P2-4 — TRIM unicode station filtering', () => {
   function cleanup() {
     try {
@@ -208,7 +206,7 @@ test.describe('P2-4 — TRIM unicode station filtering', () => {
 
     for (const catId of catIds) {
       psql(
-        `INSERT INTO menu_items (name, category_id, price_cents, is_available) VALUES ('QA-Unicode-Drink', '${catId}', 100, true)`,
+        `INSERT INTO menu_items (name, category_id, price_cents, kind, is_available) VALUES ('QA-Unicode-Drink', '${catId}', 100, 'drink', true)`,
       );
     }
     const menuIds = psqlAll(`SELECT id FROM menu_items WHERE name = 'QA-Unicode-Drink'`);
@@ -228,6 +226,8 @@ test.describe('P2-4 — TRIM unicode station filtering', () => {
       );
     }
 
+    // Pedidos entraram via SQL: derruba o cache-aside de 3s do _kds.
+    clearKdsCache();
     const barRes = await fetch(`${API}/orders/_kds?station=bar`, {
       headers: { 'x-staff-key': STAFF_KEY },
     });
@@ -405,6 +405,8 @@ test.describe('P3-6 — KDS future order filter', () => {
         `VALUES ('${pastId}', '8ebe30e2-0d64-4bc8-96df-c6fcacc7fe34', 1, 7900, 7900)`,
     );
 
+    // Pedidos entraram via SQL: derruba o cache-aside de 3s do _kds.
+    clearKdsCache();
     const res = await fetch(`${API}/orders/_kds?station=kitchen`, {
       headers: { 'x-staff-key': STAFF_KEY },
     });
@@ -418,8 +420,6 @@ test.describe('P3-6 — KDS future order filter', () => {
 
 // ======== ROUND 5 TESTS ========
 
-const M02_SECRET = '2f00b359-6d69-408a-a50e-84ffbe44ea45';
-
 function clearThrottle() {
   try {
     execSync(
@@ -431,22 +431,8 @@ function clearThrottle() {
   }
 }
 
-async function getM02Session(): Promise<string> {
-  const crypto = await import('node:crypto');
-  const ts = Date.now();
-  const sig = crypto.createHmac('sha256', M02_SECRET).update(`M02:${ts}`).digest('hex');
-  const res = await fetch(`${API}/session/init`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      tableCode: 'M02',
-      hmacSignature: sig,
-      timestamp: String(ts),
-      accessToken: dailyAccessToken('M02', M02_SECRET),
-    }),
-  });
-  if (!res.ok) throw new Error(`M02 session init failed: ${res.status}`);
-  return ((await res.json()) as { sessionId: string }).sessionId;
+function m02Session(): Promise<TvSession> {
+  return initTvSession('M02');
 }
 
 async function welcomeCustomer(
@@ -516,20 +502,20 @@ test.describe('P0-X7-3 — host forgery blocked', () => {
   });
 
   test('pending participant cannot decide with forged hostCustomerId', async () => {
-    const session = await getSessionToken();
-    const hostResult = await welcomeCustomer(session, 'QA-HostR5', '50000000132');
-    const attackerResult = await welcomeCustomer(session, 'QA-AttackerR5', '50000000213');
+    const { sessionId, token } = await m01Session();
+    const hostResult = await welcomeCustomer(token, 'QA-HostR5', '50000000132');
+    const attackerResult = await welcomeCustomer(token, 'QA-AttackerR5', '50000000213');
 
     // Force host to be the first welcomed customer
     psql(
-      `UPDATE table_sessions SET host_customer_id = '${hostResult.customerId}' WHERE id = '${session}'`,
+      `UPDATE table_sessions SET host_customer_id = '${hostResult.customerId}' WHERE id = '${sessionId}'`,
     );
 
     // Attacker tries to approve themselves with forged hostCustomerId
     const res = await fetch(`${API}/table/participants/decide`, {
       method: 'POST',
       headers: {
-        'x-session-token': session,
+        'x-session-token': token,
         'x-recognition-token': attackerResult.recognitionToken,
         'content-type': 'application/json',
       },
@@ -545,7 +531,7 @@ test.describe('P0-X7-3 — host forgery blocked', () => {
     const res2 = await fetch(`${API}/table/participants/decide`, {
       method: 'POST',
       headers: {
-        'x-session-token': session,
+        'x-session-token': token,
         'x-recognition-token': hostResult.recognitionToken,
         'content-type': 'application/json',
       },
@@ -629,16 +615,25 @@ test.describe('P0-X7-1/2 — feedbacks IDOR blocked', () => {
   });
 
   test('POST /feedbacks with cross-session visitId returns 403', async () => {
-    const m01Session = await getSessionToken();
-    const m01Welcome = await welcomeCustomer(m01Session, 'QA-R5-M01', '50000000302');
+    // Contrato atual: feedback é ação PESSOAL — além da sessão da mesa, exige o
+    // cliente identificado (recognition_token; o browser manda o cookie, aqui
+    // vai no header x-recognition-token) e dono da visita. A sessão sozinha
+    // (customerId compartilhado da mesa) responde 403 "Identificação
+    // obrigatória". Por isso o atacante aqui é um cliente IDENTIFICADO na M02.
+    const m01 = await m01Session();
+    const m01Welcome = await welcomeCustomer(m01.token, 'QA-R5-M01', '50000000302');
 
-    const m02Session = await getM02Session();
-    await welcomeCustomer(m02Session, 'QA-R5-M02', '50000000485');
+    const m02 = await m02Session();
+    const m02Welcome = await welcomeCustomer(m02.token, 'QA-R5-M02', '50000000485');
 
     // M02 tries to post feedback with M01's visitId → 403
     const res = await fetch(`${API}/feedbacks`, {
       method: 'POST',
-      headers: { 'x-session-token': m02Session, 'content-type': 'application/json' },
+      headers: {
+        'x-session-token': m02.token,
+        'x-recognition-token': m02Welcome.recognitionToken,
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({
         visitId: m01Welcome.visitId,
         overallRating: 1,
@@ -650,14 +645,21 @@ test.describe('P0-X7-1/2 — feedbacks IDOR blocked', () => {
     // M01 with own visitId → 201
     const res2 = await fetch(`${API}/feedbacks`, {
       method: 'POST',
-      headers: { 'x-session-token': m01Session, 'content-type': 'application/json' },
+      headers: {
+        'x-session-token': m01.token,
+        'x-recognition-token': m01Welcome.recognitionToken,
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ visitId: m01Welcome.visitId, overallRating: 5, comment: 'QA-R5-own' }),
     });
     expect(res2.status, 'own-session feedback should succeed').toBe(201);
 
     // M02 tries to read M01's feedback → empty (null)
     const res3 = await fetch(`${API}/feedbacks?visitId=${m01Welcome.visitId}`, {
-      headers: { 'x-session-token': m02Session },
+      headers: {
+        'x-session-token': m02.token,
+        'x-recognition-token': m02Welcome.recognitionToken,
+      },
     });
     expect(res3.status).toBe(200);
     const text3 = await res3.text();
@@ -669,10 +671,10 @@ test.describe('P0-X7-1/2 — feedbacks IDOR blocked', () => {
 // P1-X7-2: feedbacks DTO rejects null visitId
 test.describe('P1-X7-2 — feedbacks visitId required', () => {
   test('POST /feedbacks without visitId returns 400', async () => {
-    const session = await getSessionToken();
+    const { token } = await m01Session();
     const res = await fetch(`${API}/feedbacks`, {
       method: 'POST',
-      headers: { 'x-session-token': session, 'content-type': 'application/json' },
+      headers: { 'x-session-token': token, 'content-type': 'application/json' },
       body: JSON.stringify({ overallRating: 5, comment: 'QA-R5-novisit' }),
     });
     expect(res.status, 'missing visitId should 400').toBe(400);
@@ -719,21 +721,37 @@ test.describe('P1-X7-3 — /customer/welcome rate-limited', () => {
     } catch {
       /* no-op */
     }
+    // O flood deixa o bucket IP+sessão da M01 travado por 15 min; sem soltar,
+    // os welcomes dos describes seguintes (mesma mesa) tomariam 429.
+    clearWelcomeAndThrottleLocks();
   });
 
-  test('30 parallel POST /customer/welcome hit 429', async () => {
-    const session = await getSessionToken();
-    const results = await Promise.all(
-      Array.from({ length: 30 }).map((_, i) =>
-        fetch(`${API}/customer/welcome`, {
-          method: 'POST',
-          headers: { 'x-session-token': session, 'content-type': 'application/json' },
-          body: JSON.stringify({ name: `QA-R5-Flood${i}`, cpf: `${String(10000000000 + i)}` }),
-        }).then((r) => r.status),
-      ),
-    );
-    const rate429 = results.filter((s) => s === 429).length;
-    expect(rate429, 'should hit 429 on welcome flood').toBeGreaterThanOrEqual(5);
+  // Contrato atual: 30 tentativas por IP REAL + sessão de mesa em 15 min
+  // (CUSTOMER_WELCOME_RATE_*), depois lock de 15 min; falhas (CPF inválido)
+  // também contam. O teste antigo mandava 30 em paralelo contra um limite de
+  // 5/IP — com o limite em 30, 30 requisições nunca passam dele. Aqui o flood
+  // vai além do limite e em série, pra medir o lock e não a ordem de chegada.
+  test('flood de welcomes na mesma sessão bate 429 após o limite e trava', async () => {
+    const limit = Number(process.env.CUSTOMER_WELCOME_RATE_MAX ?? 30);
+    const extra = 15;
+    const { token } = await m01Session();
+    const statuses: number[] = [];
+    for (let i = 0; i < limit + extra; i++) {
+      const res = await fetch(`${API}/customer/welcome`, {
+        method: 'POST',
+        headers: { 'x-session-token': token, 'content-type': 'application/json' },
+        body: JSON.stringify({ name: `QA-R5-Flood${i}`, cpf: `${String(10000000000 + i)}` }),
+      });
+      statuses.push(res.status);
+    }
+    const first429 = statuses.indexOf(429);
+    expect(first429, `nenhum 429 em ${statuses.length} tentativas`).toBeGreaterThanOrEqual(0);
+    expect(first429, 'o lock deve cair até a tentativa limite+1').toBeLessThanOrEqual(limit);
+    expect(
+      statuses.slice(first429).every((s) => s === 429),
+      `depois do primeiro 429 o lock precisa segurar tudo: ${statuses.slice(first429)}`,
+    ).toBe(true);
+    expect(statuses.filter((s) => s === 429).length).toBeGreaterThanOrEqual(extra);
   });
 });
 
@@ -775,14 +793,20 @@ test.describe('P2-X7-1 — feedbacks dedup race', () => {
   });
 
   test('5 parallel POST /feedbacks with same visitId yield 1 DB row', async () => {
-    const session = await getSessionToken();
-    const welcome = await welcomeCustomer(session, 'QA-R5-Race', '50000000566');
+    const { token } = await m01Session();
+    const welcome = await welcomeCustomer(token, 'QA-R5-Race', '50000000566');
 
+    // O dono da visita, identificado (ver P0-X7-1/2): sem recognition token a
+    // API responde 403 antes de chegar na corrida que este teste mede.
     const results = await Promise.all(
       Array.from({ length: 5 }).map((_, i) =>
         fetch(`${API}/feedbacks`, {
           method: 'POST',
-          headers: { 'x-session-token': session, 'content-type': 'application/json' },
+          headers: {
+            'x-session-token': token,
+            'x-recognition-token': welcome.recognitionToken,
+            'content-type': 'application/json',
+          },
           body: JSON.stringify({
             visitId: welcome.visitId,
             overallRating: 3,
@@ -858,18 +882,18 @@ test.describe('P2-X7-2 — payments dedup race', () => {
   });
 
   test('5 parallel POST /payments with same scope yield 1 pending row', async () => {
-    const session = await getSessionToken();
-    const welcome = await welcomeCustomer(session, 'QA-R5-Pay', '50000000647');
+    const { sessionId, token } = await m01Session();
+    const welcome = await welcomeCustomer(token, 'QA-R5-Pay', '50000000647');
 
     psql(
-      `INSERT INTO orders (table_session_id, visit_id, billing_mode, status, total_cents, created_by, notes) VALUES ('${session}', '${welcome.visitId}', 'table', 'received', 1000, 'qa-test', 'QA-R5-pay')`,
+      `INSERT INTO orders (table_session_id, visit_id, billing_mode, status, total_cents, created_by, notes) VALUES ('${sessionId}', '${welcome.visitId}', 'table', 'received', 1000, 'qa-test', 'QA-R5-pay')`,
     );
 
     const results = await Promise.all(
       Array.from({ length: 5 }).map(() =>
         fetch(`${API}/payments`, {
           method: 'POST',
-          headers: { 'x-session-token': session, 'content-type': 'application/json' },
+          headers: { 'x-session-token': token, 'content-type': 'application/json' },
           body: JSON.stringify({ mode: 'table', method: 'pix' }),
         }).then((r) => r.status),
       ),
@@ -879,7 +903,7 @@ test.describe('P2-X7-2 — payments dedup race', () => {
 
     const dbCount = Number(
       psql(
-        `SELECT count(*) FROM payments WHERE table_session_id = '${session}' AND status = 'pending'`,
+        `SELECT count(*) FROM payments WHERE table_session_id = '${sessionId}' AND status = 'pending'`,
       ),
     );
     expect(dbCount, 'DB should have at most 1 pending payment').toBeLessThanOrEqual(1);
@@ -938,13 +962,13 @@ test.describe('P2-X7-4 — decideJoinRequest CAS', () => {
   });
 
   test('5 parallel approve for same target yield 1 approved row', async () => {
-    const session = await getSessionToken();
-    const host = await welcomeCustomer(session, 'QA-R5-CASHost', '50000000728');
-    const target = await welcomeCustomer(session, 'QA-R5-CASTarget', '50000000809');
+    const { sessionId, token } = await m01Session();
+    const host = await welcomeCustomer(token, 'QA-R5-CASHost', '50000000728');
+    const target = await welcomeCustomer(token, 'QA-R5-CASTarget', '50000000809');
 
     // Force host assignment for the test
     psql(
-      `UPDATE table_sessions SET host_customer_id = '${host.customerId}' WHERE id = '${session}'`,
+      `UPDATE table_sessions SET host_customer_id = '${host.customerId}' WHERE id = '${sessionId}'`,
     );
 
     await Promise.all(
@@ -952,7 +976,7 @@ test.describe('P2-X7-4 — decideJoinRequest CAS', () => {
         fetch(`${API}/table/participants/decide`, {
           method: 'POST',
           headers: {
-            'x-session-token': session,
+            'x-session-token': token,
             'x-recognition-token': host.recognitionToken,
             'content-type': 'application/json',
           },
@@ -962,7 +986,7 @@ test.describe('P2-X7-4 — decideJoinRequest CAS', () => {
     );
 
     const status = psql(
-      `SELECT status FROM session_participants WHERE customer_id = '${target.customerId}' AND table_session_id = '${session}'`,
+      `SELECT status FROM session_participants WHERE customer_id = '${target.customerId}' AND table_session_id = '${sessionId}'`,
     );
     expect(status).toBe('approved');
   });
