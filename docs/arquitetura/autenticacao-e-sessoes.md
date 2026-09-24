@@ -77,7 +77,7 @@ flowchart TD
 6. **Revogação.** Troca e redefinição de PIN e logout apagam as sessões do funcionário no Redis. O
    gerente vê e encerra as próprias sessões em `/manager/seguranca`.
 7. **Recuperação de PIN** (`/forgot`): código de 6 dígitos → token de redefinição → PIN novo, com
-   limite próprio de tentativas. Nenhum código envia o código por SMS ou e-mail: fora de produção a
+   limite próprio de tentativas. O sistema não envia o código por SMS nem por e-mail: fora de produção a
    resposta traz o código (`devCode`) para teste; em produção, sem
    `STAFF_RECOVERY_DELIVERY_ENABLED=true`, a rota responde 503 e orienta procurar um gerente.
 

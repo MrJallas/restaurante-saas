@@ -136,7 +136,8 @@ produto.
 ## Como subir e testar
 
 O jeito suportado é o **Docker Compose**: bancos, API, serviço de IA e os dois apps web sobem em
-containers. Node e Python na máquina só são necessários para rodar os testes automatizados.
+containers. Node e Python na máquina só são necessários para os testes automatizados e para gerar a
+imagem do QR no passo 8.
 
 ### 1. Pré-requisitos
 
@@ -148,7 +149,8 @@ containers. Node e Python na máquina só são necessários para rodar os testes
 - Internet no primeiro boot: o Compose baixa imagens e instala as dependências dentro dos containers,
   o que leva alguns minutos.
 - Shell bash ou zsh (macOS ou Linux). No Windows, use o WSL2.
-- Opcional, só para testes: Node.js 20.19 ou mais recente e Python 3.11.
+- Opcional: Node.js 20.19 ou mais recente (testes automatizados e o `npx qrcode` do passo 8) e
+  Python 3.11 (testes).
 
 | Serviço                | Endereço                           | Observação                             |
 | ---------------------- | ---------------------------------- | -------------------------------------- |
@@ -204,8 +206,8 @@ docker compose exec -T postgres psql -U postgres -p 5434 -d restaurant_saas \
   < packages/database/seeds/demo/demo_data.sql
 ```
 
-O resultado é o restaurante `restaurant_dev` (o _slug_, identificador que vai na URL), com as mesas **M01 a M05** e duas mesas
-reservadas aos testes automatizados (**QRTEST91** e **QRTEST92**).
+O resultado é o restaurante `restaurant_dev` (o _slug_, identificador que vai na URL), com as
+mesas **M01 a M05** e duas mesas reservadas aos testes automatizados (**QRTEST91** e **QRTEST92**).
 
 ### 5. Credenciais de teste
 
@@ -254,9 +256,10 @@ A recepção tem **cerca de 60 segundos** para decidir cada scan; por isso, abra
    PIN `1234`). Você cai em `/host`, com os contadores do salão e a lista "Pra liberar".
 2. **Cliente.** Em outro perfil do navegador (ou no celular, ver passo 8), abra
    `http://localhost:3001/api/qr/<token-da-mesa>`, com a emulação de celular do DevTools se estiver
-   no computador. O app pede **permissão de localização**: permita. Se o navegador negar, use DevTools →
-   _Sensors_ → _Location_ ou abra pelo IP da rede (passo 8), que dispensa a permissão em
-   desenvolvimento.
+   no computador. O app pede **permissão de localização**: permita. Se o navegador tiver
+   negado, libere a localização nas configurações do site (ícone à esquerda do endereço) e recarregue;
+   se a posição não vier (computador sem serviço de localização), defina uma em DevTools → _Sensors_ →
+   _Location_; ou abra pelo IP da rede (passo 8), que dispensa a permissão em desenvolvimento.
 3. Na tela **"Pra começar, quem é você?"**, preencha **Seu nome** e **Seu CPF** e toque em
    **Continuar**. O CPF precisa ter dígitos verificadores válidos; use um fictício, como
    `246.813.579-28`, `135.792.468-28` ou `864.209.753-10`. O aparelho mostra **"Esperando aprovação"**.
@@ -269,7 +272,8 @@ A recepção tem **cerca de 60 segundos** para decidir cada scan; por isso, abra
      **Minha comanda** ou **Comanda da mesa** → **Revise seu pedido** → **Enviar para cozinha**. Há
      15 segundos para desistir; depois o pedido vai para a cozinha.
    - **Chamar garçom**, escolhendo um dos motivos.
-   - **Conta**: acompanhe o valor por comanda. O Pix é uma demonstração.
+   - **Conta**: abra o menu (ícone no topo) → **Pagar conta**, ou toque em **Ir para pagamento** na tela
+     do pedido; o valor aparece por comanda. O Pix é uma demonstração.
 6. **O outro lado.** Abra `http://localhost:3002/cozinha/tv`: o pedido aparece como **NOVO PEDIDO**,
    com o botão **INICIAR PREPARO**. Em outros perfis, entre como garçom e como gerente para ver os
    chamados, as entregas e o mapa do salão.
@@ -277,8 +281,7 @@ A recepção tem **cerca de 60 segundos** para decidir cada scan; por isso, abra
 Outros caminhos úteis:
 
 - **Liberar antes de o cliente chegar**: em `/host`, clique em **Liberar** numa mesa livre, escolha o número de pessoas e
-  confirme em **Liberar mesa**. Por
-  15 minutos, o primeiro scan dessa mesa entra direto, sem aprovação.
+  confirme em **Liberar mesa**. Por 15 minutos, o primeiro scan dessa mesa entra direto, sem aprovação.
 - **Quem chega depois** numa mesa ocupada é aprovado pelo cliente anfitrião, no app dele, e não pela
   recepção.
 - **Recomeçar uma mesa**: `bash scripts/demo/reset-mesa.sh M03` encerra a sessão ativa; feche a aba
@@ -298,14 +301,18 @@ Outros caminhos úteis:
 
 1. Computador e celular na mesma rede Wi-Fi.
 2. Descubra o IP do computador (macOS: `ipconfig getifaddr en0`; Linux: `hostname -I`).
-3. No `.env`, defina `PUBLIC_HOST=<IP>` e recrie os containers com `docker compose up -d`.
+3. No `.env`, defina `PUBLIC_HOST=<IP>` e recrie os containers com `docker compose up -d`. Depois de
+   recriar, se `/login` ou `/<slug>/mesa/...` responder 404, limpe o cache do Next como em
+   [Problemas comuns](#9-problemas-comuns).
 4. Gere a imagem do QR com `npx --yes qrcode -o mesa.png "http://<IP>:3001/api/qr/<token>"` e abra
-   `mesa.png` na tela para o celular escanear (ou digite o endereço no celular).
+   `mesa.png` na tela para o celular escanear (precisa de Node; sem ele, use qualquer gerador de QR Code
+   ou digite o endereço no celular).
 5. Aberto pelo IP da rede, sem HTTPS, o app do cliente usa uma localização sintética e não pede
    permissão (`NEXT_PUBLIC_ALLOW_INSECURE_LAN_GEOLOCATION=true`, só em desenvolvimento).
 6. A equipe também pode usar tablet ou celular: `http://<IP>:3002/login`.
 
-Se o computador mudar de rede, o IP muda: atualize `PUBLIC_HOST` e recrie os containers.
+Se o computador mudar de rede, o IP muda: atualize `PUBLIC_HOST` e recrie os containers (e, se
+aparecer 404, limpe o cache do Next).
 
 ### 9. Problemas comuns
 
@@ -315,9 +322,9 @@ Se o computador mudar de rede, o IP muda: atualize `PUBLIC_HOST` e recrie os con
 | `SESSION_TOKEN_SECRET must be set` ou `STAFF_API_KEY must be set`      | Faltou preencher os segredos (passo 2).                                                                                                                                                                                                                                                                                           |
 | Uma rota que existe responde 404 (ex.: `/login` ou `/<slug>/mesa/...`) | Cache de desenvolvimento do Next.js desatualizado, comum depois de recriar os containers. Limpe e reinicie o app afetado: `docker exec restaurant-web-customer sh -c 'rm -rf /repo/apps/web-customer/.next/*' && docker restart restaurant-web-customer` (para a equipe, troque `web-customer` por `web-staff` nos três lugares). |
 | "Conexão lenta. Toque para tentar novamente." no 1º acesso             | A tela espera a API por 3 s, e a primeira compilação do Next demora mais que isso. Toque de novo.                                                                                                                                                                                                                                 |
-| "Permita o acesso à localização para entrar no app do restaurante."    | O navegador negou a localização. Permita, use DevTools → Sensors ou abra pelo IP da rede (passo 8).                                                                                                                                                                                                                               |
-| "Mesa não encontrada" ou restaurante inexistente                       | Faltou o passo 4, ou o endereço usa outro slug ou código de mesa.                                                                                                                                                                                                                                                                 |
-| "QR Code inválido ou expirado"                                         | Foi aberto um link final antigo. Abra de novo o endereço `/api/qr/<token>`.                                                                                                                                                                                                                                                       |
+| "Permita o acesso à localização para entrar no app do restaurante."    | Permissão negada ou posição indisponível. Libere a localização nas configurações do site e recarregue; sem posição, use DevTools → Sensors; ou abra pelo IP da rede (passo 8).                                                                                                                                                    |
+| "Mesa nao encontrada." ou restaurante inexistente                      | Faltou o passo 4, ou o endereço usa outro slug ou código de mesa.                                                                                                                                                                                                                                                                 |
+| "QR Code invalido ou expirado."                                        | Foi aberto um link final antigo. Abra de novo o endereço `/api/qr/<token>`.                                                                                                                                                                                                                                                       |
 | O cartão da recepção não aceita mais a decisão                         | Passou a janela de cerca de 60 s. Aguarde expirar e escaneie de novo, ou use `reset-mesa.sh`.                                                                                                                                                                                                                                     |
 | O cliente entrou direto, sem tela de espera                            | A mesa tinha sido liberada pela recepção (15 min).                                                                                                                                                                                                                                                                                |
 | O cliente espera e nada aparece na recepção                            | A mesa já estava ocupada: quem aprova é o cliente anfitrião. Use uma mesa livre ou `reset-mesa.sh`.                                                                                                                                                                                                                               |

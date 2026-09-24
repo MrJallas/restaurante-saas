@@ -40,7 +40,7 @@ As rotas de cada persona estão em [Jornadas e telas](jornadas-e-telas.md).
 1. **A equipe entra.** Cada funcionário faz login com CPF e PIN no app da equipe e cai na tela do
    seu papel. A recepção fica em `/host`.
 2. **O primeiro cliente chega.** Escaneia o QR da mesa, permite a localização, informa nome e CPF e
-   fica na tela "aguardando aprovação".
+   fica na tela "Esperando aprovação".
 3. **A recepção confere.** O card "Verificar mesa escaneada" aparece em `/host`; a recepção olha a
    mesa e aprova. A espera some sozinha e esse cliente vira o cliente-anfitrião. (Se a recepção
    liberou a mesa antes, o primeiro scan entra direto.)

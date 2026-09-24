@@ -19,11 +19,7 @@ coverage/
 # Playwright E2E artifacts
 test-results/
 playwright-report/
-playwright/.cache/
-e2e/.auth/
 artifacts/
-**/test-results/
-**/playwright-report/
 
 # Playwright MCP (cache de browser automation via MCP — sessao-local)
 .playwright-mcp/
@@ -38,8 +34,7 @@ output/
 # script antigo recriar a pasta, nada dentro dela entra no git.
 /qa-reports/
 
-# Worktrees criadas por agentes Claude (cada sessao do harness gera uma) —
-# nao versionar nada dentro, evita poluir o repo.
+# Worktrees locais de ferramentas de desenvolvimento (não versionar nada dentro).
 .claude/worktrees/
 
 # Screenshots no root (debug/contextualizacao de sessao — nao versionar)
@@ -54,7 +49,7 @@ output/
 .env.backup*
 *.env.bak
 
-# Rascunhos locais de agentes (insumo de sessao, nao doutrina)
+# Rascunhos locais (não versionados)
 .ai/rascunhos/
 .rag-drafts/
 

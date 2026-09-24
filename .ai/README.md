@@ -35,4 +35,4 @@ Mapa dos caminhos antigos de material de agente (reorganização de setembro de 
 - Evidência nova de teste vai para `output/` (ignorado); relatório curado vai para
   `docs/archive/qa/<data>-<slug>/`. Decisão de produto ou arquitetura vai para `docs/decisoes/`.
 - Na máquina do autor, "por que decidimos X":
-  `bash ~/obsidian/'memorias de caleb'/rag/recall.sh "pergunta" --project restaurante-saas`.
+  `bash <vault-do-autor>/rag/recall.sh "pergunta" --project restaurante-saas` (caminho do vault configurado na máquina do autor).

@@ -115,9 +115,11 @@ O mapa, as telas e a carga dos garçons usam essa mesma definição.
    2. o último garçom que atendeu um chamado dessa mesa, se não estiver em pausa;
    3. garçons em turno agora, sem pausa, pelo rodízio;
    4. qualquer garçom ativo sem pausa, por nome.
-      Nenhuma etapa escolhe garçom em pausa ([Pausa de zona](../produto/funcionalidades/pausa-de-zona.md)).
-      O horário de turno usa o fuso do restaurante (`settings.timezone`), inclusive turnos que passam da
-      meia-noite.
+
+   Nenhuma etapa escolhe garçom em pausa ([Pausa de zona](../produto/funcionalidades/pausa-de-zona.md)).
+   O horário de turno usa o fuso do restaurante (`settings.timezone`), inclusive turnos que passam da
+   meia-noite.
+
 2. **Estou levando.** O garçom assume a entrega (`POST /:slug/orders/:orderId/in-transit`). Outro
    garçom pode assumir no lugar.
 3. **Confirmar entrega.** `POST /:slug/orders/:orderId/delivered`. Só então o cliente vê o pedido como
