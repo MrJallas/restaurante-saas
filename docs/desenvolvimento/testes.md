@@ -150,7 +150,7 @@ de novo os `qr_public_token`, que mudam porque o seed recria as mesas.
 ### Resultado medido
 
 Ambiente novo, `.env` do tutorial (segredos gerados, `HOME_CONTINUATION_ENABLED=false`), seed do
-passo 4 e sem LLM: **143 de 145** execuções passam, igual em duas rodadas seguidas (ambiente recém-criado
+passo 4 e sem LLM: **144 de 146** execuções passam, igual em duas rodadas seguidas (ambiente recém-criado
 e depois de reaplicar o seed).
 
 | Quantidade          | Onde                 | Causa                                                                |
@@ -162,10 +162,11 @@ download do WebKit do Playwright), PostgreSQL, Redis e MongoDB nos containers do
 web e serviço de IA rodando direto no Linux, com as mesmas variáveis do Compose. Falta confirmar em
 WebKit, o navegador da configuração padrão.
 
-A suíte tem 145 testes, e não 142: no `tv-kds`, três testes em que a chave compartilhada bastava
+A suíte tem 146 testes, e não 142: no `tv-kds`, três testes em que a chave compartilhada bastava
 viraram pares com o contrato atual, em que a chave sozinha recebe 401 e o caminho autorizado recebe
 200 (sessão individual da equipe, ou a TV informando a estação): troca de status direto na API e pelo
-proxy da TV, e painel do gerente.
+proxy da TV, e painel do gerente. O quarto a mais é a rajada paralela do `welcome` no `tv-coverage`
+(P1-X7-3), que confere que o limite processa exatamente 30.
 
 Medição anterior, no mesmo dia, em WebKit e antes das correções: 99 de 142. As 43 que não passavam
 eram os specs de TV escritos para o modelo de autenticação anterior (26), o seletor de um botão

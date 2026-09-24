@@ -408,7 +408,7 @@ Resultados medidos num ambiente novo, com o stack do tutorial e **sem LLM**:
 | Unitários do app do cliente (Jest)   | `npm test --workspace @restaurant/web-customer`                                                                        | 180 de 180              |
 | Unitários do app da equipe (Jest)    | `npm test --workspace @restaurant/web-staff`                                                                           | 87 de 87                |
 | Serviço de IA (pytest, LLM simulado) | `docker exec restaurant-ai sh -c 'pip install -q -r requirements-dev.lock && env -i PATH="$PATH" python -m pytest -q'` | 435 de 435              |
-| Ponta a ponta (Playwright)           | `cd apps/web-customer && npx playwright install webkit && npx playwright test`                                         | 143 de 145 (ver abaixo) |
+| Ponta a ponta (Playwright)           | `cd apps/web-customer && npx playwright install webkit && npx playwright test`                                         | 144 de 146 (ver abaixo) |
 
 Os unitários rodam no host depois de um `npm install` na raiz e não precisam do stack. O pytest roda
 dentro do container com o ambiente limpo (`env -i`), porque as variáveis do Compose interferem nos
