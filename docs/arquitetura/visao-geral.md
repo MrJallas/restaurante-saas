@@ -94,7 +94,8 @@ Saúde: `GET /api/health` (resposta fixa) e `GET /api/ready` (confere PostgreSQL
   `test` (`package.json`, `turbo.json`). Node 20.19 ou mais novo.
 - `packages/shared-types`: contratos TypeScript entre API e apps (DTOs e eventos do WebSocket em
   `src/ws-events.ts`). É consumido como **código-fonte** (`main` aponta para `src/index.ts`; os apps
-  Next usam `transpilePackages`), sem etapa de build própria.
+  Next usam `transpilePackages`). O script `build` (`tsc` → `dist/`) existe e o Turborepo o roda
+  antes de `test` e `lint`, mas nenhum consumidor usa o `dist/`.
 - `packages/database`: migrations, seeds, init do MongoDB e scripts de restaurante.
 - `services/ai-service`: é workspace npm só para `npm run dev`; os testes são pytest.
 

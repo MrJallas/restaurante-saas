@@ -32,13 +32,13 @@ vários restaurantes, cada um isolado no próprio schema do PostgreSQL (multi-te
 
 ## O que o sistema faz
 
-| Quem            | Onde                             | O que faz                                                                                        |
-| --------------- | -------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Cliente na mesa | celular, pelo QR Code            | se identifica, vê o cardápio, pede, chama o garçom, acompanha a conta, conversa com o assistente |
-| Recepção        | tablet ou computador (`/host`)   | valida o primeiro scan de cada mesa, libera mesas, fila de espera, reservas                      |
-| Garçom          | celular (`/waiter`)              | chamados, entregas, mesas da sua zona                                                            |
-| Cozinha e bar   | tela do KDS (`/cozinha`, `/bar`) | fila de preparo por estação, com versão para TV                                                  |
-| Gerente e dono  | `/manager`                       | indicadores, equipe, alertas, mapa do salão, cortesias, configurações                            |
+| Quem            | Onde                                 | O que faz                                                                                        |
+| --------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Cliente na mesa | celular, pelo QR Code                | se identifica, vê o cardápio, pede, chama o garçom, acompanha a conta, conversa com o assistente |
+| Recepção        | tablet ou computador (`/host`)       | valida o primeiro scan de cada mesa, libera mesas, fila de espera, reservas                      |
+| Garçom          | celular (`/waiter`)                  | chamados, entregas, mesas da sua zona                                                            |
+| Cozinha e bar   | tela de preparo (`/cozinha`, `/bar`) | fila de preparo por estação, com versão para TV                                                  |
+| Gerente e dono  | `/manager`                           | indicadores, equipe, alertas, mapa do salão, cortesias, configurações                            |
 
 Uma noite típica:
 
@@ -47,7 +47,8 @@ Uma noite típica:
    partir da foto de um QR.
 3. O primeiro cliente vira o anfitrião da mesa: quem chegar depois é aprovado por ele, no próprio app.
 4. O cliente pede pelo cardápio ou pelo assistente, na comanda individual ou na da mesa.
-5. O pedido cai no KDS da estação (cozinha ou bar), que marca preparo e pronto.
+5. O pedido cai no KDS (_kitchen display system_, a tela de preparo) da estação, cozinha ou bar, que
+   marca preparo e pronto.
 6. O garçom entrega, e o cliente acompanha tudo em tempo real.
 7. A conta é dividida no backend, com taxa de serviço e rateio. O pagamento Pix é uma demonstração.
 
@@ -203,7 +204,7 @@ docker compose exec -T postgres psql -U postgres -p 5434 -d restaurant_saas \
   < packages/database/seeds/demo/demo_data.sql
 ```
 
-O resultado é o restaurante de slug `restaurant_dev`, com as mesas **M01 a M05** e duas mesas
+O resultado é o restaurante `restaurant_dev` (o _slug_, identificador que vai na URL), com as mesas **M01 a M05** e duas mesas
 reservadas aos testes automatizados (**QRTEST91** e **QRTEST92**).
 
 ### 5. Credenciais de teste
@@ -242,7 +243,7 @@ docker exec restaurant-postgres psql -U postgres -p 5434 -d restaurant_saas \
 
 - Para o teste manual, **use M03, M04 ou M05**: os testes automatizados mexem em M01 e M02.
 - No computador não é preciso imprimir nada: basta abrir o endereço no navegador. Para escanear com o
-  celular, gere a imagem do QR a partir do endereço em qualquer gerador de QR Code (veja o passo 8).
+  celular, gere a imagem do QR a partir do endereço em qualquer gerador de QR Code (comando no passo 8).
 - Use sempre o endereço `/api/qr/<token>`. O link final para onde ele redireciona expira.
 
 ### 7. Roteiro ponta a ponta: QR → recepção → cliente
@@ -275,7 +276,8 @@ A recepção tem **cerca de 60 segundos** para decidir cada scan; por isso, abra
 
 Outros caminhos úteis:
 
-- **Liberar antes de o cliente chegar**: em `/host`, clique em **Liberar** numa mesa livre. Por
+- **Liberar antes de o cliente chegar**: em `/host`, clique em **Liberar** numa mesa livre, escolha o número de pessoas e
+  confirme em **Liberar mesa**. Por
   15 minutos, o primeiro scan dessa mesa entra direto, sem aprovação.
 - **Quem chega depois** numa mesa ocupada é aprovado pelo cliente anfitrião, no app dele, e não pela
   recepção.
@@ -297,7 +299,8 @@ Outros caminhos úteis:
 1. Computador e celular na mesma rede Wi-Fi.
 2. Descubra o IP do computador (macOS: `ipconfig getifaddr en0`; Linux: `hostname -I`).
 3. No `.env`, defina `PUBLIC_HOST=<IP>` e recrie os containers com `docker compose up -d`.
-4. Gere o QR (ou digite no celular) a partir de `http://<IP>:3001/api/qr/<token>`.
+4. Gere a imagem do QR com `npx --yes qrcode -o mesa.png "http://<IP>:3001/api/qr/<token>"` e abra
+   `mesa.png` na tela para o celular escanear (ou digite o endereço no celular).
 5. Aberto pelo IP da rede, sem HTTPS, o app do cliente usa uma localização sintética e não pede
    permissão (`NEXT_PUBLIC_ALLOW_INSECURE_LAN_GEOLOCATION=true`, só em desenvolvimento).
 6. A equipe também pode usar tablet ou celular: `http://<IP>:3002/login`.
@@ -311,6 +314,7 @@ Se o computador mudar de rede, o IP muda: atualize `PUBLIC_HOST` e recrie os con
 | `external volume "restaurant-saas_..." not found`                      | Faltou criar os volumes (passo 3).                                                                                                                                                                                                                                                                                                |
 | `SESSION_TOKEN_SECRET must be set` ou `STAFF_API_KEY must be set`      | Faltou preencher os segredos (passo 2).                                                                                                                                                                                                                                                                                           |
 | Uma rota que existe responde 404 (ex.: `/login` ou `/<slug>/mesa/...`) | Cache de desenvolvimento do Next.js desatualizado, comum depois de recriar os containers. Limpe e reinicie o app afetado: `docker exec restaurant-web-customer sh -c 'rm -rf /repo/apps/web-customer/.next/*' && docker restart restaurant-web-customer` (para a equipe, troque `web-customer` por `web-staff` nos três lugares). |
+| "Conexão lenta. Toque para tentar novamente." no 1º acesso             | A tela espera a API por 3 s, e a primeira compilação do Next demora mais que isso. Toque de novo.                                                                                                                                                                                                                                 |
 | "Permita o acesso à localização para entrar no app do restaurante."    | O navegador negou a localização. Permita, use DevTools → Sensors ou abra pelo IP da rede (passo 8).                                                                                                                                                                                                                               |
 | "Mesa não encontrada" ou restaurante inexistente                       | Faltou o passo 4, ou o endereço usa outro slug ou código de mesa.                                                                                                                                                                                                                                                                 |
 | "QR Code inválido ou expirado"                                         | Foi aberto um link final antigo. Abra de novo o endereço `/api/qr/<token>`.                                                                                                                                                                                                                                                       |
@@ -372,14 +376,16 @@ Tudo se configura no `.env`; depois de editar, recrie os serviços com `docker c
 | `LLM_COMPACT_PROMPT`, `LLM_COMPACT_TOOL_SCHEMAS` | `true` encurta o prompt para modelos locais de contexto curto                               |
 | `LLM_REQUEST_TIMEOUT`, `AI_SERVICE_TIMEOUT_MS`   | tempo máximo do LLM (s) e da API esperando o serviço de IA (ms)                             |
 
-- **LM Studio ou Ollama no próprio computador**: inicie o servidor (LM Studio na porta 1234; Ollama em
-  `http://host.docker.internal:11434/v1`), escolha um modelo _instruct_ com suporte a ferramentas e
-  coloque o identificador exato dele em `LLM_MODEL_MAIN` e `LLM_MODEL_CLASSIFIER`. O modelo precisa
-  responder bem abaixo de 15 s no seu hardware.
+- **LM Studio ou Ollama no próprio computador**: inicie o servidor. O `LLM_BASE_URL` padrão já aponta
+  para o LM Studio na porta 1234; para o Ollama, use `LLM_BASE_URL=http://host.docker.internal:11434/v1`.
+  No Linux, `host.docker.internal` não existe por padrão: use o IP da máquina. Escolha um modelo
+  _instruct_ com suporte a ferramentas e coloque o identificador exato dele em `LLM_MODEL_MAIN` e
+  `LLM_MODEL_CLASSIFIER`. O modelo precisa responder bem abaixo de 15 s no seu hardware.
 - **API da OpenAI**: use o bloco alternativo do `.env.example` (`LLM_BASE_URL=https://api.openai.com/v1`,
   sua chave, `gpt-4o-mini` e `LLM_REASONING_EFFORT` vazio).
 - **Anthropic ou Google**: `LLM_PROVIDER=anthropic` ou `google`, `LLM_API_KEY` e os identificadores dos
-  modelos.
+  modelos. Esses dois provedores estão implementados, mas não foram validados de ponta a ponta, e não
+  usam `LLM_BASE_URL` nem `LLM_REQUEST_TIMEOUT`.
 
 Falhas do LLM aparecem em `docker compose logs ai-service`. Mais detalhes em
 [docs/arquitetura/servico-de-ia.md](docs/arquitetura/servico-de-ia.md).
@@ -402,7 +408,7 @@ testes.
 
 A suíte ponta a ponta precisa do stack no ar com o seed, roda em série e mexe nas mesas M01, M02,
 QRTEST91 e QRTEST92; por isso, rode-a **depois** do roteiro manual e, ao terminar, volte ao estado
-inicial com o seed (passo 7). Das 43 execuções que não passam:
+inicial com o seed (segundo comando do passo 4). Das 43 execuções que não passam:
 
 - 1 depende de um LLM de verdade, por definição ("pergunta aberta usa o LLM real"); o teste seguinte
   do mesmo arquivo, em série, não chega a rodar.
@@ -447,4 +453,4 @@ Desenvolvido por Caleb Medeiros.
 
 Todos os direitos reservados. O acesso a este repositório foi concedido exclusivamente para avaliação
 acadêmica; não é permitido copiar, distribuir ou usar o código para outros fins sem autorização do
-autor.
+autor. Ver [LICENSE](LICENSE).

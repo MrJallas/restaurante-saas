@@ -37,7 +37,7 @@ porque essas telas foram desenhadas à mão pelo autor e conferidas lado a lado 
   força um downgrade.
 - Ruim, porque divergência de texto nessas telas espera decisão de produto. Exemplo: a tela de espera
   da junção de mesas diz "Você pode tentar de novo em 20 min", e o intervalo real depois de uma
-  recusa ou de um pedido sem resposta é de 10 min (`COOLDOWN_MINUTES` em
+  recusa é de 10 min; um pedido sem resposta só expira, sem cooldown (`COOLDOWN_MINUTES` em
   `apps/api/src/modules/table-merge/merge-consent-state-machine.ts`).
 - O `CallWaiterSheet` é exceção à tipografia: título 22/600 em vez de 26/700.
 - O protótipo é referência de design, não de comportamento: onde diverge do código, vale o código

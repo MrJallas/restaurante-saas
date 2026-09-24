@@ -40,7 +40,8 @@ nomes), e apagar esses volumes apaga todos os dados do sistema.
 ## Variáveis de ambiente
 
 O Compose lê o `.env` da raiz. A referência é o [`.env.example`](../../.env.example): os valores dele
-são os mesmos defaults do `docker-compose.yml`, e só os dois segredos obrigatórios não têm default.
+são os defaults do `docker-compose.yml`, com duas exceções: os dois segredos obrigatórios, que não têm
+default, e `HOME_CONTINUATION_ENABLED` (`false` no `.env.example`, `true` no compose).
 
 ```bash
 cp .env.example .env
@@ -143,7 +144,7 @@ Dados fictícios do seed. Todos usam o PIN de demonstração `1234`, em `http://
 
 | Papel         | CPF (fictício) | Tela inicial |
 | ------------- | -------------- | ------------ |
-| Dona          | `90000000000`  | `/manager`   |
+| Dono          | `90000000000`  | `/manager`   |
 | Gerente       | `90000000001`  | `/manager`   |
 | Recepcionista | `90000000002`  | `/host`      |
 | Garçom        | `90000000003`  | `/waiter`    |

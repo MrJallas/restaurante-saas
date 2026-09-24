@@ -126,20 +126,20 @@ convertem as ferramentas para o formato de cada API, mas não foram validados po
 
 ## Configuração
 
-| Variável                                         | Padrão no compose                              | Observação                                                                                                                                    |
-| ------------------------------------------------ | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LLM_PROVIDER`                                   | `openai`                                       |                                                                                                                                               |
-| `LLM_BASE_URL`                                   | LM Studio no computador hospedeiro, porta 1234 | O compose usa `${VAR:-padrão}`: deixar vazio **não** leva à API oficial da OpenAI, volta para o LM Studio. Para a OpenAI, preencha o endereço |
-| `LLM_API_KEY`                                    | valor de exemplo do LM Studio                  |                                                                                                                                               |
-| `LLM_MODEL_MAIN`, `LLM_MODEL_CLASSIFIER`         | modelo instruct de 7B para Apple Silicon       | Conversa e filtro de assunto                                                                                                                  |
-| `LLM_REASONING_EFFORT`                           | `none`                                         | Vazio também vira `none` no compose                                                                                                           |
-| `LLM_REQUEST_TIMEOUT`                            | 90 s                                           | Só no provedor `openai`                                                                                                                       |
-| `LLM_COMPACT_PROMPT`, `LLM_COMPACT_TOOL_SCHEMAS` | `true`                                         | Encurtam instruções e esquemas para modelos locais                                                                                            |
-| `AI_SERVICE_TIMEOUT_MS`                          | 95000                                          | Quanto a API espera o `/chat` (padrão do código: 35000)                                                                                       |
-| `AI_SERVICE_API_KEY`                             | valor de desenvolvimento                       | Chave entre API e serviço                                                                                                                     |
-| `HOME_CONTINUATION_ENABLED`                      | `true`                                         | `false` no `.env.example`: a home mostra os botões canônicos em vez das sugestões                                                             |
+| Variável                                         | Padrão no compose                              | Observação                                                                                                                                                          |
+| ------------------------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LLM_PROVIDER`                                   | `openai`                                       |                                                                                                                                                                     |
+| `LLM_BASE_URL`                                   | LM Studio no computador hospedeiro, porta 1234 | O compose usa `${VAR:-padrão}`: deixar vazio **não** leva à API oficial da OpenAI, volta para o LM Studio. Para a OpenAI, preencha o endereço                       |
+| `LLM_API_KEY`                                    | valor de exemplo do LM Studio                  |                                                                                                                                                                     |
+| `LLM_MODEL_MAIN`, `LLM_MODEL_CLASSIFIER`         | modelo instruct de 7B para Apple Silicon       | Conversa e filtro de assunto                                                                                                                                        |
+| `LLM_REASONING_EFFORT`                           | `none`                                         | O compose usa `${LLM_REASONING_EFFORT-none}`: vazio é respeitado (o necessário para a API oficial da OpenAI); `none` só vale quando a variável não existe no `.env` |
+| `LLM_REQUEST_TIMEOUT`                            | 90 s                                           | Só no provedor `openai`                                                                                                                                             |
+| `LLM_COMPACT_PROMPT`, `LLM_COMPACT_TOOL_SCHEMAS` | `true`                                         | Encurtam instruções e esquemas para modelos locais                                                                                                                  |
+| `AI_SERVICE_TIMEOUT_MS`                          | 95000                                          | Quanto a API espera o `/chat` (padrão do código: 35000)                                                                                                             |
+| `AI_SERVICE_API_KEY`                             | valor de desenvolvimento                       | Chave entre API e serviço                                                                                                                                           |
+| `HOME_CONTINUATION_ENABLED`                      | `true`                                         | `false` no `.env.example`: a home mostra os botões canônicos em vez das sugestões                                                                                   |
 
-O `.env.example` traz esses mesmos padrões e um bloco alternativo para a API da OpenAI. Passo a passo
+O `.env.example` traz esses mesmos padrões (exceto `HOME_CONTINUATION_ENABLED=false`) e um bloco alternativo para a API da OpenAI. Passo a passo
 em [Ambiente local](../desenvolvimento/ambiente-local.md).
 
 ## Tempos

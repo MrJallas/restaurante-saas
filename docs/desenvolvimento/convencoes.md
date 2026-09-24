@@ -55,8 +55,9 @@ que já aconteceu; o motivo vem junto.
   `npm run format:check` confere o repositório inteiro. O `.prettierignore` deixa de fora o material
   histórico (`docs/archive/`), o protótipo de design (`docs/design/canvas/`), saídas de ferramentas e
   arquivos gerados.
-- ESLint com `@typescript-eslint` (`.eslintrc.json`; `npm run lint` via Turborepo). Variáveis não usadas
-  são erro, salvo com prefixo `_`.
+- ESLint com `@typescript-eslint`: `.eslintrc.json` na raiz (API e shared-types) e `eslint.config.mjs` em
+  cada app Next, que também aplica `eslint-config-next`; `npm run lint` via Turborepo. Variáveis não
+  usadas são erro; parâmetros com prefixo `_` são tolerados.
 
 ## Dependências Python
 

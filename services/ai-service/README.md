@@ -58,7 +58,7 @@ tests/             # pytest
 
 ## Testes
 
-18 arquivos `test_*.py`. O LLM é simulado: não precisa de GPU nem de chave. As dependências de teste
+17 arquivos `test_*.py`. O LLM é simulado: não precisa de GPU nem de chave. As dependências de teste
 estão no `requirements-dev.lock` (a imagem Docker não traz o pytest):
 
 ```bash

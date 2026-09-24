@@ -298,7 +298,7 @@ web-staff via `NEXT_PUBLIC_*`); registry único de retenção/erasure por store.
 (branch `fix/framework-bugfixes`, base `main`). Base repo:
 `<repo>`. Remote: `origin` (GitHub).
 
-**Memória do projeto** (`~/.claude/projects/-Users-calebmedeiros-meus-projetos-restauranteSaaS/memory/`):
+**Memória do projeto** (`~/.claude/projects/<projeto>/memory/`):
 `MEMORY.md` (índice), `project_loop_framework_bugfix.md` (escopo/cadência/decomposição),
 `project_audit_fable_2026-07-03.md` (achados da auditoria), `project_sim_ios_testing.md` (teste iOS),
 `project_e2e_worktree_stack.md` (worktree + docker), `feedback_playwright_serial.md`,

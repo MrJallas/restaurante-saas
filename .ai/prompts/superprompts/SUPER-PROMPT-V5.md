@@ -292,7 +292,7 @@ Util em `apps/web-staff/src/app/globals.css` matchea `[data-hide-scrollbar]`.
 
 ## 9. Memory entries persistentes
 
-`~/.claude/projects/-Users-calebmedeiros-meus-projetos/memory/`:
+`~/.claude/projects/<projeto>/memory/`:
 - `feedback_visual_validation.md`
 - `feedback_buttons_must_work.md`
 - `feedback_systematic_button_audit.md`

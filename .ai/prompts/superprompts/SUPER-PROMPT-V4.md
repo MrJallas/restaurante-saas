@@ -240,7 +240,7 @@ Per `CLAUDE.md` §🔒:
 
 ## 10. Memory entries persistentes
 
-`~/.claude/projects/-Users-calebmedeiros-meus-projetos/memory/`:
+`~/.claude/projects/<projeto>/memory/`:
 - `feedback_visual_validation.md` — sempre preview + screenshots
 - `feedback_buttons_must_work.md` — real or stub toast, nunca placebo
 - `feedback_systematic_button_audit.md` — superscan toda onda

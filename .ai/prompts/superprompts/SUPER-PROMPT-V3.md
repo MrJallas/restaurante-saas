@@ -71,7 +71,7 @@ API key: `<chave-de-dev-antiga-bloqueada-em-producao>` (header `x-staff-key`).
 
 ## 4. Memória persistente
 
-Arquivos em `~/.claude/projects/-Users-calebmedeiros-meus-projetos/memory/`:
+Arquivos em `~/.claude/projects/<projeto>/memory/`:
 - `feedback_visual_validation.md` — sempre subir preview + screenshots
 - `feedback_buttons_must_work.md` — nunca telas-zumbi (CTAs reais ou toast stub explícito)
 - `feedback_systematic_button_audit.md` — spawn subagent Playwright a cada onda
@@ -335,7 +335,7 @@ Screenshots em `qa-reports/round18-sticky-shots/` (38 PNGs · cada bug tem antes
 
 ## 14. Onde encontrar o quê
 
-- **Memória**: `~/.claude/projects/-Users-calebmedeiros-meus-projetos/memory/`
+- **Memória**: `~/.claude/projects/<projeto>/memory/`
 - **Audit reports**: `qa-reports/round18-*.md`
 - **Canvas spec**: `docs/design-canvas/handoff/garcom/garcom-screens-{a,b,c,d}.jsx` (V11+ manager/host/waiter); `docs/design-canvas/handoff/cliente/cliente-journey-v20.jsx` (V20 customer)
 - **Tokens**: `apps/web-staff/src/components/manager/tokens.ts` (manager); `apps/web-staff/src/components/waiter/tokens.ts` (waiter)

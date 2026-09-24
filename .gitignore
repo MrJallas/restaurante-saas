@@ -64,3 +64,6 @@ output/
 .swc/
 **/e2e/.auth/
 **/playwright/.cache/
+
+# Permissões locais da ferramenta de desenvolvimento (pessoais)
+.claude/settings.local.json

@@ -2,7 +2,8 @@
 
 Esta página descreve quem decide quem entra numa mesa e como duas mesas se juntam. A regra de produto
 é uma só: **decisão social da mesa é do cliente-anfitrião**. A equipe não aprova quem chega depois nem
-junção de mesas; ela só é avisada depois.
+junção de mesas. Das junções decididas ela recebe um aviso passivo na caixa de entrada da recepção;
+da chegada tardia não recebe aviso nenhum (ver "O que a equipe vê").
 
 ## Conceito
 

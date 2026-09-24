@@ -7,7 +7,7 @@ restaurante de demonstração, ver [ambiente local](ambiente-local.md).
 | -------------------- | -------------------------------------------------------------------------------------------- | ------------------------- | ----------------------- |
 | Unitários da API     | `apps/api/src/**/*.test.ts` (152 arquivos)                                                   | Jest + Supertest          | não (usa fakes)         |
 | Unitários dos fronts | `apps/web-customer/src` (31), `apps/web-staff/src` (22)                                      | Jest (`next/jest`, jsdom) | não                     |
-| Serviço de IA        | `services/ai-service/tests/` (18 arquivos)                                                   | pytest                    | não (LLM simulado)      |
+| Serviço de IA        | `services/ai-service/tests/` (17 arquivos de teste)                                          | pytest                    | não (LLM simulado)      |
 | Ponta a ponta        | `apps/web-customer/e2e/specs/` (13 specs)                                                    | Playwright                | **sim, com o seed**     |
 | Smoke manuais        | `apps/web-staff/__tests__/smoke-cors.test.ts`, `apps/web-staff/src/lib/api.identity.spec.ts` | `node:test`, ts-node      | a API, no smoke de CORS |
 
