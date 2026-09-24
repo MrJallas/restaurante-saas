@@ -46,7 +46,7 @@ describe('assertStaffKeyConfigured', () => {
     expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 
-  it('em dev tolera o literal de dev (mesma chave do .env.example)', () => {
+  it('em dev tolera o literal de dev antigo (KNOWN_LEAKED_STAFF_KEY)', () => {
     const logger = makeLogger();
     expect(() =>
       assertStaffKeyConfigured(logger, {

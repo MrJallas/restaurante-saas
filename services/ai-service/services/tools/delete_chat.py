@@ -1,7 +1,7 @@
 """
 Request deletion of one chat thread (LGPD individual delete).
 
-Per `chat-history-lgpd.md` — the customer can delete a single chat thread
+Per `historico-de-chat-e-lgpd.md` — the customer can delete a single chat thread
 via the chat history screen OR via this tool when they ask in conversation.
 The destructive confirmation chip is consumed by web-customer, which calls
 the canonical endpoint with the browser's httpOnly recognition_token cookie.

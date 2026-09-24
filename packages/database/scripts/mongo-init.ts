@@ -3,7 +3,7 @@
  *
  * Cria o database `restaurant_chat`, as collections `chat_threads` e
  * `chat_messages`, e os indices documentados em
- * `packages/database/mongodb/chat-threads.md`. Pode rodar quantas vezes for
+ * `docs/arquitetura/dados-e-armazenamento.md`. Pode rodar quantas vezes for
  * preciso — `createIndex` e no-op se o indice ja existe com mesmo spec.
  *
  * Uso:

@@ -1,6 +1,6 @@
 'use client';
 
-// ScreenHostHome — dashboard da recepcionista. Match com docs/design-canvas/
+// ScreenHostHome — dashboard da recepcionista. Match com docs/design/canvas/
 // handoff/garcom/garcom-screens-host.jsx :: ScreenHostHome.
 //
 // Sumário no topo (4 contadores) + lista de mesas livres (pra liberar) +

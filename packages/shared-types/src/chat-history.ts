@@ -1,5 +1,5 @@
 // === Chat history (NoSQL · 30-day TTL) ===
-// Per docs/features/chat-history-lgpd.md. Read-only consumption from MongoDB.
+// Per docs/produto/funcionalidades/historico-de-chat-e-lgpd.md. Read-only consumption from MongoDB.
 
 /**
  * Role of the message author. `manager` is for staff replies (complaint

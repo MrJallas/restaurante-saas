@@ -10,7 +10,7 @@ export interface StationLoad {
 }
 
 /**
- * `priorityOf(call, loads)` · per docs/features/vip-customer.md.
+ * `priorityOf(call, loads)` · per docs/produto/funcionalidades/cliente-vip.md.
  *
  * Decision order:
  *   1. ABSOLUTE OVERRIDES (`allergy`, `vip`) — bypass saturation logic.

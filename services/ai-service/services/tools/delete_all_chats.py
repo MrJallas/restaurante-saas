@@ -1,7 +1,7 @@
 """
 Request deletion of all chat threads for the customer (30d window).
 
-Per `chat-history-lgpd.md` — bulk delete of every NoSQL thread tied to
+Per `historico-de-chat-e-lgpd.md` — bulk delete of every NoSQL thread tied to
 `customerId`. Different from `lgpd_data_request(type='erasure')` because:
   - This is the UI-driven mass delete (no LGPD protocol number minted)
   - LGPD request includes the formal protocol + audit trail

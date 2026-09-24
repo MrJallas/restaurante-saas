@@ -34,7 +34,7 @@ export function buildComplaintRedirect(slug: string, orderId: string, comment: s
  * notification (~13min after `delivered`). The push lands on the customer's
  * lock screen and deep-links to `/{slug}/orders/{orderId}/rating`.
  *
- * UX rules per `complaint-flow-v12.md`:
+ * UX rules per `avaliacao-e-reclamacao.md`:
  *   - 5 stars + optional textarea
  *   - rating >= 4 + empty comment → ends here, friendly toast
  *   - rating <= 3 OR comment non-empty → BE returns redirectTo and we

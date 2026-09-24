@@ -84,7 +84,7 @@ function groupMessagesByDay(messages: ChatMessageDto[]): DayGroup[] {
 }
 
 /**
- * Read-only chat thread view · per `chat-history-lgpd.md`.
+ * Read-only chat thread view · per `historico-de-chat-e-lgpd.md`.
  *
  * Renders the historical thread (user, assistant, manager, system roles).
  * Composer is intentionally absent — the thread CANNOT be continued; that's

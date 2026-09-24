@@ -10,7 +10,7 @@ const RATING_PUSH_DEDUP_TTL_SECONDS = 30 * 24 * 60 * 60;
 /**
  * Scheduled order-rating push. Runs every minute and, for each tenant,
  * picks `order_ratings` rows where:
- *   - prompted_at is older than 13 minutes (matches docs/complaint-flow-v12)
+ *   - prompted_at is older than 13 minutes (matches docs/produto/funcionalidades/avaliacao-e-reclamacao.md)
  *   - submitted_at is NULL (customer hasn't responded yet)
  *   - the row hasn't been pushed yet (we proxy this with `comment IS NULL`
  *     plus a Redis-backed dedup key, since the migration doesn't carry a

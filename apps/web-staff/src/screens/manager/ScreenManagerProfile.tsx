@@ -2,7 +2,7 @@
 
 // ScreenManagerProfile — tela "Eu" do gerente (rota /manager/configuracoes).
 // Faithful port of ScreenManagerSettings em
-// docs/design-canvas/handoff/garcom/garcom-screens-c.jsx:1889 (V11 layout):
+// docs/design/canvas/handoff/garcom/garcom-screens-c.jsx:1889 (V11 layout):
 // Hero (avatar lado-a-lado · pulse "em turno desde HH:MM") · Mensagens (bloco
 // próprio · V11) · KPI "Vendas no seu turno" · Operação (Encerrar turno
 // destacado mostarda · Histórico · Equipe e turnos · Cortesias) · Conta ·

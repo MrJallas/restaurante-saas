@@ -25,7 +25,10 @@ test.describe.configure({ mode: 'serial' });
 test.setTimeout(180_000);
 
 const TABLE_CODE = 'QRTEST91';
-const REPORT_DIR = path.resolve(__dirname, '../../../../qa-reports/join-table-ai-typewriter');
+const REPORT_DIR = path.resolve(
+  __dirname,
+  '../../../../output/evidencias/join-table-ai-typewriter',
+);
 const IPHONE_14 = devices['iPhone 14'];
 
 let cpfSeed = Math.floor(Date.now() % 100_000);

@@ -1,1 +1,0 @@
-http://localhost:3103/restaurant_dev/assistente?prefill=quero+explicar+melhor%3A&mode=expand

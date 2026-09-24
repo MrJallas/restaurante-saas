@@ -29,24 +29,14 @@ artifacts/
 .playwright-mcp/
 
 # Playwright CLI e capturas locais (traces, vídeos, screenshots e HARs).
-# Evidência textual reproduzível pode ir em qa-reports; mídia pesada não.
+# Evidência gerada por specs e scripts vai para output/ (ignorado); o Playwright
+# limpa test-results/ a cada execução.
 .playwright-cli/
 output/
 
-# Midia pesada de QA — regeneravel. Evidencia textual (md/json/txt) FICA
-# versionada: o CLAUDE.md manda ler qa-reports/loop-audit-2026-07-11/FINAL-REPORT.md
-# antes de reabrir achados, e os SUPER-PROMPT*.md sao insumo de sessao.
-qa-reports/**/*.png
-qa-reports/**/*.jpg
-qa-reports/**/*.jpeg
-qa-reports/**/*.gif
-qa-reports/**/*.webm
-qa-reports/**/*.mp4
-qa-reports/**/*.zip
-qa-reports/**/*.trace
-qa-reports/**/*.network
-qa-reports/**/*.har
-qa-reports/**/playwright/*.log
+# qa-reports/ foi aposentada (relatórios curados em docs/archive/qa/). Se algum
+# script antigo recriar a pasta, nada dentro dela entra no git.
+/qa-reports/
 
 # Worktrees criadas por agentes Claude (cada sessao do harness gera uma) —
 # nao versionar nada dentro, evita poluir o repo.
@@ -64,5 +54,13 @@ qa-reports/**/playwright/*.log
 .env.backup*
 *.env.bak
 
-# Rascunhos locais de mapeamento (insumo de sessao, nao doutrina)
+# Rascunhos locais de agentes (insumo de sessao, nao doutrina)
+.ai/rascunhos/
 .rag-drafts/
+
+# === reorganizacao-2026-09 ===
+# Caches gerados que as regras acima nao cobriam
+.pytest_cache/
+.swc/
+**/e2e/.auth/
+**/playwright/.cache/

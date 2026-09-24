@@ -1,7 +1,7 @@
 'use client';
 
 // ScreenWaiterReportQrIssue — formulário pra reportar QR ilegível.
-// Match com docs/design-canvas/handoff/garcom/garcom-qr-issue.jsx ::
+// Match com docs/design/canvas/handoff/garcom/garcom-qr-issue.jsx ::
 // ScreenWaiterReportQrIssue (sheet · compose mode + sent state).
 // Stepper de número de mesa · chip "tipo do problema" · descrição opcional.
 

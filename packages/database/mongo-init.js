@@ -8,8 +8,8 @@
 // scripts/mongo-init.ts) — it has richer logging and ensure-style logic.
 //
 // References:
-//   - docs/features/chat-history-lgpd.md
-//   - packages/database/mongodb/chat-threads.md
+//   - docs/produto/funcionalidades/historico-de-chat-e-lgpd.md
+//   - docs/arquitetura/dados-e-armazenamento.md
 
 // Round 5 (B-NEW-10) fix: era `chat_history`, mas a API conecta em
 // `restaurant_chat` (env MONGODB_DB do docker-compose:74). Init rodava

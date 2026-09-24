@@ -24,7 +24,7 @@ interface ScreenCustomerHostApproveMergeProps {
 }
 
 /**
- * `ScreenCustomerHostApproveMerge` · per docs/features/customer-host-model.md
+ * `ScreenCustomerHostApproveMerge` · per docs/produto/funcionalidades/cliente-host-e-mesa-compartilhada.md
  * (frame 06 of cliente-table-merge.jsx — fullscreen alternative to the
  * inline typewriter bubble).
  *

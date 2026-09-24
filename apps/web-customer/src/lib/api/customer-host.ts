@@ -7,7 +7,7 @@ import { apiGet, apiPost, ApiRequestError } from '../api';
 import { cleanCpf } from '../cpf';
 
 /**
- * Customer-host model API client. Per docs/features/customer-host-model.md.
+ * Customer-host model API client. Per docs/produto/funcionalidades/cliente-host-e-mesa-compartilhada.md.
  *
  * Endpoints implemented in apps/api/src/modules/{customers,table-merge}.
  * Slug is derived from current pathname so callers don't have to thread it through.

@@ -1,1 +1,0 @@
-http://localhost:3103/restaurant_dev/assistente?prefill=qual+a+sobremesa+do+dia%3F

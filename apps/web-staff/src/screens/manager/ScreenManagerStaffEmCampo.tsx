@@ -2,7 +2,7 @@
 
 // V9 drill-down — EM CAMPO tile (/manager/equipe/em-campo).
 //
-// Canvas spec: docs/design-canvas/handoff/garcom/garcom-screens-e.jsx:132-198
+// Canvas spec: docs/design/canvas/handoff/garcom/garcom-screens-e.jsx:132-198
 // (variant `em-campo`). Hero "5/6" + "1 fora" lista quem está fora +
 // 3 ActionPills + bloco Fórmula. Topbar com voltar pra /manager/equipe.
 //

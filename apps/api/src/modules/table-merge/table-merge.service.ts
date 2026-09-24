@@ -376,7 +376,7 @@ export class TableMergeService {
   /**
    * P1 #28 — Dual-consent state machine. A merge is a social decision and
    * only rolls when BOTH hosts approve (per
-   * docs/features/customer-host-model.md V16: "Junção só rola se ambos
+   * docs/produto/funcionalidades/cliente-host-e-mesa-compartilhada.md V16: "Junção só rola se ambos
    * aprovarem · consent duplo"). The previous implementation flipped
    * `status = 'approved'` on the first /respond hit, ignoring the other
    * side — single-consent bug.

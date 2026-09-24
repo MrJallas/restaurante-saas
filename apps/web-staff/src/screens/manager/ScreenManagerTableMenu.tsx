@@ -5,7 +5,7 @@
 // Hero (table number + status) + 3 editable attributes (party, observation,
 // client) + manager action list (Cortesia, Contactar, Timeline, Imprimir,
 // Transferir, Fechar). VIP toggle lives in the MoreSheet of this screen
-// (per docs/features/vip-customer.md).
+// (per docs/produto/funcionalidades/cliente-vip.md).
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';

@@ -59,7 +59,7 @@ function formatThreadDateTime(iso: string): string {
 }
 
 /**
- * Chat history list · per `chat-history-lgpd.md`.
+ * Chat history list · per `historico-de-chat-e-lgpd.md`.
  *
  * Renders the customer's chat threads grouped by day with a delete CTA on
  * each row + a destructive "Apagar todo o histórico" footer button. The

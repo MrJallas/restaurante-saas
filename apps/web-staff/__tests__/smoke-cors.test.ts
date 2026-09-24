@@ -6,7 +6,7 @@
  * files were missing `http://localhost:3002` (the web-staff dev origin).
  * Result: every staff fetch failed in the browser with a CORS error before
  * the request even reached the controller. The fix (rooted in
- * `.env.example` + `apps/api/.env.example`) lists both 3003 and 3002.
+ * root `.env.example`) lists both 3003 and 3002.
  *
  * The test runs with the built-in `node:test` runner so we don't have to
  * pull jest/vitest into `web-staff` just for one smoke. It is *integration*
@@ -70,7 +70,8 @@ test('OPTIONS preflight from web-staff origin returns CORS headers', async (t) =
 
   // The critical assertion: the API must echo the staff origin. If this
   // fails, the running API process has a stale `CORS_ORIGINS` that omits
-  // :3002 — regenerate `apps/api/.env` from `.env.example` and restart.
+  // :3002 — outside Docker, regenerate `apps/api/.env` from the root `.env.example` and
+  // restart; under Docker Compose, CORS_ORIGINS comes from docker-compose.yml (api).
   const allowOrigin = res.headers.get('access-control-allow-origin');
   assert.equal(
     allowOrigin,

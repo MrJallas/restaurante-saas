@@ -95,7 +95,7 @@ export interface CustomerWelcomeResponseDto {
   locationCheck?: import('./scan-verification').CustomerLocationCheck | null;
 }
 
-// === New feature contracts (per docs/features/*) ===
+// === New feature contracts (per docs/produto/funcionalidades/*) ===
 // Domain entities + DTOs + WS events for the 5 new product features. Each
 // module groups types by feature; this barrel re-exports them flat to keep
 // existing import sites (`from '@restaurant/shared-types'`) unchanged.

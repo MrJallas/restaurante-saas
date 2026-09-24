@@ -1,4 +1,4 @@
-// Barrel for the 9 push lockscreen variants per docs/design-canvas/handoff/garcom/garcom-push.jsx
+// Barrel for the 9 push lockscreen variants per docs/design/canvas/handoff/garcom/garcom-push.jsx
 export { PushCardIOS, PushCardAndroid, default as PushCard } from './PushCard';
 export type { PushTone, PushCardProps } from './PushCard';
 export { PushChamouGarcom } from './PushChamouGarcom';

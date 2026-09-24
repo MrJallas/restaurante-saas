@@ -3,7 +3,7 @@ LGPD canonical messages — IMMUTABILITY GUARD.
 
 This test asserts byte-for-byte equality between the strings exported by
 `services.lgpd_messages` and the canonical phrasing in
-`docs/features/chat-history-lgpd.md`. Any drift breaks the test.
+`docs/produto/funcionalidades/historico-de-chat-e-lgpd.md`. Any drift breaks the test.
 
 If the spec doc legitimately changes, update BOTH the spec and the module
 in the same commit.
@@ -18,7 +18,7 @@ from services.lgpd_messages import (
 )
 
 
-# Verbatim from chat-history-lgpd.md (lines around 73 and 151-155).
+# Verbatim from historico-de-chat-e-lgpd.md, section "Textos canônicos".
 EXPECTED_NOTICE = (
     "Você, como consumidor, tem direito por lei (LGPD) de pedir a exclusão "
     "dos seus dados a qualquer momento. Posso encaminhar sua solicitação pra gerência?"

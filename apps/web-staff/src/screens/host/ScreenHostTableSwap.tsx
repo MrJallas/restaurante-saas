@@ -1,7 +1,7 @@
 'use client';
 
 // ScreenHostTableSwap — mover a sessão de uma mesa pra outra.
-// Match com docs/design-canvas/handoff/garcom/garcom-screens-host.jsx ::
+// Match com docs/design/canvas/handoff/garcom/garcom-screens-host.jsx ::
 // ScreenHostTableSwap. Lista mesas livres compatíveis com a capacidade.
 
 import * as React from 'react';

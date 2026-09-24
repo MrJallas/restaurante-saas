@@ -1,5 +1,5 @@
 // === Complaint + order rating ===
-// Per docs/features/complaint-flow-v12.md. Customer rates after delivery; if
+// Per docs/produto/funcionalidades/avaliacao-e-reclamacao.md. Customer rates after delivery; if
 // rating <=3 or comment populated, may escalate to a complaint -> manager flow.
 
 /**

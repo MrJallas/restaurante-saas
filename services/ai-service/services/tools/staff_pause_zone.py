@@ -1,7 +1,7 @@
 """
 Manager pauses zone (waiter's tables). Requires text reason per spec.
 
-Spec: `zone-pause.md` — `reason?` is OPTIONAL in the API but our tool guard
+Spec: `pausa-de-zona.md` — `reason?` is OPTIONAL in the API but our tool guard
 mandates it for accountability of the LLM-mediated path.
 """
 

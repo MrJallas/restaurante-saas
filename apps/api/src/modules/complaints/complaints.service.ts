@@ -28,7 +28,7 @@ export class ComplaintsService {
       orderRatingId?: string | null;
       rating?: number | null;
       /**
-       * Per docs/features/complaint-flow-v12.md — one of:
+       * Per docs/produto/funcionalidades/avaliacao-e-reclamacao.md — one of:
        * 'demora' | 'item-errado' | 'item-faltando' | 'comida-fria' | 'outro'.
        * Persisted in the `problem_type` column (migration 033).
        */
@@ -354,10 +354,11 @@ export class ComplaintsService {
   }
 
   /**
-   * Forward a complaint to a different manager. Per docs/features/
-   * complaint-flow-v12.md the action lives in the MoreSheet ("Encaminhar
-   * pra outro gerente"). The forward IS an escalation — the original
-   * manager couldn't (or wouldn't) resolve it, so it climbs the chain.
+   * Forward a complaint to a different manager. Per
+   * docs/produto/funcionalidades/avaliacao-e-reclamacao.md the action lives
+   * in the MoreSheet ("Encaminhar pra outro gerente"). The forward IS an
+   * escalation — the original manager couldn't (or wouldn't) resolve it, so
+   * it climbs the chain.
    *
    * P1 #29 — Until now `emitEscalationCreated` was orphan: declared in the
    * gateway but never called, so dashboards never showed forwarded

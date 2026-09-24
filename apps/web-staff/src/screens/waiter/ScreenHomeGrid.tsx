@@ -1,9 +1,9 @@
 'use client';
 
 // ScreenHomeGrid — Home do garçom (única vista, V3).
-// Match com docs/design-canvas/handoff/garcom/garcom-screens-a.jsx ::
+// Match com docs/design/canvas/handoff/garcom/garcom-screens-a.jsx ::
 // ScreenHomeGrid. Grade 2-col + faixa de chamados ativos + banner
-// zone-pause (per docs/features/zone-pause.md).
+// zone-pause (per docs/produto/funcionalidades/pausa-de-zona.md).
 //
 // WS: zone_pause.{started|ended} liga/desliga o banner em tempo real.
 
@@ -252,7 +252,7 @@ export const ScreenHomeGrid: React.FC<ScreenHomeGridProps> = ({
         />
       )}
 
-      {/* Zone-pause banner — per docs/features/zone-pause.md */}
+      {/* Zone-pause banner — per docs/produto/funcionalidades/pausa-de-zona.md */}
       {activePause && (
         <div
           role="alert"

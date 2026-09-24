@@ -28,7 +28,7 @@ const PROBLEM_CHIPS: Array<{ value: ComplaintProblemType; label: string }> = [
 ];
 
 /**
- * Complaint composer · per `complaint-flow-v12.md` (Pattern2A → 2C in canvas).
+ * Complaint composer · per `avaliacao-e-reclamacao.md` (Pattern2A → 2C in canvas).
  * 5 problem-type chips + textarea (required) + (V2 photo). Submit creates the
  * complaint and routes to the waiting screen with the protocol number.
  *

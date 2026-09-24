@@ -11,7 +11,7 @@
  *  3. Resposta do gerente é PRIVADA: só o cliente destinatário recebe a
  *     bubble (realtime + reload); o outro participante da mesa não vê.
  *
- * Serial (DB compartilhado — MEMORY.md): não rodar em paralelo com outros
+ * Serial (DB compartilhado — .ai/MEMORY.md): não rodar em paralelo com outros
  * specs.
  */
 import {

@@ -1,5 +1,5 @@
 // === LGPD requests ===
-// Per docs/features/chat-history-lgpd.md. Triggered via the LLM tool
+// Per docs/produto/funcionalidades/historico-de-chat-e-lgpd.md. Triggered via the LLM tool
 // `lgpd_data_request`; processed immediately for `erasure` of NoSQL chat data.
 
 /**

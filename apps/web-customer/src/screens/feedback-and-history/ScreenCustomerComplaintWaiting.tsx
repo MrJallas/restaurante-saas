@@ -58,7 +58,7 @@ function formatRelative(iso: string | null): string {
 }
 
 /**
- * Complaint waiting screen · per `complaint-flow-v12.md`.
+ * Complaint waiting screen · per `avaliacao-e-reclamacao.md`.
  *
  * Shows the customer's bubble at the top and the manager's response (if any)
  * as a `ManagerBubble`. When the response hasn't arrived yet, displays a

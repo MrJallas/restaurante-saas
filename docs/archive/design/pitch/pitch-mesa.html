@@ -1,0 +1,1229 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Mesa — pitch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:        #f0efe9;          /* canvas (cream paper) */
+    --paper:     #ffffff;          /* card / paper */
+    --surface:   #f6f5f2;          /* warm surface */
+    --ink:       #0a0a0a;
+    --border:    #0a0a0a;
+    --soft:      #e5e5e5;
+    --faint:     #efefef;
+    --mute:      #6b6b6b;
+    --far:       #a3a3a3;
+    --accent:    oklch(64% 0.16 32);
+    --accent-bg: oklch(96% 0.02 32);
+    --warn:      #b87800;
+    --warn-bg:   #fdf3d8;
+    --amber:     #f0c542;
+    --success:   #2f7d4f;
+    --success-bg:#e8f3ec;
+    --danger:    #c43a3a;
+    --danger-bg: #fdecec;
+    --display:   'Inter', system-ui, -apple-system, sans-serif;
+    --body:      'Inter', system-ui, -apple-system, sans-serif;
+    --mono:      'JetBrains Mono', ui-monospace, 'IBM Plex Mono', Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    background: #1d1c19;
+    color: var(--ink);
+    font-family: var(--body);
+    font-feature-settings: 'cv11','ss01','ss03';
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  .stage {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse at center, #2a2925 0%, #15140f 80%);
+  }
+
+  .deck {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    transform: scale(var(--scale, 1));
+    transform-origin: center center;
+    background: var(--bg);
+    box-shadow: 0 24px 60px rgba(0,0,0,0.45), 0 4px 14px rgba(0,0,0,0.25);
+    overflow: hidden;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    padding: 88px 112px;
+    display: flex;
+    flex-direction: column;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms ease-out;
+    background: var(--bg);
+  }
+  .slide.active {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .head { flex-shrink: 0; }
+
+  /* — Type system — */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+  .eyebrow .accent { color: var(--accent); }
+  .h-hero  { font-family: var(--display); font-weight: 800; letter-spacing: -0.04em; font-size: 200px; line-height: 0.92; color: var(--ink); text-wrap: balance; }
+  .h-title { font-family: var(--display); font-weight: 700; letter-spacing: -0.025em; font-size: 84px;  line-height: 1.02; color: var(--ink); text-wrap: balance; }
+  .h-sec   { font-family: var(--display); font-weight: 700; letter-spacing: -0.02em;  font-size: 56px;  line-height: 1.1;  color: var(--ink); text-wrap: balance; }
+  .h-card  { font-family: var(--display); font-weight: 700; letter-spacing: -0.012em; font-size: 32px;  line-height: 1.18; color: var(--ink); text-wrap: pretty; }
+  .lead    { font-family: var(--body);    font-weight: 400; font-size: 32px;  line-height: 1.42; color: var(--ink); text-wrap: pretty; }
+  .body    { font-family: var(--body);    font-weight: 400; font-size: 24px;  line-height: 1.5;  color: var(--ink); text-wrap: pretty; }
+  .body-mute { color: var(--mute); }
+  .small   { font-family: var(--body);    font-weight: 500; font-size: 20px;  line-height: 1.45; color: var(--mute); }
+  .num     { font-family: var(--mono); font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+
+  .accent { color: var(--accent); }
+  .underline-rust { background-image: linear-gradient(transparent 60%, color-mix(in oklch, var(--accent) 25%, transparent) 60%); padding: 0 2px; }
+
+  /* — slide chrome — */
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 64px;
+  }
+  .head .brand {
+    font-family: var(--display);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    font-size: 22px;
+    color: var(--ink);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .head .brand .dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--ink);
+    display: inline-block;
+  }
+  .head .meta {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--far);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  /* — diagram primitives — */
+  .device {
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    border-radius: 36px;
+    overflow: hidden;
+    position: relative;
+  }
+  .device.iphone {
+    width: 360px; height: 780px;
+  }
+  .device .sb {
+    height: 36px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 26px;
+    font-size: 11px;
+    font-weight: 600;
+    position: relative;
+  }
+  .device .sb::after {
+    content: ''; position: absolute; left: 50%; top: 8px; transform: translateX(-50%);
+    width: 92px; height: 24px; border-radius: 14px; background: var(--ink);
+  }
+  .device .sb .right { display: flex; gap: 6px; align-items: center; font-size: 10px; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--ink);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: var(--paper);
+  }
+  .pill.amber  { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+  .pill.green  { background: var(--success-bg); border-color: var(--success); color: var(--success); }
+  .pill.red    { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
+  .pill.dot::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; display: inline-block; }
+
+  /* — KDS card replica — */
+  .kds {
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    border-radius: 18px;
+    padding: 22px 22px 18px;
+    display: flex; flex-direction: column; gap: 16px;
+    min-height: 420px;
+  }
+  .kds.amber  { background: #fffbef; border-color: var(--warn); }
+  .kds.red    { background: #fef4f4; border-color: var(--danger); animation: pulseLate 1.6s ease-in-out infinite; }
+  .kds.green  { background: var(--success-bg); border-color: var(--success); }
+
+  .kds .row1 { display: flex; align-items: center; justify-content: space-between; }
+  .kds .id   { font-family: var(--mono); font-weight: 600; font-size: 22px; letter-spacing: 0.04em; color: var(--ink); }
+  .kds .table { font-family: var(--display); font-weight: 700; font-size: 22px; color: var(--ink); }
+  .kds .timer { font-family: var(--mono); font-weight: 500; font-size: 16px; color: var(--mute); }
+  .kds .items { display: flex; flex-direction: column; gap: 6px; }
+  .kds .item { display: flex; gap: 10px; align-items: baseline; font-family: var(--body); font-size: 18px; color: var(--ink); font-weight: 500; }
+  .kds .item .q { font-family: var(--mono); color: var(--ink); font-weight: 600; min-width: 26px; }
+  .kds .item .note { font-family: var(--body); font-size: 14px; color: var(--mute); margin-left: 36px; font-weight: 400; display: block; line-height: 1.3; }
+  .kds .item .alert { background: var(--danger); color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; margin-left: 36px; display: inline-block; }
+  .kds .actions { margin-top: auto; display: flex; gap: 8px; align-items: center; }
+  .kds .btn { flex: 1; padding: 12px 14px; border-radius: 999px; border: 1.5px solid var(--ink); background: var(--ink); color: #fff; font-weight: 600; font-size: 16px; font-family: var(--body); text-align: center; }
+  .kds .btn.ghost { background: transparent; color: var(--ink); }
+  .kds.amber .btn { background: var(--warn); border-color: var(--warn); }
+  .kds.red .btn { background: var(--danger); border-color: var(--danger); }
+  .kds.green .btn { background: var(--success); border-color: var(--success); }
+
+  @keyframes pulseLate {
+    0%,100% { box-shadow: 0 0 0 0 rgba(196,58,58,0.0); }
+    50% { box-shadow: 0 0 0 8px rgba(196,58,58,0.18); }
+  }
+
+  /* — flow / connectors — */
+  .flow {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    align-items: center;
+    gap: 32px;
+  }
+  .flow .arrow {
+    width: 84px; height: 2px; background: var(--ink); position: relative;
+  }
+  .flow .arrow::after {
+    content: ''; position: absolute; right: 0; top: 50%;
+    width: 14px; height: 14px;
+    border-top: 2px solid var(--ink); border-right: 2px solid var(--ink);
+    transform: translateY(-50%) rotate(45deg);
+  }
+
+  /* — counter / nav — */
+  .deck-counter {
+    position: fixed;
+    bottom: 18px;
+    right: 24px;
+    z-index: 50;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: rgba(255,255,255,0.55);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-feature-settings: 'tnum';
+    pointer-events: none;
+    user-select: none;
+  }
+  .deck-help {
+    position: fixed;
+    bottom: 18px;
+    left: 24px;
+    z-index: 50;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* — image reproduction — */
+  .shot-frame {
+    position: relative;
+    border: 1.5px solid var(--ink);
+    border-radius: 24px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .shot-frame img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .shot-cap {
+    position: absolute;
+    bottom: 14px; left: 14px;
+    padding: 8px 14px;
+    background: var(--ink);
+    color: #fff;
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  /* — print — */
+  @media print {
+    @page { size: 1920px 1080px; margin: 0; }
+    body { background: var(--bg); overflow: visible; }
+    .stage { position: static; }
+    .deck { transform: none; box-shadow: none; width: 1920px; height: 1080px; page-break-after: always; }
+    .slide {
+      visibility: visible !important;
+      opacity: 1 !important;
+      pointer-events: auto;
+      position: relative;
+      transform: none !important;
+      page-break-after: always;
+    }
+    .deck-counter, .deck-help { display: none; }
+  }
+
+  /* — table for design system slide — */
+  .swatch {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--soft);
+    border-radius: 14px;
+    background: var(--paper);
+  }
+  .swatch .chip {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    border: 1px solid var(--ink);
+  }
+  .swatch .meta { display: flex; flex-direction: column; }
+  .swatch .lbl { font-family: var(--display); font-weight: 600; font-size: 16px; color: var(--ink); }
+  .swatch .hex { font-family: var(--mono); font-size: 12px; color: var(--mute); letter-spacing: 0.04em; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 28px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
+
+  .stack { display: flex; flex-direction: column; }
+  .stack-tight > * + * { margin-top: 8px; }
+  .stack-cozy  > * + * { margin-top: 16px; }
+  .stack-room  > * + * { margin-top: 28px; }
+  .stack-loose > * + * { margin-top: 48px; }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="deck" id="deck">
+
+    <!-- ============ SLIDE 01 — CAPA ============ -->
+    <section class="slide" data-screen-label="01 Capa">
+      <div class="head">
+        <div class="brand"><span class="dot"></span>Mesa</div>
+        <div class="meta">Pitch · Mai 2026</div>
+      </div>
+
+      <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+        <div style="max-width: 1500px; text-align: left;">
+          <div class="eyebrow" style="margin-bottom: 36px;">
+            Um sistema operacional para restaurantes
+          </div>
+          <h1 class="h-hero" style="font-size: 280px; letter-spacing: -0.05em; font-weight: 900;">
+            Mesa<span style="color: var(--accent);">.</span>
+          </h1>
+          <div class="lead" style="margin-top: 40px; max-width: 1100px; font-size: 36px; line-height: 1.35;">
+            Cliente, garçom e cozinha conectados<br/>em uma mesma conversa, em tempo real.
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-top: auto;">
+        <div class="small" style="display:flex; gap:32px;">
+          <span><span class="num" style="color: var(--ink); font-weight: 600;">3</span> superfícies</span>
+          <span><span class="num" style="color: var(--ink); font-weight: 600;">1</span> pedido</span>
+          <span><span class="num" style="color: var(--ink); font-weight: 600;">∞</span> fricções a menos</span>
+        </div>
+        <div class="small" style="font-family: var(--mono); letter-spacing: 0.16em; text-transform: uppercase;">
+          Caleb · 2026
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ============ SLIDE 02 — CONTEXTO ============ -->
+    <section class="slide" data-screen-label="02 O contexto">
+      <div class="head">
+        <div class="brand"><span class="dot"></span>Mesa</div>
+        <div class="meta">01 / Contexto</div>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom: 28px;">
+        <span class="accent">●</span>&nbsp;&nbsp;O contexto
+      </div>
+      <h2 class="h-title" style="max-width: 1500px; margin-bottom: 80px;">
+        Restaurantes ainda funcionam<br/>com <span class="underline-rust">papel</span> e <span class="underline-rust">voz</span>.
+      </h2>
+
+      <div class="grid-3" style="margin-top: 24px;">
+        <div style="border-top: 1.5px solid var(--ink); padding-top: 28px;">
+          <div class="num accent" style="font-size: 64px; font-weight: 700; line-height: 1; letter-spacing: -0.02em;">01</div>
+          <div class="h-card" style="margin-top: 22px;">A comanda no bolso</div>
+          <div class="body body-mute" style="margin-top: 18px;">
+            Garçom anota no papel, repete pra cozinha, lembra de cabeça. Quando perde, o pedido some.
+          </div>
+        </div>
+        <div style="border-top: 1.5px solid var(--ink); padding-top: 28px;">
+          <div class="num accent" style="font-size: 64px; font-weight: 700; line-height: 1; letter-spacing: -0.02em;">02</div>
+          <div class="h-card" style="margin-top: 22px;">A cozinha grita</div>
+          <div class="body body-mute" style="margin-top: 18px;">
+            Status do pedido vive na cabeça do cozinheiro. Ninguém sabe quanto falta sem ir até lá perguntar.
+          </div>
+        </div>
+        <div style="border-top: 1.5px solid var(--ink); padding-top: 28px;">
+          <div class="num accent" style="font-size: 64px; font-weight: 700; line-height: 1; letter-spacing: -0.02em;">03</div>
+          <div class="h-card" style="margin-top: 22px;">A espera vira reclamação</div>
+          <div class="body body-mute" style="margin-top: 18px;">
+            Sem visibilidade, o cliente acha que foi esquecido. A nota baixa cai no Google, não na recepção.
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: auto; display: flex; align-items: center; gap: 16px; padding-top: 32px; border-top: 1px solid var(--soft);">
+        <div class="pill"><span class="num">·</span>&nbsp;ponto de partida</div>
+        <div class="small">Tudo isso poderia ser uma única conversa síncrona entre as três pontas.</div>
+      </div>
+    </section>
+
+
+    <!-- ============ SLIDE 03 — INSIGHT ============ -->
+    <section class="slide" data-screen-label="03 Insight">
+      <div class="head">
+        <div class="brand"><span class="dot"></span>Mesa</div>
+        <div class="meta">02 / Insight</div>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom: 28px;">
+        <span class="accent">●</span>&nbsp;&nbsp;O insight
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1.25fr 0.75fr; gap: 100px; align-items: center; flex: 1;">
+        <div>
+          <h2 class="h-title" style="font-size: 96px;">
+            O melhor terminal<br/>já está na <span class="underline-rust">mão</span><br/>do cliente.
+          </h2>
+          <div class="lead" style="margin-top: 48px; max-width: 720px;">
+            Antes de comprarmos um tablet por mesa, comprarmos um POS por garçom, contratarmos uma operadora de cardápio digital — pergunte primeiro: e se o iPhone que ele já tem fosse o controle remoto da própria mesa?
+          </div>
+          <div style="margin-top: 56px; display: flex; gap: 14px; flex-wrap: wrap;">
+            <div class="pill">QR na borda da mesa</div>
+            <div class="pill">cardápio responsivo</div>
+            <div class="pill">pagamento em conjunto</div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: center;">
+          <!-- iPhone with QR scan -->
+          <div class="device iphone" style="height: 740px; transform: rotate(-3deg);">
+            <div class="sb">
+              <span>9:41</span>
+              <div class="right"><span>●●●●</span><span>5G</span><span>87%</span></div>
+            </div>
+            <div style="padding: 24px; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px;">
+              <div style="font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; color: var(--mute); text-transform: uppercase;">Câmera · Trattoria Luna</div>
+              <!-- QR code visualization -->
+              <div style="width: 240px; height: 240px; background: var(--ink); border-radius: 18px; padding: 16px; position: relative;">
+                <div style="display: grid; grid-template-columns: repeat(11, 1fr); gap: 2px; width: 100%; height: 100%;">
+                  <!-- generative QR-like pattern, deterministic -->
+                  <div style="aspect-ratio:1; background:#fff; grid-row: span 3; grid-column: span 3;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1; background:#fff; grid-row: span 3; grid-column: span 3;"></div>
+
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+
+                  <div style="aspect-ratio:1; background:#fff; grid-row: span 3; grid-column: span 3;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                  <div style="aspect-ratio:1; background:#fff;"></div>
+                </div>
+                <!-- focus brackets -->
+                <div style="position: absolute; inset: 6px; pointer-events: none;">
+                  <div style="position:absolute; top:0; left:0; width:34px; height:34px; border-top: 3px solid var(--accent); border-left: 3px solid var(--accent); border-radius: 6px 0 0 0;"></div>
+                  <div style="position:absolute; top:0; right:0; width:34px; height:34px; border-top: 3px solid var(--accent); border-right: 3px solid var(--accent); border-radius: 0 6px 0 0;"></div>
+                  <div style="position:absolute; bottom:0; left:0; width:34px; height:34px; border-bottom: 3px solid var(--accent); border-left: 3px solid var(--accent); border-radius: 0 0 0 6px;"></div>
+                  <div style="position:absolute; bottom:0; right:0; width:34px; height:34px; border-bottom: 3px solid var(--accent); border-right: 3px solid var(--accent); border-radius: 0 0 6px 0;"></div>
+                </div>
+              </div>
+              <div style="text-align: center;">
+                <div style="font-family: var(--display); font-weight: 600; font-size: 17px;">Mesa 12 · Trattoria Luna</div>
+                <div style="font-family: var(--body); font-size: 13px; color: var(--mute); margin-top: 4px;">Tocar para abrir</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ============ SLIDE 04 — A SOLUÇÃO ============ -->
+    <section class="slide" data-screen-label="04 A solucao">
+      <div class="head">
+        <div class="brand"><span class="dot"></span>Mesa</div>
+        <div class="meta">03 / Solução</div>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom: 28px;">
+        <span class="accent">●</span>&nbsp;&nbsp;A solução
+      </div>
+      <h2 class="h-title" style="margin-bottom: 60px;">
+        Um sistema. <span class="accent">Três</span> superfícies. Um pedido.
+      </h2>
+
+      <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 48px; align-items: stretch; padding-top: 24px;">
+
+        <!-- Cliente -->
+        <div style="border: 1.5px solid var(--ink); border-radius: 24px; padding: 36px; background: var(--paper); display: flex; flex-direction: column; gap: 24px;">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div style="width: 56px; height: 56px; border-radius: 14px; border: 1.5px solid var(--ink); display: grid; place-items: center;">
+              <!-- iPhone glyph -->
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="6" y="2" width="12" height="20" rx="3"/>
+                <path d="M11 18h2"/>
+              </svg>
+            </div>
+            <div>
+              <div class="eyebrow" style="font-size: 14px;">Superfície 01</div>
+              <div class="h-card" style="font-size: 28px; margin-top: 4px;">Cliente</div>
+            </div>
+          </div>
+          <div style="height: 200px; border-radius: 14px; background: var(--surface); border: 1px solid var(--soft); padding: 20px; display: flex; flex-direction: column; gap: 10px;">
+            <div style="font-family: var(--mono); font-size: 11px; color: var(--mute); letter-spacing: 0.14em; text-transform: uppercase;">Mesa 12 · 4 pessoas</div>
+            <div style="font-family: var(--display); font-weight: 700; font-size: 20px;">Risoto de camarão</div>
+            <div style="font-family: var(--body); font-size: 13px; color: var(--mute);">Sem cebola · ponto bem passado</div>
+            <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: center;">
+              <div class="num" style="font-weight: 600; font-size: 16px;">R$ 78,00</div>
+              <div style="background: var(--ink); color: #fff; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;">Adicionar</div>
+            </div>
+          </div>
+          <div class="body" style="font-size: 20px; line-height: 1.45;">
+            QR na mesa, identifica-se em 30s, monta o pedido, divide a conta com a galera, paga sem chamar ninguém.
+          </div>
+        </div>
+
+        <!-- Cozinha -->
+        <div style="border: 1.5px solid var(--ink); border-radius: 24px; padding: 36px; background: var(--paper); display: flex; flex-direction: column; gap: 24px;">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div style="width: 56px; height: 56px; border-radius: 14px; border: 1.5px solid var(--ink); display: grid; place-items: center;">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="4" width="20" height="14" rx="2"/>
+                <path d="M8 22h8M12 18v4"/>
+              </svg>
+            </div>
+            <div>
+              <div class="eyebrow" style="font-size: 14px;">Superfície 02</div>
+              <div class="h-card" style="font-size: 28px; margin-top: 4px;">Cozinha & Bar</div>
+            </div>
+          </div>
+          <div style="height: 200px; border-radius: 14px; background: var(--surface); border: 1px solid var(--soft); padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span class="num" style="font-weight: 600; font-size: 16px;">#0142</span>
+              <span class="pill amber dot" style="font-size: 10px;">Preparando</span>
+            </div>
+            <div style="border-top: 1px dashed var(--soft); margin: 4px 0;"></div>
+            <div style="font-family: var(--body); font-size: 14px;"><span class="num" style="font-weight: 600;">1×</span> Risoto camarão</div>
+            <div style="font-family: var(--body); font-size: 14px;"><span class="num" style="font-weight: 600;">1×</span> Filé ao vinho</div>
+            <div style="margin-top: auto; padding: 6px 10px; background: var(--ink); color: #fff; font-size: 11px; border-radius: 6px; text-align: center; font-weight: 600;">▶ Marcar pronto</div>
+          </div>
+          <div class="body" style="font-size: 20px; line-height: 1.45;">
+            TV 1920×1080 com pedidos em tempo real. Status muda com um toque, alergias chegam destacadas, atrasados pulsam em vermelho.
+          </div>
+        </div>
+
+        <!-- Garçom -->
+        <div style="border: 1.5px solid var(--ink); border-radius: 24px; padding: 36px; background: var(--paper); display: flex; flex-direction: column; gap: 24px;">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div style="width: 56px; height: 56px; border-radius: 14px; border: 1.5px solid var(--ink); display: grid; place-items: center;">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="8" r="4"/>
+                <path d="M4 21c0-4 4-7 8-7s8 3 8 7"/>
+              </svg>
+            </div>
+            <div>
+              <div class="eyebrow" style="font-size: 14px;">Superfície 03</div>
+              <div class="h-card" style="font-size: 28px; margin-top: 4px;">Garçom</div>
+            </div>
+          </div>
+          <div style="height: 200px; border-radius: 14px; background: var(--ink); color: #fff; border: 1px solid var(--soft); padding: 18px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="font-family: var(--mono); font-size: 10px; color: rgba(255,255,255,0.55); letter-spacing: 0.16em; text-transform: uppercase;">Faturado por mim</div>
+            <div class="num" style="font-family: var(--display); font-weight: 800; font-size: 36px; letter-spacing: -0.02em;">R$ 2.487,30</div>
+            <div style="border-top: 1px solid rgba(255,255,255,0.15); margin: 8px 0;"></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; font-size: 11px;">
+              <div><div style="color:rgba(255,255,255,0.55); font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase;">Mesas</div><div class="num" style="font-weight:600; font-size: 14px;">11</div></div>
+              <div><div style="color:rgba(255,255,255,0.55); font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase;">Pedidos</div><div class="num" style="font-weight:600; font-size: 14px;">34</div></div>
+              <div><div style="color:rgba(255,255,255,0.55); font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase;">Méd.</div><div class="num" style="font-weight:600; font-size: 14px;">6m</div></div>
+              <div><div style="color:rgba(255,255,255,0.55); font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase;">Gorj.</div><div class="num" style="font-weight:600; font-size: 14px;">R$ 248</div></div>
+            </div>
+          </div>
+          <div class="body" style="font-size: 20px; line-height: 1.45;">
+            Painel pessoal: mesas, chamadas urgentes, prontos pra servir, conta dividida e fechamento no próprio celular.
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+
+    <!-- ============ SLIDE 05 — CLIENTE ============ -->
+    <section class="slide" data-screen-label="05 Cliente">
+      <div class="head">
+        <div class="brand"><span class="dot"></span>Mesa</div>
+        <div class="meta">04 / Superfície 01 — Cliente</div>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom: 18px;">
+        <span class="accent">●</span>&nbsp;&nbsp;Cliente
+      </div>
+      <h2 class="h-title" style="margin-bottom: 0; font-size: 64px; line-height: 1.05;">
+        Escaneou o QR. <span class="accent">Pronto</span>, é o controle remoto da mesa.
+      </h2>
+
+      <div style="display: flex; gap: 32px; align-items: flex-end; justify-content: center; margin-top: 32px; flex: 1; min-height: 0;">
+
+        <!-- Phone 1: Splash -->
+        <div class="device iphone" style="height: 580px; width: 268px;">
+          <div class="sb">
+            <span>9:41</span>
+            <div class="right"><span>●●●●</span><span>5G</span><span>87%</span></div>
+          </div>
+          <div style="flex:1; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;">
+            <div style="width: 64px; height: 64px; border-radius: 18px; border: 1.5px solid var(--ink); display: grid; place-items: center; font-family: var(--display); font-weight: 700; font-size: 22px; letter-spacing: -1px;">TL</div>
+            <div style="text-align: center;">
+              <div style="font-family: var(--display); font-weight: 600; font-size: 18px; letter-spacing: -0.4px;">Trattoria Luna</div>
+              <div style="font-family: var(--mono); font-size: 10px; color: var(--mute); letter-spacing: 0.2em; margin-top: 4px;">MESA 12</div>
+            </div>
+            <div style="margin-top: 14px;">
+              <div style="display: flex; gap: 6px; justify-content: center; margin-bottom: 12px;">
+                <span style="width: 7px; height: 7px; border-radius: 4px; background: var(--ink); opacity: 0.3;"></span>
+                <span style="width: 7px; height: 7px; border-radius: 4px; background: var(--ink); opacity: 0.6;"></span>
+                <span style="width: 7px; height: 7px; border-radius: 4px; background: var(--ink); opacity: 1;"></span>
+              </div>
+              <div style="font-family: var(--body); font-size: 11px; color: var(--mute); text-align: center;">Preparando sua experiência</div>
+            </div>
+          </div>
+          <div class="pill" style="position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: 10px; padding: 4px 10px; background: var(--ink); color: #fff; border-color: var(--ink);">01 · Escaneou QR</div>
+        </div>
+
+        <!-- Phone 2: Identidade -->
+        <div class="device iphone" style="height: 580px; width: 268px;">
+          <div class="sb">
+            <span>9:41</span>
+            <div class="right"><span>●●●●</span><span>5G</span><span>87%</span></div>
+          </div>
+          <div style="flex:1; padding: 18px; position: relative;">
+            <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.18);"></div>
+            <div style="position: relative; background: #fff; border: 1.5px solid var(--ink); border-radius: 22px; padding: 22px; margin-top: 60px;">
+              <div style="font-family: var(--display); font-weight: 600; font-size: 18px; text-align: center; letter-spacing: -0.4px;">Bem-vindo ao Trattoria Luna</div>
+              <div style="font-family: var(--body); font-size: 11px; color: var(--mute); text-align: center; margin-top: 6px; line-height: 1.4;">Para personalizar sua experiência,<br/>informe seu nome e CPF.</div>
+              <div style="margin-top: 20px;">
+                <div style="font-family: var(--mono); font-size: 9px; font-weight: 600; color: var(--mute); letter-spacing: 0.16em;">NOME</div>
+                <div style="margin-top: 4px; padding: 9px 12px; border-radius: 12px; border: 1.2px solid var(--soft); font-size: 13px;">Caleb</div>
+              </div>
+              <div style="margin-top: 12px;">
+                <div style="font-family: var(--mono); font-size: 9px; font-weight: 600; color: var(--mute); letter-spacing: 0.16em;">CPF</div>
+                <div style="margin-top: 4px; padding: 9px 12px; border-radius: 12px; border: 1.2px solid var(--soft); font-family: var(--mono); font-size: 13px;">123.456.789-00</div>
+              </div>
+              <div style="margin-top: 18px; padding: 11px; border-radius: 999px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 600; text-align: center;">Continuar</div>
+            </div>
+          </div>
+          <div class="pill" style="position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: 10px; padding: 4px 10px; background: var(--ink); color: #fff; border-color: var(--ink);">02 · Identidade</div>
+        </div>
+
+        <!-- Phone 3: Cardápio -->
+        <div class="device iphone" style="height: 580px; width: 268px;">
+          <div class="sb">
+            <span>9:41</span>
+            <div class="right"><span>●●●●</span><span>5G</span><span>87%</span></div>
+          </div>
+          <div style="flex:1; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div>
+                <div style="font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: -0.4px;">Cardápio</div>
+                <div style="font-family: var(--mono); font-size: 10px; color: var(--mute); letter-spacing: 0.16em; text-transform: uppercase;">Mesa 12</div>
+              </div>
+              <div class="pill" style="font-size: 10px; padding: 4px 8px;"><span class="num">3</span>&nbsp;itens</div>
+            </div>
+            <div style="display: flex; gap: 6px; overflow: hidden;">
+              <div class="pill" style="font-size: 10px; padding: 4px 9px; background: var(--ink); color: #fff; border-color: var(--ink);">Massas</div>
+              <div class="pill" style="font-size: 10px; padding: 4px 9px;">Grelha</div>
+              <div class="pill" style="font-size: 10px; padding: 4px 9px;">Bar</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 4px;">
+              <!-- item -->
+              <div style="border: 1px solid var(--soft); border-radius: 14px; padding: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <div style="font-family: var(--display); font-weight: 600; font-size: 14px;">Risoto de camarão</div>
+                  <div class="num" style="font-weight: 600; font-size: 13px;">R$ 78</div>
+                </div>
+                <div style="font-family: var(--body); font-size: 10px; color: var(--mute); margin-top: 3px; line-height: 1.35;">Arroz arbóreo, camarão rosa, manteiga de limão.</div>
+              </div>
+              <div style="border: 1px solid var(--ink); border-radius: 14px; padding: 12px; background: var(--surface);">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <div style="font-family: var(--display); font-weight: 600; font-size: 14px;">Spaghetti al funghi</div>
+                  <div class="num" style="font-weight: 600; font-size: 13px;">R$ 62</div>
+                </div>
+                <div style="font-family: var(--body); font-size: 10px; color: var(--mute); margin-top: 3px; line-height: 1.35;">Mix de cogumelos, alho confit, parmesão.</div>
+                <div class="pill" style="margin-top: 8px; font-size: 9px; padding: 3px 7px; background: var(--accent); color: #fff; border-color: var(--accent);">no carrinho</div>
+              </div>
+              <div style="border: 1px solid var(--soft); border-radius: 14px; padding: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <div style="font-family: var(--display); font-weight: 600; font-size: 14px;">Lasagna bolonhesa</div>
+                  <div class="num" style="font-weight: 600; font-size: 13px;">R$ 58</div>
+                </div>
+                <div style="font-family: var(--body); font-size: 10px; color: var(--mute); margin-top: 3px; line-height: 1.35;">12 horas em fogo baixo, queijo gratinado.</div>
+              </div>
+            </div>
+            <div style="margin-top: auto; padding: 12px; background: var(--ink); color: #fff; border-radius: 999px; display: flex; justify-content: space-between; font-family: var(--display); font-weight: 600; font-size: 13px;">
+              <span>Confirmar pedido</span>
+              <span class="num">R$ 198</span>
+            </div>
+          </div>
+          <div class="pill" style="position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: 10px; padding: 4px 10px; background: var(--ink); color: #fff; border-color: var(--ink); white-space: nowrap;">03 · Pedido</div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ============ SLIDE 06 — GARÇOM ============ -->
+    <section class="slide" data-screen-label="06 Garcom">
+      <div class="head">
+        <div class="brand"><span class="dot"></span>Mesa</div>
+        <div class="meta">05 / Superfície 02 — Garçom</div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; flex: 1;">
+        <div>
+          <div class="eyebrow" style="margin-bottom: 24px;">
+            <span class="accent">●</span>&nbsp;&nbsp;Garçom
+          </div>
+          <h2 class="h-title" style="font-size: 80px; margin-bottom: 36px;">
+            App pro garçom<br/>com <span class="underline-rust">faturamento próprio</span>.
+          </h2>
+          <div class="lead" style="font-size: 28px; line-height: 1.4; margin-bottom: 40px;">
+            Cada turno é um pequeno negócio. O garçom abre o app, vê o que faturou hoje, quais mesas pediram conta, quem chamou e há quanto tempo.
+          </div>
+
+          <div class="stack-cozy" style="border-top: 1px solid var(--soft); padding-top: 28px;">
+            <div style="display: flex; gap: 18px; align-items: flex-start;">
+              <div class="num accent" style="font-size: 22px; font-weight: 600;">↳</div>
+              <div>
+                <div class="h-card" style="font-size: 22px;">Painel de mesas em tempo real</div>
+                <div class="body body-mute" style="font-size: 18px; margin-top: 6px;">aberta · aguardando · pediu conta · livre</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 18px; align-items: flex-start;">
+              <div class="num accent" style="font-size: 22px; font-weight: 600;">↳</div>
+              <div>
+                <div class="h-card" style="font-size: 22px;">Chamadas priorizadas</div>
+                <div class="body body-mute" style="font-size: 18px; margin-top: 6px;">cliente chamou · prato pronto · conta pedida · atrasado</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 18px; align-items: flex-start;">
+              <div class="num accent" style="font-size: 22px; font-weight: 600;">↳</div>
+              <div>
+                <div class="h-card" style="font-size: 22px;">Conta dividida no celular</div>
+                <div class="body body-mute" style="font-size: 18px; margin-top: 6px;">pagamento parcial via Pix, cartão e link próprio do cliente</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="shot-frame" style="aspect-ratio: 4/5; height: 800px; max-height: 100%; justify-self: center; width: auto;">
+          <img src="mos29vk5-image.png" alt="Tela Meu turno · faturamento por mim · R$ 2.487,30" style="object-position: center 35%;" />
+          <div class="shot-cap">Meu turno · iOS</div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ============ SLIDE 07 — COZINHA & BAR ============ -->
+    <section class="slide" data-screen-label="07 KDS">
+      <div class="head">
+        <div class="brand"><span class="dot"></span>Mesa</div>
+        <div class="meta">06 / Superfície 03 — Cozinha & Bar</div>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom: 24px;">
+        <span class="accent">●</span>&nbsp;&nbsp;Cozinha & Bar
+      </div>
+      <h2 class="h-title" style="margin-bottom: 8px;">
+        TV 1920×1080. Tudo que entra, <span class="accent">você vê</span>.
+      </h2>
+      <div class="lead" style="margin-bottom: 36px; max-width: 1200px; font-size: 26px;">
+        Quatro estados, um botão por estado. Cliques errados podem ser desfeitos em 5s. Atrasados pulsam até alguém finalizar.
+      </div>
+
+      <div class="grid-4" style="flex: 1; align-items: stretch;">
+        <!-- novo -->
+        <div class="kds">
+          <div class="row1">
+            <div class="id">#0145</div>
+            <div class="pill dot" style="font-size: 10px; padding: 4px 10px;">Novo</div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <div class="table">Mesa 18</div>
+            <div class="timer">19:48 · 0 min</div>
+          </div>
+          <div class="items">
+            <div class="item"><span class="q">2×</span> Bruschetta caprese</div>
+            <div class="item"><span class="q">1×</span> Polenta frita</div>
+          </div>
+          <div class="actions">
+            <div class="btn">▶ Iniciar preparo</div>
+          </div>
+        </div>
+
+        <!-- preparando -->
+        <div class="kds amber">
+          <div class="row1">
+            <div class="id">#0142</div>
+            <div class="pill amber dot" style="font-size: 10px; padding: 4px 10px;">Preparando</div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <div class="table">Mesa 12</div>
+            <div class="timer">19:42 · 4 min</div>
+          </div>
+          <div class="items">
+            <div class="item"><span class="q">1×</span> Risoto de camarão</div>
+            <div style="font-family: var(--body); font-size: 14px; color: var(--mute); margin-left: 36px; margin-top: -2px;">sem cebola · ponto bem passado</div>
+            <div class="item"><span class="q">1×</span> Filé ao vinho</div>
+            <div class="alert">⚠ Cliente alérgica a frutos do mar</div>
+          </div>
+          <div class="actions">
+            <div class="btn">✓ Marcar pronto</div>
+          </div>
+        </div>
+
+        <!-- atrasado -->
+        <div class="kds red">
+          <div class="row1">
+            <div class="id">#0140</div>
+            <div class="pill red dot" style="font-size: 10px; padding: 4px 10px;">Atrasado</div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <div class="table">Bal. 02</div>
+            <div class="timer" style="color: var(--danger); font-weight: 600;">19:32 · 14 min</div>
+          </div>
+          <div class="items">
+            <div class="item"><span class="q">3×</span> Aperol Spritz</div>
+            <div style="font-family: var(--body); font-size: 14px; color: var(--mute); margin-left: 36px;">gelo extra na 2 e 3</div>
+            <div class="item"><span class="q">1×</span> Negroni</div>
+          </div>
+          <div class="actions">
+            <div class="btn">✓ Marcar pronto</div>
+          </div>
+        </div>
+
+        <!-- pronto -->
+        <div class="kds green">
+          <div class="row1">
+            <div class="id">#0141</div>
+            <div class="pill green dot" style="font-size: 10px; padding: 4px 10px;">Pronto</div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <div class="table">Mesa 7</div>
+            <div class="timer">19:38 · 8 min</div>
+          </div>
+          <div class="items">
+            <div class="item"><span class="q">1×</span> Salmão grelhado</div>
+            <div class="item"><span class="q">1×</span> Spaghetti al funghi</div>
+          </div>
+          <div class="actions">
+            <div class="btn">✓ Servir agora</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 16px; padding-top: 22px; margin-top: 28px; border-top: 1px solid var(--soft);">
+        <div class="pill"><span class="num">·</span>&nbsp;Status muda com 1 toque</div>
+        <div class="pill"><span class="num">·</span>&nbsp;Undo de 5s</div>
+        <div class="pill"><span class="num">·</span>&nbsp;Atrasado é derivado, não persistido</div>
+        <div class="pill"><span class="num">·</span>&nbsp;Tick de 30s recalcula no cliente</div>
+      </div>
+    </section>
+
+
+    <!-- ============ SLIDE 08 — DETALHES QUE IMPORTAM ============ -->
+    <section class="slide" data-screen-label="08 Detalhes">
+      <div class="head">
+        <div class="brand"><span class="dot"></span>Mesa</div>
+        <div class="meta">07 / Detalhes</div>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom: 18px;">
+        <span class="accent">●</span>&nbsp;&nbsp;Detalhes que decidem se a equipe usa ou abandona
+      </div>
+      <h2 class="h-title" style="margin-bottom: 32px; font-size: 60px;">
+        Não é a tela bonita que <span class="underline-rust">salva</span> a noite.
+      </h2>
+
+      <div class="grid-2" style="flex: 1; align-items: stretch; gap: 24px; min-height: 0;">
+
+        <div style="border: 1.5px solid var(--ink); border-radius: 18px; padding: 26px 28px; background: var(--paper); display: flex; flex-direction: column; gap: 14px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div class="num" style="font-size: 32px; font-weight: 700; letter-spacing: -0.02em;">01</div>
+            <div class="pill" style="font-size: 11px; padding: 3px 10px;">undo</div>
+          </div>
+          <div class="h-card" style="font-size: 26px;">5 segundos pra dizer "não, espera".</div>
+          <div class="body body-mute" style="font-size: 19px; line-height: 1.4;">
+            Mãos molhadas, pressa, tela suja — clique errado é frequente. Toda transição mostra um snackbar com "Desfazer" por 5s. Depois disso, ainda é possível reverter via <span class="num" style="background: var(--surface); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--soft); font-size: 16px;">⋯ → voltar status</span>, com confirmação e log.
+          </div>
+        </div>
+
+        <div style="border: 1.5px solid var(--ink); border-radius: 18px; padding: 26px 28px; background: var(--paper); display: flex; flex-direction: column; gap: 14px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div class="num" style="font-size: 32px; font-weight: 700; letter-spacing: -0.02em;">02</div>
+            <div class="pill amber dot" style="font-size: 11px; padding: 3px 10px;">derivado</div>
+          </div>
+          <div class="h-card" style="font-size: 26px;">"Atrasado" não é status. É consequência.</div>
+          <div class="body body-mute" style="font-size: 19px; line-height: 1.4;">
+            Backend manda só <span class="num" style="background: var(--surface); padding: 2px 6px; border-radius: 4px; font-size: 16px;">novo · preparando · pronto</span>. Atrasado é calculado quando <span class="num" style="font-size: 16px;">elapsedMin&nbsp;&gt;&nbsp;12</span>. Se a equipe corre, o card volta sozinho ao normal — sem update extra, sem dessincronização.
+          </div>
+        </div>
+
+        <div style="border: 1.5px solid var(--ink); border-radius: 18px; padding: 26px 28px; background: var(--paper); display: flex; flex-direction: column; gap: 14px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div class="num" style="font-size: 32px; font-weight: 700; letter-spacing: -0.02em;">03</div>
+            <div class="pill red dot" style="font-size: 11px; padding: 3px 10px;">alergias</div>
+          </div>
+          <div class="h-card" style="font-size: 26px;">Alergia chega como bandeira, não como nota.</div>
+          <div class="body body-mute" style="font-size: 19px; line-height: 1.4;">
+            Observação comum aparece em amarelo discreto. Restrição médica chega em vermelho-fundo, branco-tipo, no topo do card. Impossível ler errado:
+          </div>
+          <div style="background: var(--danger); color: #fff; padding: 8px 14px; border-radius: 6px; font-family: var(--body); font-size: 14px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; align-self: flex-start;">⚠ Cliente alérgica a frutos do mar</div>
+        </div>
+
+        <div style="border: 1.5px solid var(--ink); border-radius: 18px; padding: 26px 28px; background: var(--paper); display: flex; flex-direction: column; gap: 14px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div class="num" style="font-size: 32px; font-weight: 700; letter-spacing: -0.02em;">04</div>
+            <div class="pill" style="font-size: 11px; padding: 3px 10px;">multi-tela</div>
+          </div>
+          <div class="h-card" style="font-size: 26px;">Duas TVs, mesma cozinha, sem briga.</div>
+          <div class="body body-mute" style="font-size: 19px; line-height: 1.4;">
+            Optimistic locking entre estações. Se outra estação iniciou um pedido há 1s, a TV mostra um banner discreto em vez de duplicar o estado:
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center; padding: 7px 12px; border: 1px solid var(--soft); border-radius: 6px; background: var(--surface); font-family: var(--body); font-size: 13px; align-self: flex-start;">
+            <span style="width: 8px; height: 8px; background: var(--success); border-radius: 50%;"></span>
+            Rodrigo iniciou este pedido há 1s
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+
+    <!-- ============ SLIDE 09 — LINGUAGEM VISUAL ============ -->
+    <section class="slide" data-screen-label="09 Linguagem">
+      <div class="head">
+        <div class="brand"><span class="dot"></span>Mesa</div>
+        <div class="meta">08 / Linguagem visual</div>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom: 24px;">
+        <span class="accent">●</span>&nbsp;&nbsp;Linguagem visual
+      </div>
+      <h2 class="h-title" style="margin-bottom: 48px;">
+        Uma mesma régua em<br/>iPhone, TV e mão do cliente.
+      </h2>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 56px; flex: 1;">
+        <!-- Cores -->
+        <div>
+          <div class="eyebrow" style="margin-bottom: 18px;">Paleta</div>
+          <div class="stack-cozy">
+            <div class="swatch"><div class="chip" style="background: var(--paper);"></div><div class="meta"><div class="lbl">Paper</div><div class="hex">#FFFFFF · branco puro pra cards</div></div></div>
+            <div class="swatch"><div class="chip" style="background: var(--surface);"></div><div class="meta"><div class="lbl">Surface</div><div class="hex">#F6F5F2 · cream warm pra base</div></div></div>
+            <div class="swatch"><div class="chip" style="background: var(--ink);"></div><div class="meta"><div class="lbl">Ink</div><div class="hex">#0A0A0A · texto, bordas, CTA</div></div></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+              <div class="swatch" style="padding: 10px; gap: 8px;"><div class="chip" style="background: var(--amber); width:32px; height:32px;"></div><div class="meta"><div class="lbl" style="font-size: 13px;">Preparando</div></div></div>
+              <div class="swatch" style="padding: 10px; gap: 8px;"><div class="chip" style="background: var(--success); width:32px; height:32px;"></div><div class="meta"><div class="lbl" style="font-size: 13px;">Pronto</div></div></div>
+              <div class="swatch" style="padding: 10px; gap: 8px;"><div class="chip" style="background: var(--danger); width:32px; height:32px;"></div><div class="meta"><div class="lbl" style="font-size: 13px;">Atrasado</div></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tipografia + componentes -->
+        <div>
+          <div class="eyebrow" style="margin-bottom: 18px;">Tipografia · Inter + JetBrains Mono</div>
+          <div style="border: 1px solid var(--soft); border-radius: 14px; padding: 22px; background: var(--paper);">
+            <div style="font-family: var(--display); font-weight: 800; font-size: 60px; letter-spacing: -0.04em; line-height: 1;">Display</div>
+            <div style="font-family: var(--display); font-weight: 700; font-size: 32px; letter-spacing: -0.012em; margin-top: 8px;">Card / título</div>
+            <div style="font-family: var(--body); font-size: 18px; line-height: 1.5; margin-top: 12px;">Body — texto narrativo, descrições de pedido, observações.</div>
+            <div style="font-family: var(--mono); font-size: 14px; letter-spacing: 0.06em; margin-top: 8px; color: var(--mute); text-transform: uppercase;">MONO · #0142 · R$ 287,50 · 19:42</div>
+          </div>
+
+          <div class="eyebrow" style="margin: 24px 0 18px;">Posturas</div>
+          <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; font-family: var(--body); font-size: 18px;">
+            <li>· bordas pretas <span class="num">1.5px</span> em vez de sombras</li>
+            <li>· raios <span class="num">14–22px</span> em cards, <span class="num">999px</span> em CTAs</li>
+            <li>· numerais sempre <span class="num">tabular-nums</span></li>
+            <li>· status muda <em>cor de fundo</em>, não só borda</li>
+            <li>· mono em IDs, pedidos e timestamps; sans em todo o resto</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ============ SLIDE 10 — STATUS / PRÓXIMOS PASSOS ============ -->
+    <section class="slide" data-screen-label="10 Status">
+      <div class="head">
+        <div class="brand"><span class="dot"></span>Mesa</div>
+        <div class="meta">09 / Status</div>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom: 24px;">
+        <span class="accent">●</span>&nbsp;&nbsp;Onde está, pra onde vai
+      </div>
+      <h2 class="h-title" style="margin-bottom: 64px;">
+        Hoje é protótipo navegável.<br/>Próximo passo é <span class="accent">piloto</span>.
+      </h2>
+
+      <div style="position: relative; flex: 1; display: flex; align-items: stretch; min-height: 0;">
+
+        <div style="position: absolute; left: 60px; right: 60px; top: 9px; height: 2px; background: var(--soft); z-index: 0;"></div>
+        <div style="position: absolute; left: 60px; top: 9px; width: 50%; height: 2px; background: var(--ink); z-index: 0;"></div>
+
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; width: 100%; padding: 0 60px; position: relative; z-index: 1;">
+
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="width: 18px; height: 18px; border-radius: 50%; background: var(--ink);"></div>
+              <div class="eyebrow" style="font-size: 13px; background: var(--bg); padding: 2px 8px 2px 0;">Hoje</div>
+            </div>
+            <div class="h-card" style="font-size: 28px;">Protótipo navegável</div>
+            <ul style="list-style: none; padding: 0; margin: 0; font-family: var(--body); font-size: 18px; color: var(--mute); display: flex; flex-direction: column; gap: 8px;">
+              <li>· 3 superfícies em alta fidelidade</li>
+              <li>· fluxos completos client → KDS → garçom</li>
+              <li>· estados, animações, transições</li>
+              <li>· design system documentado</li>
+            </ul>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="width: 18px; height: 18px; border-radius: 50%; background: var(--ink);"></div>
+              <div class="eyebrow" style="font-size: 13px; background: var(--bg); padding: 2px 8px 2px 0;">Próximas semanas</div>
+            </div>
+            <div class="h-card" style="font-size: 28px;">Backend + uma cozinha real</div>
+            <ul style="list-style: none; padding: 0; margin: 0; font-family: var(--body); font-size: 18px; color: var(--mute); display: flex; flex-direction: column; gap: 8px;">
+              <li>· API de pedidos / WebSocket</li>
+              <li>· integração com 1 restaurante-piloto</li>
+              <li>· medir tempo de mesa e ticket médio</li>
+              <li>· iterar em campo, no salão</li>
+            </ul>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--ink); background: var(--bg);"></div>
+              <div class="eyebrow" style="font-size: 13px; background: var(--bg); padding: 2px 8px 2px 0;">3 meses</div>
+            </div>
+            <div class="h-card" style="font-size: 28px;">3 pilotos + onboarding</div>
+            <ul style="list-style: none; padding: 0; margin: 0; font-family: var(--body); font-size: 18px; color: var(--mute); display: flex; flex-direction: column; gap: 8px;">
+              <li>· 3 restaurantes ativos</li>
+              <li>· auto-onboarding (cardápio, mesas, QRs)</li>
+              <li>· dashboard pro dono</li>
+              <li>· relatórios diários por turno</li>
+            </ul>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--soft); background: var(--bg);"></div>
+              <div class="eyebrow" style="font-size: 13px; background: var(--bg); padding: 2px 8px 2px 0;">6 meses</div>
+            </div>
+            <div class="h-card" style="font-size: 28px;">Modelo escalável</div>
+            <ul style="list-style: none; padding: 0; margin: 0; font-family: var(--body); font-size: 18px; color: var(--mute); display: flex; flex-direction: column; gap: 8px;">
+              <li>· 25–50 restaurantes</li>
+              <li>· precificação por unidade</li>
+              <li>· marketplace de cardápios</li>
+              <li>· primeira contratação</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: auto; display: flex; align-items: center; gap: 16px; padding-top: 36px; border-top: 1px solid var(--soft);">
+        <div class="pill"><span class="num">·</span>&nbsp;O que já existe</div>
+        <div class="small">As 3 superfícies estão desenhadas e navegáveis no canvas deste mesmo projeto — o pitch é o resumo, não a peça.</div>
+      </div>
+    </section>
+
+
+    <!-- ============ SLIDE 11 — FECHAMENTO ============ -->
+    <section class="slide" data-screen-label="11 Fim">
+      <div class="head">
+        <div class="brand"><span class="dot"></span>Mesa</div>
+        <div class="meta">Fim · Obrigado</div>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom: 24px;">
+        <span class="accent">●</span>&nbsp;&nbsp;Fim · obrigado
+      </div>
+
+      <h2 class="h-hero" style="font-size: 168px; letter-spacing: -0.045em; font-weight: 900; line-height: 0.94; margin: auto 0;">
+        Vamos conversar<span class="accent">?</span>
+      </h2>
+
+      <div class="lead" style="max-width: 1100px; font-size: 28px; line-height: 1.4; margin-top: 24px; margin-bottom: 32px; flex-shrink: 0;">
+        Se essa coisa fizer sentido pra você, o protótipo navegável está ali no canvas deste mesmo projeto — abre, mexe, manda dor. Pitch tem 11 slides; o produto tem três telas em três aparelhos, todas conversando.
+      </div>
+
+      <div style="display: flex; align-items: end; justify-content: space-between; padding-top: 24px; border-top: 1px solid var(--soft); flex-shrink: 0;">
+        <div class="stack-tight">
+          <div class="eyebrow">Caleb</div>
+        </div>
+        <div class="stack-tight" style="text-align: right;">
+          <div class="eyebrow">Mesa</div>
+          <div class="small" style="font-family: var(--mono);">Pitch · v1 · Mai 2026</div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<div class="deck-counter" id="counter">01 / 11</div>
+<div class="deck-help">← →  ·  espaço  ·  clique</div>
+
+<script>
+(function() {
+  const STORAGE_KEY = 'pitch-mesa-pos';
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const counter = document.getElementById('counter');
+  const stage = document.querySelector('.stage');
+  const deck = document.getElementById('deck');
+
+  let idx = 0;
+  try {
+    const saved = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10);
+    if (!Number.isNaN(saved) && saved >= 0 && saved < slides.length) idx = saved;
+  } catch (e) {}
+
+  function render() {
+    slides.forEach((s, i) => s.classList.toggle('active', i === idx));
+    const total = String(slides.length).padStart(2, '0');
+    const cur = String(idx + 1).padStart(2, '0');
+    counter.textContent = cur + ' / ' + total;
+    try { localStorage.setItem(STORAGE_KEY, String(idx)); } catch (e) {}
+  }
+
+  function go(delta) {
+    idx = Math.max(0, Math.min(slides.length - 1, idx + delta));
+    render();
+  }
+  function goTo(n) {
+    idx = Math.max(0, Math.min(slides.length - 1, n));
+    render();
+  }
+
+  function fit() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const scale = Math.min(w / 1920, h / 1080);
+    deck.style.setProperty('--scale', scale);
+  }
+  window.addEventListener('resize', fit);
+  fit();
+
+  document.addEventListener('keydown', (e) => {
+    const k = e.key;
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ' || k === 'Enter') {
+      e.preventDefault(); go(1);
+    } else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') {
+      e.preventDefault(); go(-1);
+    } else if (k === 'Home') {
+      e.preventDefault(); goTo(0);
+    } else if (k === 'End') {
+      e.preventDefault(); goTo(slides.length - 1);
+    } else if (/^[0-9]$/.test(k)) {
+      const n = (parseInt(k, 10) || 10) - 1;
+      goTo(n);
+    } else if (k === 'p' || k === 'P') {
+      window.print();
+    }
+  });
+
+  // click to navigate (left third = back, rest = forward)
+  stage.addEventListener('click', (e) => {
+    if (e.target.closest('a, button, input, textarea, select')) return;
+    const x = e.clientX / window.innerWidth;
+    if (x < 0.33) go(-1); else go(1);
+  });
+
+  render();
+})();
+</script>
+
+</body>
+</html>

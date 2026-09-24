@@ -1,7 +1,7 @@
 'use client';
 
 // ScreenStaffMessages — caixa de mensagens role-aware. Lista threads do
-// usuário (filtragem server-side por viewer). Match com docs/design-canvas/
+// usuário (filtragem server-side por viewer). Match com docs/design/canvas/
 // handoff/garcom/garcom-screens-b.jsx :: ScreenStaffMessages.
 
 import * as React from 'react';

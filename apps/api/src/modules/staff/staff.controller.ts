@@ -197,7 +197,8 @@ export class StaffController {
    * Period: today | 7d | 30d. Auth: staff-only (manager dashboard).
    *
    * Declarado ANTES do wildcard `@Get(':id')` pra Nest matcher não cair
-   * em getById('performance'). Vide `path collision` em SUPER-PROMPT-V3 §9.
+   * em getById('performance'). Vide "Path collision com StaffController
+   * wildcard" em `.ai/prompts/superprompts/SUPER-PROMPT-V3.md` §9.
    *
    * IDOR-read (re-scan #5): era `StaffOrSessionGuard` — um customer com
    * `x-session-token`/cookie `session_token` de QUALQUER mesa ativa do

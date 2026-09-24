@@ -1576,7 +1576,7 @@ USO DE FERRAMENTAS (function calling · OBRIGATÓRIO em mutações):
                 ]
             )
             prompt += f"\nÚltimos pedidos do cliente: {items_str}"
-        # VIP tone hint per vip-customer.md — affects copy via the system prompt.
+        # VIP tone hint per cliente-vip.md — affects copy via the system prompt.
         if customer_context.get("is_vip"):
             prompt += "\n\nObservação: este cliente é VIP nessa sessão. Tom mais caloroso e atento."
         pending_join = _pending_join_request(customer_context)

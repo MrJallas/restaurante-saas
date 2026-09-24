@@ -5,11 +5,12 @@ import { cManagerArrive, useReducedMotion } from '../../lib/animations';
 
 /**
  * Kinds de chip-action exibidos como `ChipActionInset` dentro do mesmo card
- * `ManagerBubble` (per `complaint-flow-v12.md` §`ChipActionInset`). Mirror de
+ * `ManagerBubble` (per `docs/design/canvas/docs/features/complaint-flow-v12.md`,
+ * spec do designer, §`ChipActionInset`). Mirror de
  * `ComplaintChipAction` em `@restaurant/shared-types/complaint`. `custom` ⇒
  * sem inset (resposta puramente em prosa livre).
  *
- * Labels canônicos (per `complaint-flow-v12.md` §`ChipActionInset`):
+ * Labels canônicos (mesma spec do designer, §`ChipActionInset`):
  *  - `on-the-way`    "Já estou indo"           (chega em alguns min)
  *  - `kitchen-check` "Vou verificar com a cozinha"
  *  - `courtesy`      "Estou enviando uma cortesia"
@@ -187,7 +188,8 @@ export const ManagerBubble = memo(function ManagerBubble({
         {insetKind && insetLabel && (
           // ChipActionInset — separated from the prose by a top border, with
           // a mono-caps eyebrow ("Renata avisou") and an outline 28×28 icon.
-          // Per `complaint-flow-v12.md`: "inset row dentro do mesmo card".
+          // Per `docs/design/canvas/docs/features/complaint-flow-v12.md`:
+          // "inset row dentro do mesmo card".
           <div className="mt-3 flex items-center gap-2.5 border-t border-border-soft pt-3">
             <ChipActionIcon kind={insetKind} />
             <div className="flex flex-col">

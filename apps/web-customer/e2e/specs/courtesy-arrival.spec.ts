@@ -9,7 +9,7 @@ test.setTimeout(90_000);
 
 const TABLE_CODE = 'QRTEST92';
 const TABLE_NUMBER = 92;
-const REPORT_DIR = path.resolve(__dirname, '../../../../qa-reports/courtesy-arrival');
+const REPORT_DIR = path.resolve(__dirname, '../../../../output/evidencias/courtesy-arrival');
 let cpfSeed = Math.floor(Date.now() % 100_000);
 let ipSeed = Math.floor(Date.now() % 60_000);
 

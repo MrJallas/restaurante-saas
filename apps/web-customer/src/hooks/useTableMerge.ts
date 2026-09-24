@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from 'react';
 
 /**
  * `useTableMerge` — bridges LLM tool calls of `request_table_merge` to the
- * `OverlaySalonMap` UX described in `docs/features/customer-host-model.md`.
+ * `OverlaySalonMap` UX described in `docs/produto/funcionalidades/cliente-host-e-mesa-compartilhada.md`.
  *
  * The LLM emits `request_table_merge` with no `targetTable` when it detects
  * intent ("quero juntar com a mesa do lado") but doesn't know which table.

@@ -1,7 +1,7 @@
 'use client';
 
 // PushQrIssue — QR ilegível reportado pelo garçom · gerente recebe.
-// Tone warn (mostarda) per docs/design-canvas/handoff/garcom/garcom-qr-issue.jsx.
+// Tone warn (mostarda) per docs/design/canvas/handoff/garcom/garcom-qr-issue.jsx.
 
 import * as React from 'react';
 import { PushCardIOS } from './PushCard';

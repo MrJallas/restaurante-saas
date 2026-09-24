@@ -1,7 +1,7 @@
 'use client';
 
 // ScreenHostWaitlist — fila de espera com party + tempo de espera.
-// Match com docs/design-canvas/handoff/garcom/garcom-screens-host.jsx ::
+// Match com docs/design/canvas/handoff/garcom/garcom-screens-host.jsx ::
 // ScreenHostWaitlist.
 
 import * as React from 'react';

@@ -12,7 +12,7 @@ import { CustomersService } from './customers.service';
  * complementa o forwardRef em `CallerResolverModule.imports` pra quebrar
  * o ciclo `CustomersModule -> TableSessionModule -> CallerResolverModule
  * -> CustomersModule`. NestJS exige forwardRef em ambos os lados de uma
- * dependencia circular de modulo (docs/circular-dependency).
+ * dependencia circular de modulo (https://docs.nestjs.com/fundamentals/circular-dependency).
  *
  * P1-C (IDOR fix): `forwardRef(() => CallerResolverModule)` — o
  * CustomersController agora injeta CallerResolverService pra resolver o

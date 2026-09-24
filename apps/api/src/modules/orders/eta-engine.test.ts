@@ -2,7 +2,7 @@
  * CHARACTERIZATION (FASE 2 · 2B): congela o cálculo de ETA exatamente como
  * era dentro do orders.service (extração verbatim). Valores computados à
  * mão do algoritmo original — a regra do cliente "range que encolhe por
- * estágio" (MEMORY.md 2026-06-10) não pode mudar num refactor.
+ * estágio" (.ai/MEMORY.md 2026-06-10) não pode mudar num refactor.
  */
 
 import { computeEtaRange } from './eta-engine';

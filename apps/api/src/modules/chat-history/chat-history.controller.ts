@@ -22,7 +22,7 @@ class ThreadIdParam {
 }
 
 /**
- * Chat history (NoSQL backed) · per docs/features/chat-history-lgpd.md.
+ * Chat history (NoSQL backed) · per docs/produto/funcionalidades/historico-de-chat-e-lgpd.md.
  * Customer reads/deletes their own threads; manager audit lookups happen on
  * the staff side (see staff-messages module — operational thread lives in PG).
  *

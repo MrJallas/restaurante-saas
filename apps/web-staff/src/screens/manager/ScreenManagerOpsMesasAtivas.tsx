@@ -2,7 +2,7 @@
 
 // V9 drill-down — MESAS ATIVAS chip (/manager/operacoes/mesas-ativas).
 //
-// Canvas spec: docs/design-canvas/handoff/garcom/garcom-screens-e.jsx:771-884
+// Canvas spec: docs/design/canvas/handoff/garcom/garcom-screens-e.jsx:771-884
 // (variant `mesas-ativas`). Hero "occ/total" + livres + lista de mesas
 // abertas + Ver arrow. ActionPill "Ver no Mapa →" + Fórmula.
 //

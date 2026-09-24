@@ -69,7 +69,7 @@ class ListQueryDto {
 }
 
 /**
- * Table-merge requests · per docs/features/customer-host-model.md.
+ * Table-merge requests · per docs/produto/funcionalidades/cliente-host-e-mesa-compartilhada.md.
  * 429 returned when an active cooldown blocks a new attempt.
  */
 @Controller(':slug/table-merge-requests')

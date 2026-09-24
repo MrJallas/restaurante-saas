@@ -14,7 +14,7 @@ import { newSession } from '../helpers/session';
  *
  * Roda contra o stack docker-compose de pé (api 3001, customer 3003,
  * staff 3002). Serial — compartilha QRTEST91 com as outras suites
- * (não rodar em paralelo com outros specs, ver MEMORY.md).
+ * (não rodar em paralelo com outros specs, ver .ai/MEMORY.md).
  */
 
 const SLUG = 'restaurant_dev';

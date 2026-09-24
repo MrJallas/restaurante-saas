@@ -2,7 +2,7 @@
 
 // ScreenHostProfile — perfil + turno da recepcionista (rota /host/eu).
 // Faithful port of ScreenHostProfile em
-// docs/design-canvas/handoff/garcom/garcom-screens-host.jsx:2453 (V11 layout):
+// docs/design/canvas/handoff/garcom/garcom-screens-host.jsx:2453 (V11 layout):
 // Hero (avatar 76 lado-a-lado · pulse "em turno desde HH:MM") · Mensagens
 // (V11 1º bloco) · KPI "Suas liberações no turno" · Operação (Histórico de
 // turnos) · Conta (Notificações · Segurança · Aparência) · Sair · footer.

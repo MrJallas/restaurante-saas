@@ -3,7 +3,7 @@ Continuation message pool — short welcome-back / wrap-up templates.
 
 Per `packages/shared-types/src/ai.ts::ContinuationMessage`. Pool is keyed by
 tenant + segment; segments capture customer state (returning/new, VIP/regular,
-time-of-day). Falls back to a built-in default per `vip-customer.md` (warmer
+time-of-day). Falls back to a built-in default per `cliente-vip.md` (warmer
 tone for VIP).
 """
 
@@ -48,7 +48,7 @@ DEFAULTS: dict[str, list[dict]] = {
             "weight": 1.0,
         },
     ],
-    # segment: returning · VIP — warmer tone per vip-customer.md
+    # segment: returning · VIP — warmer tone per cliente-vip.md
     "returning:vip": [
         {
             "id": "v1",

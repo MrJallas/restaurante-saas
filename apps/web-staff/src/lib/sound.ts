@@ -5,7 +5,7 @@
  *
  * Extraído pra cá no prompt 100 §5.5 (host UI "pediu a recepção") em vez
  * de criar uma terceira cópia inline. O KDS mantém a dele por enquanto
- * (consolidação está no backlog de cleanup aceito — MEMORY.md).
+ * (consolidação está no backlog de cleanup aceito — .ai/MEMORY.md).
  */
 export function playBeep(frequency = 880): void {
   if (typeof window === 'undefined') return;

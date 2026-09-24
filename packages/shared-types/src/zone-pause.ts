@@ -1,5 +1,5 @@
 // === Zone pause ===
-// Per docs/features/zone-pause.md. Localized pause of new orders for the
+// Per docs/produto/funcionalidades/pausa-de-zona.md. Localized pause of new orders for the
 // tables of one specific waiter; rest of the salon keeps flowing.
 
 /**

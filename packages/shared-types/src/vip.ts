@@ -1,5 +1,5 @@
 // === VIP marker + session flags + priority ===
-// Per docs/features/vip-customer.md. VIP is session-scoped (lives in
+// Per docs/produto/funcionalidades/cliente-vip.md. VIP is session-scoped (lives in
 // `table_sessions.flags`), not a permanent customer attribute.
 
 /**

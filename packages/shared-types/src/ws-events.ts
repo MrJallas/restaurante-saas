@@ -608,7 +608,7 @@ export interface WsHostSwapStateChanged {
 
 /**
  * VIP flag toggled via TableMenu da recepcionista. Diferente do WS event
- * `session.flag_changed` (vip-customer.md): este foca apenas em VIP e e
+ * `session.flag_changed` (cliente-vip.md): este foca apenas em VIP e e
  * emitido pelo modulo host. O FE pode subscrever em ambos.
  */
 export interface WsHostVipFlagged {

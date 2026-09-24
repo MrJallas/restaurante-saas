@@ -24,7 +24,7 @@ interface TypewriterBubbleProps {
 }
 
 /**
- * Typewriter bubble per docs/features/customer-host-model.md (frame 04 of
+ * Typewriter bubble per docs/produto/funcionalidades/cliente-host-e-mesa-compartilhada.md (frame 04 of
  * cliente-table-merge.jsx — also the late-arrival inline notification).
  *
  * Visual rules:

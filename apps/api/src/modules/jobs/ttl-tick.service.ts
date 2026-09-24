@@ -355,7 +355,7 @@ export class TtlTickService {
    * scan verification uses 0 (host) -> 1 (manager) -> 2 (waiter). After
    * level 2 we stop escalating and mark completed.
    *
-   * Per-step TTL = 60s (matches docs/customer-host-model.md "Job a cada 5s
+   * Per-step TTL = 60s (the original customer-host spec said "Job a cada 5s
    * detecta `expires_at < now()` em pending → marca timeout"). We stretch to
    * 60s here because the cron tick is 10s; first level already had its
    * 60s window.

@@ -2,7 +2,7 @@
 
 // V9 drill-down — CRÍTICOS chip (/manager/operacoes/criticos).
 //
-// Canvas spec: docs/design-canvas/handoff/garcom/garcom-screens-e.jsx:569-667
+// Canvas spec: docs/design/canvas/handoff/garcom/garcom-screens-e.jsx:569-667
 // (variant `criticos`). Hero "N" críticos vermelho + lista cada com 2
 // ações inline + Fórmula.
 //

@@ -1,7 +1,7 @@
 'use client';
 
 // P1 #31 — Route mount for ScreenManagerTableMenu.
-// VIP via TableMenu is in spec (docs/features/vip-customer.md), but the
+// VIP via TableMenu is in spec (docs/produto/funcionalidades/cliente-vip.md), but the
 // component had no host route until now — manager dashboards couldn't
 // reach the screen except via direct mount in tests. The path mirrors
 // the V5 deep-link convention `/manager/table-menu/<tableSessionId>`.

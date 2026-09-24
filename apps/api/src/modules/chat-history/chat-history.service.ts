@@ -7,7 +7,7 @@ const THREADS_COLLECTION = 'chat_threads';
 const MESSAGES_COLLECTION = 'chat_messages';
 
 /**
- * Default TTL for chat docs · 30 days. Per docs/features/chat-history-lgpd.md
+ * Default TTL for chat docs · 30 days. Per docs/produto/funcionalidades/historico-de-chat-e-lgpd.md
  * (lines 4, 38, 228, 290, 299, 314) o canon LGPD é 30d — antes estava 90d
  * (round 5 B-NEW-15 fix). Discrepância violava transparência ANPD: UI
  * promete "30 dias" mas guardava 90. Customer pode erase earlier via tool;

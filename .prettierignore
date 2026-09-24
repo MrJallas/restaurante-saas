@@ -6,7 +6,6 @@ out
 .next
 .turbo
 coverage
-.rag
 *.min.js
 *.min.css
 
@@ -15,9 +14,13 @@ package-lock.json
 pnpm-lock.yaml
 yarn.lock
 
-# Evidências/artefatos de QA — não é código (inclui dumps JSON-lines do idb/
-# simulador que o prettier nem consegue parsear). Não formatar/checar.
-qa-reports
+# === reorganizacao-2026-09 ===
+# Material histórico e de agentes: o texto fica como foi escrito.
+.ai
+docs/archive
+# Protótipo navegável de design: comentários do código citam arquivo:linha destes JSX.
+docs/design/canvas
+# Saídas locais de ferramentas de captura/teste.
 .playwright-cli
 output
 

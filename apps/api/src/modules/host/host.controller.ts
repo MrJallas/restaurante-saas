@@ -41,7 +41,7 @@ class SwapListQueryDto {
 }
 
 /**
- * Staff-host controller · per docs/features/customer-host-model.md (V16) +
+ * Staff-host controller · per docs/produto/funcionalidades/cliente-host-e-mesa-compartilhada.md (V16) +
  * `apps/web-staff/src/screens/host/*`. Cobre TODAS as rotas que estavam
  * caindo em 404 (P0 #11): mapa, inbox, liberate, swap, vip via TableMenu,
  * waitlist e reservations.

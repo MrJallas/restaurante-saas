@@ -61,7 +61,7 @@ interface ScreenCustomerWaitingApprovalProps {
 }
 
 /**
- * `ScreenCustomerWaitingApproval` · per docs/features/customer-host-model.md
+ * `ScreenCustomerWaitingApproval` · per docs/produto/funcionalidades/cliente-host-e-mesa-compartilhada.md
  * (frames 04-06 of cliente-late-arrival.jsx).
  *
  * Three visual states:

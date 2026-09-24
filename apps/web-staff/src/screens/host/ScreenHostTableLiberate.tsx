@@ -1,7 +1,7 @@
 'use client';
 
 // Liberar mesa — fluxo da recepcionista pra reabrir uma mesa após o
-// cliente sair. Match com docs/design-canvas/handoff/garcom/garcom-screens-host.jsx ::
+// cliente sair. Match com docs/design/canvas/handoff/garcom/garcom-screens-host.jsx ::
 // ScreenHostTableLiberate.
 
 import * as React from 'react';

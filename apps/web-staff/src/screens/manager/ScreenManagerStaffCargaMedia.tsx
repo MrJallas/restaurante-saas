@@ -2,7 +2,7 @@
 
 // V9 drill-down — CARGA MÉDIA tile (/manager/equipe/carga-media).
 //
-// Canvas spec: docs/design-canvas/handoff/garcom/garcom-screens-e.jsx:372-567
+// Canvas spec: docs/design/canvas/handoff/garcom/garcom-screens-e.jsx:372-567
 // (variant `carga-media`). Hero "X,Y" mesas/garçom + bloco distribuição
 // agora (cada garçom + carga real) + bloco ações condicional (só quando
 // above-target) + Fórmula.

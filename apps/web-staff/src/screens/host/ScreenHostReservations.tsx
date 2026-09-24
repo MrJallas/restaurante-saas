@@ -1,7 +1,7 @@
 'use client';
 
 // ScreenHostReservations — lista de reservas do dia + criar nova.
-// Match com docs/design-canvas/handoff/garcom/garcom-screens-host.jsx ::
+// Match com docs/design/canvas/handoff/garcom/garcom-screens-host.jsx ::
 // ScreenHostReservations.
 
 import * as React from 'react';

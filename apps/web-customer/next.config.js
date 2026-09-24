@@ -52,7 +52,7 @@ const nextConfig = {
   // features comprovadamente não-usadas; PRESERVA geolocation=self, que o fluxo
   // de mesa precisa). CSP entra em REPORT-ONLY: documenta a política e não
   // bloqueia nada — promover pra enforce exige nonces (script inline do Next) +
-  // observar reports, follow-up em docs/SECURITY-FOLLOWUPS.md.
+  // observar reports, follow-up em docs/seguranca/riscos-aceitos-e-pendencias.md.
   async headers() {
     const base = [
       { key: 'X-Content-Type-Options', value: 'nosniff' },

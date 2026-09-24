@@ -1,7 +1,7 @@
 'use client';
 
 // Operação — V11 layout · faithful port of ScreenManagerOps em
-// docs/design-canvas/handoff/garcom/garcom-screens-d.jsx:189.
+// docs/design/canvas/handoff/garcom/garcom-screens-d.jsx:189.
 //
 // Estrutura:
 //   • Hero (MAppHeader saudação + AO VIVO)

@@ -2,7 +2,7 @@
 
 // ScreenWaiterProfile — perfil + turno do garçom (rota /waiter/eu).
 // Faithful port of ScreenProfile em
-// docs/design-canvas/handoff/garcom/garcom-screens-b.jsx:1333 (V11 layout):
+// docs/design/canvas/handoff/garcom/garcom-screens-b.jsx:1333 (V11 layout):
 // Hero centralizado · pill verde "EM TURNO · HHh MMm" · Mensagens (V11 1º
 // bloco · interruptivo) · Notificações (Som · Vibrar · Avisar bar) ·
 // Preferências (Setor · Tema · PIN) · Sessão (Encerrar turno · Sair em

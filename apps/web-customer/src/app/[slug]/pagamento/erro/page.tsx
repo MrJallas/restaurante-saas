@@ -68,7 +68,7 @@ export default function PagamentoErroPage() {
 
   // Anti-placebo (2026-07-05): os cartões de crédito/débito foram REMOVIDOS.
   // Cartão saiu do pagamento por decisão de produto (gate 1D — Pix é o método;
-  // ver MEMORY.md "cartao some do pagamento, Pix com selo 'Pagamento simulado'").
+  // ver .ai/MEMORY.md "cartao some do pagamento, Pix com selo 'Pagamento simulado'").
   // Antes, os dois itens de cartão tinham chevron › (afordância de navegação)
   // mas nenhum onTap/href — toque = nada. A única alternativa REAL na tela de
   // erro é o pagamento presencial via garçom; tentar Pix de novo e voltar já

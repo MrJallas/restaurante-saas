@@ -1,7 +1,7 @@
 'use client';
 
 // ScreenWaiterScanQr — câmera/viewfinder pra escanear o QR da mesa.
-// Match com docs/design-canvas/handoff/garcom/garcom-screens-b.jsx ::
+// Match com docs/design/canvas/handoff/garcom/garcom-screens-b.jsx ::
 // ScreenWaiterScanQr. Fundo SEMPRE escuro.
 //
 // Tap no fallback ("Inserir número da mesa") leva pro picker.

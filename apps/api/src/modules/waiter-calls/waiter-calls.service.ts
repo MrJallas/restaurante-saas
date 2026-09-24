@@ -450,7 +450,7 @@ export class WaiterCallsService {
   async getPendingCalls(staffId: string) {
     // `ts.flags` is required by `priorityOf()` (see
     // apps/api/src/modules/vip/priority.util.ts and
-    // docs/features/vip-customer.md). Migration 031 added
+    // docs/produto/funcionalidades/cliente-vip.md). Migration 031 added
     // `table_sessions.flags text[]`.
     //
     // P1 (re-scan 2026-07-05): a lista traz status IN ('pending',

@@ -22,7 +22,7 @@ import type { Request } from 'express';
 /**
  * `StartZonePauseDto` — body of `POST /:slug/zone-pauses`.
  *
- * Per docs/features/zone-pause.md (V13): pause is **waiter-specific**, not
+ * Per docs/produto/funcionalidades/pausa-de-zona.md (V13): pause is **waiter-specific**, not
  * zone-wide. The `zone_pauses` table was refactored in migration 032 to
  * carry `waiter_id` / `started_by` / `ends_at` / `ended_at` / `ended_by`.
  */
@@ -89,8 +89,9 @@ class ListQueryDto {
  *                                            clients that prefer DELETE)
  *   - `GET    /:slug/zone-pauses`        · list (staff OR session — customer
  *                                            polls this for silent ETA
- *                                            adjustment per docs/features/
- *                                            zone-pause.md; no PII exposed)
+ *                                            adjustment per
+ *                                            docs/produto/funcionalidades/pausa-de-zona.md;
+ *                                            no PII exposed)
  *
  * Guard escolhido por metodo: as mutacoes seguem manager-only / staff-only
  * (nao foram afrouxadas), enquanto o GET aceita session-token pra que o

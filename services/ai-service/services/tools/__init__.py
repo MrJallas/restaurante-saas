@@ -29,7 +29,7 @@ Round 3 spec drift cheatsheet (P1 #B-3 / D-4):
       · `remove_from_cart` (era `remove_order_item`)
       · `cancel_order`     (variante semântica · cancela pedido inteiro)
       · `request_check`    (era `request_bill`)
-  - Specs em `docs/prompts/02-cross-simulator-validation.md` Subagentes B
+  - Specs em `.ai/prompts/sessoes/02-cross-simulator-validation.md` Subagentes B
     e D foram atualizadas com os nomes reais — não renomear no registry,
     pois o canônico está estável e atualizar a spec é mais barato.
 """

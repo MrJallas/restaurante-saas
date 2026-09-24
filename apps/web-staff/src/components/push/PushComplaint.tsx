@@ -1,7 +1,7 @@
 'use client';
 
 // PushComplaint — cliente abriu reclamação (≤2 estrelas ou pediu garçom).
-// Per docs/features/complaint-flow-v12.md.
+// Per docs/produto/funcionalidades/avaliacao-e-reclamacao.md.
 
 import * as React from 'react';
 import { PushCardIOS } from './PushCard';

@@ -11,7 +11,7 @@ import { getSessionToken } from './storage';
  * cliente gerava dezenas de handshakes e estourava o rate-limit do gateway
  * (30 handshakes/60s POR IP — num restaurante todos os clientes saem pelo
  * mesmo IP). O staff já tinha migrado pra socket compartilhado por
- * (tenant|staffId) pelo mesmo motivo (useWaiterEvents, MEMORY.md); este
+ * (tenant|staffId) pelo mesmo motivo (useWaiterEvents, .ai/MEMORY.md); este
  * módulo é o espelho customer-side.
  *
  * - `acquire` reaproveita o socket vivo e cancela o linger.

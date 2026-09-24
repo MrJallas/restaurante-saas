@@ -2,7 +2,7 @@
 
 // V9 drill-down — ATENÇÃO chip (/manager/operacoes/atencao).
 //
-// Canvas spec: docs/design-canvas/handoff/garcom/garcom-screens-e.jsx:669-769
+// Canvas spec: docs/design/canvas/handoff/garcom/garcom-screens-e.jsx:669-769
 // (variant `atencao`). Hero "N" mostarda + lista cada com 2 ações inline
 // + Fórmula.
 //

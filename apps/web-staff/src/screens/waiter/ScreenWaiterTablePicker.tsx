@@ -2,7 +2,7 @@
 
 // Picker · fallback manual quando o QR não está disponível.
 // Lista mesas que o garçom JÁ atende + mesas livres com capacidade.
-// Match com docs/design-canvas/handoff/garcom/garcom-screens-b.jsx ::
+// Match com docs/design/canvas/handoff/garcom/garcom-screens-b.jsx ::
 // ScreenWaiterTablePicker.
 
 import * as React from 'react';

@@ -2,7 +2,7 @@
 
 // ScreenWaiterNewEntry — chooser modal aberto pela aba "Novo".
 // V4: 2 caminhos · Cliente Nova Visita / Pedido Direto.
-// Match com docs/design-canvas/handoff/garcom/garcom-screens-b.jsx ::
+// Match com docs/design/canvas/handoff/garcom/garcom-screens-b.jsx ::
 // ScreenWaiterNewEntry (extendido pra 3 cards).
 
 import * as React from 'react';

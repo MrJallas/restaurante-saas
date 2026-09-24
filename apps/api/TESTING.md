@@ -1,4 +1,4 @@
-# Testes do apps/api — Jest/Supertest (prompt 100 §5.4)
+# Testes do apps/api — Jest/Supertest
 
 Decisão Caleb 2026-06-11: formalizar Jest + Supertest no workspace, com
 migração gradual dos specs ts-node.
@@ -29,7 +29,7 @@ quebram a suíte enquanto não forem migrados.
    `Collection`, fake `ExecutionContext`) continuam valendo — só o runner
    muda.
 
-Migrados como prova (2026-06-12): `round17-contract.test.ts`,
+Migrados como prova (2026-06-12): `src/modules/round17-contract.test.ts`,
 `table-session/qr-code.service.test.ts`, `alerts/alerts.service.test.ts`.
 
 ## Padrão Supertest (HTTP-level)

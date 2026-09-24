@@ -11,7 +11,7 @@ import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
 
 /**
- * Zone pause · per docs/features/zone-pause.md (V13).
+ * Zone pause · per docs/produto/funcionalidades/pausa-de-zona.md (V13).
  *
  * Pause is **waiter-specific**: a manager pauses orders for the tables
  * attended by ONE waiter while the rest of the floor keeps flowing. The

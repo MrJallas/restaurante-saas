@@ -17,7 +17,7 @@ import {
 
 /**
  * Suite de bugs P1+P2 das telas TV (Cozinha + Bar). Cada test cobre um
- * comportamento documentado no QA-HANDOFF-IOS.md. Roda contra o stack
+ * comportamento documentado no .ai/handoffs/2026-04-28-qa-handoff-ios.md. Roda contra o stack
  * docker-compose ja de pe (postgres na 5434, api na 3001, web-staff
  * na 3002).
  *

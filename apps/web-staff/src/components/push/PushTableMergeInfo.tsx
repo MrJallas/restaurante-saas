@@ -1,7 +1,7 @@
 'use client';
 
 // PushTableMergeInfo — info push pra request de juntar mesas.
-// Per docs/features/customer-host-model.md (table-merge cooldown rules).
+// Per docs/produto/funcionalidades/cliente-host-e-mesa-compartilhada.md (table-merge cooldown rules).
 
 import * as React from 'react';
 import { PushCardIOS } from './PushCard';

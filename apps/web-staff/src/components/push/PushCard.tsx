@@ -4,7 +4,7 @@
 // Renders an iOS-style glass-blur card. For Android we accept `expanded`
 // + `actions` to mirror the Material You shape used in the canvas.
 //
-// Per docs/design-canvas/handoff/garcom/garcom-push.jsx :: IOSNotif/AndroidNotif.
+// Per docs/design/canvas/handoff/garcom/garcom-push.jsx :: IOSNotif/AndroidNotif.
 
 import * as React from 'react';
 

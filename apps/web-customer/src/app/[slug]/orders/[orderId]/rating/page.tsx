@@ -7,7 +7,8 @@ import { ScreenCustomerOrderRating } from '../../../../../screens/feedback-and-h
  * Route: `/{slug}/orders/{orderId}/rating`
  *
  * Deep-link target of the post-delivery rating push (~13min after delivered).
- * Per `complaint-flow-v12.md` "Order rating" section.
+ * Per `docs/produto/funcionalidades/avaliacao-e-reclamacao.md`, section
+ * "Avaliação do pedido".
  */
 export default function OrderRatingPage() {
   const params = useParams();

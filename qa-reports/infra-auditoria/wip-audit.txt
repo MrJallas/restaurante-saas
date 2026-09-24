@@ -1,3 +1,0 @@
-apps/api/src/modules/shifts/shifts.controller.ts:71: * Round 18 (Onda 2 backend): persistencia de turnos.
-apps/web-staff/src/lib/api/manager.ts:591:// Shifts (round 18 Onda 2 backend) — `/shifts/*` not `/staff/shifts/*`
-apps/api/src/modules/shifts/shifts.module.ts:15: * Round 18 (Onda 2 backend): persistencia de turnos pra

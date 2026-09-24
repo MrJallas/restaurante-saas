@@ -1,5 +1,5 @@
 // === Staff messages (manager bubble) ===
-// Per docs/features/complaint-flow-v12.md and chat-history-lgpd.md ("mensagens
+// Per docs/produto/funcionalidades/avaliacao-e-reclamacao.md and historico-de-chat-e-lgpd.md ("mensagens
 // da gerencia"). Lives in Postgres `assistant_messages` rather than NoSQL,
 // because it has operational/audit value (not pure conversation).
 

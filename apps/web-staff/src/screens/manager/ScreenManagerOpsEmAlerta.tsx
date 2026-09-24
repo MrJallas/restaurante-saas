@@ -2,7 +2,7 @@
 
 // V9 drill-down — EM ALERTA chip (/manager/operacoes/em-alerta).
 //
-// Canvas spec: docs/design-canvas/handoff/garcom/garcom-screens-e.jsx:886-987
+// Canvas spec: docs/design/canvas/handoff/garcom/garcom-screens-e.jsx:886-987
 // (variant `em-alerta`).
 //
 // Backend wiring (anti-placebo):

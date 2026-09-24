@@ -1,7 +1,7 @@
 """
 Open the formal complaint composer (canonical name per F2 spec).
 
-Renamed from `complaint_compose` — same semantics. Per `complaint-flow-v12.md`,
+Renamed from `complaint_compose` — same semantics. Per `avaliacao-e-reclamacao.md`,
 complaint composition lives in `ScreenCustomerComplaintCompose`; this is a
 routing tool that takes the customer to that screen. The legacy
 `complaint_compose` forwarding module was removed in P1 #30.

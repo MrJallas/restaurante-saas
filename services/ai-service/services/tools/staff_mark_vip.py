@@ -1,5 +1,5 @@
 """
-Manager marks a session as VIP. Per `vip-customer.md` it's session-scoped,
+Manager marks a session as VIP. Per `cliente-vip.md` it's session-scoped,
 not a permanent customer attribute.
 """
 

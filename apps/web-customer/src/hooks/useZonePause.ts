@@ -20,7 +20,7 @@ interface ZonePauseListResponse {
  *
  * P1 #21: o customer-side nao tinha nenhum hook (WS ou polling) que
  * detectasse zone-pause ativa, entao a tela do cliente nao podia ajustar
- * ETA "silenciosamente" como o spec pede (`docs/features/zone-pause.md`).
+ * ETA "silenciosamente" como o spec pede (`docs/produto/funcionalidades/pausa-de-zona.md`).
  *
  * Optei por polling em vez de WS porque:
  *   - O broadcast atual de `zone_pause.{started|ended}` vai pra

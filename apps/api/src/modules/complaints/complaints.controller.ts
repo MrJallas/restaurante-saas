@@ -32,7 +32,7 @@ class CreateComplaintDto {
   rating?: number;
 
   /**
-   * Per docs/features/complaint-flow-v12.md: composer chips classify the
+   * Per docs/produto/funcionalidades/avaliacao-e-reclamacao.md: composer chips classify the
    * problem in one of 5 buckets so the manager can see at a glance.
    * Optional because legacy clients don't send it; new composer enforces it.
    */

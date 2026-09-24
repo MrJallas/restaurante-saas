@@ -12,7 +12,7 @@ import { PIX_INITIAL_LOAD_ERROR, resolvePixGate, type PixLoadStatus } from './pi
 import { serviceFeeCopy } from './serviceFeeCopy';
 
 /**
- * ⚠️ PIX É UM STUB DE DEMONSTRAÇÃO — NÃO É BUG. Ver docs/PIX-STATUS.md.
+ * ⚠️ PIX É UM STUB DE DEMONSTRAÇÃO — NÃO É BUG. Ver docs/produto/funcionalidades/pagamento-pix.md.
  *
  * Esta tela mostra um QR/copia-e-cola de DEMONSTRAÇÃO: o `pixCopyPaste` que ela
  * renderiza é uma string gerada localmente no backend, NÃO um BR Code emitido
@@ -22,7 +22,7 @@ import { serviceFeeCopy } from './serviceFeeCopy';
  * o Pix real só será implementado depois que houver um cliente fechado. NÃO
  * "conserte" isso gerando QR real nem religando auto-confirm — o caminho de
  * implementação (PSP + webhook = a verificação de que o Pix chegou) está em
- * docs/PIX-STATUS.md. A tela é mantida como está de propósito, pra demo.
+ * docs/produto/funcionalidades/pagamento-pix.md. A tela é mantida como está de propósito, pra demo.
  */
 
 interface PaymentData {

@@ -2,7 +2,7 @@
 
 // V9 drill-down — SOBRECARGA tile (/manager/equipe/sobrecarga).
 //
-// Canvas spec: docs/design-canvas/handoff/garcom/garcom-screens-e.jsx:200-370
+// Canvas spec: docs/design/canvas/handoff/garcom/garcom-screens-e.jsx:200-370
 // (variant `sobrecarga`). Hero "N" sobrecarregados + lista expansível
 // das zonas de cada um + 3 ActionPills + Fórmula.
 //

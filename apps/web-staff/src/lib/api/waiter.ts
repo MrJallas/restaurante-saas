@@ -40,7 +40,7 @@ export interface ActiveTableSummary {
   ticket_total_cents: number;
   opened_min: number;
   last_event: string | null;
-  /** VIP marker · signals "VIP" tile pin (per docs/features/vip-customer.md). */
+  /** VIP marker · signals "VIP" tile pin (per docs/produto/funcionalidades/cliente-vip.md). */
   is_vip?: boolean;
 }
 

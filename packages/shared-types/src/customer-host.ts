@@ -1,5 +1,5 @@
 // === Customer-host model ===
-// Table-merge + escalation chains. Per docs/features/customer-host-model.md.
+// Table-merge + escalation chains. Per docs/produto/funcionalidades/cliente-host-e-mesa-compartilhada.md.
 //
 // Chegada tardia NÃO mora aqui: o fluxo real é o System A
 // (`session_participants`, o host da mesa aprova). A tabela

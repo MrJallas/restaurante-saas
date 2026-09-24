@@ -266,7 +266,8 @@ export function ScreenManagerStaffForm({
       {/* Round 18 sticky-footer fix: overflow:auto + minHeight:0 são
           obrigatórios pra que `flex: 1` no middle limite a tela; sem
           eles a página inteira cresce e CTAs ficam off-screen no
-          viewport mobile (audit round18-sticky-footer-audit P0/P1). */}
+          viewport mobile (auditoria de sticky footer do Round 18, P0/P1;
+          relatório no histórico do Git, commit 6a64bcc). */}
       <div style={{ padding: 16, flex: 1, overflow: 'auto', minHeight: 0 }}>
         <Field
           C={C}

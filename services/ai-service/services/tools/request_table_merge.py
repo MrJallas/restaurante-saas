@@ -2,7 +2,8 @@
 Request table merge — "junta minha mesa com a mesa N" (canonical name per F2).
 
 Renamed from `table_merge_request`; the legacy forwarding module was removed
-in P1 #30. Per `customer-host-model.md` lines 178+. The actual request
+in P1 #30. Per `docs/produto/funcionalidades/cliente-host-e-mesa-compartilhada.md`,
+section "Junção de mesas". The actual request
 creation is protected by the customer's browser session, so this tool returns
 the payload that makes the frontend open the salon map or create the request
 with the known target.

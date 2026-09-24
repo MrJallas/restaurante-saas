@@ -36,7 +36,7 @@ class ToggleFlagDto {
 }
 
 /**
- * Session flag toggle endpoint · per docs/features/vip-customer.md.
+ * Session flag toggle endpoint · per docs/produto/funcionalidades/cliente-vip.md.
  * Manager / host can flag a session as VIP / allergy. Staff "waiter" cannot:
  * `StaffOnlyGuard` validates `x-staff-key`; `ManagerOnlyGuard` enforces the
  * per-role check via the `x-staff-role` header.

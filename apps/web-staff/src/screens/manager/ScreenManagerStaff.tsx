@@ -1,7 +1,7 @@
 'use client';
 
 // Equipe — V11 layout · faithful port of ScreenManagerStaff em
-// docs/design-canvas/handoff/garcom/garcom-screens-c.jsx:876.
+// docs/design/canvas/handoff/garcom/garcom-screens-c.jsx:876.
 //
 // 8 blocos:
 //   1. Hero (MAppHeader saudação + AO VIVO)

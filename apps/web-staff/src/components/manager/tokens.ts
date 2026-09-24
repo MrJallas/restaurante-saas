@@ -1,5 +1,5 @@
 // Manager-side design tokens.
-// Mirrors docs/design-canvas/handoff/garcom/garcom-tokens.jsx — same visual
+// Mirrors docs/design/canvas/handoff/garcom/garcom-tokens.jsx — same visual
 // language as the customer/host apps (white + ink borders + Inter). Light/dark
 // resolved via the `dark` flag on each component.
 

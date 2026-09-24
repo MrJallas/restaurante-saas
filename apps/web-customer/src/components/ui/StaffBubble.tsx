@@ -5,7 +5,7 @@ import { ReactNode, memo } from 'react';
  * distinta da Bubble (IA/cliente) e da ManagerBubble (que cobre o sub-fluxo
  * de complaint com chip-action inset).
  *
- * V20 canon (per `docs/design-canvas/handoff/cliente/cliente-tokens.jsx`
+ * V20 canon (per `docs/design/canvas/handoff/cliente/cliente-tokens.jsx`
  * §`ManagerBubble (4.5)` + `cliente-journey-v20.jsx` §F11_Manager):
  *  - bg `surface` (warm gray) + border 1px `border-soft`
  *  - border-left 3px `ink` (signature stripe — humano, não IA)

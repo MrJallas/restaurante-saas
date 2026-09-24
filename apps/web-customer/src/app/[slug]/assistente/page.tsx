@@ -2882,7 +2882,7 @@ export default function AssistentePage() {
   };
 
   /**
-   * LGPD chip handlers · per `chat-history-lgpd.md`.
+   * LGPD chip handlers · per `historico-de-chat-e-lgpd.md`.
    *
    * Confirm  → POST /lgpd-requests (kind=erasure). The BE wipes the customer's
    *            NoSQL chat data synchronously and returns the protocol number.

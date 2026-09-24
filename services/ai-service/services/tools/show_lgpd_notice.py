@@ -1,7 +1,8 @@
 """
 LGPD notice tool — surfaces the canonical legal notice + binary consent chips.
 
-Per `docs/features/chat-history-lgpd.md` (lines 53-117), the LLM **never**
+Per `docs/produto/funcionalidades/historico-de-chat-e-lgpd.md` (section
+"O que o assistente faz"), the LLM **never**
 composes LGPD copy itself. When it detects an LGPD-related intent ("quero
 apagar meus dados", "quais meus direitos LGPD", etc.) it MUST call
 `show_lgpd_notice`. Only the browser's out-of-band chip handler may call the
@@ -10,7 +11,7 @@ authenticated LGPD endpoint; free text and LLM tool calls never authorize it.
 Tool signature: `show_lgpd_notice() -> dict`
 Returns the canonical text + 2 chips (consent capture · binary).
 
-Spec snippet (chat-history-lgpd.md, the canonical payload for this tool):
+Spec snippet (historico-de-chat-e-lgpd.md, the canonical payload for this tool):
     {
       "messageType": "lgpd_notice",
       "content": LGPD_NOTICE,
@@ -21,7 +22,8 @@ Spec snippet (chat-history-lgpd.md, the canonical payload for this tool):
     }
 
 Implementation note: F2 spec asks for chip labels `"Sim, apagar"` /
-`"Cancelar"`; the canonical spec doc (chat-history-lgpd.md line 75) uses
+`"Cancelar"`; the canonical spec doc (historico-de-chat-e-lgpd.md, section
+"Textos canônicos") uses
 `"Sim, quero excluir"` / `"Não, não quero excluir"`. The `lgpd_messages.py`
 module exports the canonical labels (`LGPD_CHIP_CONFIRM` /
 `LGPD_CHIP_DISMISS`); we use those here so the chips feed the audit log
