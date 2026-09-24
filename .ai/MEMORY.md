@@ -207,7 +207,11 @@ Staff usa poucos `data-testid`; preferir roles, labels e texto visivel:
 - Multi-tenancy e por schema Postgres. `:slug` resolve
   `public.restaurants.schema_name` e o backend aplica `search_path`.
 - Customer auth usa cookie/header `session_token` no Redis.
-- Staff auth usa `x-staff-key`; manager/host validam `x-staff-id` no DB.
+- Staff auth: pessoa = `x-staff-token` do login CPF+PIN (no web-staff, cookie
+  httpOnly `staff_token` que o proxy converte); `x-staff-key` = estação/TV via
+  proxy, não identifica ninguém. `x-staff-id` legado: os guards de papel só o
+  aceitam fora de prod, mas o `requireStaffId` das rotas só-StaffOnly ainda o
+  aceita com a key em qualquer ambiente (pendência aberta em 2026-09-24).
 - WS tem rooms de tenant, session, customer, staff e manager.
 - Eventos importantes: `order:*`, `waiter:*`, `scan_verification.*`,
   `participant:*`, `table_merge.*`, `complaint.*`, `staff_message.*`,
@@ -937,6 +941,9 @@ unless-stopped` + healthcheck de compose (visibilidade no docker ps).
 
 ## Suite TV Reproduzivel + Round-5 Security (2026-06-13)
 
+> Histórico. O modelo de credenciais mudou depois; ver "Specs E2E no modelo de
+> auth atual (2026-09-24)" no fim deste arquivo antes de mexer nesses specs.
+
 - `apps/web-customer/e2e/specs/{tv-kds,tv-coverage}.spec.ts` agora 100% verde
   e reproduzivel em qualquer DB. Validacao:
   `npx playwright test tv-kds tv-coverage --workers=1 --retries=2` (serial
@@ -1103,3 +1110,22 @@ unless-stopped` + healthcheck de compose (visibilidade no docker ps).
   no começo. O gate final deve terminar com zero sessões/liberações/scans,
   pedidos e chamados operacionais ativos; não deixe a última rodada contaminar
   o salão demo.
+
+## Specs E2E no modelo de auth atual (2026-09-24)
+
+- Specs que chamam a API usam as credenciais reais: cliente com o `token` do
+  `session/init` (nunca o `sessionId`, que dá 401 AUTH_INVALID), pessoa da equipe
+  com `staffFetch` (login real), tela do web-staff com `loginStaffApp`. Injetar
+  `staffId` no localStorage não autentica nada desde o ciclo 2.
+- `physical-qr-heavy` é serial: uma falha esconde todos os cenários seguintes.
+  Depois de corrigir um, rode o arquivo inteiro — o cenário 9 escondia 17, 18 e
+  20, cada um com defeito próprio.
+- Não bloqueie o worker do Playwright por segundos com `execFileSync` em laço: a
+  API fecha as conexões keep-alive ociosas e o próximo `fetch` reusa socket morto
+  ("other side closed"). E não cheque estado de socket logo após polling síncrono
+  sem ceder o event loop; use `waitFor`.
+- Ao reiniciar o Next dev à força, apague `.next` de web-customer e web-staff: o
+  cache do Turbopack interrompido faz rota existente responder 404.
+- Medição sem WebKit (sandbox sem acesso ao CDN do Playwright): Chromium com o
+  perfil iPhone 14 via config local fora do repo. Não é o gate oficial; o número
+  de referência continua sendo WebKit no Mac.

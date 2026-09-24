@@ -5,7 +5,7 @@ restaurante de demonstração, ver [ambiente local](ambiente-local.md).
 
 | Suíte                | Onde                                                                                         | Runner                    | Precisa do stack no ar? |
 | -------------------- | -------------------------------------------------------------------------------------------- | ------------------------- | ----------------------- |
-| Unitários da API     | `apps/api/src/**/*.test.ts` (152 arquivos)                                                   | Jest + Supertest          | não (usa fakes)         |
+| Unitários da API     | `apps/api/src/**/*.test.ts` (153 arquivos)                                                   | Jest + Supertest          | não (usa fakes)         |
 | Unitários dos fronts | `apps/web-customer/src` (31), `apps/web-staff/src` (22)                                      | Jest (`next/jest`, jsdom) | não                     |
 | Serviço de IA        | `services/ai-service/tests/` (17 arquivos de teste)                                          | pytest                    | não (LLM simulado)      |
 | Ponta a ponta        | `apps/web-customer/e2e/specs/` (13 specs)                                                    | Playwright                | **sim, com o seed**     |
@@ -29,7 +29,7 @@ npm run format:check                          # Prettier no repositório inteiro
   (idem `@restaurant/web-customer` e `@restaurant/web-staff`).
 - `node_modules` desatualizado no host produz falhas falsas (ex.: módulo não encontrado). Rode
   `npm install` antes, ou rode dentro do container:
-  `docker exec restaurant-api sh -c "cd /repo/apps/api && npm test"` (926 de 926 no ensaio).
+  `docker exec restaurant-api sh -c "cd /repo/apps/api && npm test"` (930 de 930 no ensaio).
 
 ## Serviço de IA (pytest)
 
@@ -149,15 +149,28 @@ de novo os `qr_public_token`, que mudam porque o seed recria as mesas.
 
 ### Resultado medido
 
-Ambiente novo, stack do tutorial, `.env` copiado do `.env.example` e sem LLM: **99 de 142** execuções
-passam. As outras 43:
+Ambiente novo, `.env` do tutorial (segredos gerados, `HOME_CONTINUATION_ENABLED=false`), seed do
+passo 4 e sem LLM: **143 de 145** execuções passam, igual em duas rodadas seguidas (ambiente recém-criado
+e depois de reaplicar o seed).
 
-| Quantidade           | Onde                                        | Causa                                                                                                                                                                                                                                     |
-| -------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 + 1 não executada  | `assistente-context`                        | o teste da pergunta aberta exige LLM; o seguinte, em série, não roda                                                                                                                                                                      |
-| 26                   | `tv-kds`, `tv-coverage`, `tv-delivery-flow` | escritos para o modelo de autenticação anterior: a maioria das chamadas recebe 401 (`AUTH_INVALID` para o id de sessão usado como token; `AUTH_TOKEN_REQUIRED` na troca de status do preparo, que hoje exige sessão individual da equipe) |
-| 5                    | `critical-paths` (3), `sheet-drag` (2)      | procuram um botão "Fechar" nas folhas de chamar garçom e de cardápio, que a interface atual não tem; as folhas abrem e funcionam                                                                                                          |
-| 1 + 9 não executadas | `physical-qr-heavy`                         | o cenário 9 espera `scan_verification.resolved` no socket do garçom no fim da escalada; os cenários seguintes, em série, não rodam                                                                                                        |
+| Quantidade          | Onde                 | Causa                                                                |
+| ------------------- | -------------------- | -------------------------------------------------------------------- |
+| 1 + 1 não executada | `assistente-context` | o teste da pergunta aberta exige LLM; o seguinte, em série, não roda |
+
+Condições da medição (2026-09-24): Chromium com o perfil iPhone 14 (a máquina não tinha acesso ao
+download do WebKit do Playwright), PostgreSQL, Redis e MongoDB nos containers do Compose e API, apps
+web e serviço de IA rodando direto no Linux, com as mesmas variáveis do Compose. Falta confirmar em
+WebKit, o navegador da configuração padrão.
+
+A suíte tem 145 testes, e não 142: no `tv-kds`, três testes em que a chave compartilhada bastava
+viraram pares com o contrato atual, em que a chave sozinha recebe 401 e o caminho autorizado recebe
+200 (sessão individual da equipe, ou a TV informando a estação): troca de status direto na API e pelo
+proxy da TV, e painel do gerente.
+
+Medição anterior, no mesmo dia, em WebKit e antes das correções: 99 de 142. As 43 que não passavam
+eram os specs de TV escritos para o modelo de autenticação anterior (26), o seletor de um botão
+"Fechar" que as folhas não têm mais (5), o `scan_verification.resolved` que não chegava ao garçom no
+fim da escalada (1, mais 9 cenários que não rodavam depois dele) e o teste que exige LLM (1 + 1).
 
 Com `HOME_CONTINUATION_ENABLED=true` (padrão do Compose quando a variável não existe), mais 5 testes
 falham, porque a home troca os botões "Chamar garçom" e "Ver cardápio" pelas sugestões do assistente;

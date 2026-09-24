@@ -402,13 +402,13 @@ Falhas do LLM aparecem em `docker compose logs ai-service`. Mais detalhes em
 
 Resultados medidos num ambiente novo, com o stack do tutorial e **sem LLM**:
 
-| Suíte                                | Comando                                                                                                                | Resultado              |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| Unitários da API (Jest)              | `npm test --workspace @restaurant/api`                                                                                 | 926 de 926             |
-| Unitários do app do cliente (Jest)   | `npm test --workspace @restaurant/web-customer`                                                                        | 180 de 180             |
-| Unitários do app da equipe (Jest)    | `npm test --workspace @restaurant/web-staff`                                                                           | 86 de 86               |
-| Serviço de IA (pytest, LLM simulado) | `docker exec restaurant-ai sh -c 'pip install -q -r requirements-dev.lock && env -i PATH="$PATH" python -m pytest -q'` | 435 de 435             |
-| Ponta a ponta (Playwright, WebKit)   | `cd apps/web-customer && npx playwright install webkit && npx playwright test`                                         | 99 de 142 (ver abaixo) |
+| Suíte                                | Comando                                                                                                                | Resultado               |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| Unitários da API (Jest)              | `npm test --workspace @restaurant/api`                                                                                 | 930 de 930              |
+| Unitários do app do cliente (Jest)   | `npm test --workspace @restaurant/web-customer`                                                                        | 180 de 180              |
+| Unitários do app da equipe (Jest)    | `npm test --workspace @restaurant/web-staff`                                                                           | 86 de 86                |
+| Serviço de IA (pytest, LLM simulado) | `docker exec restaurant-ai sh -c 'pip install -q -r requirements-dev.lock && env -i PATH="$PATH" python -m pytest -q'` | 435 de 435              |
+| Ponta a ponta (Playwright)           | `cd apps/web-customer && npx playwright install webkit && npx playwright test`                                         | 143 de 145 (ver abaixo) |
 
 Os unitários rodam no host depois de um `npm install` na raiz e não precisam do stack. O pytest roda
 dentro do container com o ambiente limpo (`env -i`), porque as variáveis do Compose interferem nos
@@ -416,17 +416,11 @@ testes.
 
 A suíte ponta a ponta precisa do stack no ar com o seed, roda em série e mexe nas mesas M01, M02,
 QRTEST91 e QRTEST92; por isso, rode-a **depois** do roteiro manual e, ao terminar, volte ao estado
-inicial com o seed (segundo comando do passo 4). Das 43 execuções que não passam:
-
-- 1 depende de um LLM de verdade, por definição ("pergunta aberta usa o LLM real"); o teste seguinte
-  do mesmo arquivo, em série, não chega a rodar.
-- 26 estão nos três specs de TV (`tv-kds`, `tv-coverage`, `tv-delivery-flow`), escritos para o modelo
-  de autenticação anterior: a maioria das chamadas recebe 401, porque a API hoje exige o token
-  derivado da sessão do cliente e a sessão individual da equipe.
-- 5 esperam um botão "Fechar" nas folhas de chamar garçom e de cardápio, que a interface atual não
-  tem. As folhas funcionam; o seletor do teste ficou desatualizado.
-- 1 (`physical-qr-heavy`, cenário 9) espera um evento de socket do garçom que não chega no fim da
-  escalada da verificação do QR; os 9 cenários seguintes do arquivo, em série, não chegam a rodar.
+inicial com o seed (segundo comando do passo 4). O resultado foi o mesmo em duas rodadas seguidas, e
+as 2 execuções que não passam são do `assistente-context`: uma depende de um LLM de verdade, por
+definição ("pergunta aberta usa o LLM real"), e o teste seguinte do mesmo arquivo, em série, não chega
+a rodar. Essa medição usou o Chromium com o perfil iPhone 14; a configuração padrão usa o WebKit, em
+que a suíte ainda precisa ser confirmada.
 
 Detalhes, variáveis e a cobertura de cada spec em
 [docs/desenvolvimento/testes.md](docs/desenvolvimento/testes.md).
