@@ -66,7 +66,8 @@ O que cada item significa e as ressalvas de reaplicação estão em
   vazio. No banco `restaurant_chat`, cria os índices de `chat_threads`, `chat_messages` e
   `customer_courtesy_history` (expiração por `expiresAt`, campos em camelCase) e os de `shift_logs`; no
   banco `restaurant_security`, os de `qr_scan_events`, `scan_verification_events` e
-  `security_audit_events`, também com expiração por `expiresAt`.
+  `security_audit_events`, também com expiração por `expiresAt` e com nome explícito, igual ao de
+  `scripts/mongo-init.ts`.
 - `scripts/mongo-init.ts` (`npm run mongo:init`) faz o mesmo, de forma idempotente, sobre um volume que
   já existe (lê `MONGODB_URI`, `MONGODB_DB`, `MONGODB_SECURITY_DB`). Rode de dentro do container da API,
   porque o MongoDB não publica porta no computador.

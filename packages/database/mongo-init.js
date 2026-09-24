@@ -50,12 +50,23 @@ print('mongo-init.js: restaurant_chat TTL + lookup + shift_logs indexes ensured.
 
 db = db.getSiblingDB('restaurant_security');
 
+// Nomes explícitos = os de SECURITY_EVENT_INDEXES em scripts/mongo-init.ts
+// (e os que o E2E de auditoria confere). Sem eles o Mongo gerava o nome padrão
+// (`tenantId_1_createdAt_-1`) e o `npm run mongo:init` batia em
+// IndexOptionsConflict (85) sobre o mesmo spec. A API não cria índices nestas
+// coleções, então nomear aqui não conflita com nada em runtime.
 for (const collection of ['qr_scan_events', 'scan_verification_events', 'security_audit_events']) {
-  db[collection].createIndex({ tenantId: 1, createdAt: -1 });
-  db[collection].createIndex({ tenantId: 1, tableId: 1, createdAt: -1 });
-  db[collection].createIndex({ tenantId: 1, customerId: 1, createdAt: -1 });
-  db[collection].createIndex({ eventType: 1, createdAt: -1 });
-  db[collection].createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+  db[collection].createIndex({ tenantId: 1, createdAt: -1 }, { name: 'tenantId_createdAt' });
+  db[collection].createIndex(
+    { tenantId: 1, tableId: 1, createdAt: -1 },
+    { name: 'tenantId_tableId_createdAt' },
+  );
+  db[collection].createIndex(
+    { tenantId: 1, customerId: 1, createdAt: -1 },
+    { name: 'tenantId_customerId_createdAt' },
+  );
+  db[collection].createIndex({ eventType: 1, createdAt: -1 }, { name: 'eventType_createdAt' });
+  db[collection].createIndex({ expiresAt: 1 }, { name: 'expiresAt_ttl', expireAfterSeconds: 0 });
 }
 
 print('mongo-init.js: restaurant_security audit indexes ensured.');
