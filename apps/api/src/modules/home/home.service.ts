@@ -122,6 +122,13 @@ export class HomeService {
     // fail the whole request when the Python service is down.
     let continuationMessage: HomeData['continuationMessage'];
     try {
+      // A home troca os dois PillButtons ("Chamar garçom" / "Ver cardápio") pelo
+      // bloco de continuação assim que a IA devolve chips. Em demo ao vivo isso
+      // esconde a tela canônica, então `HOME_CONTINUATION_ENABLED=false` desliga
+      // só a continuação — o chat do assistente segue intacto.
+      if (process.env.HOME_CONTINUATION_ENABLED === 'false') {
+        throw new Error('continuation disabled by env');
+      }
       const aiUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
       const inferred = await this.inferContinuationKind({
         sessionId,

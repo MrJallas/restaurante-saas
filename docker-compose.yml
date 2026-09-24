@@ -106,6 +106,9 @@ services:
       CORS_ORIGINS: http://localhost:3003,http://localhost:3002,http://${PUBLIC_HOST:-localhost}:3003,http://${PUBLIC_HOST:-localhost}:3002
       CUSTOMER_APP_URL: http://${PUBLIC_HOST:-localhost}:3003
       AI_SERVICE_URL: http://ai-service:8000
+      # false = home mantem os dois PillButtons canonicos em vez do bloco de
+      # continuacao com chips. Nao afeta o chat do assistente.
+      HOME_CONTINUATION_ENABLED: ${HOME_CONTINUATION_ENABLED:-true}
       # Keep API waits slightly above ai-service's local LLM timeout so
       # LMStudio responses can finish during simulator/dev runs.
       AI_SERVICE_TIMEOUT_MS: ${AI_SERVICE_TIMEOUT_MS:-95000}

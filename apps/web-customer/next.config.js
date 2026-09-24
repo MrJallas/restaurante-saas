@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Demo/producao: some com o badge do Next no canto da tela. A UI que o
+  // cliente ve nao pode ter afordancia de ferramenta de desenvolvimento.
+  devIndicators: false,
   transpilePackages: ['@restaurant/shared-types'],
   // Next 16 bloqueia recursos dev/HMR quando o Host difere de `localhost`.
   // Permite loopback e o host LAN explicitamente escolhido pelo operador;
