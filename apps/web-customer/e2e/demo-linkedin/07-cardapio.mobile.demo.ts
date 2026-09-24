@@ -21,7 +21,11 @@ test('cardapio: fotos e categorias', async ({ page }) => {
     const cpf = page.getByLabel(/seu cpf/i).or(page.locator('input[inputmode="numeric"]').first());
     await cpf.fill('12345678909');
     await beat(page, 600);
-    await softClick(page, page.getByRole('button', { name: /continuar|entrar|começar|→/i }), 'welcome');
+    await softClick(
+      page,
+      page.getByRole('button', { name: /continuar|entrar|começar|→/i }),
+      'welcome',
+    );
     await settle(page, 2200);
   }
 
@@ -30,8 +34,18 @@ test('cardapio: fotos e categorias', async ({ page }) => {
   // Na home o chip se chama só "Cardápio"; vira "Ver cardápio" depois que a
   // conversa começa. Tenta os dois, com espera por habilitar.
   const abriu =
-    (await softClick(page, page.getByRole('button', { name: /^cardápio$/i }), 'Cardápio', 20_000)) ||
-    (await softClick(page, page.getByRole('button', { name: /ver cardápio/i }), 'Ver cardápio', 20_000));
+    (await softClick(
+      page,
+      page.getByRole('button', { name: /^cardápio$/i }),
+      'Cardápio',
+      20_000,
+    )) ||
+    (await softClick(
+      page,
+      page.getByRole('button', { name: /ver cardápio/i }),
+      'Ver cardápio',
+      20_000,
+    ));
 
   if (!abriu) {
     await page.goto(`${page.url().split('/mesa/')[0]}/cardapio`, { waitUntil: 'domcontentloaded' });
@@ -52,6 +66,10 @@ test('cardapio: fotos e categorias', async ({ page }) => {
   // Volta ao topo e abre um item pra mostrar a foto grande.
   for (let i = 0; i < 4; i += 1) await swipe(page, 340, 12, 195, 220);
   await beat(page, 900);
-  await softClick(page, page.getByText(/Picanha Fatiada|Pudim da Casa/i).first(), 'item do cardápio');
+  await softClick(
+    page,
+    page.getByText(/Picanha Fatiada|Pudim da Casa/i).first(),
+    'item do cardápio',
+  );
   await beat(page, 3200);
 });

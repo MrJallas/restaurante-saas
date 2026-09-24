@@ -41,7 +41,12 @@ const bEscaneou = new Barreira('cliente enviou o welcome (scan criado)');
 async function logaStaff(page: Page, cpf: string, rota: string) {
   await page.goto(`${STAFF}/login`, { waitUntil: 'domcontentloaded' });
   await page.evaluate(() => {
-    try { localStorage.clear(); sessionStorage.clear(); } catch { /* ok */ }
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {
+      /* ok */
+    }
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByPlaceholder('90000000001').fill(cpf);
@@ -83,11 +88,15 @@ test('noite cheia: quatro telas ao mesmo tempo', async ({ playwright }) => {
   }); // ator de apoio: não grava, só existe para o split ter 2 participantes
 
   const ctxGerente = await chromium.newContext({
-    viewport: VIEW_MOBILE, hasTouch: true, isMobile: false,
+    viewport: VIEW_MOBILE,
+    hasTouch: true,
+    isMobile: false,
     recordVideo: { dir: path.join(OUT, 'gerente'), size: VIEW_MOBILE },
   });
   const ctxRecepcao = await chromium.newContext({
-    viewport: VIEW_MOBILE, hasTouch: true, isMobile: false,
+    viewport: VIEW_MOBILE,
+    hasTouch: true,
+    isMobile: false,
     recordVideo: { dir: path.join(OUT, 'recepcao'), size: VIEW_MOBILE },
   });
   const ctxCozinha = await chromium.newContext({
@@ -97,8 +106,11 @@ test('noite cheia: quatro telas ao mesmo tempo', async ({ playwright }) => {
 
   const todos: BrowserContext[] = [ctxCliente, ctxGerente, ctxRecepcao, ctxCozinha];
   const [pCliente, pClienteB, pGerente, pRecepcao, pCozinha] = await Promise.all([
-    ctxCliente.newPage(), ctxClienteB.newPage(), ctxGerente.newPage(),
-    ctxRecepcao.newPage(), ctxCozinha.newPage(),
+    ctxCliente.newPage(),
+    ctxClienteB.newPage(),
+    ctxGerente.newPage(),
+    ctxRecepcao.newPage(),
+    ctxCozinha.newPage(),
   ]);
 
   // Tira o badge do Next Dev Tools e o toast "Compiling…" do quadro.
@@ -127,14 +139,21 @@ test('noite cheia: quatro telas ao mesmo tempo', async ({ playwright }) => {
 
     // Equipe → estado ANTES (os KPIs vão mudar depois da escala; é o "antes")
     await relogio.ate(22, 'gerente');
-    await softClick(pGerente, pGerente.getByRole('button', { name: 'Equipe' }), 'aba Equipe', 12_000);
+    await softClick(
+      pGerente,
+      pGerente.getByRole('button', { name: 'Equipe' }),
+      'aba Equipe',
+      12_000,
+    );
     await settle(pGerente, 1800);
     await softClick(pGerente, pGerente.getByRole('button', { name: /^Garçons/ }), 'filtro Garçons');
     await beat(pGerente, 1500);
 
     // Escala do turno
     await relogio.ate(40, 'gerente');
-    await pGerente.goto(`${STAFF}/manager/equipe/turnos?slug=restaurant_dev`, { waitUntil: 'domcontentloaded' });
+    await pGerente.goto(`${STAFF}/manager/equipe/turnos?slug=restaurant_dev`, {
+      waitUntil: 'domcontentloaded',
+    });
     await settle(pGerente, 2000);
 
     const cardTurno = pGerente.getByText(new RegExp(turno.label, 'i')).first();
@@ -148,23 +167,36 @@ test('noite cheia: quatro telas ao mesmo tempo', async ({ playwright }) => {
       const candidato = pGerente.getByText(nome, { exact: false }).last();
       await softClick(pGerente, candidato, nome, 6000);
       // "Adicionar" existe uma vez por candidato — escopar para não dar strict mode
-      await softClick(pGerente, pGerente.getByRole('button', { name: /^Adicionar$/ }).first(), 'confirmar', 6000);
+      await softClick(
+        pGerente,
+        pGerente.getByRole('button', { name: /^Adicionar$/ }).first(),
+        'confirmar',
+        6000,
+      );
       await beat(pGerente, 900);
     }
 
     // Zona (a unidade real de atribuição — não existe mesa→garçom no produto)
     await relogio.ate(95, 'gerente');
-    await pGerente.goto(`${STAFF}/manager/equipe?slug=restaurant_dev`, { waitUntil: 'domcontentloaded' });
+    await pGerente.goto(`${STAFF}/manager/equipe?slug=restaurant_dev`, {
+      waitUntil: 'domcontentloaded',
+    });
     await settle(pGerente, 1800);
     for (let i = 0; i < 5; i += 1) await swipe(pGerente, -260, 14, 195, 500);
     await beat(pGerente, 1200);
 
-    for (const [zona, garcom] of [['Salão Principal', 'Ana Garcom'], ['Varanda', 'Bruno Garcom']]) {
+    for (const [zona, garcom] of [
+      ['Salão Principal', 'Ana Garcom'],
+      ['Varanda', 'Bruno Garcom'],
+    ]) {
       const combo = pGerente.getByRole('combobox', { name: new RegExp(zona, 'i') }).first();
       if (await combo.isVisible().catch(() => false)) {
         await combo.selectOption({ label: garcom }).catch(() => {});
         await beat(pGerente, 700);
-        const atribuir = combo.locator('xpath=../..').getByRole('button', { name: /Atribuir/i }).first();
+        const atribuir = combo
+          .locator('xpath=../..')
+          .getByRole('button', { name: /Atribuir/i })
+          .first();
         await softClick(pGerente, atribuir, `atribuir ${garcom} → ${zona}`, 6000);
         // espera o chip REAL (a UI é otimista: entra com id temp- antes do POST resolver)
         await pGerente
@@ -178,7 +210,9 @@ test('noite cheia: quatro telas ao mesmo tempo', async ({ playwright }) => {
 
     // Mapa — fica parado aqui para a mesa acender ao vivo (R4)
     await relogio.ate(112, 'gerente');
-    await pGerente.goto(`${STAFF}/manager/operacoes?slug=restaurant_dev`, { waitUntil: 'domcontentloaded' });
+    await pGerente.goto(`${STAFF}/manager/operacoes?slug=restaurant_dev`, {
+      waitUntil: 'domcontentloaded',
+    });
     await settle(pGerente, 1500);
     await softClick(pGerente, pGerente.getByRole('button', { name: /^Mapa$/i }), 'aba Mapa', 8000);
     await beat(pGerente, 2000);
@@ -187,7 +221,12 @@ test('noite cheia: quatro telas ao mesmo tempo', async ({ playwright }) => {
     await beat(pGerente, 3000);
     await pGerente.reload({ waitUntil: 'domcontentloaded' }); // R4 em quadro
     await settle(pGerente, 2000);
-    await softClick(pGerente, pGerente.getByRole('button', { name: /^Mapa$/i }), 'Mapa (pós)', 8000);
+    await softClick(
+      pGerente,
+      pGerente.getByRole('button', { name: /^Mapa$/i }),
+      'Mapa (pós)',
+      8000,
+    );
     await beat(pGerente, 4000);
 
     await bPedidoFeito.espera(180_000);
@@ -215,9 +254,9 @@ test('noite cheia: quatro telas ao mesmo tempo', async ({ playwright }) => {
     // com a seta. Filtrar por "VERIFICAR PRESENÇA" (que só existe nele) evita
     // pegar a mesa 91 na lista "Pra liberar".
     const rotulo = pRecepcao.getByText(/VERIFICAR MESA ESCANEADA/i).first();
-    await rotulo.waitFor({ state: 'visible', timeout: 45_000 }).catch(() =>
-      console.log('  ⚠ card de verificação não apareceu na recepção'),
-    );
+    await rotulo
+      .waitFor({ state: 'visible', timeout: 45_000 })
+      .catch(() => console.log('  ⚠ card de verificação não apareceu na recepção'));
     await beat(pRecepcao, 2500); // deixa o card respirar em quadro
 
     const card = pRecepcao
@@ -226,7 +265,11 @@ test('noite cheia: quatro telas ao mesmo tempo', async ({ playwright }) => {
       .first();
     if (!(await softClick(pRecepcao, card, 'abrir verificação', 10_000))) {
       // fallback: o cartão pode ser um container clicável sem role acessível
-      await pRecepcao.getByText(/Mesa 91 ·/).first().click({ timeout: 8000 }).catch(() => {});
+      await pRecepcao
+        .getByText(/Mesa 91 ·/)
+        .first()
+        .click({ timeout: 8000 })
+        .catch(() => {});
       await settle(pRecepcao, 1500);
     }
     await settle(pRecepcao, 1500);
@@ -258,14 +301,19 @@ test('noite cheia: quatro telas ao mesmo tempo', async ({ playwright }) => {
     // Fica parada: o card tem que ENTRAR em quadro sozinho (R3)
     await bPedidoFeito.espera(300_000);
     const novo = pCozinha.getByRole('button', { name: /Preparar/i }).first();
-    await novo.waitFor({ state: 'visible', timeout: 60_000 }).catch(() =>
-      console.log('  ⚠ card não entrou no KDS'),
-    );
+    await novo
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .catch(() => console.log('  ⚠ card não entrou no KDS'));
     await beat(pCozinha, 4000); // deixa ler a observação do cliente no card
 
     await softClick(pCozinha, novo, 'Preparar', 10_000);
     await beat(pCozinha, 3500);
-    await softClick(pCozinha, pCozinha.getByRole('button', { name: /Pronto/i }).first(), 'Pronto!', 10_000);
+    await softClick(
+      pCozinha,
+      pCozinha.getByRole('button', { name: /Pronto/i }).first(),
+      'Pronto!',
+      10_000,
+    );
     await beat(pCozinha, 4000);
   };
 
@@ -282,10 +330,16 @@ test('noite cheia: quatro telas ao mesmo tempo', async ({ playwright }) => {
     if (await nome.isVisible().catch(() => false)) {
       await nome.pressSequentially(nomeA, { delay: 60 });
       await beat(pCliente, 600);
-      const cpf = pCliente.getByLabel(/seu cpf/i).or(pCliente.locator('input[inputmode="numeric"]').first());
+      const cpf = pCliente
+        .getByLabel(/seu cpf/i)
+        .or(pCliente.locator('input[inputmode="numeric"]').first());
       await cpf.pressSequentially(cpfA, { delay: 45 });
       await beat(pCliente, 800);
-      await softClick(pCliente, pCliente.getByRole('button', { name: /continuar|entrar|começar|→/i }), 'Continuar');
+      await softClick(
+        pCliente,
+        pCliente.getByRole('button', { name: /continuar|entrar|começar|→/i }),
+        'Continuar',
+      );
       bEscaneou.libera(); // nasce aqui o TTL de 60s do scan_verification
     }
 
@@ -302,7 +356,12 @@ test('noite cheia: quatro telas ao mesmo tempo', async ({ playwright }) => {
     await pCliente.goto(`${CLIENTE}/restaurant_dev/cardapio`, { waitUntil: 'domcontentloaded' });
     await settle(pCliente, 2000);
     await swipe(pCliente, -220, 16, 195, 520);
-    await softClick(pCliente, pCliente.getByText(/Picanha na Brasa/i).first(), 'Picanha na Brasa', 10_000);
+    await softClick(
+      pCliente,
+      pCliente.getByText(/Picanha na Brasa/i).first(),
+      'Picanha na Brasa',
+      10_000,
+    );
     await settle(pCliente, 1800);
     await swipe(pCliente, -300, 16, 195, 520);
 
@@ -316,63 +375,145 @@ test('noite cheia: quatro telas ao mesmo tempo', async ({ playwright }) => {
     }
 
     // CAMINHO 1 — comanda da mesa (permite dividir depois)
-    await softClick(pCliente, pCliente.getByRole('button', { name: /adicionar|pedir/i }).first(), 'adicionar', 10_000);
+    await softClick(
+      pCliente,
+      pCliente.getByRole('button', { name: /adicionar|pedir/i }).first(),
+      'adicionar',
+      10_000,
+    );
     await settle(pCliente, 1500);
-    await softClick(pCliente, pCliente.getByText(/Comanda da mesa/i).first(), 'Comanda da mesa', 8000);
-    await softClick(pCliente, pCliente.getByRole('button', { name: /Adicionar à comanda da mesa/i }).first(), 'confirmar comanda da mesa', 10_000);
+    await softClick(
+      pCliente,
+      pCliente.getByText(/Comanda da mesa/i).first(),
+      'Comanda da mesa',
+      8000,
+    );
+    await softClick(
+      pCliente,
+      pCliente.getByRole('button', { name: /Adicionar à comanda da mesa/i }).first(),
+      'confirmar comanda da mesa',
+      10_000,
+    );
     await beat(pCliente, 1800);
 
     // CAMINHO 2 — comanda individual (cada um paga o que pediu)
     await pCliente.goto(`${CLIENTE}/restaurant_dev/cardapio`, { waitUntil: 'domcontentloaded' });
     await settle(pCliente, 1500);
-    await softClick(pCliente, pCliente.getByText(/Bolinho de Bacalhau/i).first(), 'Bolinho de Bacalhau', 10_000);
+    await softClick(
+      pCliente,
+      pCliente.getByText(/Bolinho de Bacalhau/i).first(),
+      'Bolinho de Bacalhau',
+      10_000,
+    );
     await settle(pCliente, 1500);
-    await softClick(pCliente, pCliente.getByRole('button', { name: /adicionar|pedir/i }).first(), 'adicionar', 8000);
+    await softClick(
+      pCliente,
+      pCliente.getByRole('button', { name: /adicionar|pedir/i }).first(),
+      'adicionar',
+      8000,
+    );
     await settle(pCliente, 1200);
-    await softClick(pCliente, pCliente.getByText(/^Minha comanda$/i).first(), 'Minha comanda', 8000);
-    await softClick(pCliente, pCliente.getByRole('button', { name: /Adicionar à minha comanda/i }).first(), 'confirmar comanda individual', 10_000);
+    await softClick(
+      pCliente,
+      pCliente.getByText(/^Minha comanda$/i).first(),
+      'Minha comanda',
+      8000,
+    );
+    await softClick(
+      pCliente,
+      pCliente.getByRole('button', { name: /Adicionar à minha comanda/i }).first(),
+      'confirmar comanda individual',
+      10_000,
+    );
     await beat(pCliente, 1800);
 
     // Revisão + envio
-    await pCliente.goto(`${CLIENTE}/restaurant_dev/pedido/revisar`, { waitUntil: 'domcontentloaded' });
+    await pCliente.goto(`${CLIENTE}/restaurant_dev/pedido/revisar`, {
+      waitUntil: 'domcontentloaded',
+    });
     await settle(pCliente, 2000);
     await swipe(pCliente, -200, 14, 195, 520);
     await beat(pCliente, 1500);
 
-    await softClick(pCliente, pCliente.getByRole('button', { name: /Enviar para cozinha/i }).first(), 'Enviar para cozinha', 10_000);
+    await softClick(
+      pCliente,
+      pCliente.getByRole('button', { name: /Enviar para cozinha/i }).first(),
+      'Enviar para cozinha',
+      10_000,
+    );
     await settle(pCliente, 1500);
-    await softClick(pCliente, pCliente.getByRole('button', { name: /Confirmar agora/i }).first(), 'Confirmar agora', 12_000);
+    await softClick(
+      pCliente,
+      pCliente.getByRole('button', { name: /Confirmar agora/i }).first(),
+      'Confirmar agora',
+      12_000,
+    );
     await settle(pCliente, 2000);
     bPedidoFeito.libera();
     await beat(pCliente, 3500);
 
     // Cliente B entra (ator de apoio) para o split ter 2 participantes
-    await pClienteB.goto(`${API}/qr/qrtest91-public-token-fixed`, { waitUntil: 'domcontentloaded' }).catch(() => {});
+    await pClienteB
+      .goto(`${API}/qr/qrtest91-public-token-fixed`, { waitUntil: 'domcontentloaded' })
+      .catch(() => {});
     await pClienteB.waitForTimeout(2500);
     const nomeB = pClienteB.getByLabel(/seu nome/i).or(pClienteB.locator('input').first());
     if (await nomeB.isVisible().catch(() => false)) {
       await nomeB.fill('Ana Souza');
-      await pClienteB.locator('input[inputmode="numeric"]').first().fill(cpfB).catch(() => {});
-      await pClienteB.getByRole('button', { name: /continuar|entrar|→/i }).first().click().catch(() => {});
+      await pClienteB
+        .locator('input[inputmode="numeric"]')
+        .first()
+        .fill(cpfB)
+        .catch(() => {});
+      await pClienteB
+        .getByRole('button', { name: /continuar|entrar|→/i })
+        .first()
+        .click()
+        .catch(() => {});
     }
     // A aprova B pelo banner (quem decide é o cliente-host, não a recepção)
     await beat(pCliente, 3000);
-    await softClick(pCliente, pCliente.getByRole('button', { name: /Aprovar|Deixar entrar/i }).first(), 'aprovar cliente B', 15_000);
+    await softClick(
+      pCliente,
+      pCliente.getByRole('button', { name: /Aprovar|Deixar entrar/i }).first(),
+      'aprovar cliente B',
+      15_000,
+    );
     await beat(pCliente, 2500);
 
     // Conta: mostra os dois modos e a trava de short-pay
     await pCliente.goto(`${CLIENTE}/restaurant_dev/pagamento`, { waitUntil: 'domcontentloaded' });
     await settle(pCliente, 2000);
     await beat(pCliente, 2500);
-    await softClick(pCliente, pCliente.getByText(/Minha comanda/i).first(), 'toggle minha comanda', 6000);
+    await softClick(
+      pCliente,
+      pCliente.getByText(/Minha comanda/i).first(),
+      'toggle minha comanda',
+      6000,
+    );
     await beat(pCliente, 2500);
-    await softClick(pCliente, pCliente.getByText(/Conta da mesa/i).first(), 'toggle conta da mesa', 6000);
+    await softClick(
+      pCliente,
+      pCliente.getByText(/Conta da mesa/i).first(),
+      'toggle conta da mesa',
+      6000,
+    );
     await beat(pCliente, 2000);
 
-    await softClick(pCliente, pCliente.getByRole('button', { name: /Dividir conta/i }).first(), 'Dividir conta', 10_000);
+    await softClick(
+      pCliente,
+      pCliente.getByRole('button', { name: /Dividir conta/i }).first(),
+      'Dividir conta',
+      10_000,
+    );
     await settle(pCliente, 2000);
     for (const modo of [/^Igual$/i, /Por item/i, /Customizado/i]) {
-      await softClick(pCliente, pCliente.getByRole('button', { name: modo }).first(), String(modo), 6000);
+      await softClick(
+        pCliente,
+        pCliente.getByRole('button', { name: modo }).first(),
+        String(modo),
+        6000,
+      );
       await beat(pCliente, 2200);
     }
     await beat(pCliente, 3000);

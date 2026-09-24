@@ -51,9 +51,9 @@ export default defineConfig({
       use: {
         ...devices['iPhone 14'],
         // O size TEM que bater com o viewport. O Playwright não faz upscale: se o
-    // vídeo for maior que a página, ele desenha a página no canto superior
-    // esquerdo e preenche o resto de cinza. O aumento pra 1080p é no ffmpeg.
-    video: { mode: 'on', size: { width: 390, height: 844 } },
+        // vídeo for maior que a página, ele desenha a página no canto superior
+        // esquerdo e preenche o resto de cinza. O aumento pra 1080p é no ffmpeg.
+        video: { mode: 'on', size: { width: 390, height: 844 } },
       },
     },
     {

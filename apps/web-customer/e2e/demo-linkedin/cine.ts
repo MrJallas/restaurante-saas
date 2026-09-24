@@ -28,9 +28,7 @@ export async function smoothScroll(page: Page, distance: number, steps = 24) {
       const rolavel = (el: Element | null): boolean => {
         if (!el) return false;
         const s = getComputedStyle(el);
-        return (
-          /(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 8
-        );
+        return /(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 8;
       };
 
       const antes = window.scrollY;
@@ -145,7 +143,6 @@ export async function settle(page: Page, ms = 1200) {
   await beat(page, ms);
 }
 
-
 /**
  * Esconde os indicadores de desenvolvimento do Next (badge do Dev Tools e o
  * toast "Compiling…").
@@ -165,13 +162,15 @@ export async function esconderDevTools(page: Page) {
     #__next-prerender-indicator { display: none !important; }
   `;
   await page.addStyleTag({ content: css }).catch(() => {});
-  await page.addInitScript((c) => {
-    const por = () => {
-      const s = document.createElement('style');
-      s.textContent = c;
-      document.head?.appendChild(s);
-    };
-    if (document.head) por();
-    else document.addEventListener('DOMContentLoaded', por);
-  }, css).catch(() => {});
+  await page
+    .addInitScript((c) => {
+      const por = () => {
+        const s = document.createElement('style');
+        s.textContent = c;
+        document.head?.appendChild(s);
+      };
+      if (document.head) por();
+      else document.addEventListener('DOMContentLoaded', por);
+    }, css)
+    .catch(() => {});
 }

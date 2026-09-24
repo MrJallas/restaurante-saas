@@ -17,7 +17,11 @@ test('gerente: painel ao vivo e operação', async ({ page }) => {
   await beat(page, 1200);
 
   for (const aba of [/opera[çc][ãa]o/i, /equipe/i, /financeiro/i]) {
-    const foi = await softClick(page, page.getByRole('link', { name: aba }).or(page.getByRole('button', { name: aba })), String(aba));
+    const foi = await softClick(
+      page,
+      page.getByRole('link', { name: aba }).or(page.getByRole('button', { name: aba })),
+      String(aba),
+    );
     if (foi) {
       await settle(page, 2000);
       await smoothScroll(page, 450);

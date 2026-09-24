@@ -38,7 +38,11 @@ test('cliente: do QR ao pedido', async ({ page }) => {
     const cpf = page.getByLabel(/seu cpf/i).or(page.locator('input[inputmode="numeric"]').first());
     await typeSlow(cpf, CPF, 35);
     await beat(page, 900);
-    await softClick(page, page.getByRole('button', { name: /continuar|entrar|começar|→/i }), 'CTA welcome');
+    await softClick(
+      page,
+      page.getByRole('button', { name: /continuar|entrar|começar|→/i }),
+      'CTA welcome',
+    );
     await settle(page, 2000);
   } else {
     console.log('  · sessão já reconhecida — home direto');
@@ -48,9 +52,7 @@ test('cliente: do QR ao pedido', async ({ page }) => {
   await beat(page, 2600);
 
   // 4. Conversa: pede indicação ao assistente.
-  const campo = page
-    .getByPlaceholder(/digite aqui/i)
-    .or(page.getByRole('textbox').last());
+  const campo = page.getByPlaceholder(/digite aqui/i).or(page.getByRole('textbox').last());
 
   const temChat = await campo
     .waitFor({ state: 'visible', timeout: 6000 })

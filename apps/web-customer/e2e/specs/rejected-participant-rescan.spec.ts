@@ -165,7 +165,9 @@ test.describe('participante rejeitado · recuperação por re-scan', () => {
     await page.goto(`/${SLUG}/mesa/${TABLE}`);
 
     await expect(
-      page.getByText('O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.'),
+      page.getByText(
+        'O host da mesa não autorizou sua entrada. Tente outra mesa ou peça ao garçom.',
+      ),
     ).toBeVisible({ timeout: 20_000 });
     // Rejeição é decisão terminal: sem botão de reload mentiroso, só o
     // caminho real (novo scan físico).
