@@ -2,9 +2,22 @@ import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import type { Db } from 'mongodb';
 import { MongoService } from '../../infra/mongo/mongo.service';
+import { ensureIndexes, type EnsuredIndex } from '../../infra/mongo/ensure-indexes';
 
 const THREADS_COLLECTION = 'chat_threads';
 const MESSAGES_COLLECTION = 'chat_messages';
+
+// Nomes canônicos = packages/database/scripts/mongo-init.ts e mongo-init.js.
+const TTL_INDEX: EnsuredIndex = {
+  key: { expiresAt: 1 },
+  name: 'expiresAt_ttl',
+  expireAfterSeconds: 0,
+};
+const THREAD_INDEXES: EnsuredIndex[] = [TTL_INDEX];
+const MESSAGE_INDEXES: EnsuredIndex[] = [
+  TTL_INDEX,
+  { key: { threadId: 1, createdAt: 1 }, name: 'threadId_createdAt' },
+];
 
 /**
  * Default TTL for chat docs · 30 days. Per docs/produto/funcionalidades/historico-de-chat-e-lgpd.md
@@ -100,15 +113,16 @@ export class ChatHistoryService {
     const db = this.mongo.tryDb();
     if (!db) return;
     try {
-      await db
-        .collection<ThreadDoc>(THREADS_COLLECTION)
-        .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-      await db
-        .collection<MessageDoc>(MESSAGES_COLLECTION)
-        .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-      await db
-        .collection<MessageDoc>(MESSAGES_COLLECTION)
-        .createIndex({ threadId: 1, createdAt: 1 });
+      const conflicts = [
+        ...(await ensureIndexes(db.collection<ThreadDoc>(THREADS_COLLECTION), THREAD_INDEXES)),
+        ...(await ensureIndexes(db.collection<MessageDoc>(MESSAGES_COLLECTION), MESSAGE_INDEXES)),
+      ];
+      // Divergência de definição não some tentando de novo a cada gravação.
+      if (conflicts.length) {
+        this.logger.error(
+          `Índices do chat divergentes (${conflicts.join(', ')}); rode npm run mongo:init`,
+        );
+      }
       this.indexesEnsured = true;
     } catch (err) {
       this.logger?.warn?.(`Falha ao garantir TTL index do chat: ${(err as Error).message}`);

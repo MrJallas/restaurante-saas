@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import type { CustomerCourtesyDto, CustomerCourtesyHistoryDto } from '@restaurant/shared-types';
 import { MongoService } from '../../infra/mongo/mongo.service';
+import { ensureIndexes, type EnsuredIndex } from '../../infra/mongo/ensure-indexes';
 import { TenantConnectionProvider } from '../tenant/tenant-connection.provider';
 import { unwrapRows } from '../tenant/query-utils';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -33,6 +34,17 @@ export interface CourtesyRow {
 const VALID_TYPES = ['Sobremesa', 'Drink', 'Desconto', 'Couvert', 'Mensagem', 'Outro'];
 const VALID_STATUS: CourtesyStatus[] = ['pendente', 'aceita', 'recusada'];
 const HISTORY_COLLECTION = 'customer_courtesy_history';
+// Nomes canônicos = packages/database/scripts/mongo-init.ts e mongo-init.js.
+const HISTORY_INDEXES: EnsuredIndex[] = [
+  { key: { expiresAt: 1 }, name: 'expiresAt_ttl', expireAfterSeconds: 0 },
+  { key: { tenantId: 1, customerId: 1, createdAt: -1 }, name: 'tenantId_customerId_createdAt' },
+  {
+    key: { tenantId: 1, customerId: 1, courtesyId: 1 },
+    name: 'tenantId_customerId_courtesyId_unique',
+    unique: true,
+  },
+  { key: { tenantId: 1, courtesyId: 1 }, name: 'tenantId_courtesyId' },
+];
 const HISTORY_TTL_DAYS = 30;
 
 interface CourtesyHistoryDoc {
@@ -437,11 +449,13 @@ export class CourtesiesService {
     const db = this.mongo.tryDb();
     if (!db) return;
     try {
-      const collection = db.collection<CourtesyHistoryDoc>(HISTORY_COLLECTION);
-      await collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-      await collection.createIndex({ tenantId: 1, customerId: 1, createdAt: -1 });
-      await collection.createIndex({ tenantId: 1, customerId: 1, courtesyId: 1 }, { unique: true });
-      await collection.createIndex({ tenantId: 1, courtesyId: 1 });
+      const conflicts = await ensureIndexes(
+        db.collection<CourtesyHistoryDoc>(HISTORY_COLLECTION),
+        HISTORY_INDEXES,
+      );
+      if (conflicts.length) {
+        this.logger.error(`Índices divergentes (${conflicts.join(', ')}); rode npm run mongo:init`);
+      }
       this.historyIndexesEnsured = true;
     } catch (err) {
       this.logger.warn(

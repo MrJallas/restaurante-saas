@@ -66,10 +66,11 @@ O que cada item significa e as ressalvas de reaplicação estão em
   vazio. No banco `restaurant_chat`, cria os índices de `chat_threads`, `chat_messages` e
   `customer_courtesy_history` (expiração por `expiresAt`, campos em camelCase) e os de `shift_logs`; no
   banco `restaurant_security`, os de `qr_scan_events`, `scan_verification_events` e
-  `security_audit_events`, também com expiração por `expiresAt` e com nome explícito, igual ao de
-  `scripts/mongo-init.ts`.
+  `security_audit_events`, também com expiração por `expiresAt`. Todo índice tem nome explícito, igual
+  ao de `scripts/mongo-init.ts` e ao que a API garante na primeira gravação.
 - `scripts/mongo-init.ts` (`npm run mongo:init`) faz o mesmo, de forma idempotente, sobre um volume que
-  já existe (lê `MONGODB_URI`, `MONGODB_DB`, `MONGODB_SECURITY_DB`). Rode de dentro do container da API,
-  porque o MongoDB não publica porta no computador.
+  já existe (lê `MONGODB_URI`, `MONGODB_DB`, `MONGODB_SECURITY_DB`). Num volume antigo, com o índice
+  sob o nome padrão do MongoDB (`expiresAt_1`), derruba e recria com o nome canônico. Rode de dentro do
+  container da API, porque o MongoDB não publica porta no computador.
 
 Onde cada dado vive e por quê: [dados e armazenamento](../../docs/arquitetura/dados-e-armazenamento.md).

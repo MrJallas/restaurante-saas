@@ -85,18 +85,17 @@ Os nomes dos bancos vêm de `MONGODB_DB` e `MONGODB_SECURITY_DB`. Os índices (T
 criados por `packages/database/mongo-init.js`, que o container do MongoDB executa **só no primeiro
 boot** de um volume vazio. Para um volume existente, rode de dentro do container da API:
 `docker exec restaurant-api sh -c "cd /repo/packages/database && npm run mongo:init"` (versão
-`scripts/mongo-init.ts`). O histórico de conversas também garante o
-próprio índice TTL na primeira gravação.
+`scripts/mongo-init.ts`). O histórico de conversas e o de cortesias também garantem os próprios
+índices na primeira gravação.
 
-Em `restaurant_security`, os índices têm nome explícito (`tenantId_createdAt`,
-`tenantId_tableId_createdAt`, `tenantId_customerId_createdAt`, `eventType_createdAt`,
-`expiresAt_ttl`), o mesmo nos dois scripts. Um volume criado antes de 2026-09-24 guarda esses índices
-com o nome padrão do MongoDB (`tenantId_1_createdAt_-1` etc.): a consulta funciona igual, mas o teste de
-auditoria do `physical-qr-heavy` falha e o `npm run mongo:init` para com `IndexOptionsConflict`.
-Recriar o volume do MongoDB resolve. Nas coleções de `restaurant_chat` os nomes seguem divergentes
-entre o `mongo-init.js` (padrão do MongoDB, o mesmo que a API usa ao garantir o TTL) e o
-`mongo-init.ts` (explícitos); por isso o `npm run mongo:init` ainda falha num volume criado pelo
-primeiro boot.
+Todo índice tem nome explícito, o mesmo nos dois scripts e na API (`expiresAt_ttl`,
+`threadId_createdAt`, `tenantId_createdAt` etc.; a lista completa está em `scripts/mongo-init.ts`).
+Um volume criado antes de 2026-09-24 guarda os mesmos índices com o nome padrão do MongoDB
+(`expiresAt_1`, `tenantId_1_createdAt_-1`): a consulta e a expiração funcionam igual e a API os aceita,
+mas o teste de auditoria do `physical-qr-heavy` confere os nomes. O `npm run mongo:init` converge esse
+volume: derruba o índice de nome divergente e cria o canônico, sem apagar documento. Se a API encontra
+a mesma chave com outra definição (sem TTL, sem unicidade), registra um erro pedindo o
+`mongo:init`; ela não derruba índice sozinha.
 
 **Linha do tempo da sessão.** O emissor de eventos do WebSocket grava cada evento relevante em
 `session_timeline`, sem bloquear o fluxo. Se o MongoDB cair, os eventos daquele período se perdem;

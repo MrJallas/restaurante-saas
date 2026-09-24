@@ -4,12 +4,18 @@
  * Cria o database `restaurant_chat`, as collections `chat_threads` e
  * `chat_messages`, e os indices documentados em
  * `docs/arquitetura/dados-e-armazenamento.md`. Pode rodar quantas vezes for
- * preciso — `createIndex` e no-op se o indice ja existe com mesmo spec.
+ * preciso — `createIndex` e no-op se o indice ja existe com mesmo nome e spec.
+ *
+ * Os nomes daqui sao os canonicos: `mongo-init.js` (primeiro boot) e a API
+ * (que garante TTL e consulta na primeira gravacao) usam os mesmos. Volume
+ * criado antes do alinhamento guarda o mesmo indice com o nome padrao do
+ * MongoDB (`expiresAt_1`); o script converge em vez de parar (ver
+ * `ensureIndexes`).
  *
  * Uso:
  *   MONGODB_URI=mongodb://localhost:27017 ts-node scripts/mongo-init.ts
  */
-import { MongoClient, IndexSpecification, CreateIndexesOptions } from 'mongodb';
+import { MongoClient, CreateIndexesOptions, Document } from 'mongodb';
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DB_NAME = process.env.MONGODB_DB || 'restaurant_chat';
@@ -17,15 +23,21 @@ const SECURITY_DB_NAME = process.env.MONGODB_SECURITY_DB || 'restaurant_security
 
 interface IndexDef {
   name: string;
-  spec: IndexSpecification;
+  spec: Record<string, 1 | -1>;
   options?: CreateIndexesOptions;
 }
+
+/** Mesma chave ja existe com outro nome ou outras opcoes. */
+const INDEX_OPTIONS_CONFLICT = 85;
+/** Mesmo nome ja existe com outra chave. */
+const INDEX_KEY_SPECS_CONFLICT = 86;
 
 // Round 9 (B-NEW-40): TODOS os indexes em camelCase, alinhados com os
 // campos que `chat-history.service.ts` realmente armazena. Antes os
 // indexes em snake_case eram inúteis (Mongo schemaless: campos snake_case
 // não existem nos docs), e LGPD instant erasure caía em collection scan.
-// Agora alinhado com `mongo-init.js` (Docker first-boot).
+// Nomes e specs iguais aos de `mongo-init.js` (Docker first-boot) e aos que a
+// API garante em runtime (chat-history e courtesies).
 const THREAD_INDEXES: IndexDef[] = [
   {
     // Listing rapido pra historico do cliente: tenant + customer +
@@ -168,9 +180,35 @@ async function ensureIndexes(
   const coll = db.collection(collection);
   for (const ix of indexes) {
     const opts: CreateIndexesOptions = { name: ix.name, ...(ix.options ?? {}) };
-    await coll.createIndex(ix.spec, opts);
-    console.log(`    -> index ${collection}.${ix.name}`);
+    try {
+      await coll.createIndex(ix.spec, opts);
+      console.log(`    -> index ${collection}.${ix.name}`);
+    } catch (err) {
+      const code = (err as { code?: unknown }).code;
+      if (code !== INDEX_OPTIONS_CONFLICT && code !== INDEX_KEY_SPECS_CONFLICT) throw err;
+      // O MongoDB nao renomeia nem altera indice: `createIndex` sobre a mesma
+      // chave com outro nome (85) ou sobre o mesmo nome com outra chave (86)
+      // falha. Converge derrubando o divergente e criando o canonico. A janela
+      // sem o indice dura o tempo do create; no indice unico, uma duplicata
+      // gravada nesse meio faz o create falhar alto, sem perder dado.
+      const divergent = (await coll.listIndexes().toArray()).filter(
+        (current) =>
+          current.name !== '_id_' &&
+          (current.name === ix.name || sameKey(current.key as Document, ix.spec)),
+      );
+      if (!divergent.length) throw err;
+      for (const current of divergent) {
+        await coll.dropIndex(current.name as string);
+        console.log(`    - dropped divergent index ${collection}.${current.name}`);
+      }
+      await coll.createIndex(ix.spec, opts);
+      console.log(`    -> index ${collection}.${ix.name} (recriado)`);
+    }
   }
+}
+
+function sameKey(a: Document, b: Record<string, number>): boolean {
+  return JSON.stringify(Object.entries(a)) === JSON.stringify(Object.entries(b));
 }
 
 async function dropLegacyIndexes(

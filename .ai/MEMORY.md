@@ -1129,3 +1129,11 @@ unless-stopped` + healthcheck de compose (visibilidade no docker ps).
 - Medição sem WebKit (sandbox sem acesso ao CDN do Playwright): Chromium com o
   perfil iPhone 14 via config local fora do repo. Não é o gate oficial; o número
   de referência continua sendo WebKit no Mac.
+
+## Contratos fechados em 2026-09-24
+
+- Índices do Mongo têm nome canônico em três lugares: `mongo-init.js` (primeiro
+  boot), `scripts/mongo-init.ts` e a API (`infra/mongo/ensure-indexes.ts`, usado
+  por chat-history e courtesies). Índice novo entra nos três com o mesmo nome. A
+  API aceita o nome padrão do Mongo de volumes antigos e nunca derruba índice; o
+  `npm run mongo:init` converge (drop + create) e é o remédio para volume antigo.

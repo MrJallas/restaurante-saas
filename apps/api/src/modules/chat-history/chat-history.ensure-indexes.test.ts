@@ -14,17 +14,28 @@
 import { ChatHistoryService } from './chat-history.service';
 import type { MongoService } from '../../infra/mongo/mongo.service';
 
-function fakeMongo() {
-  const createIndexCalls: Array<{ collection: string; key: Record<string, number> }> = [];
+type CreateIndex = (key: Record<string, number>) => Promise<string>;
+
+function fakeMongo(
+  createIndex: CreateIndex = async () => 'ok',
+  existingIndexes: Array<Record<string, unknown>> = [],
+) {
+  const createIndexCalls: Array<{
+    collection: string;
+    key: Record<string, number>;
+    options: Record<string, unknown>;
+  }> = [];
   const collections = new Map<string, unknown>();
 
   function collection(name: string) {
     if (!collections.has(name)) {
       collections.set(name, {
-        createIndex: async (key: Record<string, number>) => {
-          createIndexCalls.push({ collection: name, key });
-          return 'ok';
+        collectionName: name,
+        createIndex: async (key: Record<string, number>, options: Record<string, unknown>) => {
+          createIndexCalls.push({ collection: name, key, options });
+          return createIndex(key);
         },
+        listIndexes: () => ({ toArray: async () => existingIndexes }),
         findOne: async () => null,
         updateOne: async () => ({ upsertedId: null }),
         insertMany: async () => ({ insertedCount: 2 }),
@@ -57,6 +68,46 @@ describe('ChatHistoryService — índices TTL garantidos em runtime (LGPD)', () 
       .sort();
     expect(ttlTargets).toHaveLength(2); // threads + messages
     expect(createIndexCalls.some((c) => c.key.threadId === 1 && c.key.createdAt === 1)).toBe(true);
+  });
+
+  it('usa os nomes canônicos do mongo-init (expiresAt_ttl, threadId_createdAt)', async () => {
+    const { mongo, createIndexCalls } = fakeMongo();
+    await new ChatHistoryService(mongo).appendTurn(TURN);
+
+    expect(createIndexCalls.map((c) => `${c.collection}.${String(c.options.name)}`).sort()).toEqual(
+      [
+        'chat_messages.expiresAt_ttl',
+        'chat_messages.threadId_createdAt',
+        'chat_threads.expiresAt_ttl',
+      ],
+    );
+  });
+
+  it('volume antigo com os nomes padrão (85) → aceita e não repete a cada gravação', async () => {
+    const { mongo, createIndexCalls } = fakeMongo(async () => {
+      throw Object.assign(new Error('Index already exists with a different name'), { code: 85 });
+    }, [
+      { name: 'expiresAt_1', key: { expiresAt: 1 }, expireAfterSeconds: 0 },
+      { name: 'threadId_1_createdAt_1', key: { threadId: 1, createdAt: 1 } },
+    ]);
+    const svc = new ChatHistoryService(mongo);
+    await svc.appendTurn(TURN);
+    const after1st = createIndexCalls.length;
+    await svc.appendTurn(TURN);
+    expect(createIndexCalls.length).toBe(after1st);
+  });
+
+  it('Mongo instável no 1º write → a gravação seguinte tenta os índices de novo', async () => {
+    let failures = 1;
+    const { mongo, createIndexCalls } = fakeMongo(async () => {
+      if (failures-- > 0) throw new Error('connection reset');
+      return 'ok';
+    });
+    const svc = new ChatHistoryService(mongo);
+    await svc.appendTurn(TURN);
+    const after1st = createIndexCalls.length;
+    await svc.appendTurn(TURN);
+    expect(createIndexCalls.length).toBeGreaterThan(after1st);
   });
 
   it('idempotente: 2º appendTurn não re-cria índices', async () => {

@@ -23,7 +23,8 @@ fora do ar, a conversa segue e o turno simplesmente não é gravado no históric
   MongoDB apaga o documento depois dessa data. A conversa conta os 30 dias a partir de quando foi
   criada.
 - **Índice garantido duas vezes**: pelo `packages/database/mongo-init.js` no primeiro boot do volume
-  e pela própria API na primeira gravação, para volumes criados antes do script.
+  e pela própria API na primeira gravação, para volumes criados antes do script. Os dois usam o mesmo
+  nome (`expiresAt_ttl`); a API aceita o nome antigo (`expiresAt_1`) de volumes anteriores.
 - **No máximo 80 conversas por cliente.** Ao criar a 81ª, as mais antigas são apagadas.
 - **No máximo 50 mensagens por sessão de mesa** com o assistente; depois disso a API responde que o
   limite foi atingido (`MAX_MESSAGES_PER_SESSION` em `assistant.service.ts`).
