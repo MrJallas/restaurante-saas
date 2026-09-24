@@ -181,7 +181,7 @@ services:
       LLM_MODEL_CLASSIFIER: ${LLM_MODEL_CLASSIFIER:-qwen2.5-7b-instruct-mlx}
       # LM Studio: evita que modelos reasoning consumam todos os 500 tokens
       # em raciocínio oculto e devolvam `content` vazio.
-      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-none}
+      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT-none}
       LLM_REQUEST_TIMEOUT: ${LLM_REQUEST_TIMEOUT:-90}
       LLM_COMPACT_PROMPT: ${LLM_COMPACT_PROMPT:-true}
       LLM_COMPACT_TOOL_SCHEMAS: ${LLM_COMPACT_TOOL_SCHEMAS:-true}
