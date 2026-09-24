@@ -82,7 +82,6 @@ _api_client = _build_api_client()
 def _context_api_client(
     tenant_id: str | None,
     session_token: str | None,
-    staff_id: str | None = None,
 ):
     """
     Scope the process-wide apps/api client to one tool invocation.
@@ -90,13 +89,17 @@ def _context_api_client(
     Tool modules use canonical paths like `/menu/search`; apps/api routes are
     tenant-prefixed and menu routes require `x-session-token`. This wrapper
     adds both without making every tool know about HTTP auth details.
+
+    Never staff credentials: the shared STAFF_API_KEY plus an `x-staff-id`
+    picked by this service would make it a confused deputy (see
+    `tools_dispatch`), and apps/api refuses a bare `x-staff-id` wherever the
+    staff session token is mandatory.
     """
     if not _api_client:
         return None
 
     clean_tenant = (tenant_id or "").strip().strip("/")
     clean_session = (session_token or "").strip()
-    clean_staff = (staff_id or "").strip()
 
     def _call(method: str, path: str, body=None):
         normalised = path if path.startswith("/") else f"/{path}"
@@ -107,10 +110,6 @@ def _context_api_client(
         headers = {}
         if clean_session:
             headers["x-session-token"] = clean_session
-        if clean_staff:
-            headers["x-staff-id"] = clean_staff
-            if settings.STAFF_API_KEY:
-                headers["x-staff-key"] = settings.STAFF_API_KEY
         return _api_client(method, normalised, body, headers=headers)
 
     return _call

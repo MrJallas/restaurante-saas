@@ -209,9 +209,9 @@ Staff usa poucos `data-testid`; preferir roles, labels e texto visivel:
 - Customer auth usa cookie/header `session_token` no Redis.
 - Staff auth: pessoa = `x-staff-token` do login CPF+PIN (no web-staff, cookie
   httpOnly `staff_token` que o proxy converte); `x-staff-key` = estação/TV via
-  proxy, não identifica ninguém. `x-staff-id` legado: os guards de papel só o
-  aceitam fora de prod, mas o `requireStaffId` das rotas só-StaffOnly ainda o
-  aceita com a key em qualquer ambiente (pendência aberta em 2026-09-24).
+  proxy, não identifica ninguém. `x-staff-id` legado só vale onde o token não é
+  obrigatório (guards de papel, `requireStaffId` e handshake WS por key); o
+  proxy não o repassa e o ai-service não manda credencial de staff.
 - WS tem rooms de tenant, session, customer, staff e manager.
 - Eventos importantes: `order:*`, `waiter:*`, `scan_verification.*`,
   `participant:*`, `table_merge.*`, `complaint.*`, `staff_message.*`,

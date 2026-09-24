@@ -27,6 +27,8 @@ Em ordem (`events.gateway.ts`):
    dono também em `tenant:<slug>`. Sessão marcada para troca de PIN é desconectada.
 3. **Chave de serviço.** `x-staff-key` com `x-staff-id` e `x-tenant-slug` (caminho antigo; nenhum app
    atual o usa: o navegador não tem a chave, e as TVs consultam a fila por HTTP em vez de abrir socket).
+   Como o funcionário e o papel vêm de cabeçalhos declarados, o caminho é recusado onde o token de sessão
+   é obrigatório (produção, staging, preview ou `STAFF_SESSION_REQUIRED=true`).
 4. **Mesa.** `x-session-token` (cabeçalho ou `auth.sessionToken`): sessão de mesa; o cliente
    reconhecido pelo cookie é associado ao socket.
 5. Sem credencial válida: `error` e desconexão.

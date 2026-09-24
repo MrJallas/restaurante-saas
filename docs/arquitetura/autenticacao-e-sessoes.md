@@ -63,15 +63,20 @@ flowchart TD
    resposta e o grava no cookie httpOnly `staff_token`. Daí em diante, toda chamada do app vai para
    `/api/proxy/...`; o proxy acrescenta `x-staff-token` (do cookie) e `x-staff-key` (a
    `STAFF_API_KEY`, que só existe no servidor) e repassa à API. Sem cookie, o proxy responde 401 sem
-   chamar a API. Nenhuma chave vai para o código do navegador.
+   chamar a API. Nenhuma chave vai para o código do navegador, e o proxy não repassa o `x-staff-id`
+   que o navegador mande: a identidade é só a do token.
 3. **`StaffOnlyGuard`** (`common/guards/staff-only.guard.ts`) aceita:
    - `x-staff-token` válido e do mesmo restaurante; um token presente e inválido dá 403, sem tentar a
      chave; token marcado para troca de PIN dá 403 `AUTH_PIN_CHANGE_REQUIRED`; ou
    - `x-staff-key` igual à `STAFF_API_KEY` (comparação em tempo constante), usada pelo proxy e pelas TVs.
-4. **Papel.** `ManagerOnlyGuard`, `HostOrManagerGuard`, `KitchenOrManagerGuard` e `OwnerOnlyGuard`
-   preferem a identidade do token e reconferem o papel no banco. O cabeçalho antigo `x-staff-id` só
-   é aceito quando o token não é obrigatório: fora de produção, staging e preview, e com
-   `STAFF_SESSION_REQUIRED` diferente de `true` (`common/guards/staff-auth-context.ts`).
+4. **Papel e autoria.** `ManagerOnlyGuard`, `HostOrManagerGuard`, `KitchenOrManagerGuard` e
+   `OwnerOnlyGuard` preferem a identidade do token e reconferem o papel no banco; nas rotas só com
+   `StaffOnlyGuard`, quem registra a autoria (atender chamado, levar e entregar pedido, assumir
+   entrega) é o `CallerResolverService`, pela mesma regra. O cabeçalho antigo `x-staff-id` só é aceito
+   quando o token não é obrigatório: fora de produção, staging e preview, e com
+   `STAFF_SESSION_REQUIRED` diferente de `true` (`common/guards/staff-auth-context.ts`). Onde é
+   obrigatório, a chave compartilhada sozinha não identifica ninguém: serve à TV como estação (fila,
+   preparo com `station` e "chamar garçom", gravado como chamada da estação).
 5. **Destino por papel** (`homeForStaffRole`): dono e gerente → `/manager`; recepção → `/host`;
    garçom → `/waiter`; cozinha → `/cozinha`; bar → `/bar`; caixa → `/cashier`. PIN temporário leva a
    `/trocar-pin`.

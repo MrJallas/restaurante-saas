@@ -23,7 +23,10 @@ const STAFF_KEY = process.env.STAFF_API_KEY || '';
 const STAFF_TOKEN_COOKIE = 'staff_token';
 const STAFF_TOKEN_MAX_AGE = 12 * 60 * 60; // 12h, igual ao TTL do token no Redis
 
-const FORWARDED_REQUEST_HEADERS = new Set(['accept', 'content-type', 'user-agent', 'x-staff-id']);
+// `x-staff-id` NÃO passa: a identidade da pessoa é o `x-staff-token` do cookie.
+// Nas rotas de TV (sem cookie) o proxy injeta a key, e um `x-staff-id` vindo do
+// browser virava identidade escolhida pelo cliente na API (ex.: called_by).
+const FORWARDED_REQUEST_HEADERS = new Set(['accept', 'content-type', 'user-agent']);
 const FORWARDED_RESPONSE_HEADERS = new Set(['content-type', 'cache-control']);
 
 /** Rotas de TV pública (estação anônima) — gate por PIN, sem login. */

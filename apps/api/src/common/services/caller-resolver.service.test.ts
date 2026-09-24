@@ -8,9 +8,10 @@
  * StaffOnlyGuard. Agora:
  *   - com `req.staffAuth` (token verificado) → o staffId vem do TOKEN,
  *     ignorando o header; header divergente vira warn (spoof ou bug).
- *   - sem `req.staffAuth` (fluxo key/TV legado) → fallback pro header,
- *     comportamento ATUAL preservado (shape UUID + cross-check DB no
- *     requireActiveStaffId).
+ *   - sem `req.staffAuth` (fluxo key/TV legado) → fallback pro header
+ *     (shape UUID + cross-check DB no requireActiveStaffId), mas SÓ onde o
+ *     token não é obrigatório; em production/staging/preview ou com
+ *     STAFF_SESSION_REQUIRED=true o header solto dá 401 AUTH_MISSING.
  */
 
 import { HttpException, HttpStatus, Logger } from '@nestjs/common';
@@ -143,6 +144,69 @@ describe('CallerResolverService — identidade staff do token (gate #34)', () =>
     it('sem staffAuth e sem header → null (comportamento atual)', () => {
       const { service } = makeService();
       expect(service.tryGetStaffId(reqWith({}))).toBeNull();
+    });
+  });
+
+  // Onde o token é obrigatório, o header solto deixa de ser identidade — mesma
+  // regra do resolveAuthenticatedStaff. Antes, com a key compartilhada, qualquer
+  // `x-staff-id` de staff ativo passava nas rotas só StaffOnlyGuard.
+  describe('token obrigatório (production/staging/preview ou STAFF_SESSION_REQUIRED)', () => {
+    const ENV_KEYS = ['NODE_ENV', 'APP_ENV', 'VERCEL_ENV', 'STAFF_SESSION_REQUIRED'] as const;
+    let saved: Record<string, string | undefined>;
+
+    beforeEach(() => {
+      saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+    });
+    afterEach(() => {
+      for (const k of ENV_KEYS) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    });
+
+    it.each([
+      ['NODE_ENV=production', { NODE_ENV: 'production' }],
+      ['APP_ENV=staging', { APP_ENV: 'staging' }],
+      ['VERCEL_ENV=preview', { VERCEL_ENV: 'preview' }],
+      ['STAFF_SESSION_REQUIRED=true', { STAFF_SESSION_REQUIRED: 'true' }],
+    ])('%s: x-staff-id válido sem token → 401 AUTH_MISSING', (_label, env) => {
+      Object.assign(process.env, env);
+      const { service } = makeService();
+      const req = reqWith({ 'x-staff-id': OTHER_STAFF_ID });
+
+      let caught: unknown;
+      try {
+        service.requireStaffId(req);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(HttpException);
+      expect((caught as HttpException).getStatus()).toBe(HttpStatus.UNAUTHORIZED);
+      expect((caught as HttpException).getResponse()).toMatchObject({ code: 'AUTH_MISSING' });
+    });
+
+    it('com token verificado continua resolvendo pelo token', () => {
+      process.env.NODE_ENV = 'production';
+      const { service } = makeService();
+      expect(service.requireStaffId(reqWith({ 'x-staff-id': OTHER_STAFF_ID }, staffAuth()))).toBe(
+        TOKEN_STAFF_ID,
+      );
+    });
+
+    it('requireActiveStaffId sem token → 401 antes de consultar o banco', async () => {
+      process.env.NODE_ENV = 'production';
+      const { service, query } = makeService([{ ok: 1 }]);
+
+      await expect(
+        service.requireActiveStaffId(reqWith({ 'x-staff-id': OTHER_STAFF_ID })),
+      ).rejects.toMatchObject({ status: HttpStatus.UNAUTHORIZED });
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it('tryGetStaffId sem token → null', () => {
+      process.env.STAFF_SESSION_REQUIRED = 'true';
+      const { service } = makeService();
+      expect(service.tryGetStaffId(reqWith({ 'x-staff-id': OTHER_STAFF_ID }))).toBeNull();
     });
   });
 });

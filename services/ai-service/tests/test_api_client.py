@@ -81,23 +81,23 @@ def test_context_api_client_prefixes_tenant_and_session_header(monkeypatch):
     assert api.call_headers == [{"x-session-token": "sess-1"}]
 
 
-def test_context_api_client_forwards_staff_headers(monkeypatch):
+def test_context_api_client_never_sends_staff_credentials(monkeypatch):
+    """Even with STAFF_API_KEY configured, tool calls carry only the table session.
+
+    The shared key plus an `x-staff-id` chosen by this service would let any
+    tool act as any staff member (confused deputy); apps/api also refuses a
+    bare `x-staff-id` wherever the staff session token is mandatory.
+    """
     api = RecordingApiClient(default={"ok": True})
     monkeypatch.setattr(main, "_api_client", api)
     monkeypatch.setattr(main.settings, "STAFF_API_KEY", "staff-secret")
 
-    scoped = main._context_api_client("restaurant_dev", "sess-1", "staff-1")
+    scoped = main._context_api_client("restaurant_dev", "sess-1")
     assert scoped is not None
     assert scoped("POST", "/staff-messages", {"body": "Aviso"}) == {"ok": True}
 
     assert api.calls == [("POST", "/restaurant_dev/staff-messages", {"body": "Aviso"})]
-    assert api.call_headers == [
-        {
-            "x-session-token": "sess-1",
-            "x-staff-id": "staff-1",
-            "x-staff-key": "staff-secret",
-        }
-    ]
+    assert api.call_headers == [{"x-session-token": "sess-1"}]
 
 
 def test_main_builds_api_client_when_base_url_set(monkeypatch):

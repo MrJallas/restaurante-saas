@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import type { Request } from 'express';
 import { authErrorResponse } from '../guards/auth-error-response';
+import { staffSessionTokenRequired } from '../guards/staff-auth-context';
 import { CustomersService } from '../../modules/customers/customers.service';
 import { TenantConnectionProvider } from '../../modules/tenant/tenant-connection.provider';
 import type { StaffAuthRequest } from '../auth/staff-auth-request';
@@ -111,6 +112,18 @@ export class CallerResolverService {
         );
       }
       return staffAuth.staffId;
+    }
+
+    // Sem token, o `x-staff-id` é só um cabeçalho que o chamador escolhe. Com
+    // a key compartilhada ele virava identidade em qualquer ambiente nas rotas
+    // protegidas só pelo StaffOnlyGuard. Onde o token é obrigatório
+    // (production/staging/preview ou STAFF_SESSION_REQUIRED=true), recusa como
+    // o resolveAuthenticatedStaff dos guards de papel já faz.
+    if (staffSessionTokenRequired()) {
+      throw new HttpException(
+        authErrorResponse('AUTH_MISSING', 'Sessão expirada'),
+        HttpStatus.UNAUTHORIZED,
+      );
     }
 
     if (!staffId || typeof staffId !== 'string') {

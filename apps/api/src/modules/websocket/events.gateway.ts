@@ -16,6 +16,7 @@ import { RedisService } from '../../infra/redis/redis.service';
 import { safeJsonParse } from '../../common/utils/safe-json';
 import { verifyStaffSessionToken } from '../../common/auth/staff-session-token';
 import { readSessionAuthById } from '../../common/auth/session-auth-token';
+import { staffSessionTokenRequired } from '../../common/guards/staff-auth-context';
 import { EventsEmitterService } from './events-emitter.service';
 import type {
   WsEscalationCreated,
@@ -352,6 +353,17 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       const a = Buffer.from(expected, 'utf8');
       const b = Buffer.from(staffKey, 'utf8');
       if (a.length === b.length && timingSafeEqual(a, b)) {
+        // Neste caminho staffId e papel são cabeçalhos declarados por quem
+        // conecta (um `x-staff-role: manager` entrava em tenant:<slug>, a room
+        // com PII gerencial). Onde o token é obrigatório, só o cookie
+        // staff_token (acima) autentica equipe — nenhum app atual usa a key no
+        // WebSocket (o web-staff usa o cookie; as TVs consultam por HTTP).
+        if (staffSessionTokenRequired()) {
+          this.logger.warn(`Staff WS por x-staff-key recusado: token obrigatório (${client.id})`);
+          client.emit('error', { message: 'Sessão de equipe obrigatória. Faça login novamente.' });
+          client.disconnect(true);
+          return;
+        }
         client.data.authType = 'staff';
         // Round 9 (B-NEW-36): staffId AGORA é OBRIGATÓRIO no handshake
         // staff (era opcional). Atacante que não passou x-staff-id

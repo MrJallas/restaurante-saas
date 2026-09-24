@@ -165,3 +165,53 @@ describe('EventsGateway — rate-limit do handshake', () => {
     expect(calls.incr).toBe(0);
   });
 });
+
+// Handshake por x-staff-key: staffId e papel são cabeçalhos declarados por quem
+// conecta. Onde o token de sessão é obrigatório, esse caminho não autentica.
+describe('EventsGateway — handshake por x-staff-key com token obrigatório', () => {
+  const ENV_KEYS = ['STAFF_API_KEY', 'NODE_ENV', 'STAFF_SESSION_REQUIRED'] as const;
+  let saved: Record<string, string | undefined>;
+  beforeEach(() => {
+    saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+    process.env.STAFF_API_KEY = STAFF_KEY;
+  });
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it.each([
+    ['NODE_ENV=production', { NODE_ENV: 'production' }],
+    ['STAFF_SESSION_REQUIRED=true', { STAFF_SESSION_REQUIRED: 'true' }],
+  ])('%s: key + x-staff-role manager é recusado, sem entrar em room nenhuma', async (_l, env) => {
+    Object.assign(process.env, env);
+    const { svc, counters } = fakeRedis();
+    const gateway = makeGateway(svc);
+    const socket = fakeSocket({
+      headers: { ...staffHeaders('restaurant_dev'), 'x-staff-role': 'manager' },
+    });
+
+    await gateway.handleConnection(socket as never);
+
+    expect(socket.disconnect).toHaveBeenCalledWith(true);
+    expect(socket.join).not.toHaveBeenCalled();
+    expect(socket.data.authType).toBeUndefined();
+    // Falha de autenticação consome a cota do handshake (não há refund).
+    expect([...counters.values()].some((v) => v > 0)).toBe(true);
+  });
+
+  it('fora desses ambientes o caminho legado continua (dev/testes)', async () => {
+    delete process.env.STAFF_SESSION_REQUIRED;
+    process.env.NODE_ENV = 'test';
+    const { svc } = fakeRedis();
+    const gateway = makeGateway(svc);
+    const socket = fakeSocket({ headers: staffHeaders('restaurant_dev') });
+
+    await gateway.handleConnection(socket as never);
+
+    expect(socket.disconnect).not.toHaveBeenCalled();
+    expect(socket.data.staffId).toBe(STAFF_ID);
+  });
+});

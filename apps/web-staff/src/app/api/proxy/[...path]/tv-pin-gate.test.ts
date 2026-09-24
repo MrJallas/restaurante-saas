@@ -38,6 +38,7 @@ type FakeReqOpts = {
   path: string[];
   cookies?: Record<string, string>;
   search?: string;
+  headers?: Record<string, string>;
 };
 
 /** NextRequest mínimo suficiente pro handler do proxy. */
@@ -45,7 +46,7 @@ function fakeReq(opts: FakeReqOpts): NextRequest {
   const cookies = opts.cookies ?? {};
   return {
     method: opts.method,
-    headers: new Headers(),
+    headers: new Headers(opts.headers ?? {}),
     nextUrl: { search: opts.search ?? '' },
     cookies: {
       get: (name: string) => (name in cookies ? { value: cookies[name] } : undefined),
@@ -186,5 +187,32 @@ describe('proxy TV gate — tvPinValid fail-CLOSE (P1 A05)', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const upstream = (global.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
     expect(upstream.headers).toMatchObject({ 'x-staff-token': 'staff-session-token' });
+  });
+
+  it('x-staff-id do browser não chega na API (identidade é só o token do cookie)', async () => {
+    const CALL_WAITER_PATH = [
+      'restaurant_dev',
+      'orders',
+      'aaaaaaa1-0000-0000-0000-000000000001',
+      'call-waiter',
+    ];
+    const { POST } = await loadRoute();
+    const res = await POST(
+      fakeReq({
+        method: 'POST',
+        path: CALL_WAITER_PATH,
+        headers: {
+          'x-staff-id': '99999999-9999-4999-8999-999999999999',
+          'content-type': 'application/json',
+        },
+      }),
+      { params: Promise.resolve({ path: CALL_WAITER_PATH }) },
+    );
+
+    expect(res.status).toBe(200);
+    const upstream = (global.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
+    const sent = upstream.headers as Record<string, string>;
+    expect(Object.keys(sent).map((k) => k.toLowerCase())).not.toContain('x-staff-id');
+    expect(sent['content-type']).toBe('application/json');
   });
 });

@@ -511,14 +511,20 @@ export class OrdersController {
     @Param('slug') slug: string,
     @Req() req: Request,
   ) {
-    // Só o header AUSENTE vira chamada de estação (called_by NULL). Header
-    // PRESENTE passa pela validação completa — id forjado/demitido continua
-    // 401 como no round 11, e erro de DB propaga em vez de degradar a
-    // atribuição silenciosamente (achado do code-review: o catch-all
-    // anterior engolia tudo).
+    // Chamada de estação (called_by NULL) só quando não há identidade nenhuma:
+    // sem token verificado e sem header. Token (cozinheiro logado no /bar ou
+    // /cozinha) atribui a ele — antes dependia do proxy repassar o x-staff-id
+    // do browser. Header sem token passa pela validação completa: id
+    // forjado/demitido continua 401 (round 11) e, onde o token é obrigatório,
+    // header solto também é 401. Erro de DB propaga em vez de degradar a
+    // atribuição silenciosamente (code-review: o catch-all anterior engolia).
     const rawStaffId = req.headers['x-staff-id'];
     const hasStaffIdHeader = typeof rawStaffId === 'string' && rawStaffId.trim().length > 0;
-    const staffId = hasStaffIdHeader ? await this.callerResolver.requireActiveStaffId(req) : null;
+    const hasVerifiedStaff = Boolean((req as Request & StaffAuthRequest).staffAuth?.staffId);
+    const staffId =
+      hasVerifiedStaff || hasStaffIdHeader
+        ? await this.callerResolver.requireActiveStaffId(req)
+        : null;
     return this.ordersService.callWaiterForOrder(orderId, slug, staffId);
   }
 
