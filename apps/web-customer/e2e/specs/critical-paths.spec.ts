@@ -25,10 +25,17 @@ async function openReasonPicker(page: Page) {
   });
 }
 
+/**
+ * Fecha a CallWaiterSheet tocando fora do painel. O backdrop é um
+ * `div[aria-hidden="true"]` (não mais `<button aria-label="Fechar">`, desde a
+ * auditoria de 2026-07-11) — por isso não é alcançável por role/nome.
+ */
 async function closeSheet(page: Page) {
-  await page.getByRole('button', { name: 'Fechar' }).click({
+  const sheet = page.getByTestId('call-waiter-sheet');
+  await sheet.locator(':scope > div[aria-hidden="true"]').click({
     position: { x: 12, y: 12 },
   });
+  await expect(sheet).toBeHidden();
 }
 
 /**

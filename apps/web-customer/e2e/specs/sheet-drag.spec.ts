@@ -156,11 +156,20 @@ async function openMenuOverlay(page: Page, messageSuffix = '') {
   return overlay;
 }
 
+/**
+ * Backdrop das folhas: `div[aria-hidden="true"]` filho direto do container.
+ * Desde a auditoria de 2026-07-11 ele não é mais `<button aria-label="Fechar">`:
+ * `role="dialog"` foi pro painel (focus trap + Esc + "Cancelar"), e o fundo
+ * virou decorativo para leitor de tela. O toque fora do painel continua
+ * fechando — é esse mecanismo que os testes exercitam.
+ */
+function sheetBackdrop(page: Page, testId: string) {
+  return page.locator(`[data-testid="${testId}"] > div[aria-hidden="true"]`);
+}
+
 async function expectSheetClosed(page: Page, testId: string) {
   await expect(page.locator(`[data-testid="${testId}"]`)).toBeHidden();
-  await expect(page.locator(`[data-testid="${testId}"] > button[aria-label="Fechar"]`)).toHaveCount(
-    0,
-  );
+  await expect(sheetBackdrop(page, testId)).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => document.body.style.position)).toBe('');
 }
 
@@ -372,9 +381,7 @@ test.describe('bottom sheet drag', () => {
     await page.goto(`/${SLUG}/assistente`, { waitUntil: 'networkidle' });
     await openCallWaiterSheet(page);
 
-    await page
-      .locator('[data-testid="call-waiter-sheet"] > button[aria-label="Fechar"]')
-      .click({ position: { x: 20, y: 20 } });
+    await sheetBackdrop(page, 'call-waiter-sheet').click({ position: { x: 20, y: 20 } });
 
     await expectSheetClosed(page, 'call-waiter-sheet');
   });
@@ -384,9 +391,7 @@ test.describe('bottom sheet drag', () => {
     await page.goto(`/${SLUG}/assistente`, { waitUntil: 'networkidle' });
     await openMenuOverlay(page);
 
-    await page
-      .locator('[data-testid="menu-overlay"] > button[aria-label="Fechar"]')
-      .click({ position: { x: 20, y: 20 } });
+    await sheetBackdrop(page, 'menu-overlay').click({ position: { x: 20, y: 20 } });
 
     await expectSheetClosed(page, 'menu-overlay');
   });
