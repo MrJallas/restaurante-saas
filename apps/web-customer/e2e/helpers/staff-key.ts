@@ -7,7 +7,7 @@ import { join } from 'node:path';
  * Ordem: `E2E_STAFF_API_KEY` > `STAFF_API_KEY` do ambiente > `STAFF_API_KEY` do
  * `.env` da raiz (o mesmo arquivo que o docker compose lê). Assim o E2E usa a
  * chave gerada no setup, sem literal fixo no código. Sem nenhuma das três, a
- * chave fica vazia e a API responde 403, o que aponta direto para a configuração.
+ * chave fica vazia e a API responde 401, o que aponta direto para a configuração.
  */
 function resolveStaffApiKey(): string {
   const fromEnv = process.env.E2E_STAFF_API_KEY || process.env.STAFF_API_KEY;

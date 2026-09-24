@@ -7,7 +7,7 @@ cd "$(dirname "$0")/../.."
 
 IP="${1:-$(ipconfig getifaddr en0 || true)}"
 if [ -z "$IP" ]; then
-  echo "❌ Não achei IP no en0. Conecte o Mac no wi-fi/hotspot e rode de novo (ou passe o IP: bash $0 172.20.10.2)"
+  echo "❌ Não achei IP no en0. Conecte o Mac no wi-fi/hotspot e rode de novo (ou passe o IP: bash $0 <IP>)"
   exit 1
 fi
 echo "▶ IP da demo: $IP"
@@ -45,7 +45,10 @@ fi
 echo "✓ Stack no ar (rota da mesa: $(curl -s -o /dev/null -w '%{http_code}' http://localhost:3003/restaurant_dev/mesa/M01))"
 
 # 4. Regenera o QR da Mesa 01 com o IP novo -> ~/Desktop/qr-mesa-01-demo.png
-QR_TOKEN="8ad1f98e-09ba-43ae-9140-c18d562907bf"   # tables.qr_public_token da M01 (tenant dev)
+# tables.qr_public_token da M01: cada banco gera o seu, então consulta em vez de fixar.
+QR_TOKEN=$(docker exec restaurant-postgres psql -U postgres -p 5434 -d restaurant_saas -tA \
+  -c "SELECT qr_public_token FROM restaurant_dev.tables WHERE code = 'M01'")
+[ -n "$QR_TOKEN" ] || { echo "❌ Mesa M01 não encontrada no restaurant_dev. Rodou o seed?"; exit 1; }
 TMP=$(mktemp -d)
 npx --yes qrcode -t svg -e M -o "$TMP/qr.svg" "http://$IP:3001/api/qr/$QR_TOKEN"
 python3 - "$TMP" <<'PYEOF'
