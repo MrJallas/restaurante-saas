@@ -6,7 +6,9 @@
 //
 // Faithful port of `MInProgressCard` in garcom-screens-c.jsx (V4 · 2026-05).
 // Three families:
-//   • 4 active (V4): late-arrival, table-merge, complaint, escalation
+//   • 3 active: table-merge, complaint, escalation (o 4º do V4 era
+//     late-arrival, removido com o System B na migration 081 — chegada tardia
+//     é decidida pelo customer-host dentro da mesa, nunca pelo gerente)
 //   • 3 info passive (V4): zone-pause-active, lgpd-request-pending,
 //                          staff-message-unread
 //   • Existing async (kitchen-reorder, contact-client, courtesy, pause-orders)
@@ -20,7 +22,6 @@ export type InProgressKind =
   | 'kitchen-reorder'
   | 'contact-client'
   | 'courtesy'
-  | 'late-arrival'
   | 'table-merge'
   | 'complaint'
   | 'escalation'
@@ -55,10 +56,10 @@ export interface MInProgressCardProps {
   complaintCustomer?: string;
   complaintSummary?: string;
   /** escalation. */
-  escalationKind?: 'late_arrival' | 'table_merge' | 'qr_issue';
+  escalationKind?: 'table_merge' | 'qr_issue';
   escalationHeadline?: string;
   escalationDeadline?: string;
-  /** late-arrival / table-merge requesters. */
+  /** table-merge requesters. */
   requesterName?: string;
   requestedTable?: number;
   /** zone-pause-active. */
@@ -146,7 +147,6 @@ function pickAccent(kind: InProgressKind, state: InProgressState) {
   if (kind === 'zone-pause-active') return '#9A7212';
   if (kind === 'complaint') return '#C43A3A';
   if (kind === 'escalation') return '#C43A3A';
-  if (kind === 'late-arrival') return '#3B5FBE';
   if (kind === 'table-merge') return '#3B5FBE';
   if (kind === 'lgpd-request-pending') return '#1F3784';
   if (kind === 'staff-message-unread') return '#1F3784';
@@ -211,8 +211,6 @@ export function MInProgressCard(props: MInProgressCardProps) {
         return `MENSAGEM · MESA ${contactTable ?? '?'} · AGUARDANDO LEITURA`;
       case 'courtesy':
         return `CORTESIA · MESA ${courtesyTable ?? '?'} · AGUARDANDO ACEITAR`;
-      case 'late-arrival':
-        return `CHEGADA TARDIA · MESA ${requestedTable ?? '?'} · AGUARDA HOST`;
       case 'table-merge':
         return `JUNÇÃO DE MESAS · MESA ${requestedTable ?? '?'}`;
       case 'complaint':
@@ -415,7 +413,7 @@ export function MInProgressCard(props: MInProgressCardProps) {
         )}
       </>
     );
-  } else if (kind === 'late-arrival' || kind === 'table-merge') {
+  } else if (kind === 'table-merge') {
     body = (
       <>
         <div
@@ -440,7 +438,7 @@ export function MInProgressCard(props: MInProgressCardProps) {
             textTransform: 'uppercase',
           }}
         >
-          {kind === 'late-arrival' ? 'Aguarda host aprovar' : 'Aguarda hosts aprovar'}
+          Aguarda hosts aprovar
         </div>
       </>
     );
@@ -612,7 +610,7 @@ export function MInProgressCard(props: MInProgressCardProps) {
         <PillBtn filled label="Responder" onClick={onPrimary} dark={dark} />
       </div>
     );
-  } else if (kind === 'late-arrival' || kind === 'table-merge' || kind === 'escalation') {
+  } else if (kind === 'table-merge' || kind === 'escalation') {
     actions = (
       <div style={{ display: 'flex', gap: 6 }}>
         <PillBtn label="Ver detalhes" onClick={onPrimary} dark={dark} />

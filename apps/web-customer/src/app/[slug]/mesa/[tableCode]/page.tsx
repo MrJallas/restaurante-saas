@@ -933,9 +933,7 @@ export default function MesaPage() {
         {errorRequiresRescan ? (
           // Decisão terminal do servidor: reload repete o mesmo resultado.
           // O único caminho real é um novo scan físico — o CTA diz só isso.
-          <p className="text-[12px] text-mute">
-            Escaneie o QR Code da mesa para tentar de novo.
-          </p>
+          <p className="text-[12px] text-mute">Escaneie o QR Code da mesa para tentar de novo.</p>
         ) : (
           <>
             <button
@@ -956,11 +954,12 @@ export default function MesaPage() {
     // Round 19 — V20 canon LOCKED waiting screen (ScreenCustomerWaitingApproval)
     // substitui o legacy `PendingApprovalScreen` (V13 dots + título "Aguardando
     // aprovação"). Per user ask: "a tela de espera do outro cliente tentando
-    // entrar na mesa tambem tem que existir". Mode='late-arrival' usa o copy
-    // canon ("Esperando aprovação · {host} foi avisado").
+    // entrar na mesa tambem tem que existir". Mode='late-arrival' aqui é só
+    // ESCOLHA DE COPY ("Esperando aprovação · {host} foi avisado"); a autoridade
+    // é o System A.
     //
-    // System A (participant) não emite `late_arrival.approved` — usa
-    // `participant:decision`. Logo, este wrapper escuta via useTableSocket
+    // O contrato do System A é `participant:decision` (+ poll de
+    // `GET /:slug/table/participants`). Este wrapper escuta via useTableSocket
     // diretamente e força `setPageState('home')` quando o decision chegar.
     return (
       <PendingApprovalWrapper
@@ -1215,10 +1214,14 @@ export default function MesaPage() {
 
 /**
  * Round 19 wrapper · monta o V20 canon `ScreenCustomerWaitingApproval`
- * (mode='late-arrival') em cima do contrato WS do System A (participants).
- * Listens para `participant:decision` e bridgea pro callback do mount —
- * o V20 canon LOCKED não pode ser editado pra reconhecer
+ * (mode='late-arrival' = copy) em cima do contrato do System A
+ * (`session_participants`). Listens para `participant:decision` e bridgea pro
+ * callback do mount — o V20 canon LOCKED não pode ser editado pra reconhecer
  * `participant:decision` diretamente, então mantemos o wiring aqui.
+ *
+ * Esta é a ÚNICA origem de chegada tardia no app. O System B
+ * (`late_arrival_requests`, com escalada pro staff) foi removido na migration
+ * 081 por contrariar a decisão de produto V16.
  */
 function PendingApprovalWrapper({
   slug,

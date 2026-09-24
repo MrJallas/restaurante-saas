@@ -9,12 +9,19 @@ import { toTenantInternalPath } from '../../../lib/safe-internal-path';
 import { parseWaitingMode } from '../../../lib/waiting-approval-state';
 
 /**
- * `/[slug]/waiting-approval` · landing page after the late-arrival /
- * table-merge request is created. Subscribes to WS to watch for the host's
- * decision and bridges to the success/failure screens accordingly.
+ * `/[slug]/waiting-approval` · landing page depois que um pedido de JUNÇÃO DE
+ * MESAS é criado. Subscribes to WS to watch for the host's decision and
+ * bridges to the success/failure screens accordingly.
+ *
+ * Chegada tardia NÃO passa por esta rota: o System A monta a mesma tela
+ * inline em `/mesa/[tableCode]` (PendingApprovalWrapper), com o estado vindo
+ * de `participant:decision`. Um deep-link sem `mode` cai no modo
+ * 'late-arrival', que aqui não tem fonte autoritativa e por isso é
+ * fail-closed ("Não consegui confirmar").
  *
  * Query params:
- *  - `mode`        : 'late-arrival' | 'merge-target' | 'merge-origin'
+ *  - `mode`        : 'merge-target' | 'merge-origin' (default 'late-arrival',
+ *                    sem fonte REST — ver acima)
  *  - `requestId`   : id of the request to track
  *  - `expiresAt`   : ISO datetime — drives the visible countdown
  *  - `hostName`    : copy hint for the sub-text

@@ -45,7 +45,6 @@ function erasureLeaseSeconds(): number {
  */
 const RETAINED_PSEUDONYMOUS_STORES = [
   'session_participants.customer_id',
-  'late_arrival_requests.customer_id',
   'table_merge_requests.requesting_customer_id',
   'scan_verification_requests.customer_id',
   'bill_split_notifications.created_by_customer_id',
@@ -425,9 +424,6 @@ export class LgpdService {
           SELECT escalation_chain_id FROM complaints
            WHERE customer_id = $1 AND escalation_chain_id IS NOT NULL
           UNION
-          SELECT escalation_chain_id FROM late_arrival_requests
-           WHERE customer_id = $1 AND escalation_chain_id IS NOT NULL
-          UNION
           SELECT escalation_chain_id FROM table_merge_requests
            WHERE (requesting_customer_id = $1 OR target_customer_id = $1)
              AND escalation_chain_id IS NOT NULL
@@ -483,12 +479,6 @@ export class LgpdService {
     await mutate(
       'session_participants',
       `UPDATE session_participants SET approved_by = NULL WHERE approved_by = $1`,
-    );
-    await mutate(
-      'late_arrival_requests',
-      `UPDATE late_arrival_requests
-          SET approved_by_customer_id = NULL, message = NULL, updated_at = now()
-        WHERE customer_id = $1 OR approved_by_customer_id = $1`,
     );
     await mutate(
       'table_merge_requests',
@@ -568,7 +558,6 @@ export class LgpdService {
            (SELECT COUNT(*) FROM table_sessions WHERE host_customer_id = $1) +
            (SELECT COUNT(*) FROM session_flags WHERE set_by_customer_id = $1) +
            (SELECT COUNT(*) FROM session_participants WHERE approved_by = $1) +
-           (SELECT COUNT(*) FROM late_arrival_requests WHERE approved_by_customer_id = $1) +
            (SELECT COUNT(*) FROM table_merge_requests
              WHERE target_customer_id = $1 OR decided_by_customer_id = $1) +
            (SELECT COUNT(*) FROM table_qr_releases WHERE consumed_by_customer_id = $1) +

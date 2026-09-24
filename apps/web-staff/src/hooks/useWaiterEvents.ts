@@ -11,7 +11,7 @@
 //  - staff_message.received   · inbox unread + push
 //  - staff_message.read       · inbox flips to read on counterpart device
 //  - complaint.received       · only when manager forwards to waiter
-//  - escalation.advanced      · qr-issue / late-arrival / table-merge fallout
+//  - escalation.advanced      · qr-issue / table-merge fallout
 //
 // The hook is intentionally thin: it manages the Socket.IO connection
 // lifecycle and exposes (a) connection state, (b) a typed event stream the

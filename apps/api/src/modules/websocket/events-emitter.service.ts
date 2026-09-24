@@ -28,10 +28,6 @@ import type {
   WsEscalationCreated,
   WsEscalationAdvanced,
   WsEscalationCompleted,
-  WsLateArrivalCreated,
-  WsLateArrivalApproved,
-  WsLateArrivalRejected,
-  WsLateArrivalExpired,
   WsScanVerificationCreated,
   WsScanVerificationEscalated,
   WsScanVerificationResolved,
@@ -392,7 +388,7 @@ export class EventsEmitterService {
   /**
    * Routing: staff dashboards (`tenant:<slug>`) + the assigned staff member
    * (`staff:<assigneeId>`) when known. Customer side is informed via the
-   * specific late_arrival/table_merge events instead.
+   * specific table_merge events instead.
    */
   emitEscalationCreated(
     slug: string,
@@ -437,67 +433,6 @@ export class EventsEmitterService {
     this.server.to(`tenant:${slug}`).emit('escalation.completed', payload);
     if (customerId) {
       this.server.to(`customer:${customerId}`).emit('escalation.completed', payload);
-    }
-  }
-
-  /**
-   * Routing: staff dashboards (host-side inbox shows new approval card) +
-   * the host-customer's UI (`customer:<hostId>`) for the in-app pop-up. The
-   * requester customer also subscribes via session room.
-   */
-  emitLateArrivalCreated(
-    slug: string,
-    hostCustomerId: string | null,
-    payload: WsLateArrivalCreated['payload'],
-  ) {
-    this.server.to(`tenant:${slug}`).emit('late_arrival.created', payload);
-    if (hostCustomerId) {
-      this.server.to(`customer:${hostCustomerId}`).emit('late_arrival.created', payload);
-    }
-    this.server.to(`customer:${payload.requesterCustomerId}`).emit('late_arrival.created', payload);
-    // M4 (timeline): tap fire-and-forget.
-    this.tap?.record('late_arrival.created', payload, slug);
-  }
-
-  /**
-   * Routing: tenant dashboards + requester customer (the late-arriver who
-   * was approved) so their FE can transition to "approved" screen.
-   */
-  emitLateArrivalApproved(slug: string, payload: WsLateArrivalApproved['payload']) {
-    this.server.to(`tenant:${slug}`).emit('late_arrival.approved', payload);
-    this.server
-      .to(`customer:${payload.requesterCustomerId}`)
-      .emit('late_arrival.approved', payload);
-    this.server.to(`session:${payload.tableSessionId}`).emit('late_arrival.approved', payload);
-    // M4 (timeline): tap fire-and-forget.
-    this.tap?.record('late_arrival.approved', payload, slug);
-  }
-
-  /**
-   * Routing: tenant dashboards + requester customer for the rejection screen.
-   */
-  emitLateArrivalRejected(slug: string, payload: WsLateArrivalRejected['payload']) {
-    this.server.to(`tenant:${slug}`).emit('late_arrival.rejected', payload);
-    this.server
-      .to(`customer:${payload.requesterCustomerId}`)
-      .emit('late_arrival.rejected', payload);
-    // M4 (timeline): tap fire-and-forget.
-    this.tap?.record('late_arrival.rejected', payload, slug);
-  }
-
-  /**
-   * Routing: tenant dashboards (close the open card) + the table session room
-   * so the still-open approval UI on the host's device can dismiss itself.
-   */
-  emitLateArrivalExpired(
-    slug: string,
-    requesterCustomerId: string | null,
-    payload: WsLateArrivalExpired['payload'],
-  ) {
-    this.server.to(`tenant:${slug}`).emit('late_arrival.expired', payload);
-    this.server.to(`session:${payload.tableSessionId}`).emit('late_arrival.expired', payload);
-    if (requesterCustomerId) {
-      this.server.to(`customer:${requesterCustomerId}`).emit('late_arrival.expired', payload);
     }
   }
 

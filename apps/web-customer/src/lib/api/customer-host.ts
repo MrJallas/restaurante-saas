@@ -1,6 +1,5 @@
 import type {
   CustomerIdentifyResponse,
-  LateArrivalRequestDto,
   TableMergeRequestDto,
   MergeCooldownDto,
 } from '@restaurant/shared-types';
@@ -10,7 +9,7 @@ import { cleanCpf } from '../cpf';
 /**
  * Customer-host model API client. Per docs/features/customer-host-model.md.
  *
- * Endpoints implemented in apps/api/src/modules/{customers,late-arrival,table-merge}.
+ * Endpoints implemented in apps/api/src/modules/{customers,table-merge}.
  * Slug is derived from current pathname so callers don't have to thread it through.
  */
 
@@ -63,7 +62,7 @@ function cooldownFromError(err: ApiRequestError): MergeCooldownDto {
 // ─── Customer identify (CPF lookup) ──────────────────────────────────────────
 
 /**
- * `POST /:slug/customer/identify` — CPF lookup before late-arrival join.
+ * `POST /:slug/customer/identify` — CPF lookup do gate de identidade.
  *
  * Backend handles both branches:
  *  - returning customer (CPF found) → `isReturning=true`, cookie canônico
@@ -85,90 +84,6 @@ export async function identifyCustomer(input: {
     cpf: cleanCpf(input.cpf),
     currentSessionId: input.currentSessionId,
   });
-}
-
-// ─── Late-arrival ────────────────────────────────────────────────────────────
-
-/**
- * `POST /:slug/late-arrival-requests` — kicks off a customer-B join request.
- * Returns the freshly created request with TTL/expiresAt so the waiting screen
- * can render its 60s countdown.
- */
-export async function createLateArrivalRequest(input: {
-  customerId: string;
-  visitId?: string;
-  tableSessionId?: string;
-  expectedArrivalAt?: string;
-  message?: string;
-  slug?: string;
-}): Promise<LateArrivalRequestDto> {
-  const slug = input.slug ?? getSlugFromPath();
-  return apiPost<LateArrivalRequestDto>(`/${slug}/late-arrival-requests`, {
-    customerId: input.customerId,
-    visitId: input.visitId,
-    tableSessionId: input.tableSessionId,
-    expectedArrivalAt: input.expectedArrivalAt,
-    message: input.message,
-  });
-}
-
-/**
- * `POST /:slug/late-arrival-requests/:id/approve` — host accepts the joiner.
- * `customerId` identifies the host (the approver).
- */
-export async function approveLateArrival(
-  id: string,
-  input: { customerId?: string; staffId?: string; slug?: string } = {},
-): Promise<LateArrivalRequestDto> {
-  const slug = input.slug ?? getSlugFromPath();
-  return apiPost<LateArrivalRequestDto>(`/${slug}/late-arrival-requests/${id}/approve`, {
-    customerId: input.customerId,
-    staffId: input.staffId,
-  });
-}
-
-/**
- * `POST /:slug/late-arrival-requests/:id/reject` — host refuses the joiner.
- * Optional `reason` ends up in the rejection record (free-form, max 500).
- */
-export async function rejectLateArrival(
-  id: string,
-  input: { customerId?: string; staffId?: string; reason?: string; slug?: string } = {},
-): Promise<LateArrivalRequestDto> {
-  const slug = input.slug ?? getSlugFromPath();
-  return apiPost<LateArrivalRequestDto>(`/${slug}/late-arrival-requests/${id}/reject`, {
-    customerId: input.customerId,
-    staffId: input.staffId,
-    reason: input.reason,
-  });
-}
-
-/**
- * `POST /:slug/late-arrival-requests/:id/cancel` — o PRÓPRIO solicitante
- * (Customer B) derruba o próprio pedido de join enquanto o host não decidiu.
- *
- * P1 (re-scan): antes o "Cancelar pedido" da waiting-approval só fazia
- * router.back() (no-op) — o request seguia 'pending' e escalava pro gerente
- * como timeout fantasma. O BE valida (cookie recognition_token) que o caller
- * é o requester da row, flipa 'cancelled', fecha a escalation_chain e dispensa
- * o card do host. O customerId derivado do cookie é a fonte de verdade; o
- * campo aqui é só best-effort (o BE ignora body).
- */
-export async function cancelLateArrivalRequest(
-  id: string,
-  input: { slug?: string } = {},
-): Promise<LateArrivalRequestDto> {
-  const slug = input.slug ?? getSlugFromPath();
-  return apiPost<LateArrivalRequestDto>(`/${slug}/late-arrival-requests/${id}/cancel`, {});
-}
-
-/** Status autoritativo do próprio solicitante; sobrevive a reload/WS perdido. */
-export async function getLateArrivalRequestStatus(
-  id: string,
-  input: { slug?: string } = {},
-): Promise<LateArrivalRequestDto> {
-  const slug = input.slug ?? getSlugFromPath();
-  return apiGet<LateArrivalRequestDto>(`/${slug}/late-arrival-requests/${id}/status`);
 }
 
 // ─── Table merge ─────────────────────────────────────────────────────────────

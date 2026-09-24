@@ -354,68 +354,6 @@ export function mapSessionParticipant(
   return entries;
 }
 
-// ─── late_arrival_requests → late_arrival.{requested,approved,rejected} ────
-
-export interface LateArrivalRequestRow {
-  id: string;
-  table_session_id: string;
-  customer_id: string;
-  requested_at: SqlTimestamp | null;
-  expected_arrival_at: SqlTimestamp | null;
-  status: string;
-  approved_by_staff_id: string | null;
-  approved_by_customer_id: string | null;
-  decided_at: SqlTimestamp | null;
-  message: string | null;
-  created_at: SqlTimestamp;
-  // Coluna real não usada pelo mapper.
-  visit_id?: string | null;
-}
-
-export function mapLateArrivalRequest(
-  row: LateArrivalRequestRow,
-  ctx?: { requesterName?: string | null; deciderName?: string | null },
-): TimelineEntry[] {
-  const refs = { requestId: row.id };
-  const entries: TimelineEntry[] = [
-    {
-      id: `la:${row.id}`,
-      kind: 'late_arrival.requested',
-      at: toIso(row.requested_at ?? row.created_at),
-      sessionId: row.table_session_id,
-      actor: customerActor(row.customer_id, ctx?.requesterName),
-      refs,
-      payload: compactPayload({
-        message: row.message ?? undefined,
-        expectedArrivalAt: row.expected_arrival_at ? toIso(row.expected_arrival_at) : undefined,
-      }),
-    },
-  ];
-
-  const decided =
-    row.decided_at &&
-    (row.status === 'approved' || row.status === 'rejected' || row.status === 'expired');
-  if (decided) {
-    const approved = row.status === 'approved';
-    const decider = row.approved_by_staff_id
-      ? staffActor(row.approved_by_staff_id, ctx?.deciderName)
-      : row.approved_by_customer_id
-        ? customerActor(row.approved_by_customer_id, ctx?.deciderName)
-        : systemActor();
-    entries.push({
-      id: `la:${row.id}:${approved ? 'approved' : 'rejected'}`,
-      kind: approved ? 'late_arrival.approved' : 'late_arrival.rejected',
-      at: toIso(row.decided_at as SqlTimestamp),
-      sessionId: row.table_session_id,
-      actor: decider,
-      refs,
-      payload: compactPayload({ reason: row.status === 'expired' ? 'expired' : undefined }),
-    });
-  }
-
-  return entries;
-}
-
 // ─── table_merge_requests → merge.{requested,approved,rejected} ────────────
 
 export interface TableMergeRequestRow {
@@ -711,9 +649,6 @@ export const WIRE_EVENT_TO_TIMELINE_KIND: Readonly<Partial<Record<WsEventName, T
   'order:claimed': 'delivery.claimed',
   'waiter:call': 'waiter.called',
   'waiter:acknowledged': 'waiter.acknowledged',
-  'late_arrival.created': 'late_arrival.requested',
-  'late_arrival.approved': 'late_arrival.approved',
-  'late_arrival.rejected': 'late_arrival.rejected',
   'table_merge.created': 'merge.requested',
   'table_merge.approved': 'merge.approved',
   'table_merge.rejected': 'merge.rejected',

@@ -7,67 +7,43 @@ import { PillButton } from '../../components/ui/PillButton';
 import { useSession } from '../../hooks/useSession';
 import { cleanCpf, validateCpf } from '../../lib/cpf';
 import { toTenantInternalPath } from '../../lib/safe-internal-path';
-import { identifyCustomer, createLateArrivalRequest } from '../../lib/api/customer-host';
+import { identifyCustomer } from '../../lib/api/customer-host';
 import type { CustomerIdentifyResponse } from '@restaurant/shared-types';
 
 /**
- * Two distinct reasons the customer can land on this CPF gate:
+ * Esta tela é o GATE DE CPF e nada mais: um cliente que JÁ ESTÁ sentado prova
+ * quem é para alcançar outra tela (feedback, /eu, histórico, o assistente via
+ * `?next=`). O bounce vem de `useRequireCustomerId` / ScreenCustomerMe /
+ * assistente quando `customerId` sumiu do bundle. Submeter APENAS identifica e
+ * roteia para `next`/`redirectTo`.
  *
- *  - `'late-arrival'` — customer B genuinely scanned an occupied table and
- *    wants to JOIN it. Submitting creates a `late_arrival_request` and sends
- *    them to `/waiting-approval` so a host can approve (the P1-K flow).
- *
- *  - `'gate'` (DEFAULT) — a customer who is ALREADY seated just needs to prove
- *    their CPF to reach some other screen (feedback, /eu, histórico, o
- *    assistente via `?next=`). The bounce came from `useRequireCustomerId` /
- *    ScreenCustomerMe / assistente because `customerId` was missing from the
- *    bundle. Submitting must ONLY identify + route to `next`; it must NOT
- *    create a late_arrival_request nor land on waiting-approval — doing so
- *    stranded the customer waiting for a phantom host and spawned an orphan
- *    request that escalated to the manager after the 60s TTL (regression the
- *    re-scan flagged on P1-K commit 1c84355).
+ * A tela NÃO abre pedido de entrada em mesa ocupada. Esse fluxo (chegada
+ * tardia) é o System A: o cliente escaneia o QR da mesa, vira um
+ * `session_participant` pendente e o host da mesa decide — nunca o staff
+ * (decisão de produto V16). A variante `intent='late-arrival'`, que criava um
+ * `late_arrival_request` e caía na waiting-approval, saiu junto com o System B
+ * (migration 081); nada no app jamais produziu esse parâmetro.
  */
-export type IdentifyIntent = 'late-arrival' | 'gate';
-
 interface ScreenCustomerIdentifyBeforeJoinProps {
   slug: string;
   /**
-   * Which flow this gate is serving. Defaults to `'gate'` — the common,
-   * safe case (prove CPF, then continue). Only the explicit
-   * `'late-arrival'` intent may create a late_arrival_request. A redirect is
-   * data, never an authorization/intention signal.
-   */
-  intent?: IdentifyIntent;
-  /**
-   * Where to go after identify succeeds.
-   *  - late-arrival flow: destino da waiting-approval (default
-   *    `/${slug}/waiting-approval`).
-   *  - gate flow: destino pretendido (a tela que bouncou o cliente pra cá).
-   * Aceita path absoluto (`/slug/foo`) ou segmento slug-relativo (`assistente`).
+   * Destino pretendido (a tela que bouncou o cliente pra cá). Aceita path
+   * absoluto (`/slug/foo`) ou segmento slug-relativo (`assistente`).
    */
   redirectTo?: string;
   /**
-   * Onde voltar depois de identificar no fluxo `gate`. Escrito pelo caller que
-   * bouncou (ex.: `?next=assistente`). Path absoluto ou segmento relativo ao
-   * slug. Ignorado no fluxo late-arrival (lá o destino é a waiting-approval).
+   * Onde voltar depois de identificar. Escrito pelo caller que bouncou
+   * (ex.: `?next=assistente`). Path absoluto ou segmento relativo ao slug.
    */
   next?: string;
-  /**
-   * Optional override for the host name shown in the sub-text. When unset,
-   * the screen uses generic "host da mesa".
-   */
-  hostName?: string | null;
 }
 
 /**
- * `ScreenCustomerIdentifyBeforeJoin` · per docs/features/customer-host-model.md
- * (section "Identificação obrigatória pré-late-arrival · nome + CPF").
+ * `ScreenCustomerIdentifyBeforeJoin` · gate de CPF.
  *
- * Customer B scanned the QR of an occupied table. Before we create the
- * `late_arrival_request` we force a name+CPF capture so the host (customer A)
- * sees the requester's real name on the approval screen — never an anonymous
- * "?". Returning customers (cookie `recognition_token` present) skip this
- * screen entirely; the auto-recognize path on `/mesa/[tableCode]` handles them.
+ * Forçamos nome+CPF pra reidratar a identidade do cliente antes de liberar as
+ * telas pessoais (perfil, histórico, reclamações, assistente). Clientes
+ * retornantes (cookie `recognition_token` presente) nunca chegam aqui.
  *
  * On submit, `POST /:slug/customer/identify` does the lookup:
  *  - CPF found → auto-login, refreshed token (httpOnly cookie); we show a
@@ -84,23 +60,11 @@ interface ScreenCustomerIdentifyBeforeJoinProps {
  */
 export function ScreenCustomerIdentifyBeforeJoin({
   slug,
-  intent,
   redirectTo,
   next,
-  hostName,
 }: ScreenCustomerIdentifyBeforeJoinProps) {
   const router = useRouter();
   const { setCustomer, sessionId } = useSession();
-
-  // Distingue o late-arrival REAL do gate-de-CPF. Só entra no fluxo
-  // late-arrival (cria request + waiting-approval) quando há sinal EXPLÍCITO:
-  // `intent==='late-arrival'`. Nunca inferimos intenção de uma URL recebida
-  // por query string: além de confundir jornadas, isso transformava
-  // `javascript:...//waiting-approval` em sink XSS no router.push. Qualquer
-  // outra chegada (o caso comum: cliente
-  // sentado que só precisa provar CPF) é tratada como `gate` — a intenção
-  // default e segura.
-  const isLateArrival = intent === 'late-arrival';
 
   const [name, setName] = useState('');
   const [cpf, setCpf] = useState('');
@@ -140,40 +104,11 @@ export function ScreenCustomerIdentifyBeforeJoin({
         isReturning: result.isReturning,
       });
 
-      // Decide o destino a partir da INTENÇÃO, não incondicionalmente.
-      let destination: string;
-
-      if (isLateArrival) {
-        // Fluxo late-arrival REAL (o que o P1-K consertou — preservado):
-        // cria a late_arrival_request de verdade (o backend deriva customerId
-        // do cookie recognition_token e tableSessionId da session — o body só
-        // precisa satisfazer o @IsUUID customerId do DTO) e roteia com o `id`
-        // + `expiresAt` que o create devolve (LateArrivalRequestDto), pra que
-        // a waiting-approval case o requestId nos eventos WS `late_arrival.*`
-        // e dirija o countdown. Sem isso a tela ficava presa em "aguardando
-        // host" pra sempre.
-        const request = await createLateArrivalRequest({
-          slug,
-          customerId: result.customerId,
-        });
-
-        destination = buildWaitingUrl({
-          slug,
-          base: redirectTo ?? `/${slug}/waiting-approval`,
-          requestId: request.id,
-          expiresAt: request.expiresAt,
-          hostName,
-        });
-      } else {
-        // Gate-de-CPF (caso comum): o cliente já está sentado e só precisa
-        // provar o CPF pra alcançar outra tela (feedback, /eu, histórico,
-        // assistente via `?next=`). NÃO criamos late_arrival_request nem vamos
-        // pra waiting-approval — isso deixava o cliente preso esperando um host
-        // fantasma e gerava um pedido órfão que escalava pro gerente após o
-        // TTL. Roteamos pro destino pretendido (`next`/`redirectTo`), honrando
-        // o `?next=` que antes era ignorado. Fallback: home do slug.
-        destination = resolveGateDestination({ slug, next, redirectTo });
-      }
+      // Gate-de-CPF: o cliente já está sentado e só precisa provar o CPF pra
+      // alcançar outra tela (feedback, /eu, histórico, assistente via
+      // `?next=`). Roteamos pro destino pretendido (`next`/`redirectTo`),
+      // sempre normalizado pra um path interno. Fallback: home do slug.
+      const destination = resolveGateDestination({ slug, next, redirectTo });
 
       // Soft alert "bem-vindo de volta" quando retornante e o nome canonico
       // diverge do digitado. Pequena pausa visual antes de navegar pra que o
@@ -190,19 +125,7 @@ export function ScreenCustomerIdentifyBeforeJoin({
       setError(err instanceof Error ? err.message : 'Erro ao validar seus dados. Tente novamente.');
       setSubmitting(false);
     }
-  }, [
-    canSubmit,
-    slug,
-    name,
-    cleanedCpf,
-    sessionId,
-    setCustomer,
-    router,
-    isLateArrival,
-    redirectTo,
-    next,
-    hostName,
-  ]);
+  }, [canSubmit, slug, name, cleanedCpf, sessionId, setCustomer, router, redirectTo, next]);
 
   // capitalize on blur: roda a cada keystroke quebra autocorrect do iOS
   // (mesmo motivo do WelcomeModal). Mantemos a UX de Title-Case sem brigar
@@ -219,9 +142,7 @@ export function ScreenCustomerIdentifyBeforeJoin({
       <div className="relative grid h-[100dvh] min-h-dvh w-full place-items-center px-[22px] py-8">
         <div className="w-full max-w-[420px]">
           <span className="block font-mono text-[10px] uppercase tracking-[1.5px] text-faint">
-            {isLateArrival
-              ? 'Acabou de escanear · alguém já está nesta mesa'
-              : 'Só um instante · confirme quem é você'}
+            Só um instante · confirme quem é você
           </span>
 
           <h1 className="mt-[14px] text-[26px] font-bold leading-[1.15] tracking-[-0.024em] text-ink text-pretty">
@@ -229,18 +150,7 @@ export function ScreenCustomerIdentifyBeforeJoin({
           </h1>
 
           <p className="mt-[12px] max-w-[320px] text-[15px] font-medium leading-[1.5] tracking-[-0.005em] text-mute text-pretty">
-            {isLateArrival ? (
-              hostName ? (
-                <>
-                  <b className="font-semibold text-ink">{hostName}</b> (host da mesa) vai ver seu
-                  nome pra decidir se você pode entrar.
-                </>
-              ) : (
-                <>O host da mesa vai ver seu nome pra decidir se você pode entrar.</>
-              )
-            ) : (
-              <>Confirme seu nome e CPF pra acessar seu perfil e histórico.</>
-            )}
+            Confirme seu nome e CPF pra acessar seu perfil e histórico.
           </p>
 
           <div className="mt-[24px] flex flex-col gap-[18px]">
@@ -267,9 +177,7 @@ export function ScreenCustomerIdentifyBeforeJoin({
           </div>
 
           <p className="mt-[14px] font-mono text-[10px] font-bold uppercase leading-[1.5] tracking-[0.8px] text-faint text-pretty">
-            {isLateArrival
-              ? 'Só pra mesa saber quem é · CPF nos ajuda a te reconhecer na próxima visita'
-              : 'Confirmação rápida · CPF nos ajuda a te reconhecer na próxima visita'}
+            Confirmação rápida · CPF nos ajuda a te reconhecer na próxima visita
           </p>
 
           {error && (
@@ -307,39 +215,7 @@ export function ScreenCustomerIdentifyBeforeJoin({
 }
 
 /**
- * Anexa `requestId`/`expiresAt`/`hostName` ao destino da waiting-approval sem
- * pisar em query params que o caller já tenha posto no `redirect`. A tela
- * `/waiting-approval` lê exatamente essas chaves (page.tsx) e as repassa pro
- * `ScreenCustomerWaitingApproval`, que casa o `requestId` nos eventos WS
- * `late_arrival.*` e usa o `expiresAt` pra dirigir o countdown. Sem esses
- * params a tela ficava presa em "aguardando host" pra sempre (P1-K).
- */
-export function buildWaitingUrl(input: {
-  slug: string;
-  base: string;
-  requestId: string;
-  expiresAt?: string | null;
-  hostName?: string | null;
-}): string {
-  const fallback = `/${input.slug}/waiting-approval`;
-  const internal = toTenantInternalPath(input.base, input.slug);
-  const parsed = new URL(internal ?? fallback, 'https://internal.invalid');
-  // Late-arrival sempre termina na landing específica. Mesmo um path interno
-  // válido não pode transformar este fluxo em redirect arbitrário.
-  if (parsed.pathname !== fallback) {
-    parsed.pathname = fallback;
-    parsed.search = '';
-    parsed.hash = '';
-  }
-  parsed.searchParams.set('requestId', input.requestId);
-  if (input.expiresAt) parsed.searchParams.set('expiresAt', input.expiresAt);
-  if (input.hostName) parsed.searchParams.set('hostName', input.hostName);
-  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-}
-
-/**
- * Resolve pra onde o gate-de-CPF (não-late-arrival) deve navegar depois de
- * identificar. Preferência: `next` (o destino que o caller que bouncou o
+ * Resolve pra onde o gate-de-CPF deve navegar depois de identificar. Preferência: `next` (o destino que o caller que bouncou o
  * cliente escreveu, ex.: `?next=assistente`) → `redirectTo` → home do slug.
  *
  * `next`/`redirectTo` podem ser um path absoluto (`/slug/foo`, usado como

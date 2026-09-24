@@ -11,13 +11,11 @@ import { invalidateSessionAuthById } from '../../common/auth/session-auth-token'
  * Recurring sweeper for time-based domain transitions. Runs every 10s and,
  * for each active tenant schema, fans out to independent passes:
  *
- *  1. late-arrival expirations    -> emit late_arrival.expired (+ optional
- *                                    escalation.advanced if the chain rolls)
- *  2. escalation chain advances   -> emit escalation.advanced or .completed
- *  3. zone-pause auto-end         -> emit zone_pause.ended (autoExpired=true)
- *  4. table-merge expirations    -> emit table_merge.rejected(timeout)
- *  5. merge-cooldown notifications-> emit merge.cooldown_expired
- *  6. scan-verification cascade -> host -> manager -> waiter -> timeout
+ *  1. escalation chain advances   -> emit escalation.advanced or .completed
+ *  2. zone-pause auto-end         -> emit zone_pause.ended (autoExpired=true)
+ *  3. table-merge expirations    -> emit table_merge.rejected(timeout)
+ *  4. merge-cooldown notifications-> emit merge.cooldown_expired
+ *  5. scan-verification cascade -> host -> manager -> waiter -> timeout
  *
  * Each pass is wrapped in its own try/catch so a SQL failure in one pass
  * never blocks the others. We never use `TenantConnectionProvider` here
@@ -135,7 +133,6 @@ export class TtlTickService {
     const tables = await this.existingTables(schemaName, [
       'alerts',
       'table_sessions',
-      'late_arrival_requests',
       'escalation_chains',
       'zone_pauses',
       'table_merge_requests',
@@ -153,13 +150,6 @@ export class TtlTickService {
       jobs.push(
         this.sweepStaleSessions(slug, schemaName).catch((e) =>
           this.logger.error(`[${slug}] sweepStaleSessions`, e as Error),
-        ),
-      );
-    }
-    if (tables.has('late_arrival_requests')) {
-      jobs.push(
-        this.sweepLateArrivals(slug, schemaName).catch((e) =>
-          this.logger.error(`[${slug}] sweepLateArrivals`, e as Error),
         ),
       );
     }
@@ -317,51 +307,6 @@ export class TtlTickService {
     }
   }
 
-  private async sweepLateArrivals(slug: string, schemaName: string) {
-    const expired = await this.withTenant(schemaName, async (qr) => {
-      // Atomically flip pending→expired so concurrent ticks don't double-fire.
-      // UPDATE…RETURNING under pg returns `[rows[], rowCount]`; unwrapRows
-      // normalises that tuple back to the row array.
-      const rows = unwrapRows<{
-        id: string;
-        table_session_id: string;
-        customer_id: string;
-        escalation_chain_id: string | null;
-        decided_at: string;
-      }>(
-        await qr.query(
-          `UPDATE late_arrival_requests
-              SET status = 'expired',
-                  decided_at = now(),
-                  updated_at = now()
-            WHERE status = 'pending'
-              AND ttl_expires_at < now()
-          RETURNING id, table_session_id, customer_id, escalation_chain_id, decided_at`,
-        ),
-      );
-      return rows;
-    });
-
-    for (const row of expired) {
-      this.gateway.emitLateArrivalExpired(slug, row.customer_id, {
-        requestId: row.id,
-        tableSessionId: row.table_session_id,
-        // M2 (timeline): timestamp do ato (decided_at do sweep).
-        occurredAt: row.decided_at,
-      });
-
-      // Auto-advance any attached escalation chain — letting the host slot
-      // expire is itself the trigger to roll up to the next role.
-      if (row.escalation_chain_id) {
-        try {
-          await this.advanceChain(slug, schemaName, row.escalation_chain_id);
-        } catch (e) {
-          this.logger.error(`[${slug}] advanceChain after late_arrival expire failed`, e as Error);
-        }
-      }
-    }
-  }
-
   // ───────────── Escalation chains ─────────────
 
   private async sweepEscalations(slug: string, schemaName: string) {
@@ -428,8 +373,7 @@ export class TtlTickService {
     // P1-S: when the caller already holds a locked transaction (sweepEscalations
     // grabbed this chain under FOR UPDATE), reuse ITS runner so the advance runs
     // inside the same tx and the row lock keeps holding. Callers without a
-    // locked context (sweepLateArrivals) pass no runner and get the old
-    // per-call `withTenant`.
+    // locked context pass no runner and get the old per-call `withTenant`.
     runner?: import('typeorm').QueryRunner,
   ) {
     const run = <T>(work: (qr: import('typeorm').QueryRunner) => Promise<T>): Promise<T> =>
@@ -547,9 +491,9 @@ export class TtlTickService {
 
       // Level-CAS (resíduo 1): avança SÓ se a chain ainda está no nível que
       // lemos (`level = $5` = fromLevel). Os DOIS sweeps de um mesmo tick
-      // (sweepEscalations sob FOR UPDATE e sweepLateArrivals em autocommit,
-      // sem lock) podem casar a MESMA chain vencida; o FOR UPDATE não serializa
-      // o caminho autocommit. O Postgres serializa os dois UPDATEs na row: o
+      // podem casar a MESMA chain vencida por caminhos distintos; o FOR UPDATE
+      // não serializa um caminho autocommit concorrente. O Postgres serializa
+      // os UPDATEs na row: o
       // primeiro casa `level = fromLevel` e sobe pra nextLevel; o segundo vê o
       // nível já avançado, casa 0 linhas e abortamos SEM re-emitir advance.
       const advanceAffected = unwrapAffected(

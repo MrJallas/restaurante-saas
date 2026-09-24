@@ -2,7 +2,6 @@
 //
 // Manager-relevant events (ws-events.ts shape):
 //   • escalation.created / .advanced / .completed
-//   • late_arrival.created / .approved / .rejected / .expired
 //   • table_merge.created / .approved / .rejected
 //   • merge.cooldown_started / .cooldown_expired
 //   • lgpd.request_fulfilled
@@ -54,10 +53,6 @@ const MANAGER_EVENT_NAMES: WsEventName[] = [
   'escalation.created',
   'escalation.advanced',
   'escalation.completed',
-  'late_arrival.created',
-  'late_arrival.approved',
-  'late_arrival.rejected',
-  'late_arrival.expired',
   'scan_verification.created',
   'scan_verification.escalated',
   'scan_verification.resolved',

@@ -14,6 +14,13 @@ export const TIMELINE_KINDS = [
   'session.opened',
   'participant.joined',
   'participant.approved',
+  // SOMENTE LEITURA (System B removido na migration 081). Nenhum produtor
+  // restou — nem tap live, nem backfill SQL. Os kinds continuam no enum
+  // porque o event-store Mongo `session_timeline` guarda entries históricas
+  // com eles, e a timeline é registro do que ACONTECEU: tirá-los daqui só
+  // faria docs antigos caírem na prioridade 0 do comparator e perderem o
+  // rótulo na tela do gerente. Chegada tardia nova entra por
+  // `participant.joined` / `participant.approved` (System A).
   'late_arrival.requested',
   'late_arrival.approved',
   'late_arrival.rejected',

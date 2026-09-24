@@ -144,8 +144,8 @@ export class CustomersController {
   ) {}
 
   /**
-   * `POST /customers/identify` — CPF lookup before late-arrival join.
-   * Public (this is itself the auth bootstrap for late-arrival flow).
+   * `POST /customers/identify` — CPF lookup do gate de identidade.
+   * Public (this is itself the identity bootstrap for the customer app).
    *
    * Round 6 (B-NEW-11) hardening preservado ao redor da decisão temporária de
    * produto (2026-07-11): CPF conhecido autentica o perfil existente.
@@ -310,7 +310,7 @@ export class CustomersController {
    * `recognition_token` (via CallerResolverService), NUNCA por
    * `session.customerId`. `session.customerId` guarda o ÚLTIMO cliente que
    * fez welcome na mesa — compartilhado entre todos os participantes (host
-   * + late-arrivals). Usá-lo aqui vazava itens+notes do último welcomer pra
+   * + quem entrou depois). Usá-lo aqui vazava itens+notes do último welcomer pra
    * qualquer outro cliente da mesma sessão que tocasse "repetir última
    * visita". O WS gateway já resolvia identidade por PARTICIPANTE
    * (resolveRecognizedCustomer no events.gateway) — o REST agora segue o

@@ -15,7 +15,18 @@ import { execFileSync } from 'node:child_process';
  *    "Funcionário já escalado nesse turno nessa data" na segunda tomada.
  */
 
-const PSQL = ['exec', '-i', 'restaurant-postgres', 'psql', '-p', '5434', '-U', 'postgres', '-d', 'restaurant_saas'];
+const PSQL = [
+  'exec',
+  '-i',
+  'restaurant-postgres',
+  'psql',
+  '-p',
+  '5434',
+  '-U',
+  'postgres',
+  '-d',
+  'restaurant_saas',
+];
 
 function sql(query: string): string {
   return execFileSync('docker', [...PSQL, '-t', '-A', '-F', '|', '-c', query], {
@@ -56,7 +67,9 @@ export function escolherTurno(): Turno {
       return { id, label, inicio, fim, valeAgora: vale === 't' };
     });
 
-  const cobreODiaTodo = linhas.find((t) => t.inicio.startsWith('00:00') && t.fim.startsWith('23:5'));
+  const cobreODiaTodo = linhas.find(
+    (t) => t.inicio.startsWith('00:00') && t.fim.startsWith('23:5'),
+  );
   const atual = linhas.find((t) => t.valeAgora && t !== cobreODiaTodo);
   const escolhido = atual ?? cobreODiaTodo ?? linhas[0];
 
@@ -90,20 +103,17 @@ export function resetarEstado(mesas = ['QRTEST91', 'QRTEST92']) {
     -- com FK. Então a ordem correta é apagar o PEDIDO primeiro (soltando a
     -- FK) e só depois a chain, que a essa altura ficou órfã.
     delete from restaurant_dev.scan_verification_requests;
-    delete from restaurant_dev.late_arrival_requests;
 
     -- Só apaga a chain que ficou ÓRFÃ. Várias tabelas apontam para
-    -- escalation_chains por FK (scan_verification_requests,
-    -- late_arrival_requests, e potencialmente outras que virão), então caçar
-    -- FK por FK é jogo perdido: qualquer tabela nova quebra o reset de novo.
-    -- Deletar só o que ninguém referencia é correto por construção — e chain
-    -- órfã não afeta o vídeo, o que importa é não sobrar verificação pendente.
+    -- escalation_chains por FK (scan_verification_requests e potencialmente
+    -- outras que virão), então caçar FK por FK é jogo perdido: qualquer tabela
+    -- nova quebra o reset de novo. Deletar só o que ninguém referencia é
+    -- correto por construção — e chain órfã não afeta o vídeo, o que importa é
+    -- não sobrar verificação pendente.
     delete from restaurant_dev.escalation_chains ec
-     where ec.kind in ('scan_verification', 'late_arrival')
+     where ec.kind = 'scan_verification'
        and not exists (select 1 from restaurant_dev.scan_verification_requests s
-                        where s.escalation_chain_id = ec.id)
-       and not exists (select 1 from restaurant_dev.late_arrival_requests l
-                        where l.escalation_chain_id = ec.id);
+                        where s.escalation_chain_id = ec.id);
 
     -- escala de hoje, para a próxima tomada não bater no índice único
     update restaurant_dev.staff_shift_assignments set removed_at=now()

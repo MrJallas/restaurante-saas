@@ -1,13 +1,9 @@
 // REST helpers for the host (recepcionista) screens.
 // Tenant slug is parameterised; route prefixes follow the API conventions
-// at apps/api/src/modules/* (late-arrival, table-merge, table-session).
+// at apps/api/src/modules/* (table-merge, table-session).
 
 import { staffDelete, staffGet, staffPatch, staffPost } from '../api';
-import type {
-  HostInboxItemDto,
-  LateArrivalRequestDto,
-  ScanVerificationRequestDto,
-} from '@restaurant/shared-types';
+import type { HostInboxItemDto, ScanVerificationRequestDto } from '@restaurant/shared-types';
 
 export interface HostTableEntry {
   number: number;
@@ -150,15 +146,6 @@ export function updateReservation(
 // e não deve ser exposto como operação staff.
 // P1 #22 — backend `ListQueryDto` whitelists ['pending','approved','rejected',
 // 'expired']. The old `staff_pending` value silently filtered to nothing.
-// `pending` matches the actual DB enum on `late_arrival_requests.status`.
-export function listPendingLateArrivals(tenantSlug: string): Promise<LateArrivalRequestDto[]> {
-  return staffGet<LateArrivalRequestDto[]>(`/${tenantSlug}/late-arrival-requests?status=pending`);
-}
-
-export function getLateArrival(tenantSlug: string, id: string): Promise<LateArrivalRequestDto> {
-  return staffGet<LateArrivalRequestDto>(`/${tenantSlug}/late-arrival-requests/${id}`);
-}
-
 // ─── Physical QR scan verification ───
 export function listPendingScanVerifications(
   tenantSlug: string,

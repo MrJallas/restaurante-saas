@@ -3,7 +3,7 @@
  * (funções puras row-com-join → args dos mappers). Os mappers em si já são
  * cobertos por timeline-mappers.test.ts — aqui o alvo é o WIRING: cada
  * coluna joinada cai no campo de ctx certo, e rows sem âncora de sessão
- * (late_arrival/complaints/courtesies com sessão NULL) não geram entry.
+ * (complaints/courtesies com sessão NULL) não geram entry.
  * I/O (pg/Mongo) fica fora — a prova viva do script é do auditor.
  */
 
@@ -11,7 +11,6 @@ import {
   BACKFILL_SOURCES,
   complaintRowToEntries,
   courtesyRowToEntries,
-  lateArrivalRowToEntries,
   orderDeliveryRowToEntries,
   orderRowToEntries,
   orderStatusHistoryRowToEntries,
@@ -217,47 +216,6 @@ describe('paymentRowToEntries', () => {
   });
 });
 
-describe('lateArrivalRowToEntries', () => {
-  const base = {
-    id: 'a6b6b452-93ab-4613-b13d-e5ae923f2d34',
-    table_session_id: SESSION_ID,
-    customer_id: CUSTOMER_UUID,
-    requested_at: '2026-05-15T20:45:24.790Z',
-    expected_arrival_at: '2026-05-15T21:15:24.789Z',
-    status: 'approved',
-    approved_by_staff_id: STAFF_UUID,
-    approved_by_customer_id: null,
-    decided_at: '2026-05-15T20:46:30.012Z',
-    message: null,
-    created_at: '2026-05-15T20:45:24.790Z',
-    requester_name: 'Ana',
-    decider_staff_name: 'Renata',
-    decider_customer_name: null,
-  };
-
-  it('table_session_id NULL (coluna nullable) → [] — sem âncora não entra', () => {
-    expect(lateArrivalRowToEntries({ ...base, table_session_id: null })).toEqual([]);
-  });
-
-  it('deciderName prioriza staff (mesma ordem do mapper)', () => {
-    const entries = lateArrivalRowToEntries(base);
-    expect(entries[0].actor.name).toBe('Ana');
-    expect(entries[1].actor).toEqual({ type: 'staff', id: STAFF_UUID, name: 'Renata' });
-  });
-
-  it('decisão de customer (host) → decider_customer_name', () => {
-    const entries = lateArrivalRowToEntries({
-      ...base,
-      status: 'rejected',
-      approved_by_staff_id: null,
-      approved_by_customer_id: CUSTOMER_UUID,
-      decider_staff_name: null,
-      decider_customer_name: 'Caleb',
-    });
-    expect(entries[1].actor).toEqual({ type: 'customer', id: CUSTOMER_UUID, name: 'Caleb' });
-  });
-});
-
 describe('tableMergeRowToEntries', () => {
   it('requester_name e decider_name wired', () => {
     const entries = tableMergeRowToEntries({
@@ -383,7 +341,6 @@ describe('BACKFILL_SOURCES (registro)', () => {
       'order_deliveries',
       'waiter_calls',
       'payments',
-      'late_arrival_requests',
       'table_merge_requests',
       'complaints',
       'courtesies',

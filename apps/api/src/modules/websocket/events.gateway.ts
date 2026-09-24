@@ -21,10 +21,6 @@ import type {
   WsEscalationCreated,
   WsEscalationAdvanced,
   WsEscalationCompleted,
-  WsLateArrivalCreated,
-  WsLateArrivalApproved,
-  WsLateArrivalRejected,
-  WsLateArrivalExpired,
   WsScanVerificationCreated,
   WsScanVerificationEscalated,
   WsScanVerificationResolved,
@@ -200,7 +196,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
    * tenant do staff. Antes `join:customer` staff-path entrava na room
    * sem checar — staff de tenant A com customerId de tenant B (UUID
    * vazado em logs/Mongo dump) recebia complaint.responded /
-   * lgpd.request_fulfilled / late_arrival.* / staff_message.received
+   * lgpd.request_fulfilled / staff_message.received
    * com PII alheia. Cache na chave `customer_tenant:<customerId>` (TTL
    * 5min) pra evitar lookup em DB a cada join.
    */
@@ -629,7 +625,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       // se o customer pertence ao tenant carimbado no handshake. Antes
       // staff de tenant A com UUID alheio (vazado em logs / Mongo dump
       // / migração) recebia complaint.responded / lgpd.request_fulfilled
-      // / late_arrival.* / staff_message.received com PII de cliente
+      // / staff_message.received com PII de cliente
       // de outro tenant.
       if (!client.data.staffTenantSlug) {
         client.emit('error', { message: 'Tenant slug missing in handshake.' });
@@ -898,30 +894,6 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     payload: WsEscalationCompleted['payload'],
   ) {
     return this.emitter.emitEscalationCompleted(slug, customerId, payload);
-  }
-
-  emitLateArrivalCreated(
-    slug: string,
-    hostCustomerId: string | null,
-    payload: WsLateArrivalCreated['payload'],
-  ) {
-    return this.emitter.emitLateArrivalCreated(slug, hostCustomerId, payload);
-  }
-
-  emitLateArrivalApproved(slug: string, payload: WsLateArrivalApproved['payload']) {
-    return this.emitter.emitLateArrivalApproved(slug, payload);
-  }
-
-  emitLateArrivalRejected(slug: string, payload: WsLateArrivalRejected['payload']) {
-    return this.emitter.emitLateArrivalRejected(slug, payload);
-  }
-
-  emitLateArrivalExpired(
-    slug: string,
-    requesterCustomerId: string | null,
-    payload: WsLateArrivalExpired['payload'],
-  ) {
-    return this.emitter.emitLateArrivalExpired(slug, requesterCustomerId, payload);
   }
 
   emitScanVerificationCreated(slug: string, payload: WsScanVerificationCreated['payload']) {

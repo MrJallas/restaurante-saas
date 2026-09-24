@@ -2,10 +2,6 @@
 
 // WebSocket subscription for host (recepcionista) events.
 // Default subscription set:
-//  - late_arrival.created     · novo pedido caiu na fila do staff
-//  - late_arrival.approved    · pra refresh do feed
-//  - late_arrival.rejected    · idem
-//  - late_arrival.expired     · idem
 //  - table_merge.created      · host approval pendente (lado walkin)
 //  - table_merge.approved
 //  - table_merge.rejected
@@ -41,10 +37,6 @@ const DEFAULT_HOST_EVENTS: WsEventName[] = [
   // Mesa pediu a recepção (room tenant:slug:host) — prompt 100 §5.5:
   // a superfície do host mostra "Mesa X pediu a recepção" em tempo real.
   'host.assist_requested',
-  'late_arrival.created',
-  'late_arrival.approved',
-  'late_arrival.rejected',
-  'late_arrival.expired',
   'scan_verification.created',
   'scan_verification.escalated',
   'scan_verification.resolved',

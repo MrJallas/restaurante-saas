@@ -2,7 +2,7 @@
 // Wraps `staffApi` from `lib/api.ts` with the same auth model (`x-staff-key`).
 //
 // Endpoint surface mapped here mirrors the Phase-2 module list:
-//   • customer-host (late-arrival, table-merge)
+//   • customer-host (table-merge)
 //   • complaints, order-ratings
 //   • staff-messages
 //   • zone-pause
@@ -21,7 +21,6 @@ import type {
   ComplaintResponseDto,
   ComplaintResolveDto,
   ComplaintForwardDto,
-  LateArrivalRequestDto,
   TableMergeRequestDto,
   StaffMessageDto,
   StaffMessageThreadDto,
@@ -39,14 +38,6 @@ import type {
   SessionTimelineResponse,
   TableSessionsHistoryResponse,
 } from '@restaurant/shared-types';
-
-// ─────────────────────────────────────────────────────────────
-// Late-arrival
-// ─────────────────────────────────────────────────────────────
-
-export const lateArrivalApi = (slug: string) => ({
-  list: () => staffGet<LateArrivalRequestDto[]>(`/${slug}/late-arrival-requests`),
-});
 
 // ─────────────────────────────────────────────────────────────
 // Table merge
@@ -977,7 +968,6 @@ export const courtesiesApi = (slug: string) => ({
 export function manager(slug: string) {
   return {
     slug,
-    lateArrival: lateArrivalApi(slug),
     tableMerge: tableMergeApi(slug),
     complaints: complaintsApi(slug),
     staffMessages: staffMessagesApi(slug),

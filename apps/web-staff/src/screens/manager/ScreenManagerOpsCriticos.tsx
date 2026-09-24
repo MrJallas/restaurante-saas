@@ -7,7 +7,7 @@
 // ações inline + Fórmula.
 //
 // Backend wiring (Round 18 Onda 4):
-//   • REAL: GET /:slug/complaints + GET /:slug/late-arrival-requests
+//   • REAL: GET /:slug/complaints
 //     populam o pool. Aqui filtramos só os "críticos" (status pendente
 //     + além da meta).
 //

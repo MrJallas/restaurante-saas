@@ -29,7 +29,7 @@ import { TimelineStoreService } from './timeline-store.service';
  *    {type:'system', id:null, name:null}.
  *  - LGPD: o payload da entry SÓ leva campos estruturados (ids/valores/
  *    status/enums). Texto livre do wire (complaint.description,
- *    late_arrival.visitContext, courtesy.notes, table_liberated.reason)
+ *    courtesy.notes, table_liberated.reason)
  *    NUNCA é copiado — a entry guarda refs, o texto fica na fonte SQL.
  *
  * REGRAS DE ID (determinísticas DO PAYLOAD; onde o payload carrega o pk da
@@ -48,9 +48,6 @@ import { TimelineStoreService } from './timeline-store.service';
  *                            ws:order:claimed:<orderId>:<claimedBy>
  *  - waiter:call           → wcall:<callId>                      (M1)
  *  - waiter:acknowledged   → wcall:<callId>:acknowledged         (M1)
- *  - late_arrival.created  → la:<requestId>                      (M1)
- *  - late_arrival.approved → la:<requestId>:approved             (M1)
- *  - late_arrival.rejected → la:<requestId>:rejected             (M1)
  *  - table_merge.created   → merge:<requestId>                   (M1)
  *  - table_merge.approved  → merge:<requestId>:approved          (M1;
  *                            status 'pending' — consentimento parcial de um
@@ -201,42 +198,6 @@ export class TimelineTapService {
           actor: ack?.id ? actorOf('staff', ack.id, ack.name) : SYSTEM_ACTOR,
           refs: compactRefs({ callId: str(p.callId) }),
           payload: compact({ etaMinutes: p.etaMinutes ?? undefined }),
-        };
-      }
-
-      case 'late_arrival.created': {
-        const sessionId = this.anchor(wire, p.tableSessionId);
-        if (!sessionId) return null;
-        return {
-          id: `la:${str(p.requestId)}`,
-          kind,
-          at: pickAt(p, 'occurredAt', 'timestamp'),
-          sessionId,
-          actor: actorOf('customer', str(p.requesterCustomerId), str(p.requesterName)),
-          refs: compactRefs({ requestId: str(p.requestId) }),
-          // visitContext é texto livre do cliente — NÃO copia (LGPD).
-          payload: {},
-        };
-      }
-
-      case 'late_arrival.approved':
-      case 'late_arrival.rejected': {
-        const sessionId = this.anchor(wire, p.tableSessionId);
-        if (!sessionId) return null;
-        const approved = wire === 'late_arrival.approved';
-        return {
-          id: `la:${str(p.requestId)}:${approved ? 'approved' : 'rejected'}`,
-          kind,
-          at: pickAt(p, 'occurredAt', 'timestamp'),
-          sessionId,
-          // decidedByCustomerId ausente/null = decisão de staff/sistema (o
-          // wire M2 não distingue) → system, como o timeout do M1.
-          actor: str(p.decidedByCustomerId)
-            ? actorOf('customer', str(p.decidedByCustomerId))
-            : SYSTEM_ACTOR,
-          refs: compactRefs({ requestId: str(p.requestId) }),
-          // reason aqui é enum (host_rejected|host_timeout|walkin_no_host).
-          payload: compact({ reason: approved ? undefined : (p.reason ?? undefined) }),
         };
       }
 

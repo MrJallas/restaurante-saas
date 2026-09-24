@@ -52,7 +52,6 @@ export interface HostTableDto {
 // ─── Inbox ───
 
 export type HostInboxKind =
-  | 'late_arrival_consumed'
   | 'merge_consumed'
   | 'complaint'
   | 'zone_pause_started'
@@ -62,8 +61,8 @@ export type HostInboxKind =
 
 /**
  * Item de notificacao passiva no inbox da recepcionista. Cada source tem
- * seu campo `refId` apontando pro registro original (late_arrival_request,
- * complaint, table_merge_request, zone_pause).
+ * seu campo `refId` apontando pro registro original (complaint,
+ * table_merge_request, zone_pause).
  */
 export interface HostInboxItemDto {
   id: string;

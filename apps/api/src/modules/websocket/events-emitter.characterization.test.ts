@@ -33,9 +33,6 @@ import { EventsGateway } from './events.gateway';
 import type {
   WsEscalationCreated,
   WsComplaintRead,
-  WsLateArrivalApproved,
-  WsLateArrivalRejected,
-  WsLateArrivalExpired,
   WsStaffMessageReceived,
   WsStaffMessageRead,
   WsTableMergeCreated,
@@ -216,23 +213,6 @@ describe('EventsGateway emit* — characterization de rooms/wire/payload', () =>
     expect(emitted[0].payload).toBe(payload);
   });
 
-  it('d3. emitLateArrivalExpired com requesterCustomerId null → só rooms incondicionais tenant:<slug> + session:<id>', () => {
-    const { gateway, emitted } = createHarness();
-    const payload: WsLateArrivalExpired['payload'] = {
-      requestId: 'late-1',
-      tableSessionId: 'ts-9',
-      // M2 (timeline): campo aditivo — nasce no caller (ttl-tick).
-      occurredAt: '2026-07-04T12:00:00.000Z',
-    };
-
-    gateway.emitLateArrivalExpired(SLUG, null, payload);
-
-    expect(emitted).toHaveLength(2);
-    expect(emitted.map((e) => e.rooms)).toEqual([`tenant:${SLUG}`, 'session:ts-9']);
-    expect(emitted.every((e) => e.event === 'late_arrival.expired')).toBe(true);
-    expect(emitted.every((e) => e.payload === payload)).toBe(true);
-  });
-
   it('e1. emitLgpdFulfilled sem requestId → fallback requestId=protocolNumber, type erasure, fulfilledAt ISO, rooms tenant + customer', () => {
     const { gateway, emitted } = createHarness();
 
@@ -398,51 +378,6 @@ describe('EventsGateway emit* — characterization de rooms/wire/payload', () =>
       });
       expectIsoTimestamp(record.payload.timestamp);
     }
-  });
-
-  it('j1. [M2·late-arrival] emitLateArrivalApproved repassa occurredAt + decidedByCustomerId — rooms tenant + customer + session', () => {
-    const { gateway, emitted } = createHarness();
-    const payload: WsLateArrivalApproved['payload'] = {
-      requestId: 'late-2',
-      tableSessionId: 'ts-7',
-      tableNumber: 7,
-      requesterCustomerId: 'cust-9',
-      requesterName: 'Bia',
-      partySize: 3,
-      occurredAt: '2026-07-04T12:00:00.000Z',
-      decidedByCustomerId: 'cust-host',
-    };
-
-    gateway.emitLateArrivalApproved(SLUG, payload);
-
-    expect(emitted).toHaveLength(3);
-    expect(emitted.map((e) => e.rooms)).toEqual([
-      `tenant:${SLUG}`,
-      'customer:cust-9',
-      'session:ts-7',
-    ]);
-    expect(emitted.every((e) => e.event === 'late_arrival.approved')).toBe(true);
-    expect(emitted.every((e) => e.payload === payload)).toBe(true);
-  });
-
-  it('j2. [M2·late-arrival] emitLateArrivalRejected repassa occurredAt + decidedByCustomerId + tableNumber — rooms tenant + customer', () => {
-    const { gateway, emitted } = createHarness();
-    const payload: WsLateArrivalRejected['payload'] = {
-      requestId: 'late-3',
-      tableSessionId: 'ts-8',
-      requesterCustomerId: 'cust-10',
-      reason: 'host_rejected',
-      occurredAt: '2026-07-04T12:00:00.000Z',
-      decidedByCustomerId: 'cust-host',
-      tableNumber: 8,
-    };
-
-    gateway.emitLateArrivalRejected(SLUG, payload);
-
-    expect(emitted).toHaveLength(2);
-    expect(emitted.map((e) => e.rooms)).toEqual([`tenant:${SLUG}`, 'customer:cust-10']);
-    expect(emitted.every((e) => e.event === 'late_arrival.rejected')).toBe(true);
-    expect(emitted.every((e) => e.payload === payload)).toBe(true);
   });
 
   it('k1. [M2·merge] emitTableMergeCreated repassa createdAt — rooms tenant + ambos customers + ambas sessions', () => {

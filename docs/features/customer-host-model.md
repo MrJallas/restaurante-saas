@@ -3,6 +3,51 @@
 > Status: a desenhar (entry points: app do cliente · escaneio QR de mesa ocupada · mesa fisicamente juntada).
 > Backend: a implementar.
 
+---
+
+## ⚠️ COMO FICOU DE VERDADE (leia antes do resto · 2026-08-31)
+
+Este arquivo é o **documento de DESENHO**, escrito antes da implementação, e
+partes dele descrevem um backend que **não existe mais**. O que vale hoje:
+
+**Chegada tardia roda em `session_participants`, e só nela.**
+
+|                     | Como está implementado                                                                                                                                                                         |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pedido nasce        | `POST /:slug/customer/welcome` (ou `/recognize`) → `TableSessionService.upsertParticipant` grava `session_participants` com `status='pending'`                                                 |
+| Quem decide         | O **customer-host da mesa**, por `POST /:slug/table/participants/decide`                                                                                                                       |
+| Solicitante desiste | `POST /:slug/table/participants/cancel`                                                                                                                                                        |
+| Resultado chega     | WS `participant:decision` + poll de `GET /:slug/table/participants`                                                                                                                            |
+| Telas               | Host: `ScreenHostApproveParticipant` (`/[slug]/host/approve/participant`). Cliente: `ScreenCustomerWaitingApproval` montada inline pelo `PendingApprovalWrapper` de `/[slug]/mesa/[tableCode]` |
+| TTL                 | **Não existe.** O host pode demorar; nada expira sozinho                                                                                                                                       |
+
+**O que foi REMOVIDO na migration 081 (2026-08-31):** a tabela
+`late_arrival_requests`, o enum `late_arrival_request_status`, as rotas
+`POST|GET /:slug/late-arrival-requests*`, os eventos WS `late_arrival.*`, as
+telas `ScreenCustomerHostApproveJoin` (cliente) e `ScreenHostLateArrival`
+(recepção), e a seção "Chegadas tardias" da home da recepção.
+
+**Por quê:** aquele caminho implementava a escalada `host → recepcionista →
+gerente` que a **decisão de escopo V16 abaixo descontinuou** — as colunas
+`escalation_level`, `escalation_chain_id`, `approved_by_staff_id` e
+`ttl_expires_at` existiam exatamente pra isso. Era o código da versão ANTERIOR
+à decisão, sobrevivendo como uma segunda verdade: **zero registros** nos 4
+tenants e inalcançável a partir do app (dependia de `?intent=late-arrival`, um
+parâmetro que nenhum call-site jamais produziu).
+
+**Portanto, ao ler o que vem abaixo:** onde o texto cita
+`late_arrival_requests`, `POST /late-arrival-requests`, escalation chain
+`type='late-arrival'`, timeout de 60s ou "escala pra recepcionista", trate como
+**história de desenho, não como contrato**. A parte do desenho que VALE é a
+regra de produto: _decisão social é do cliente-host, staff não aprova_.
+`escalation_chains` continua vivo — mas para `table_merge`, `complaints` e
+`scan_verification`, nunca para chegada tardia.
+
+**Pendência conhecida:** a "notificação passiva ao staff" prometida na V16 **não
+existe** — ver `PROMPT-POLIMENTO.md`.
+
+---
+
 ## O que é
 
 A primeira pessoa que escaneia o QR de uma mesa e abre a comanda vira o **`host` daquela sessão**. Esse cliente-host tem privilégio sobre **decisões sociais da mesa** que antes eram do staff:
@@ -129,8 +174,14 @@ POST /customers/identify
 
 A tabela compartilhada criada no V15 fica · mas é usada **só pelo flow QR ilegível** (cascata puramente staff-to-staff: manager → outro manager → dono). Late-arrival e table-merge usam tabelas próprias mais simples:
 
+> **DESATUALIZADO.** O bloco `late_arrival_requests` abaixo foi construído,
+> ficou vazio e foi DROPADO na migration 081 — chegada tardia vive em
+> `session_participants` (ver o banner no topo). O bloco fica aqui só como
+> registro do desenho original. `escalation_chains` segue vivo para
+> `table_merge`, `complaints` e `scan_verification`.
+
 ```sql
--- Late-arrival: tabela própria · single approver
+-- [REMOVIDO na migration 081] Late-arrival: tabela própria · single approver
 CREATE TABLE late_arrival_requests (
   id                      uuid PRIMARY KEY,
   table_session_id        uuid NOT NULL REFERENCES table_sessions(id),
@@ -148,6 +199,11 @@ CREATE TABLE late_arrival_requests (
 ## Fluxos cobertos
 
 ### Fluxo A · Late-arrival
+
+> **DESATUALIZADO nos passos 1 e 7.** Não há escalation chain nem timeout de
+> 60s: o pedido é uma row `pending` em `session_participants` e espera o host
+> indefinidamente. Os passos 2-6 descrevem bem o que roda hoje, trocando
+> `ScreenCustomerHostApproveJoin` por `ScreenHostApproveParticipant`.
 
 Cliente B escaneia QR de mesa que já tem sessão ativa do Cliente A.
 

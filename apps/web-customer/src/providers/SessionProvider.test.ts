@@ -50,7 +50,6 @@ describe('SessionProvider cold rehydration', () => {
     window.sessionStorage.setItem('session_token', 'opaque-token');
     window.sessionStorage.setItem('continuation:kind-hint', '{"kind":"pagou"}');
     window.sessionStorage.setItem('complaint:cache:old', '{"text":"dado pessoal"}');
-    window.sessionStorage.setItem('late-arrival:old', '{"requesterName":"Nome removido"}');
     window.sessionStorage.setItem('table-merge:old', '{"originHostName":"Nome removido"}');
     window.sessionStorage.setItem('table-merge-command-choice:old', '1');
     window.localStorage.setItem('commandMode:session-lgpd', 'individual');
@@ -64,7 +63,6 @@ describe('SessionProvider cold rehydration', () => {
     expect(window.sessionStorage.getItem('session_token')).toBeNull();
     expect(window.sessionStorage.getItem('continuation:kind-hint')).toBeNull();
     expect(window.sessionStorage.getItem('complaint:cache:old')).toBeNull();
-    expect(window.sessionStorage.getItem('late-arrival:old')).toBeNull();
     expect(window.sessionStorage.getItem('table-merge:old')).toBeNull();
     expect(window.sessionStorage.getItem('table-merge-command-choice:old')).toBeNull();
     expect(window.localStorage.getItem('commandMode:session-lgpd')).toBeNull();

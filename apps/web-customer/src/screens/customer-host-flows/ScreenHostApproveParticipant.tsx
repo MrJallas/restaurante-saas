@@ -39,12 +39,13 @@ interface ScreenHostApproveParticipantProps {
  * clica na notificação". Before this round, the host could only see
  * pending joiners through the sticky bottom-sheet `HostApprovalModal`.
  * Now the bell/notification banner deep-links here for a full-screen
- * accept experience that matches the V20 customer-host flow (same canon
- * as `ScreenCustomerHostApproveJoin` which targets the late-arrival API).
+ * accept experience that matches the V20 customer-host flow.
  *
- * Differences from `ScreenCustomerHostApproveJoin`:
- *  - calls `/table/participants/decide` (System A) instead of
- *    `/late-arrival-requests/:id/approve|reject` (System B)
+ * É A ÚNICA tela de aprovação de entrada na mesa. A variante que falava com
+ * `/late-arrival-requests/:id/approve|reject` (System B) foi removida na
+ * migration 081.
+ *
+ *  - calls `/table/participants/decide` (System A)
  *  - drives off the live `/table/participants` snapshot — multiple pending
  *    requests cycle through; resolving one auto-advances to the next
  *  - no countdown / TTL (System A doesn't time out)

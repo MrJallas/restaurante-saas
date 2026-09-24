@@ -3,7 +3,6 @@
 // staff app subscribe. Every variant has a typed `payload` keyed by the
 // `event` literal.
 
-import type { LateArrivalStatus } from './customer-host';
 import type { TableMergeStatus, MergeCooldownReason } from './customer-host';
 import type { ComplaintChipAction, ComplaintProblemType } from './complaint';
 import type { SessionFlag } from './vip';
@@ -23,7 +22,7 @@ export interface WsEscalationCreated {
      * manager forwards (P1 #29) where the complaint climbs the chain because
      * the original assignee couldn't or wouldn't resolve it.
      */
-    type: 'late_arrival' | 'table_merge' | 'qr_issue' | 'complaint' | 'scan_verification';
+    type: 'table_merge' | 'qr_issue' | 'complaint' | 'scan_verification';
     tenantId: string;
     /** Free-form context payload (kind-specific). */
     context: Record<string, unknown>;
@@ -50,67 +49,6 @@ export interface WsEscalationCompleted {
     outcome: 'approved' | 'rejected' | 'timeout' | 'cancelled';
     /** Discriminated id: 'customer:<uuid>' | 'staff:<uuid>'. */
     resolvedBy: string | null;
-  };
-}
-
-// ─── Late-arrival ───
-
-export interface WsLateArrivalCreated {
-  event: 'late_arrival.created';
-  payload: {
-    requestId: string;
-    tableSessionId: string;
-    tableNumber: number;
-    requesterCustomerId: string;
-    requesterName: string;
-    visitContext?: string;
-    expiresAt: string;
-    /** M2 (timeline): timestamp do ato (row created_at). */
-    occurredAt?: string;
-  };
-}
-
-export interface WsLateArrivalApproved {
-  event: 'late_arrival.approved';
-  payload: {
-    requestId: string;
-    tableSessionId: string;
-    tableNumber: number;
-    requesterCustomerId: string;
-    requesterName: string;
-    /** New party size after the approval. */
-    partySize: number;
-    /** M2 (timeline): timestamp do ato (decided_at). */
-    occurredAt?: string;
-    /** M2 (timeline): host que aprovou — null quando staff decidiu. */
-    decidedByCustomerId?: string | null;
-  };
-}
-
-export interface WsLateArrivalRejected {
-  event: 'late_arrival.rejected';
-  payload: {
-    requestId: string;
-    tableSessionId: string;
-    requesterCustomerId: string;
-    /** Why: host_rejected | host_timeout | walkin_no_host. */
-    reason: 'host_rejected' | 'host_timeout' | 'walkin_no_host';
-    /** M2 (timeline): timestamp do ato (decided_at). */
-    occurredAt?: string;
-    /** M2 (timeline): host que rejeitou — null quando staff decidiu. */
-    decidedByCustomerId?: string | null;
-    /** M2 (timeline): número da mesa — só presente quando o caller tem o valor real. */
-    tableNumber?: number;
-  };
-}
-
-export interface WsLateArrivalExpired {
-  event: 'late_arrival.expired';
-  payload: {
-    requestId: string;
-    tableSessionId: string;
-    /** M2 (timeline): timestamp do ato (decided_at do sweep). */
-    occurredAt?: string;
   };
 }
 
@@ -704,10 +642,6 @@ export type WsEvent =
   | WsEscalationCreated
   | WsEscalationAdvanced
   | WsEscalationCompleted
-  | WsLateArrivalCreated
-  | WsLateArrivalApproved
-  | WsLateArrivalRejected
-  | WsLateArrivalExpired
   | WsScanVerificationCreated
   | WsScanVerificationEscalated
   | WsScanVerificationResolved
@@ -751,6 +685,3 @@ export type WsEventName = WsEvent['event'];
 
 /** Helper to extract a specific variant from `WsEvent` by name. */
 export type WsEventByName<N extends WsEventName> = Extract<WsEvent, { event: N }>;
-
-/** Re-export `LateArrivalStatus` type so consumers can build payload guards. */
-export type { LateArrivalStatus };

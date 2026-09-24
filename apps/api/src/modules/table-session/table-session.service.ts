@@ -28,8 +28,8 @@ interface SessionData {
    * Round 16 (B-NEW-65): customerId carimbado no session payload após
    * welcome/identify pra que `join:customer` customer-side WS handshake
    * consiga validar `client.data.customerId === data.customerId`.
-   * Antes era undefined → join sempre rejeitado → late_arrival popup
-   * sempre fallback REST.
+   * Antes era undefined → join sempre rejeitado → o popup de entrada na mesa
+   * caía sempre no fallback REST.
    */
   customerId?: string;
 }

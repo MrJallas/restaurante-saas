@@ -81,8 +81,8 @@ type HostSwapDto = Omit<HostSwapRequestDto, 'sessionId'>;
  *
  * O modulo nao reimplementa nada que ja esteja em outro service — para VIP
  * a fonte de verdade continua sendo `session_flags`/`table_sessions.flags`,
- * para inbox usamos as tabelas `late_arrival_requests`, `complaints`,
- * `table_merge_requests`, `zone_pauses` ja existentes.
+ * para inbox usamos as tabelas `complaints`, `table_merge_requests` e
+ * `zone_pauses` ja existentes.
  */
 @Injectable()
 export class HostService {

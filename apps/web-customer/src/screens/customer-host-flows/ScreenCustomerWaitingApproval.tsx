@@ -7,8 +7,6 @@ import { useSession } from '../../hooks/useSession';
 import { useCustomerHostEvents } from '../../hooks/useCustomerHostEvents';
 import { ScreenCustomerMergeCooldown } from './ScreenCustomerMergeCooldown';
 import {
-  cancelLateArrivalRequest,
-  getLateArrivalRequestStatus,
   getTableMergeRequestStatus,
   rejectTableMerge,
   requestHostAssist,
@@ -27,7 +25,11 @@ export type WaitingState = ApprovalUiState | 'cooldown';
 interface ScreenCustomerWaitingApprovalProps {
   slug: string;
   /**
-   * `late-arrival`: customer B esperando o host aprovar entrada
+   * `late-arrival`: cliente esperando o host da mesa aprovar sua entrada.
+   *   É SÓ ESCOLHA DE COPY: o estado autoritativo vem do System A
+   *   (`session_participants`) pelo wrapper de `/mesa/[tableCode]`, que monta
+   *   esta tela com `requestId=null` + `onCancel` próprio. Não existe fonte
+   *   REST/WS de late-arrival aqui desde que o System B saiu (migration 081).
    * `merge-target`: cliente A esperando o host da outra mesa aprovar a junção
    * `merge-origin`: cliente A acabou de pedir junção e espera resposta
    */
@@ -50,9 +52,9 @@ interface ScreenCustomerWaitingApprovalProps {
   retryEnabled?: boolean;
   /**
    * P1 (re-scan): override do "Cancelar pedido". System A (session_participants
-   * via PendingApprovalWrapper) monta sem requestId/expiresAt e precisa cancelar
-   * o próprio participant pending por um endpoint diferente do System B. Quando
-   * fornecido, substitui o handler interno (que só cobre late-arrival/merge).
+   * via PendingApprovalWrapper) monta sem requestId/expiresAt e cancela o
+   * próprio participant pending pelo endpoint dele. Quando fornecido,
+   * substitui o handler interno (que hoje só cobre merge).
    * Deve devolver uma Promise; a tela cuida do busy-state e navegação de saída.
    */
   onCancel?: () => Promise<void> | void;
@@ -68,9 +70,12 @@ interface ScreenCustomerWaitingApprovalProps {
  *  - `expired/rejected` : sleep icon, escape valves
  *
  * Event sources (via useCustomerHostEvents):
- *  - `late_arrival.approved | rejected | expired` (matched on `requestId`)
  *  - `table_merge.approved | rejected` (matched on `requestId`)
  *  - `escalation.advanced` flips the eyebrow copy without changing state
+ *
+ * O modo `late-arrival` NÃO escuta WS aqui: quem dirige aquele estado é o
+ * wrapper do System A em `/mesa/[tableCode]` (participant:decision + poll de
+ * `GET /:slug/table/participants`), que passa o resultado por props/onCancel.
  */
 export function ScreenCustomerWaitingApproval({
   slug,
@@ -89,7 +94,7 @@ export function ScreenCustomerWaitingApproval({
   // base só na query string. System A (participant pending) não tem requestId
   // e continua autoritativo pelo wrapper/poll próprio via onCancel.
   const [state, setState] = useState<WaitingState>(() =>
-    requestId ? 'checking' : onCancel ? 'waiting' : 'unavailable',
+    onCancel ? 'waiting' : requestId && mode !== 'late-arrival' ? 'checking' : 'unavailable',
   );
   const [escalated, setEscalated] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
@@ -111,7 +116,11 @@ export function ScreenCustomerWaitingApproval({
   const [cancelError, setCancelError] = useState<string | null>(null);
 
   const refreshStatus = useCallback(async () => {
-    if (!requestId) {
+    // Só o merge tem recurso REST próprio pra acompanhar. No modo
+    // `late-arrival` a autoridade é o System A via wrapper (`onCancel` +
+    // poll de participants); sem ele não há o que consultar e a tela fica
+    // fail-closed em "não consegui confirmar" em vez de fingir espera.
+    if (!requestId || mode === 'late-arrival') {
       if (!onCancel) {
         setStatusError('Este link não tem um pedido para acompanhar.');
         setState('unavailable');
@@ -120,10 +129,7 @@ export function ScreenCustomerWaitingApproval({
     }
     setStatusBusy(true);
     try {
-      const request =
-        mode === 'late-arrival'
-          ? await getLateArrivalRequestStatus(requestId, { slug })
-          : await getTableMergeRequestStatus(requestId, { slug });
+      const request = await getTableMergeRequestStatus(requestId, { slug });
       setAuthoritativeExpiresAt(request.expiresAt ?? null);
       setStatusError(null);
       const incoming = approvalUiState(request.status);
@@ -152,7 +158,7 @@ export function ScreenCustomerWaitingApproval({
   // REST é a fonte de verdade; WS só reduz latência. Consulta imediatamente,
   // depois em polling leve e sempre que a aba volta/recupera conexão.
   useEffect(() => {
-    if (!requestId) return;
+    if (!requestId || mode === 'late-arrival') return;
     void refreshStatus();
     const interval = window.setInterval(() => void refreshStatus(), 5_000);
     const onFocus = () => void refreshStatus();
@@ -163,7 +169,7 @@ export function ScreenCustomerWaitingApproval({
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('online', onFocus);
     };
-  }, [requestId, refreshStatus]);
+  }, [mode, requestId, refreshStatus]);
 
   const callHostToTable = async () => {
     try {
@@ -190,9 +196,9 @@ export function ScreenCustomerWaitingApproval({
       }
       return;
     }
-    // Sem requestId não há o que cancelar server-side (ex.: a tela montou antes
-    // do create devolver o id) — cai no back() defensivo.
-    if (!requestId) {
+    // Sem requestId (ou no modo late-arrival, que não tem recurso próprio) não
+    // há o que cancelar server-side — cai no back() defensivo.
+    if (!requestId || mode === 'late-arrival') {
       router.back();
       return;
     }
@@ -200,21 +206,13 @@ export function ScreenCustomerWaitingApproval({
     setCancelBusy(true);
     setCancelError(null);
     try {
-      if (mode === 'late-arrival') {
-        // P1 (re-scan): cancelamento REAL do pedido de join pelo PRÓPRIO
-        // solicitante. Antes era só router.back() (no-op) — o request seguia
-        // 'pending' até o TTL e escalava pro gerente como timeout fantasma.
-        // O BE flipa 'cancelled', fecha a chain e dispensa o card do host.
-        await cancelLateArrivalRequest(requestId, { slug });
-      } else {
-        // Cancelamento REAL do convite de junção (origin host = lado 'a'); o
-        // handler do assistente filtra o card pra quem cancelou.
-        await rejectTableMerge(requestId, {
-          slug,
-          decidedByCustomerId: customerId ?? undefined,
-          reason: 'cancelled_by_requester',
-        });
-      }
+      // Cancelamento REAL do convite de junção (origin host = lado 'a'); o
+      // handler do assistente filtra o card pra quem cancelou.
+      await rejectTableMerge(requestId, {
+        slug,
+        decidedByCustomerId: customerId ?? undefined,
+        reason: 'cancelled_by_requester',
+      });
       router.push(`/${slug}/assistente`);
     } catch {
       // Sem desfecho confirmado → mantém a tela; o WS autoritativo decide.
@@ -227,7 +225,7 @@ export function ScreenCustomerWaitingApproval({
   // Só usa prazo confirmado pelo endpoint quando existe requestId. A query
   // expiresAt é mantida exclusivamente pro System A inline sem recurso REST.
   useEffect(() => {
-    const deadline = requestId ? authoritativeExpiresAt : expiresAt;
+    const deadline = requestId && mode !== 'late-arrival' ? authoritativeExpiresAt : expiresAt;
     if (!deadline || state !== 'waiting') {
       setSecondsLeft(null);
       return;
@@ -235,7 +233,7 @@ export function ScreenCustomerWaitingApproval({
     const tick = () => {
       const remaining = approvalSecondsLeft(deadline);
       setSecondsLeft(remaining);
-      if (remaining === 0 && requestId) {
+      if (remaining === 0 && requestId && mode !== 'late-arrival') {
         // Não deixamos "aguardando · 0 s". Ao vencer, escondemos o estado
         // otimista e revalidamos imediatamente no servidor.
         setState('checking');
@@ -245,7 +243,7 @@ export function ScreenCustomerWaitingApproval({
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  }, [authoritativeExpiresAt, expiresAt, refreshStatus, requestId, state]);
+  }, [authoritativeExpiresAt, expiresAt, mode, refreshStatus, requestId, state]);
 
   // ─── WS subscription ───────────────────────────────────────────────────
   useCustomerHostEvents({
@@ -253,27 +251,6 @@ export function ScreenCustomerWaitingApproval({
     customerId,
     onEvent: (event) => {
       switch (event.type) {
-        case 'late_arrival.approved': {
-          if (mode !== 'late-arrival') return;
-          if (requestId && event.payload.requestId !== requestId) return;
-          setStatusError(null);
-          setState('approved');
-          break;
-        }
-        case 'late_arrival.rejected': {
-          if (mode !== 'late-arrival') return;
-          if (requestId && event.payload.requestId !== requestId) return;
-          setStatusError(null);
-          setState(event.payload.reason === 'host_timeout' ? 'expired' : 'rejected');
-          break;
-        }
-        case 'late_arrival.expired': {
-          if (mode !== 'late-arrival') return;
-          if (requestId && event.payload.requestId !== requestId) return;
-          setStatusError(null);
-          setState('expired');
-          break;
-        }
         case 'table_merge.approved': {
           if (mode === 'late-arrival') return;
           if (requestId && event.payload.requestId !== requestId) return;

@@ -38,6 +38,10 @@ const KIND_LABEL: Record<string, string> = {
   'session.opened': 'Mesa aberta',
   'participant.joined': 'Cliente entrou na mesa',
   'participant.approved': 'Entrada aprovada',
+  // SOMENTE HISTÓRICO: o System B saiu na migration 081 e nada mais grava
+  // esses kinds. Os rótulos ficam porque o event-store guarda entries antigas
+  // — sem eles, uma timeline de sessão velha renderiza o kind cru. Chegada
+  // tardia nova aparece como participant.joined / participant.approved.
   'late_arrival.requested': 'Chegada tardia solicitada',
   'late_arrival.approved': 'Chegada tardia aprovada',
   'late_arrival.rejected': 'Chegada tardia recusada',

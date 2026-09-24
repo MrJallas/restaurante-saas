@@ -80,7 +80,6 @@ function clearBundle(): void {
 const LOCAL_CUSTOMER_CACHE_PREFIXES = ['commandMode:', 'draft:'];
 const TAB_CUSTOMER_CACHE_PREFIXES = [
   'complaint:cache:',
-  'late-arrival:',
   'table-merge:',
   'table-merge-command-choice:',
 ];

@@ -56,17 +56,7 @@ export interface SingletonAlertResult {
 const VALID_SEV: AlertSeverity[] = ['crítica', 'atenção', 'info'];
 const MANAGEMENT_ROLES = new Set(['manager', 'owner']);
 const ROLE_ALERT_PATTERNS: Record<string, string[]> = {
-  host: [
-    'host',
-    'recepc',
-    'waitlist',
-    'lista',
-    'late_arrival',
-    'late-arrival',
-    'scan',
-    'qr',
-    'table',
-  ],
+  host: ['host', 'recepc', 'waitlist', 'lista', 'scan', 'qr', 'table'],
   waiter: [
     'waiter',
     'garcom',

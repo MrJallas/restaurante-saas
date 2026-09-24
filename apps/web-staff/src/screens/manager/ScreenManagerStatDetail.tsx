@@ -2,7 +2,9 @@
 
 // Stat / event detail screen.
 //
-// Kinds com fonte real aqui: late-arrival, merge, complaint, zone-pause, lgpd.
+// Kinds com fonte real aqui: merge, complaint, zone-pause, lgpd.
+// Chegada tardia saiu com o System B (migration 081): quem aprova entrada em
+// mesa ocupada é o customer-host, dentro da mesa, e não vira card de gerente.
 // qr-issue e generic-call têm tela própria em /manager/chamado/[id]
 // (ScreenCallDetail + QrIssueDetail); escalation não tem detalhe dedicado —
 // só existe como card in-progress. Antes esses 3 caíam num dump JSON dead-code
@@ -17,7 +19,6 @@ import { useRouter } from 'next/navigation';
 import { useG, G_FONT, Icon, MTopBar, GIconBtn, GButton, MPill } from '../../components/manager';
 import { manager } from '../../lib/api/manager';
 import type {
-  LateArrivalRequestDto,
   TableMergeRequestDto,
   ComplaintDto,
   ZonePauseDto,
@@ -25,7 +26,6 @@ import type {
 } from '@restaurant/shared-types';
 
 export type StatKind =
-  | 'late-arrival'
   | 'merge'
   | 'complaint'
   | 'escalation'
@@ -36,7 +36,6 @@ export type StatKind =
 
 // Kinds que esta tela realmente carrega e renderiza. Fora daqui não há fonte.
 const SUPPORTED_KINDS: ReadonlySet<StatKind> = new Set<StatKind>([
-  'late-arrival',
   'merge',
   'complaint',
   'zone-pause',
@@ -74,10 +73,7 @@ export function ScreenManagerStatDetail({
     (async () => {
       try {
         let res: unknown = null;
-        if (kind === 'late-arrival') {
-          const list = await api.lateArrival.list();
-          res = list.find((r) => r.id === id) ?? null;
-        } else if (kind === 'merge') {
+        if (kind === 'merge') {
           const list = await api.tableMerge.list();
           res = list.find((r) => r.id === id) ?? null;
         } else if (kind === 'complaint') {
@@ -98,7 +94,6 @@ export function ScreenManagerStatDetail({
   }, [kind, id, api, supported]);
 
   const titleByKind: Record<StatKind, string> = {
-    'late-arrival': 'Chegada Tardia',
     merge: 'Junção de Mesas',
     complaint: 'Reclamação',
     escalation: 'Escalação',
@@ -190,63 +185,7 @@ function DetailContent({
   slug: string;
   onBack: () => void;
 }) {
-  const C = useG(!!dark);
   const api = manager(slug);
-
-  if (kind === 'late-arrival') {
-    const r = data as LateArrivalRequestDto;
-    return (
-      <>
-        <Hero
-          dark={dark}
-          kicker={`MESA ${r.tableNumber}`}
-          title={`${r.requesterName} pediu pra entrar`}
-        />
-        <Field dark={dark} label="Status">
-          <MPill
-            tone={r.status === 'pending' ? 'warn' : r.status === 'approved' ? 'success' : 'danger'}
-            dark={dark}
-          >
-            {r.status}
-          </MPill>
-        </Field>
-        {r.visitContext && (
-          <Field dark={dark} label="Contexto">
-            {r.visitContext}
-          </Field>
-        )}
-        <Field dark={dark} label="Criada em">
-          {new Date(r.createdAt).toLocaleString('pt-BR')}
-        </Field>
-        <Field dark={dark} label="Expira em">
-          {new Date(r.expiresAt).toLocaleString('pt-BR')}
-        </Field>
-
-        {/* Decisão Caleb 2026-07-04 (gate 1D): late-arrival NÃO vai pro
-            staff como aprovação ativa — quem aprova é o customer-host da
-            mesa (doutrina 2026-06-09). Os botões Aprovar/Rejeitar davam
-            401 sempre (o controller usa guard de cliente) e saíram; o
-            manager vê como notificação passiva. */}
-        {r.status === 'pending' && (
-          <div
-            style={{
-              marginTop: 16,
-              padding: '10px 12px',
-              borderRadius: 10,
-              border: `1px dashed ${C.borderSoft}`,
-              color: C.faint,
-              fontSize: 12,
-              fontWeight: 500,
-              lineHeight: 1.4,
-            }}
-          >
-            Aguardando decisão do anfitrião da mesa — chegada tardia é aprovada pelo cliente, não
-            pela equipe.
-          </div>
-        )}
-      </>
-    );
-  }
 
   if (kind === 'merge') {
     const m = data as TableMergeRequestDto;

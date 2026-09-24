@@ -12,8 +12,8 @@
  * Regras herdadas do M1/M4:
  *  - ids derivados da fonte CONVERGEM com os do tap live — o backfill
  *    upserta no MESMO doc ($setOnInsert: o original vence).
- *  - fontes com âncora de sessão NULLABLE (late_arrival_requests,
- *    complaints, courtesies) retornam [] quando a row não tem sessão —
+ *  - fontes com âncora de sessão NULLABLE (complaints, courtesies)
+ *    retornam [] quando a row não tem sessão —
  *    entrada sem âncora não entra (mesma regra do tap).
  *  - colunas legacy VARCHAR (created_by/changed_by/closed_by): o JOIN
  *    `staff ON id::text = <coluna>` só casa quando o label era UUID de
@@ -25,7 +25,6 @@ import type { TimelineEntry } from '@restaurant/shared-types';
 import {
   mapComplaint,
   mapCourtesy,
-  mapLateArrivalRequest,
   mapOrderCreated,
   mapOrderDelivery,
   mapOrderStatusHistory,
@@ -39,7 +38,6 @@ import {
 import type {
   ComplaintRow,
   CourtesyRow,
-  LateArrivalRequestRow,
   OrderDeliveryRow,
   OrderRow,
   OrderStatusHistoryRow,
@@ -201,28 +199,6 @@ export function paymentRowToEntries(row: PaymentJoinedRow): TimelineEntry[] {
   return entry ? [entry] : [];
 }
 
-// ─── late_arrival_requests → late_arrival.{requested,approved,rejected} ────
-
-export interface LateArrivalJoinedRow extends Omit<LateArrivalRequestRow, 'table_session_id'> {
-  /** NULLABLE na tabela — row sem sessão não entra (sem âncora). */
-  table_session_id: string | null;
-  requester_name: string | null;
-  decider_staff_name: string | null;
-  decider_customer_name: string | null;
-}
-
-export function lateArrivalRowToEntries(row: LateArrivalJoinedRow): TimelineEntry[] {
-  if (!row.table_session_id) return [];
-  return mapLateArrivalRequest(
-    { ...row, table_session_id: row.table_session_id },
-    {
-      requesterName: row.requester_name,
-      // Mesma prioridade do mapper: staff decide antes de customer.
-      deciderName: row.decider_staff_name ?? row.decider_customer_name,
-    },
-  );
-}
-
 // ─── table_merge_requests → merge.{requested,approved,rejected} ────────────
 
 export interface TableMergeJoinedRow extends TableMergeRequestRow {
@@ -367,18 +343,6 @@ export const BACKFILL_SOURCES: readonly BackfillSource[] = [
         LEFT JOIN customers c ON c.id = v.customer_id`,
     sessionWhere: 'WHERE p.table_session_id = $1',
     toEntries: paymentRowToEntries,
-  }),
-  typedSource<LateArrivalJoinedRow>({
-    table: 'late_arrival_requests',
-    baseSql: `
-      SELECT lar.*, rc.name AS requester_name,
-             ds.name AS decider_staff_name, dc.name AS decider_customer_name
-        FROM late_arrival_requests lar
-        LEFT JOIN customers rc ON rc.id = lar.customer_id
-        LEFT JOIN staff ds ON ds.id = lar.approved_by_staff_id
-        LEFT JOIN customers dc ON dc.id = lar.approved_by_customer_id`,
-    sessionWhere: 'WHERE lar.table_session_id = $1',
-    toEntries: lateArrivalRowToEntries,
   }),
   typedSource<TableMergeJoinedRow>({
     table: 'table_merge_requests',

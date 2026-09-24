@@ -9,4 +9,3 @@ export { PushManagerMessage } from './PushManagerMessage';
 export { PushQrIssue } from './PushQrIssue';
 export { PushComplaint } from './PushComplaint';
 export { PushTableMergeInfo } from './PushTableMergeInfo';
-export { PushLateArrivalInfo } from './PushLateArrivalInfo';

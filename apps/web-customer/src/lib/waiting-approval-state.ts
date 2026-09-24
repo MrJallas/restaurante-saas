@@ -1,6 +1,12 @@
-import type { LateArrivalStatus, TableMergeStatus } from '@restaurant/shared-types';
+import type { TableMergeStatus } from '@restaurant/shared-types';
 
-export type ApprovalServerStatus = LateArrivalStatus | TableMergeStatus;
+/**
+ * Lifecycle persistido que esta tela sabe traduzir. Hoje só o merge tem um
+ * recurso REST próprio pra acompanhar; o modo `late-arrival` é dirigido pelo
+ * System A (participants) via wrapper, com o seu próprio
+ * `ParticipantGateStatus` abaixo.
+ */
+export type ApprovalServerStatus = TableMergeStatus;
 /**
  * `rejected` (o HOST recusou) e `cancelled` (o próprio cliente desistiu) são
  * estados distintos desde a migration 080. Os dois são fail-closed no gate —

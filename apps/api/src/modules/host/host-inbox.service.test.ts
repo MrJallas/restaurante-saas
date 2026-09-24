@@ -1,9 +1,8 @@
 /**
  * CHARACTERIZATION (extração HostInboxService): congela o comportamento do
  * listInbox do host ANTES de mover o método pra fora do host.service.
- * Fixa as 5 fontes agregadas e como cada row vira HostInboxItemDto:
+ * Fixa as 4 fontes agregadas e como cada row vira HostInboxItemDto:
  *  - alerts kind='host_assist_table'  → kind 'host_assist'  (id `host_assist:<id>`)
- *  - late_arrival_requests consumidos → 'late_arrival_consumed' (`late_arrival:<id>`)
  *  - table_merge_requests consumidos  → 'merge_consumed'    (`table_merge:<id>`)
  *  - complaints                       → 'complaint'         (`complaint:<id>`)
  *  - zone_pauses                      → 'zone_pause_started|ended' (`zone_pause:<id>:<estado>`)
@@ -13,6 +12,10 @@
  * O teste roda contra o HostService (facade pública usada pelo
  * host.controller) — pós-extração o delegate continua cobrindo o serviço
  * novo por transitividade, sem editar as asserções deste arquivo.
+ *
+ * 2026-08-31: a 5ª fonte era `late_arrival_requests`. Ela saiu com o System B
+ * (migration 081) — chegada tardia é decidida pelo customer-host dentro da
+ * mesa (System A) e não vira notificação de recepção.
  */
 
 import { HostService } from './host.service';
@@ -26,17 +29,6 @@ interface AssistAlertRow {
   title: string;
   sub: string | null;
   created_at: string;
-}
-
-interface LateArrivalRow {
-  id: string;
-  status: string;
-  decided_at: string | null;
-  requested_at: string;
-  table_session_id: string | null;
-  customer_id: string | null;
-  customer_name: string | null;
-  table_code: string | null;
 }
 
 interface MergeRow {
@@ -67,7 +59,6 @@ interface ZonePauseRow {
 
 interface FakeSources {
   assistAlerts?: AssistAlertRow[];
-  lateArrival?: LateArrivalRow[];
   mergeRequests?: MergeRow[];
   complaints?: ComplaintRow[];
   zonePauses?: ZonePauseRow[];
@@ -80,9 +71,6 @@ function fakeDb(sources: FakeSources = {}) {
     calls.push({ sql: s, params });
     if (s.startsWith('SELECT id, title, sub, created_at FROM alerts')) {
       return sources.assistAlerts ?? [];
-    }
-    if (s.startsWith('SELECT lar.id,')) {
-      return sources.lateArrival ?? [];
     }
     if (s.startsWith('SELECT id, status, decided_at, created_at,')) {
       return sources.mergeRequests ?? [];
@@ -144,7 +132,7 @@ describe('Host inbox — characterization', () => {
     expect(inbox[1].id).toBe('host_assist:al-1');
   });
 
-  it('agrega uma entrada de cada uma das 5 fontes no shape do DTO, ordenado desc por at', async () => {
+  it('agrega uma entrada de cada uma das 4 fontes no shape do DTO, ordenado desc por at', async () => {
     const { conn } = fakeDb({
       assistAlerts: [
         {
@@ -152,18 +140,6 @@ describe('Host inbox — characterization', () => {
           title: 'Mesa 12 pediu a recepção',
           sub: 'Cliente pediu ajuda da recepção pelo assistente.',
           created_at: '2026-07-04T12:05:00.000Z',
-        },
-      ],
-      lateArrival: [
-        {
-          id: 'la1',
-          status: 'approved',
-          decided_at: '2026-07-04T12:04:00.000Z',
-          requested_at: '2026-07-04T11:50:00.000Z',
-          table_session_id: 'ts-1',
-          customer_id: 'cust-1',
-          customer_name: 'Ana',
-          table_code: 'M12',
         },
       ],
       mergeRequests: [
@@ -210,20 +186,6 @@ describe('Host inbox — characterization', () => {
         context: { alertId: 'a1' },
       },
       {
-        id: 'late_arrival:la1',
-        kind: 'late_arrival_consumed',
-        refId: 'la1',
-        title: 'Late-arrival approved',
-        subtitle: 'Ana · mesa M12',
-        at: '2026-07-04T12:04:00.000Z',
-        context: {
-          tableSessionId: 'ts-1',
-          customerName: 'Ana',
-          tableCode: 'M12',
-          status: 'approved',
-        },
-      },
-      {
         id: 'table_merge:mg1',
         kind: 'merge_consumed',
         refId: 'mg1',
@@ -265,20 +227,6 @@ describe('Host inbox — characterization', () => {
           title: 'Mesa 3 pediu a recepção',
           sub: null,
           created_at: '2026-07-04T09:00:00.000Z',
-        },
-      ],
-      // decided_at null → at cai pro requested_at; sem customer → subtitle
-      // vira só o table_code.
-      lateArrival: [
-        {
-          id: 'la2',
-          status: 'expired',
-          decided_at: null,
-          requested_at: '2026-07-04T09:01:00.000Z',
-          table_session_id: null,
-          customer_id: null,
-          customer_name: null,
-          table_code: 'M7',
         },
       ],
       // decided_at null → at cai pro created_at.
@@ -350,20 +298,6 @@ describe('Host inbox — characterization', () => {
         },
       },
       {
-        id: 'late_arrival:la2',
-        kind: 'late_arrival_consumed',
-        refId: 'la2',
-        title: 'Late-arrival expired',
-        subtitle: 'M7',
-        at: '2026-07-04T09:01:00.000Z',
-        context: {
-          tableSessionId: null,
-          customerName: null,
-          tableCode: 'M7',
-          status: 'expired',
-        },
-      },
-      {
         id: 'host_assist:a2',
         kind: 'host_assist',
         refId: 'a2',
@@ -380,7 +314,7 @@ describe('Host inbox — characterization', () => {
     const items = await makeService(conn).listInbox();
 
     expect(items).toEqual([]);
-    expect(calls).toHaveLength(5);
+    expect(calls).toHaveLength(4);
     for (const call of calls) {
       expect(call.params).toEqual([30]);
       expect(call.sql).toContain('LIMIT $1');
@@ -392,10 +326,6 @@ describe('Host inbox — characterization', () => {
     expect(assist.sql).toContain('AND resolved_at IS NULL');
     expect(assist.sql).toContain('AND (ttl_at IS NULL OR ttl_at > now())');
     expect(assist.sql).toContain('ORDER BY created_at DESC');
-
-    const late = calls.find((c) => c.sql.includes('FROM late_arrival_requests'))!;
-    expect(late.sql).toContain("WHERE lar.status IN ('approved', 'rejected', 'expired')");
-    expect(late.sql).toContain('ORDER BY COALESCE(lar.decided_at, lar.requested_at) DESC');
 
     const merge = calls.find((c) => c.sql.includes('FROM table_merge_requests'))!;
     expect(merge.sql).toContain("WHERE status IN ('approved', 'rejected', 'expired')");

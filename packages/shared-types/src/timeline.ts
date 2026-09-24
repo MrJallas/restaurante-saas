@@ -39,6 +39,10 @@ export type TimelineKind =
   | 'session.opened'
   | 'participant.joined'
   | 'participant.approved'
+  // SOMENTE LEITURA — System B removido na migration 081. Sem produtor (nem
+  // tap live, nem backfill SQL); ficam no union porque o event-store Mongo
+  // guarda entries históricas com esses kinds. Chegada tardia nova entra por
+  // participant.joined / participant.approved.
   | 'late_arrival.requested'
   | 'late_arrival.approved'
   | 'late_arrival.rejected'

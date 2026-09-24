@@ -2,10 +2,6 @@
 
 import { useEffect, useRef } from 'react';
 import type {
-  WsLateArrivalCreated,
-  WsLateArrivalApproved,
-  WsLateArrivalRejected,
-  WsLateArrivalExpired,
   WsTableMergeCreated,
   WsTableMergeApproved,
   WsTableMergeRejected,
@@ -32,10 +28,6 @@ import {
  */
 
 export type CustomerHostEvent =
-  | { type: 'late_arrival.created'; payload: WsLateArrivalCreated['payload'] }
-  | { type: 'late_arrival.approved'; payload: WsLateArrivalApproved['payload'] }
-  | { type: 'late_arrival.rejected'; payload: WsLateArrivalRejected['payload'] }
-  | { type: 'late_arrival.expired'; payload: WsLateArrivalExpired['payload'] }
   | { type: 'table_merge.created'; payload: WsTableMergeCreated['payload'] }
   | { type: 'table_merge.approved'; payload: WsTableMergeApproved['payload'] }
   | { type: 'table_merge.rejected'; payload: WsTableMergeRejected['payload'] }
@@ -54,10 +46,6 @@ interface UseCustomerHostEventsParams {
 }
 
 const EVENTS = [
-  'late_arrival.created',
-  'late_arrival.approved',
-  'late_arrival.rejected',
-  'late_arrival.expired',
   'table_merge.created',
   'table_merge.approved',
   'table_merge.rejected',

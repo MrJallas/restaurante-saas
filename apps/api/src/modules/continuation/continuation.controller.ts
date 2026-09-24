@@ -79,7 +79,7 @@ export class ContinuationController {
     // IGNORANDO o body. Antes um cliente com token válido passava
     // `tableSessionId` de OUTRA mesa ativa + customerId da vítima e vazava
     // customer_name + last_order_summary cross-session dentro do tenant. Mesmo
-    // padrão de home.controller (B-NEW-63) e late-arrival.controller (B-NEW-58).
+    // padrão de home.controller (B-NEW-63).
     //
     // Caller STAFF (x-staff-key/x-staff-token) mantém o tableSessionId do body:
     // staff PRECISA de acesso cross-mesa legítimo (KDS, garçom, host).

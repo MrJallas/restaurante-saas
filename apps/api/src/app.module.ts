@@ -23,7 +23,6 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { StaffModule } from './modules/staff/staff.module';
 import { MongoModule } from './infra/mongo/mongo.module';
 import { SecurityAuditModule } from './modules/security-audit/security-audit.module';
-import { LateArrivalModule } from './modules/late-arrival/late-arrival.module';
 import { ScanVerificationModule } from './modules/scan-verification/scan-verification.module';
 import { QrResolverModule } from './modules/qr-resolver/qr-resolver.module';
 import { TableMergeModule } from './modules/table-merge/table-merge.module';
@@ -77,7 +76,6 @@ import { SessionTimelineModule } from './modules/session-timeline/session-timeli
     StaffModule,
     StaffAuthModule,
     // Phase 2 modules:
-    LateArrivalModule,
     ScanVerificationModule,
     QrResolverModule,
     TableMergeModule,

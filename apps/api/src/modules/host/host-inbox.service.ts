@@ -4,13 +4,16 @@ import type { HostInboxItemDto, HostInboxKind } from '@restaurant/shared-types';
 
 /**
  * Inbox passivo do host — extraído do host.service (decomposição do god
- * service). Read-only: agrega 5 fontes em HostInboxItemDto[] (sort desc
+ * service). Read-only: agrega 4 fontes em HostInboxItemDto[] (sort desc
  * por `at` + slice(limit)):
  *  1. alerts kind='host_assist_table' (pedidos de recepção em aberto)
- *  2. late_arrival_requests consumidos (approved/rejected/expired)
- *  3. table_merge_requests consumidos
- *  4. complaints
- *  5. zone_pauses (started/ended)
+ *  2. table_merge_requests consumidos
+ *  3. complaints
+ *  4. zone_pauses (started/ended)
+ *
+ * NÃO cobre chegada tardia: o fluxo real (System A, session_participants)
+ * decide dentro da mesa e não escala pra staff (decisão de produto V16). A
+ * fonte antiga `late_arrival_requests` foi removida na migration 081.
  *
  * ATENÇÃO (string mágica compartilhada): o kind 'host_assist_table'
  * consultado aqui é criado por `HostService.requestAssist()` — que
@@ -57,49 +60,6 @@ export class HostInboxService {
         subtitle: row.sub ?? undefined,
         at: row.created_at,
         context: { alertId: row.id },
-      });
-    }
-
-    // Late-arrival consumed (approved / rejected — nao mais pending).
-    const lateArrival = (await this.tenantConn.query(
-      `SELECT lar.id, lar.status, lar.decided_at, lar.requested_at,
-              lar.table_session_id, lar.customer_id,
-              c.name as customer_name,
-              t.code as table_code
-         FROM late_arrival_requests lar
-         LEFT JOIN customers c ON c.id = lar.customer_id
-         LEFT JOIN table_sessions ts ON ts.id = lar.table_session_id
-         LEFT JOIN tables t ON t.id = ts.table_id
-        WHERE lar.status IN ('approved', 'rejected', 'expired')
-        ORDER BY COALESCE(lar.decided_at, lar.requested_at) DESC
-        LIMIT $1`,
-      [limit],
-    )) as Array<{
-      id: string;
-      status: string;
-      decided_at: string | null;
-      requested_at: string;
-      table_session_id: string | null;
-      customer_id: string | null;
-      customer_name: string | null;
-      table_code: string | null;
-    }>;
-    for (const row of lateArrival) {
-      items.push({
-        id: `late_arrival:${row.id}`,
-        kind: 'late_arrival_consumed' as HostInboxKind,
-        refId: row.id,
-        title: `Late-arrival ${row.status}`,
-        subtitle: row.customer_name
-          ? `${row.customer_name}${row.table_code ? ` · mesa ${row.table_code}` : ''}`
-          : (row.table_code ?? undefined),
-        at: row.decided_at ?? row.requested_at,
-        context: {
-          tableSessionId: row.table_session_id,
-          customerName: row.customer_name,
-          tableCode: row.table_code,
-          status: row.status,
-        },
       });
     }
 

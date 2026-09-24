@@ -19,7 +19,6 @@ import {
   compareTimelineEntries,
   mapComplaint,
   mapCourtesy,
-  mapLateArrivalRequest,
   mapOrderCreated,
   mapOrderDelivery,
   mapOrderStatusHistory,
@@ -444,77 +443,6 @@ describe('mapSessionParticipant', () => {
   });
 });
 
-// ─── late_arrival_requests ─────────────────────────────────────────────────
-
-describe('mapLateArrivalRequest', () => {
-  // Row real: pedido expirado (decided_at setado pelo TTL, sem decisor).
-  const expiredRow = {
-    id: 'a6b6b452-93ab-4613-b13d-e5ae923f2d34',
-    visit_id: null,
-    table_session_id: '8e5545ab-5d27-4012-9a1f-9ede72b23d0e',
-    customer_id: '76e0565a-9f80-4c89-b008-4ae0be07d095',
-    requested_at: new Date('2026-05-15T20:45:24.790Z'),
-    expected_arrival_at: new Date('2026-05-15T21:15:24.789Z'),
-    status: 'expired',
-    approved_by_staff_id: null,
-    approved_by_customer_id: null,
-    decided_at: new Date('2026-05-15T20:46:30.012Z'),
-    message: 'Estou indo',
-    created_at: new Date('2026-05-15T20:45:24.790Z'),
-  };
-
-  it('expired → requested + rejected com reason expired e actor system', () => {
-    const entries = mapLateArrivalRequest(expiredRow, { requesterName: 'Ana' });
-    expect(entries).toHaveLength(2);
-    expect(entries[0]).toEqual({
-      id: 'la:a6b6b452-93ab-4613-b13d-e5ae923f2d34',
-      kind: 'late_arrival.requested',
-      at: '2026-05-15T20:45:24.790Z',
-      sessionId: '8e5545ab-5d27-4012-9a1f-9ede72b23d0e',
-      actor: { type: 'customer', id: '76e0565a-9f80-4c89-b008-4ae0be07d095', name: 'Ana' },
-      refs: { requestId: 'a6b6b452-93ab-4613-b13d-e5ae923f2d34' },
-      payload: { message: 'Estou indo', expectedArrivalAt: '2026-05-15T21:15:24.789Z' },
-    });
-    expect(entries[1]).toMatchObject({
-      id: 'la:a6b6b452-93ab-4613-b13d-e5ae923f2d34:rejected',
-      kind: 'late_arrival.rejected',
-      at: '2026-05-15T20:46:30.012Z',
-      actor: { type: 'system', id: null, name: null },
-      payload: { reason: 'expired' },
-    });
-  });
-
-  it('approved por staff → late_arrival.approved com actor staff', () => {
-    const entries = mapLateArrivalRequest(
-      { ...expiredRow, status: 'approved', approved_by_staff_id: STAFF_UUID },
-      { deciderName: 'Renata' },
-    );
-    expect(entries[1]).toMatchObject({
-      kind: 'late_arrival.approved',
-      id: 'la:a6b6b452-93ab-4613-b13d-e5ae923f2d34:approved',
-      actor: { type: 'staff', id: STAFF_UUID, name: 'Renata' },
-    });
-  });
-
-  it('rejected pelo host (customer) → actor customer', () => {
-    const entries = mapLateArrivalRequest({
-      ...expiredRow,
-      status: 'rejected',
-      approved_by_customer_id: '5ec9ccc0-e294-4d14-880b-95e842689a01',
-    });
-    expect(entries[1]).toMatchObject({
-      kind: 'late_arrival.rejected',
-      actor: { type: 'customer', id: '5ec9ccc0-e294-4d14-880b-95e842689a01', name: null },
-    });
-    expect(entries[1].payload.reason).toBeUndefined();
-  });
-
-  it('pending (sem decided_at) → só o requested', () => {
-    const entries = mapLateArrivalRequest({ ...expiredRow, status: 'pending', decided_at: null });
-    expect(entries.map((e) => e.kind)).toEqual(['late_arrival.requested']);
-  });
-});
-
 // ─── table_merge_requests ──────────────────────────────────────────────────
 
 describe('mapTableMergeRequest', () => {
@@ -907,9 +835,6 @@ describe('WIRE_EVENT_TO_TIMELINE_KIND', () => {
     expect(WIRE_EVENT_TO_TIMELINE_KIND['order:claimed']).toBe('delivery.claimed');
     expect(WIRE_EVENT_TO_TIMELINE_KIND['waiter:call']).toBe('waiter.called');
     expect(WIRE_EVENT_TO_TIMELINE_KIND['waiter:acknowledged']).toBe('waiter.acknowledged');
-    expect(WIRE_EVENT_TO_TIMELINE_KIND['late_arrival.created']).toBe('late_arrival.requested');
-    expect(WIRE_EVENT_TO_TIMELINE_KIND['late_arrival.approved']).toBe('late_arrival.approved');
-    expect(WIRE_EVENT_TO_TIMELINE_KIND['late_arrival.rejected']).toBe('late_arrival.rejected');
     expect(WIRE_EVENT_TO_TIMELINE_KIND['table_merge.created']).toBe('merge.requested');
     expect(WIRE_EVENT_TO_TIMELINE_KIND['table_merge.approved']).toBe('merge.approved');
     expect(WIRE_EVENT_TO_TIMELINE_KIND['table_merge.rejected']).toBe('merge.rejected');

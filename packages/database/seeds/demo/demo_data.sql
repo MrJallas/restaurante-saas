@@ -25,7 +25,6 @@ DELETE FROM table_merge_cooldowns WHERE TRUE;
 DELETE FROM table_merge_requests WHERE TRUE;
 DELETE FROM scan_verification_requests WHERE TRUE;
 DELETE FROM table_qr_releases WHERE TRUE;
-DELETE FROM late_arrival_requests WHERE TRUE;
 DELETE FROM escalation_chains WHERE TRUE;
 DELETE FROM lgpd_requests WHERE TRUE;
 DELETE FROM zone_pauses WHERE TRUE;
@@ -272,54 +271,12 @@ SELECT ts.id, 'Qual a senha do wifi de voces?',
        NULL, 'gpt-4o-mini', 'openai', 20, 0, 0, 180, true, 'off_topic', now() - interval '1 day'
 FROM table_sessions ts LIMIT 1;
 
--- === Demo customers (incl. 2 VIPs) + late-arrival + escalation chain ===
+-- === Demo customers (incl. 2 VIPs) ===
 -- Insere alguns customers sinteticos pra exercitar os fluxos novos.
 INSERT INTO customers (name, cpf, total_visits, last_visit_at, is_vip, preferences) VALUES
   ('Mariana VIP',  '11122233344', 12, now() - interval '3 days', true,  '{"favorite_drink":"caipi"}'::jsonb),
   ('Joao VIP',     '22233344455', 18, now() - interval '1 days', true,  '{"allergies":["camarao"]}'::jsonb),
   ('Pedro Cliente','33344455566',  3, now() - interval '7 days', false, '{}'::jsonb);
-
--- Late-arrival request fulfilled (aprovado pelo manager Erica).
-DO $$
-DECLARE
-  cust_id UUID := (SELECT id FROM customers WHERE cpf = '33344455566');
-  manager_id UUID := (SELECT id FROM staff WHERE name = 'Erica Gerente');
-  ts_id UUID;
-  v_id UUID;
-  late_id UUID;
-  chain_id UUID;
-BEGIN
-  -- Pega uma table_session existente (criadas nos historical orders) pra
-  -- amarrar o late-arrival request.
-  SELECT id INTO ts_id FROM table_sessions ORDER BY created_at DESC LIMIT 1;
-  SELECT id INTO v_id FROM visits WHERE table_session_id = ts_id LIMIT 1;
-
-  IF ts_id IS NOT NULL THEN
-    -- Chain ja completada (low priority demo).
-    INSERT INTO escalation_chains (
-      kind, source_id, level, escalated_at, current_assignee_role,
-      ttl_expires_at, completed_at, resolution_notes
-    ) VALUES (
-      'late_arrival', gen_random_uuid(), 1, now() - interval '2 hours', 'manager',
-      now() - interval '90 minutes', now() - interval '85 minutes',
-      'Approved by manager (demo seed)'
-    ) RETURNING id INTO chain_id;
-
-    -- O `source_id` da chain a gente atualiza apos criar o request.
-    INSERT INTO late_arrival_requests (
-      visit_id, table_session_id, customer_id, requested_at,
-      expected_arrival_at, status, approved_by_staff_id, decided_at,
-      escalation_level, escalation_chain_id, ttl_expires_at, message
-    ) VALUES (
-      v_id, ts_id, cust_id, now() - interval '2 hours',
-      now() - interval '1 hour', 'approved', manager_id, now() - interval '85 minutes',
-      1, chain_id, now() - interval '90 minutes', 'Demo: chego 30min atrasado'
-    ) RETURNING id INTO late_id;
-
-    -- Aponta a chain pro request criado.
-    UPDATE escalation_chains SET source_id = late_id WHERE id = chain_id;
-  END IF;
-END $$;
 
 -- Summary
 SELECT 'menu_items' AS entity, count(*) FROM menu_items
@@ -330,5 +287,4 @@ UNION ALL SELECT 'orders', count(*) FROM orders
 UNION ALL SELECT 'feedbacks', count(*) FROM feedbacks
 UNION ALL SELECT 'assistant_messages', count(*) FROM assistant_messages
 UNION ALL SELECT 'customers_vip', count(*) FROM customers WHERE is_vip = true
-UNION ALL SELECT 'late_arrival_requests', count(*) FROM late_arrival_requests
 UNION ALL SELECT 'escalation_chains', count(*) FROM escalation_chains;

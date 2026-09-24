@@ -194,18 +194,14 @@ export function ScreenManagerHomeA({
 
   const refreshAll = useMemo(
     () => async () => {
-      const [pausesResult, complaintsResult, lateArrivalsResult, mergesResult, lgpdResult] =
-        await Promise.allSettled([
-          api.zonePauses.list({ active: true }),
-          api.complaints.list(),
-          api.lateArrival.list(),
-          api.tableMerge.list(),
-          api.lgpd.list(),
-        ]);
+      const [pausesResult, complaintsResult, mergesResult, lgpdResult] = await Promise.allSettled([
+        api.zonePauses.list({ active: true }),
+        api.complaints.list(),
+        api.tableMerge.list(),
+        api.lgpd.list(),
+      ]);
       const pauses = pausesResult.status === 'fulfilled' ? pausesResult.value : [];
       const complaints = complaintsResult.status === 'fulfilled' ? complaintsResult.value : [];
-      const lateArrivals =
-        lateArrivalsResult.status === 'fulfilled' ? lateArrivalsResult.value : [];
       const merges = mergesResult.status === 'fulfilled' ? mergesResult.value : [];
       const lgpd = lgpdResult.status === 'fulfilled' ? lgpdResult.value : [];
 
@@ -251,19 +247,6 @@ export function ScreenManagerHomeA({
         }
       }
 
-      // Pending late-arrivals
-      for (const r of lateArrivals) {
-        if (r.status !== 'pending') continue;
-        items.push({
-          id: `la-${r.id}`,
-          kind: 'late-arrival',
-          state: 'waiting',
-          requesterName: r.requesterName,
-          requestedTable: r.tableNumber,
-          toRoute: `/manager/stat/late-arrival/${r.id}`,
-        });
-      }
-
       // Pending merges
       for (const m of merges) {
         if (m.status !== 'pending') continue;
@@ -293,7 +276,6 @@ export function ScreenManagerHomeA({
       const failedPrefixes = [
         pausesResult.status === 'rejected' ? 'zp-' : null,
         complaintsResult.status === 'rejected' ? 'c-' : null,
-        lateArrivalsResult.status === 'rejected' ? 'la-' : null,
         mergesResult.status === 'rejected' ? 'tm-' : null,
         lgpdResult.status === 'rejected' ? 'lgpd-' : null,
       ].filter((prefix): prefix is string => prefix !== null);
@@ -301,13 +283,9 @@ export function ScreenManagerHomeA({
         ...items,
         ...previous.filter((item) => failedPrefixes.some((prefix) => item.id.startsWith(prefix))),
       ]);
-      const failures = [
-        pausesResult,
-        complaintsResult,
-        lateArrivalsResult,
-        mergesResult,
-        lgpdResult,
-      ].filter((result) => result.status === 'rejected');
+      const failures = [pausesResult, complaintsResult, mergesResult, lgpdResult].filter(
+        (result) => result.status === 'rejected',
+      );
       if (failures.length > 0) {
         console.error(
           '[manager-home] one or more in-progress sources failed',
@@ -408,10 +386,6 @@ export function ScreenManagerHomeA({
       case 'complaint.received':
       case 'complaint.responded':
       case 'complaint.resolved':
-      case 'late_arrival.created':
-      case 'late_arrival.approved':
-      case 'late_arrival.rejected':
-      case 'late_arrival.expired':
       case 'table_merge.created':
       case 'table_merge.approved':
       case 'table_merge.rejected':

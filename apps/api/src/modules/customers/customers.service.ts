@@ -242,9 +242,10 @@ export class CustomersService {
   }
 
   /**
-   * `POST /customers/identify` — CPF-first identification used by late-arrival
-   * flow. Creates the customer row if CPF is new; returns the canonical name +
-   * recognition token if returning. No session is required here (pre-join).
+   * `POST /customers/identify` — CPF-first identity bootstrap. Serves the CPF
+   * gate (cliente já sentado que precisa provar quem é) e o welcome da mesa.
+   * Creates the customer row if CPF is new; returns the canonical name +
+   * recognition token if returning. No session is required here.
    */
   async identify(
     cpf: string,

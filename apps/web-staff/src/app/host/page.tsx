@@ -27,9 +27,6 @@ function HostHomePageInner() {
       onOpenTableStatus={(status) =>
         router.push(`/host/tables/${status}?tenant=${tenantSlug}&hostId=${hostId}`)
       }
-      onOpenLateArrival={(id) =>
-        router.push(`/host/late-arrival/${id}?tenant=${tenantSlug}&hostId=${hostId}`)
-      }
       onOpenScanVerification={(id) =>
         router.push(`/host/scan-verification/${id}?tenant=${tenantSlug}&hostId=${hostId}`)
       }

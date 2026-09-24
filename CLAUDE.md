@@ -21,10 +21,10 @@ Codex, Claude Code and future local RAG tooling.
      It indexes the reasoning about this codebase, not the codebase.
    - **Where something lives in the code** → Grep/Glob, which always read the
      current tree.
-   The repo-local vector index was retired on 2026-08-31: it had drifted to 55%
-   correct and was serving stale `CLAUDE.md`/`MEMORY.md` chunks as if current.
-   If semantic search over repo docs is ever wanted again, ingest the selected
-   docs into the vault — do not stand up a second index.
+     The repo-local vector index was retired on 2026-08-31: it had drifted to 55%
+     correct and was serving stale `CLAUDE.md`/`MEMORY.md` chunks as if current.
+     If semantic search over repo docs is ever wanted again, ingest the selected
+     docs into the vault — do not stand up a second index.
 4. Do not commit vector databases, embeddings, trace dumps, browser videos or
    heavy screenshot packs. Commit text-first memory docs and small evidence
    manifests.
@@ -43,15 +43,15 @@ locked unless the user explicitly asks for changes.**
 
 ### Locked files (visual + layout)
 
-| File                                                                                                                                                                             | What it owns                                                                                                                                                                                                                                                                 |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [apps/web-customer/src/components/welcome/WelcomeModal.tsx](apps/web-customer/src/components/welcome/WelcomeModal.tsx)                                                           | Welcome flow · mono eyebrow `MESA N · BEM-VINDO`, title 26/700 "Pra começar, quem é você?", FieldShell pattern, helper mono uppercase, PillButton filled com seta canon. Centralizado via `grid place-items-center` em `h-[100dvh]`. Inputs com label "Seu nome" / "Seu CPF" |
-| [apps/web-customer/src/components/welcome/CpfInput.tsx](apps/web-customer/src/components/welcome/CpfInput.tsx)                                                                   | CPF input "naked" — NÃO gerencia próprio border; sinaliza `onFocusChange` pro shell pai. Não readicionar border/padding aqui                                                                                                                                                 |
-| [apps/web-customer/src/screens/customer-host-flows/ScreenCustomerIdentifyBeforeJoin.tsx](apps/web-customer/src/screens/customer-host-flows/ScreenCustomerIdentifyBeforeJoin.tsx) | Late-arrival identify · mesmo canon do WelcomeModal (eyebrow + title + FieldShell + helper + CTA). Label canon: **"Seu nome"** (não "Seu primeiro nome")                                                                                                                     |
-| [apps/web-customer/src/screens/customer-host-flows/ScreenCustomerWaitingApproval.tsx](apps/web-customer/src/screens/customer-host-flows/ScreenCustomerWaitingApproval.tsx)       | Waiting screen · bloco unificado eyebrow→title→sub→ícone→pill→CTA centralizado. Sem `flex-1` spacer empurrando CTA pro bottom                                                                                                                                                |
-| [apps/web-customer/src/components/ui/CallWaiterSheet.tsx](apps/web-customer/src/components/ui/CallWaiterSheet.tsx)                                                               | Bottom-sheet vaul-style para `call_waiter` · 5 motivos canon V20 (Trazer cardápio · Fazer pedido · Servir bebida · Pedir conta · Outro motivo) com icon+label+sub. Drag full-area via pointer events + `touch-action: pan-y`                                                 |
-| [apps/web-customer/src/app/[slug]/mesa/[tableCode]/page.tsx](apps/web-customer/src/app/[slug]/mesa/[tableCode]/page.tsx) (linhas do `reclaimBanner`)                             | Reclaim banner · V20 canon discreet hint (`border-soft + bg-surface + mono eyebrow CONTA RECONHECIDA`). NÃO voltar pro amber/yellow                                                                                                                                          |
-| [apps/web-customer/src/app/[slug]/assistente/page.tsx](apps/web-customer/src/app/[slug]/assistente/page.tsx) (landing branch `!chatStarted`)                                     | Landing /assistente · home-like (2 PillButtons grandes "Chamar garçom" + "Ver cardápio" + `HomeHero` com greeting da continuation API). Bubbles de chat só aparecem após 1ª msg do customer; greeting vira o 1º AI bubble preservando contexto                               |
+| File                                                                                                                                                                             | What it owns                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [apps/web-customer/src/components/welcome/WelcomeModal.tsx](apps/web-customer/src/components/welcome/WelcomeModal.tsx)                                                           | Welcome flow · mono eyebrow `MESA N · BEM-VINDO`, title 26/700 "Pra começar, quem é você?", FieldShell pattern, helper mono uppercase, PillButton filled com seta canon. Centralizado via `grid place-items-center` em `h-[100dvh]`. Inputs com label "Seu nome" / "Seu CPF"                                                                     |
+| [apps/web-customer/src/components/welcome/CpfInput.tsx](apps/web-customer/src/components/welcome/CpfInput.tsx)                                                                   | CPF input "naked" — NÃO gerencia próprio border; sinaliza `onFocusChange` pro shell pai. Não readicionar border/padding aqui                                                                                                                                                                                                                     |
+| [apps/web-customer/src/screens/customer-host-flows/ScreenCustomerIdentifyBeforeJoin.tsx](apps/web-customer/src/screens/customer-host-flows/ScreenCustomerIdentifyBeforeJoin.tsx) | **Gate de CPF** (não é late-arrival) · a tela que 11 call-sites usam quando `useRequireCustomerId` / ScreenCustomerMe / assistente bouncham um cliente já sentado. Mesmo canon do WelcomeModal (eyebrow + title + FieldShell + helper + CTA). Label canon: **"Seu nome"** (não "Seu primeiro nome")                                              |
+| [apps/web-customer/src/screens/customer-host-flows/ScreenCustomerWaitingApproval.tsx](apps/web-customer/src/screens/customer-host-flows/ScreenCustomerWaitingApproval.tsx)       | Waiting screen · bloco unificado eyebrow→title→sub→ícone→pill→CTA centralizado. Sem `flex-1` spacer empurrando CTA pro bottom. Serve DOIS fluxos: junção de mesas (rota `/waiting-approval`) e chegada tardia do System A (montada inline pelo `PendingApprovalWrapper` de `/mesa/[tableCode]`, onde `mode='late-arrival'` é só escolha de copy) |
+| [apps/web-customer/src/components/ui/CallWaiterSheet.tsx](apps/web-customer/src/components/ui/CallWaiterSheet.tsx)                                                               | Bottom-sheet vaul-style para `call_waiter` · 5 motivos canon V20 (Trazer cardápio · Fazer pedido · Servir bebida · Pedir conta · Outro motivo) com icon+label+sub. Drag full-area via pointer events + `touch-action: pan-y`                                                                                                                     |
+| [apps/web-customer/src/app/[slug]/mesa/[tableCode]/page.tsx](apps/web-customer/src/app/[slug]/mesa/[tableCode]/page.tsx) (linhas do `reclaimBanner`)                             | Reclaim banner · V20 canon discreet hint (`border-soft + bg-surface + mono eyebrow CONTA RECONHECIDA`). NÃO voltar pro amber/yellow                                                                                                                                                                                                              |
+| [apps/web-customer/src/app/[slug]/assistente/page.tsx](apps/web-customer/src/app/[slug]/assistente/page.tsx) (landing branch `!chatStarted`)                                     | Landing /assistente · home-like (2 PillButtons grandes "Chamar garçom" + "Ver cardápio" + `HomeHero` com greeting da continuation API). Bubbles de chat só aparecem após 1ª msg do customer; greeting vira o 1º AI bubble preservando contexto                                                                                                   |
 
 ### Regras de ouro
 
@@ -88,9 +88,22 @@ Se em dúvida, **mostre diff antes de aplicar** ou pergunte ao user.
   e `cliente-late-arrival.jsx`. V20 é o source-of-truth — V13/V14 são
   legacy.
 - **Late-arrival boundary**: não criar/reintroduzir tool de IA para iniciar
-  late-arrival. O fluxo real começa no QR da mesa ocupada, identifica o cliente
-  no web-customer e usa `POST /:slug/late-arrival-requests`; o customer-host
-  aprova ou rejeita.
+  late-arrival. O fluxo real (e ÚNICO) começa no QR da mesa ocupada:
+  `POST /:slug/customer/welcome` (ou `/recognize`) chama
+  `TableSessionService.upsertParticipant`, que grava a row em
+  `session_participants` com `status='pending'`; o **customer-host da mesa**
+  aprova ou rejeita por `POST /:slug/table/participants/decide`, e o resultado
+  volta pelo WS `participant:decision` (+ poll de
+  `GET /:slug/table/participants`). O próprio solicitante desiste por
+  `POST /:slug/table/participants/cancel`.
+  **A decisão NUNCA escala pra staff** (decisão de produto V16). O segundo
+  sistema que existia pra isso — tabela `late_arrival_requests`, rota
+  `POST /:slug/late-arrival-requests`, `escalation_chains` kind `late_arrival`
+  e as telas de staff — implementava exatamente a escalada descontinuada,
+  tinha ZERO registros nos 4 tenants e era inalcançável pelo app; foi removido
+  na **migration 081** (2026-08-31). Não ressuscite: se aparecer necessidade de
+  avisar a recepção, é notificação PASSIVA pós-aprovação, não um aprovador
+  novo.
 - **Customer bootstrap throttles**: `/customer/welcome` usa bucket por IP real
   do peer + table session (default 30/15min, `CUSTOMER_WELCOME_RATE_*`);
   `/customer/identify` permanece 5/IP/15min. Nunca confiar em XFF nesses

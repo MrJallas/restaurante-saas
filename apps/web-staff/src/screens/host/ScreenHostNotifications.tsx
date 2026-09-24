@@ -19,7 +19,6 @@ interface ScreenHostNotificationsProps {
 }
 
 const KIND_LABEL: Record<HostInboxKind, string> = {
-  late_arrival_consumed: 'Chegada tardia',
   merge_consumed: 'Junção de mesas',
   complaint: 'Reclamação',
   zone_pause_started: 'Pausa iniciada',
@@ -359,7 +358,7 @@ function toneForKind(kind: HostInboxKind): { dot: string; bg: string; border: st
   // os passivos pra puxar o olho (destaque do prompt 100 §5.5).
   if (kind === 'host_assist') return { dot: '#B4541E', bg: '#FFF1E8', border: '#F2CBB1' };
   if (kind === 'complaint') return { dot: '#C43A3A', bg: '#FFF1F1', border: '#F4C7C7' };
-  if (kind === 'late_arrival_consumed' || kind === 'merge_consumed') {
+  if (kind === 'merge_consumed') {
     return { dot: '#D98E2B', bg: '#FFF7E8', border: '#F0DCB6' };
   }
   return { dot: '#1E8C5A', bg: '#E9F4ED', border: '#C9E2D2' };

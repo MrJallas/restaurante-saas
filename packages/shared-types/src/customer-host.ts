@@ -1,70 +1,9 @@
 // === Customer-host model ===
-// Late-arrival + table-merge + escalation chains. Per docs/features/customer-host-model.md.
-
-// ─────────────────────────────────────────────────────────────
-// Late-arrival
-// ─────────────────────────────────────────────────────────────
-
-/**
- * Late-arrival request lifecycle. Created when customer B scans the QR of an
- * already-occupied table and the host (customer A) must approve. Auto-times-out
- * 60s after creation if host doesn't respond.
- */
-export type LateArrivalStatus =
-  | 'pending'
-  | 'approved'
-  | 'rejected'
-  | 'timeout'
-  | 'expired'
-  | 'cancelled';
-
-/**
- * Domain entity mirroring `late_arrival_requests` table.
- */
-export interface LateArrivalRequest {
-  id: string;
-  tableSessionId: string;
-  requestingCustomerId: string;
-  status: LateArrivalStatus;
-  expiresAt: Date;
-  respondedAt: Date | null;
-  createdAt: Date;
-}
-
-/**
- * DTO returned to customer/host frontend. ISO date strings rather than Date.
- * Includes denormalized fields (requesterName, tableNumber, etc.) to avoid
- * extra round-trips for the approval UI.
- */
-export interface LateArrivalRequestDto {
-  id: string;
-  tableSessionId: string;
-  tableNumber: number;
-  requestingCustomerId: string;
-  /** First name shown to host on the approval screen. Always populated — guarantee from `/customers/identify`. */
-  requesterName: string;
-  /** Mono caps tiny under the name on approval screen. e.g. "primeira visita" | "3a visita". */
-  visitContext?: string;
-  status: LateArrivalStatus;
-  expiresAt: string;
-  respondedAt: string | null;
-  createdAt: string;
-}
-
-/**
- * Body of `POST /late-arrival-requests`. Backend validates that the requesting
- * customer has both `name` and `cpf` populated (i.e. went through `/customers/identify`).
- */
-export interface LateArrivalCreateDto {
-  tableSessionId: string;
-}
-
-/**
- * Body of `POST /late-arrival-requests/:id/respond`.
- */
-export interface LateArrivalApproveDto {
-  decision: 'approve' | 'reject';
-}
+// Table-merge + escalation chains. Per docs/features/customer-host-model.md.
+//
+// Chegada tardia NÃO mora aqui: o fluxo real é o System A
+// (`session_participants`, o host da mesa aprova). A tabela
+// `late_arrival_requests` e seus DTOs saíram na migration 081.
 
 // ─────────────────────────────────────────────────────────────
 // Table merge
@@ -212,9 +151,11 @@ export interface MergeCooldownDto {
 // Escalation chains (qr-issue cascade still uses this)
 // ─────────────────────────────────────────────────────────────
 
-/** Kinds of escalation chains. Late-arrival/table-merge keep their own tables;
- *  the shared chain table is now used primarily for `qr-issue`. */
-export type EscalationKind = 'late_arrival' | 'table_merge' | 'qr_issue';
+/** Kinds of escalation chains. Table-merge keeps its own table; uma chain de
+ *  `late_arrival` não é mais produzida por ninguém (System B removido na
+ *  migration 081) — o valor segue vivo no enum do Postgres porque
+ *  `ALTER TYPE ... DROP VALUE` não existe, mas não é um kind alcançável. */
+export type EscalationKind = 'table_merge' | 'qr_issue';
 
 export type EscalationStatus = 'pending' | 'approved' | 'rejected' | 'timeout' | 'cancelled';
 
@@ -252,12 +193,12 @@ export interface EscalationChain {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Customer identify (CPF lookup before late-arrival)
+// Customer identify (gate de CPF · bootstrap de identidade)
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Body of `POST /customers/identify`. Used by the
- * `ScreenCustomerIdentifyBeforeJoin` flow before a `late_arrival_request` is created.
+ * Body of `POST /customers/identify`. Usado pelo gate de CPF
+ * (`ScreenCustomerIdentifyBeforeJoin`) e pelo welcome da mesa.
  */
 export interface CustomerIdentifyDto {
   name: string;

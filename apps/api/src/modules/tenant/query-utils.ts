@@ -27,7 +27,7 @@
  * the flat shape), but on `respond` / `approve` / `end` mutations the
  * mapping fell through and the WS event payload went out empty. Repro: P0
  * #4 of the consolidated bug report — complaint respond, table-merge
- * approve/reject, zone-pause end, late-arrival approve, etc.
+ * approve/reject, zone-pause end, etc.
  *
  * The right fix is to unwrap the tuple shape at the call boundary. We
  * encapsulate that here so:

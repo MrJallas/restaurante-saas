@@ -1,0 +1,45 @@
+-- Migration 081: DROP da tabela `late_arrival_requests` (o "System B").
+--
+-- POR QUÊ (decisão do dono, 2026-08-31)
+-- ------------------------------------
+-- Existiam DOIS sistemas para o MESMO caso de uso — cliente novo escaneia o QR
+-- de uma mesa já ocupada e alguém decide se ele entra:
+--
+--   System A · `session_participants`  → o que RODA. 798 registros em
+--     restaurant_dev. O host da mesa (primeiro cliente que escaneou e abriu a
+--     comanda) aprova ou recusa, ponto final.
+--
+--   System B · `late_arrival_requests` → ZERO registros nos 4 tenants
+--     (restaurant_dev, restaurant_e2e_other, staging_demo, staging_beta), e
+--     inalcançável a partir do app: o único caminho que criava uma row era
+--     `?intent=late-arrival` no `/[slug]/identify`, parâmetro que NENHUM
+--     call-site do repositório jamais produziu.
+--
+-- O System B não é só código morto: ele implementa a ESCALADA PARA O STAFF
+-- (colunas `escalation_level`, `escalation_chain_id`, `approved_by_staff_id`,
+-- `ttl_expires_at`) que a decisão de produto V16 descontinuou explicitamente —
+-- ver docs/features/customer-host-model.md: "late-arrival e junção de mesas NÃO
+-- escalam pra staff. Staff só recebe notificação passiva depois da aprovação
+-- consumada. Customer-host é o único aprovador." É o código da versão ANTERIOR
+-- a essa decisão, sobrevivendo como uma segunda verdade no schema.
+--
+-- O QUE FICA
+-- ----------
+--   • `escalation_chains` e o enum `escalation_chain_kind`: NÃO são tocados.
+--     `table_merge_requests`, `complaints` e `scan_verification_requests` têm FK
+--     para lá nos 4 schemas. O valor 'late_arrival' do enum fica órfão de
+--     propósito — `ALTER TYPE ... DROP VALUE` não existe no PostgreSQL, e
+--     inventar um rebuild do tipo para apagar um rótulo que ninguém mais grava
+--     custaria mais risco do que o rótulo custa.
+--   • Migrations 024 / 066 / 072 continuam intactas e válidas: migration
+--     aplicada é imutável. Num tenant NOVO a tabela nasce na 024 e morre aqui —
+--     alguns milissegundos de trabalho a mais em troca de um histórico honesto.
+--
+-- IDEMPOTENTE: `DROP ... IF EXISTS` roda sem erro em tenant que já dropou (e em
+-- tenant que nunca chegou a criar). Índices e constraints caem junto com a
+-- tabela; o enum de status é dropado DEPOIS dela porque `late_arrival_requests.
+-- status` é sua única dependência (verificado em pg_attribute nos 4 schemas).
+
+DROP TABLE IF EXISTS late_arrival_requests;
+
+DROP TYPE IF EXISTS late_arrival_request_status;

@@ -125,7 +125,7 @@ Host/recepcao:
 
 - `/host`, `/host/tables/:status`, `/host/waitlist`, `/host/waitlist/:id`,
   `/host/reservations`, `/host/reservations/:id`, `/host/liberate/:tableId`,
-  `/host/swap`, `/host/late-arrival/:id`, `/host/scan-verification/:id`,
+  `/host/swap`, `/host/scan-verification/:id`,
   `/host/notifications`, `/host/mensagens`, `/host/profile`,
   `/host/turnos-historico`, `/host/notificacoes-prefs`, `/host/seguranca`,
   `/host/aparencia`.
@@ -210,7 +210,7 @@ Staff usa poucos `data-testid`; preferir roles, labels e texto visivel:
 - Staff auth usa `x-staff-key`; manager/host validam `x-staff-id` no DB.
 - WS tem rooms de tenant, session, customer, staff e manager.
 - Eventos importantes: `order:*`, `waiter:*`, `scan_verification.*`,
-  `late_arrival.*`, `table_merge.*`, `complaint.*`, `staff_message.*`,
+  `participant:*`, `table_merge.*`, `complaint.*`, `staff_message.*`,
   `zone_pause.*`, `session.flag_changed`, `host.*`, `alert.created`.
 - Lacunas observadas: `shared-types` tem statuses/roles que podem divergir do
   DB/API atuais (`timeout/cancelled` vs `expired/cooldown_blocked`; roles
@@ -465,11 +465,54 @@ Decisoes confirmadas por Caleb em 2026-06-09:
   ja existente.
 - Late-arrival nunca nasce de tool do assistente: o tool legado
   `late_arrival_request` foi removido porque chamava uma rota inexistente e o AI
-  service não possui a sessão autenticada do navegador. O fluxo canônico começa
-  ao escanear o QR da mesa ocupada, passa por identificação no web-customer e
-  cria `POST /:slug/late-arrival-requests`; o customer-host decide.
+  service não possui a sessão autenticada do navegador.
+- FLUXO CANONICO (unico, apos a migration 081 — ver abaixo): o cliente escaneia
+  o QR da mesa ocupada; `POST /:slug/customer/welcome` (ou `/recognize`) chama
+  `TableSessionService.upsertParticipant`, que grava `session_participants` com
+  `status='pending'`; o customer-host decide por
+  `POST /:slug/table/participants/decide`; o resultado volta por WS
+  `participant:decision` + poll de `GET /:slug/table/participants`; o proprio
+  solicitante desiste por `POST /:slug/table/participants/cancel`. NAO ha TTL.
 - Table merge = juncao de mesas. Late-arrival e merge nao devem ir para staff
   como aprovacao ativa; staff recebe apenas mudancas de UI/notificacao passiva.
+
+Decisao do dono em 2026-08-31 — MORTE DO "System B" de late-arrival
+(migration 081):
+
+- Existiam DOIS sistemas para o MESMO caso de uso. System A
+  (`session_participants`) roda: 798 registros em restaurant_dev. System B
+  (`late_arrival_requests`) tinha ZERO registros nos 4 tenants e era
+  inalcancavel pelo app — o unico gatilho era `?intent=late-arrival` no
+  `/[slug]/identify`, parametro que NENHUM call-site do repo produzia.
+- O System B nao era so codigo morto: as colunas `escalation_level`,
+  `escalation_chain_id`, `approved_by_staff_id` e `ttl_expires_at`
+  implementavam a ESCALADA PRA STAFF que a decisao de produto V16 descontinuou
+  (docs/features/customer-host-model.md). Era a versao ANTERIOR a decisao,
+  viva como segunda verdade no schema.
+- REMOVIDO: tabela `late_arrival_requests` + enum `late_arrival_request_status`
+  (migration 081, idempotente, aplicada nos 4 tenants), modulo
+  `apps/api/src/modules/late-arrival/`, rotas `*/late-arrival-requests*`,
+  eventos WS `late_arrival.*` (+ tipos `WsLateArrival*`, DTOs `LateArrival*`),
+  `sweepLateArrivals` do ttl-tick, a fonte de late-arrival do host-inbox
+  (kind `late_arrival_consumed`), a fonte SQL/mapper/tap da timeline, e as
+  telas `ScreenCustomerHostApproveJoin` (+ rota `/host/approve/join`) e
+  `ScreenHostLateArrival` (+ rota `/host/late-arrival/:id`).
+- PRESERVADO: `escalation_chains` e o enum `escalation_chain_kind` intactos
+  (`table_merge`, `complaints` e `scan_verification` tem FK pra la; o valor
+  'late_arrival' do enum fica orfao porque `ALTER TYPE ... DROP VALUE` nao
+  existe no Postgres). Preservados tambem os kinds de timeline
+  `late_arrival.{requested,approved,rejected}` — SOMENTE LEITURA, porque o
+  event-store Mongo guarda 32 entries historicas com eles.
+- As duas telas V20 travadas ficaram: `ScreenCustomerIdentifyBeforeJoin` e o
+  GATE DE CPF (11 call-sites via `useRequireCustomerId`), nao late-arrival;
+  `ScreenCustomerWaitingApproval` serve merge + o System A (montada inline pelo
+  `PendingApprovalWrapper` de `/mesa/[tableCode]`, onde `mode='late-arrival'` e
+  so escolha de copy). Nos dois casos so o ramo do System B saiu — zero
+  mudanca visual nos caminhos alcancaveis.
+- PENDENCIA (nao implementada, registrada em PROMPT-POLIMENTO.md): a
+  "notificacao passiva ao staff" que a V16 promete NAO existe. O System A emite
+  `participant:join_request`/`participant:decision` por `emitToSession`, que so
+  alcanca a sala da mesa — a recepcao nao fica sabendo que entrou gente.
 
 Decisao confirmada por Caleb em 2026-08-31 (System A / session_participants):
 

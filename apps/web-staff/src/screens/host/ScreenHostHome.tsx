@@ -4,7 +4,12 @@
 // handoff/garcom/garcom-screens-host.jsx :: ScreenHostHome.
 //
 // Sumário no topo (4 contadores) + lista de mesas livres (pra liberar) +
-// acompanhamento passivo de late-arrival.
+// fila de verificação de scan.
+//
+// NÃO lista chegadas tardias: quem aprova entrada em mesa ocupada é o
+// customer-host, dentro da mesa (System A / session_participants), e a decisão
+// não escala pra staff (decisão de produto V16). A seção antiga lia
+// `late_arrival_requests`, removida na migration 081.
 
 import * as React from 'react';
 import { useEffect, useState } from 'react';
@@ -15,17 +20,12 @@ import { GAppHeader, GIconBtn, HBottomNav } from '../../components/waiter/Primit
 import { OperationalErrorBanner } from '../../components/OperationalErrorBanner';
 import {
   listHostTables,
-  listPendingLateArrivals,
   listPendingScanVerifications,
   type HostTableEntry,
 } from '../../lib/api/host';
 import { useStaffTheme } from '../../lib/theme';
 import { operationalErrorCopy } from '../../lib/operational-error';
-import type {
-  LateArrivalRequestDto,
-  ScanVerificationRequestDto,
-  WsEvent,
-} from '@restaurant/shared-types';
+import type { ScanVerificationRequestDto, WsEvent } from '@restaurant/shared-types';
 import { useHostEvents } from '../../hooks/useHostEvents';
 
 function formatScanDistance(request: ScanVerificationRequestDto): string {
@@ -47,7 +47,6 @@ interface ScreenHostHomeProps {
   hostInitials?: string;
   onLiberate?: (tableNumber: number) => void;
   onOpenTableStatus?: (status: HostTableEntry['status']) => void;
-  onOpenLateArrival?: (id: string) => void;
   onOpenScanVerification?: (id: string) => void;
   onTabChange?: (tab: string) => void;
 }
@@ -58,7 +57,6 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
   hostInitials = 'EU',
   onLiberate,
   onOpenTableStatus,
-  onOpenLateArrival,
   onOpenScanVerification,
   onTabChange,
 }) => {
@@ -66,7 +64,6 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
   const C = useG(dark);
   const router = useRouter();
   const [tables, setTables] = useState<HostTableEntry[]>([]);
-  const [lateArrivals, setLateArrivals] = useState<LateArrivalRequestDto[]>([]);
   const [scanVerifications, setScanVerifications] = useState<ScanVerificationRequestDto[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -77,14 +74,12 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
     let alive = true;
     async function load() {
       try {
-        const [t, la, sv] = await Promise.all([
+        const [t, sv] = await Promise.all([
           listHostTables(tenantSlug),
-          listPendingLateArrivals(tenantSlug),
           listPendingScanVerifications(tenantSlug),
         ]);
         if (!alive) return;
         setTables(t);
-        setLateArrivals(la);
         setScanVerifications(sv);
         setHasLoaded(true);
         setLoadError(null);
@@ -102,13 +97,7 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
 
   useEffect(() => {
     const off = on((event: WsEvent) => {
-      if (event.event === 'late_arrival.created') {
-        listPendingLateArrivals(tenantSlug)
-          .then(setLateArrivals)
-          .catch((error: unknown) =>
-            setLoadError(operationalErrorCopy(error, 'as solicitações de chegada tardia')),
-          );
-      } else if (
+      if (
         event.event === 'scan_verification.created' ||
         event.event === 'scan_verification.escalated'
       ) {
@@ -117,12 +106,6 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
           .catch((error: unknown) =>
             setLoadError(operationalErrorCopy(error, 'as verificações de mesa')),
           );
-      } else if (
-        event.event === 'late_arrival.approved' ||
-        event.event === 'late_arrival.rejected' ||
-        event.event === 'late_arrival.expired'
-      ) {
-        setLateArrivals((prev) => prev.filter((la) => la.id !== event.payload.requestId));
       } else if (event.event === 'scan_verification.resolved') {
         setScanVerifications((prev) => prev.filter((sv) => sv.id !== event.payload.requestId));
       }
@@ -200,9 +183,7 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
           message={loadError}
           onRetry={() => setRetryKey((key) => key + 1)}
           dark={dark}
-          hasStaleData={
-            tables.length > 0 || lateArrivals.length > 0 || scanVerifications.length > 0
-          }
+          hasStaleData={tables.length > 0 || scanVerifications.length > 0}
         />
       )}
 
@@ -375,81 +356,6 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
           </div>
         )}
 
-        {lateArrivals.length > 0 && (
-          <div style={{ marginBottom: 18 }}>
-            <div
-              style={{
-                fontSize: 11,
-                letterSpacing: 1.5,
-                textTransform: 'uppercase',
-                color: C.ink,
-                fontWeight: 700,
-                marginBottom: 8,
-              }}
-            >
-              Chegadas tardias ({lateArrivals.length})
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {lateArrivals.map((la) => (
-                <button
-                  key={la.id}
-                  type="button"
-                  onClick={() => onOpenLateArrival?.(la.id)}
-                  style={{
-                    all: 'unset',
-                    cursor: 'pointer',
-                    boxSizing: 'border-box',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    padding: '12px 14px',
-                    borderRadius: 14,
-                    background: '#FFF7E6',
-                    border: '1px solid #F0DCB6',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 10,
-                      background: '#9A7212',
-                      color: '#fff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {Icon.user(20)}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 9.5,
-                        fontWeight: 800,
-                        color: '#7A4D10',
-                        letterSpacing: 0.7,
-                        textTransform: 'uppercase',
-                        fontFamily: 'ui-monospace, SF Mono, JetBrains Mono, monospace',
-                      }}
-                    >
-                      LATE-ARRIVAL · ACOMPANHAMENTO
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#1d1c19', marginTop: 2 }}>
-                      Mesa {la.tableNumber} · {la.requesterName}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#7A4D10', fontWeight: 500, marginTop: 2 }}>
-                      {la.visitContext ?? 'Aguardando o anfitrião da mesa'}
-                    </div>
-                  </div>
-                  <span style={{ color: '#7A4D10', flexShrink: 0 }}>{Icon.arrow(16)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Mesas livres pra liberar */}
         <div
           style={{
@@ -540,7 +446,7 @@ export const ScreenHostHome: React.FC<ScreenHostHomeProps> = ({
       <HBottomNav
         active="tables"
         dark={dark}
-        inboxBadge={lateArrivals.length + scanVerifications.length}
+        inboxBadge={scanVerifications.length}
         onTabChange={(id) => onTabChange?.(id)}
       />
     </div>
