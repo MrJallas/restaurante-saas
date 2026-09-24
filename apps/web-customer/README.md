@@ -57,7 +57,7 @@ e2e/                # Playwright: specs/, helpers/ e demo-linkedin/
 
 - **Unitários:** 31 arquivos Jest em `src/`.
 - **Ponta a ponta:** `e2e/specs/` com Playwright (WebKit, perfil iPhone 14), **em série**, contra o
-  stack no ar com o seed aplicado. Usam as mesas QRTEST91/92 e consultam o banco com `docker exec`.
+  stack no ar com o seed aplicado. Usam as mesas QRTEST91/92 (os specs de TV também usam M01 e M02) e consultam o banco com `docker exec`.
   Os specs que chamam a API direto leem a chave de equipe do `.env` da raiz
   (`e2e/helpers/staff-key.ts`). Detalhes, dependências do LLM e dados que os testes deixam no banco:
   [testes](../../docs/desenvolvimento/testes.md).

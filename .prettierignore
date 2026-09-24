@@ -14,10 +14,12 @@ package-lock.json
 pnpm-lock.yaml
 yarn.lock
 
-# === reorganizacao-2026-09 ===
-# Material histórico e de agentes: o texto fica como foi escrito.
-.ai
-docs/archive
+# === reorganização 2026-09 ===
+# Material histórico e de agentes: o texto fica como foi escrito (os índices são formatados).
+.ai/*
+!.ai/README.md
+docs/archive/*
+!docs/archive/README.md
 # Protótipo navegável de design: comentários do código citam arquivo:linha destes JSX.
 docs/design/canvas
 # Saídas locais de ferramentas de captura/teste.

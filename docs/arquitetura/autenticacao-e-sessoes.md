@@ -1,6 +1,7 @@
 # Autenticação e sessões
 
-Quatro tipos de chamador falam com a API, cada um com a sua credencial. A visão de segurança (o que
+Quatro tipos de chamador falam com a API: cliente, equipe, TV e serviço de IA. O cliente usa duas
+credenciais, a da mesa e a pessoal. A visão de segurança (o que
 isso protege e o que não protege) está em [Modelo de segurança](../seguranca/modelo-de-seguranca.md).
 
 | Chamador                        | Credencial                                                         | Onde fica no navegador                                    | Validade |
@@ -107,7 +108,8 @@ O KDS individual do bar (`/bar`) e da cozinha (`/cozinha`) usa o login normal do
 
 ## WebSocket
 
-O handshake aceita o cookie `staff_token`, a chave de serviço (TVs) ou o token da mesa, com limite
+O handshake aceita o cookie `staff_token`, a chave de serviço (caminho antigo, sem uso pelos apps) ou o
+token da mesa, com limite
 de 30 handshakes por minuto por IP. Detalhes em [Tempo real](tempo-real.md).
 
 ## Variáveis envolvidas

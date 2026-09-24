@@ -67,8 +67,9 @@ Regras de entrada: [Cliente-anfitrião e mesa compartilhada](funcionalidades/cli
 | `/host/profile`, `/host/seguranca`, `/host/aparencia`, `/host/notificacoes-prefs`, `/host/turnos-historico` | Perfil e saída, PIN e sessão, tema, preferências de aviso, histórico de turnos                                                                  |
 
 A recepção só aprova o primeiro scan enquanto o pedido está no nível dela (60 s). Depois ele sobe para
-o gerente e o garçom, que recebem o evento mas não têm tela de aprovação no app `[NÃO VERIFICADO em
-uso]`.
+o gerente e o garçom, que recebem o evento mas não têm tela de aprovação no app; a tela da recepção
+desabilita os botões fora do nível dela (`canHostDecideScan`). Só a API aceita a decisão do gerente
+ou do dono nesse ponto.
 
 ## Garçom: `/waiter/*`
 

@@ -25,8 +25,8 @@ Em ordem (`events.gateway.ts`):
    desconexão.
 2. **Equipe pelo cookie `staff_token`.** Conferido no Redis. O socket entra em `staff:<id>`; gerente e
    dono também em `tenant:<slug>`. Sessão marcada para troca de PIN é desconectada.
-3. **Chave de serviço.** `x-staff-key` com `x-staff-id` e `x-tenant-slug` (caminho antigo, usado pelas
-   TVs).
+3. **Chave de serviço.** `x-staff-key` com `x-staff-id` e `x-tenant-slug` (caminho antigo; nenhum app
+   atual o usa: o navegador não tem a chave, e as TVs consultam a fila por HTTP em vez de abrir socket).
 4. **Mesa.** `x-session-token` (cabeçalho ou `auth.sessionToken`): sessão de mesa; o cliente
    reconhecido pelo cookie é associado ao socket.
 5. Sem credencial válida: `error` e desconexão.
@@ -64,7 +64,8 @@ Os contratos tipados estão em `packages/shared-types/src/ws-events.ts` (união 
 | `order:created`, `order:status`                                                                     | mesa (`session:<id>`)                                                           | Acompanhamento do pedido pelo cliente         |
 | `order:ready`, `order:claimed`                                                                      | garçons                                                                         | Pedido pronto; garçom assumiu a entrega       |
 | `order:handoff_called`                                                                              | cozinha, garçons e o garçom escolhido (`staff:<id>`)                            | Cozinha ou bar chamou o garçom para levar     |
-| `waiter:call`, `waiter:acknowledged`, `waiter:resolved`                                             | garçons e a mesa                                                                | Chamado de garçom                             |
+| `waiter:call`                                                                                       | garçons (`tenant:<slug>:waiter`)                                                | Chamado novo                                  |
+| `waiter:acknowledged`, `waiter:resolved`                                                            | garçons e a mesa (`session:<id>`)                                               | Chamado atendido ou encerrado                 |
 | `participant:join_request`, `participant:decision`                                                  | mesa                                                                            | Chegada tardia e decisão do cliente-anfitrião |
 | `scan_verification.created`, `.escalated`, `.resolved`                                              | gestão, recepção (`:host`) ou o papel da vez; a mesa e o cliente no `.resolved` | Verificação do primeiro scan                  |
 | `table_merge.created`, `.approved`, `.rejected`; `merge.cooldown_started`, `merge.cooldown_expired` | gestão e as duas mesas                                                          | Junção de mesas                               |
@@ -85,6 +86,8 @@ Alguns eventos emitidos não estão na união tipada: `order:new`, `order:create
 O WebSocket não é a única fonte de verdade. Onde perder um evento teria custo, a tela também consulta
 por HTTP:
 
+- as TVs (`apps/web-staff/src/components/tv/TvKdsBoard.tsx`) não abrem WebSocket: recarregam
+  `GET /:slug/orders/_kds` a cada 5 s;
 - a home da recepção (`ScreenHostHome.tsx`) recarrega a cada 8 s, além de ouvir
   `scan_verification.*`;
 - a tela de espera do cliente consulta `GET /:slug/table/participants` além de ouvir
