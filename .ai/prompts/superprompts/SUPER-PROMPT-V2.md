@@ -77,7 +77,7 @@ Histórico recente:
 
 Round 17 (esta sessão, ainda não-PR): orders dto.customerId IDOR + vip
 audit spoof + zone-pause endedBy fallback. Ver
-[round17-bug-hunt.md](round17-bug-hunt.md).
+[round17-bug-hunt.md](../../../docs/archive/qa/2026-05-09-bug-hunt-estatico/round17-bug-hunt.md).
 
 ## 5. Bug-hunt protocol (round N)
 
@@ -173,7 +173,7 @@ Staff: `STAFF_API_KEY` em `.env` (default seedado), pega staffId via
 Escolha um modo:
 
 ### A · Round 18 bug-hunt
-1. Leia [round17-bug-hunt.md](round17-bug-hunt.md) seção "Backlog" e
+1. Leia [round17-bug-hunt.md](../../../docs/archive/qa/2026-05-09-bug-hunt-estatico/round17-bug-hunt.md) seção "Backlog" e
    "Outras observações".
 2. Rode os greps de §6 acima e investigue novos hits.
 3. Foco recomendado round 18:
@@ -202,7 +202,7 @@ Escolha um modo:
 1. Push branch atual.
 2. `gh pr create` com título `fix(round17): orders+vip+zone-pause audit
    attribution sweep`.
-3. Body: copiar [round17-bug-hunt.md](round17-bug-hunt.md) TL;DR +
+3. Body: copiar [round17-bug-hunt.md](../../../docs/archive/qa/2026-05-09-bug-hunt-estatico/round17-bug-hunt.md) TL;DR +
    recomendação de priorização.
 
 ### D · Comparison canvas-vs-impl (modo visual)

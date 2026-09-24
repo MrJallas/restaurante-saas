@@ -1,132 +1,80 @@
-# Zone pause · feature spec
+# Pausa de zona
 
-> Status: a desenhar (entry point existe na detail screen de SOBRECARGA do Equipe).
-> Backend: a implementar.
+A pausa de zona alivia **um garçom** sobrecarregado sem parar o restaurante inteiro. O nome ficou
+"zona" por herança, mas desde a migration 032 a pausa é **por garçom** (`zone_pauses.waiter_id`), não
+por área do salão.
 
-## O que é
+## Quem pausa
 
-Pausa de pedidos novos **só nas mesas atendidas por um funcionário específico**. Diferente da pausa global (Operação · Pausar pedidos novos · pausa todo o salão), essa é localizada — o resto do restaurante funciona normal enquanto o funcionário sobrecarregado se recupera.
-
-## Por que existe
-
-Quando 1 garçom está sobrecarregado e o resto do salão tá tranquilo, pausar TUDO é overkill. Zone pause permite aliviar só ele, sem impactar a operação dos outros garçons. Ferramenta cirúrgica vs ferramenta de força bruta.
-
-## Quem dispara
-
-- **Gerente:** `ScreenManagerStatDetail` (variante `sobrecarga`) · ação "Pausar mesas do Caleb por 5 min"
-- **Auto-trigger (futuro):** se saturação individual passa de 1.5x do limiar pessoal por mais de 3 min, sugere ao gerente
-
-## Persistência
-
-Nova tabela `zone_pauses`:
-
-```sql
-CREATE TABLE zone_pauses (
-  id            uuid PRIMARY KEY,
-  waiter_id     uuid NOT NULL REFERENCES staff(id),
-  started_at    timestamptz NOT NULL DEFAULT now(),
-  ends_at       timestamptz NOT NULL,
-  started_by    uuid NOT NULL REFERENCES staff(id),
-  ended_at      timestamptz,
-  ended_by      uuid REFERENCES staff(id),
-  reason        text
-);
-
-CREATE INDEX idx_zone_pauses_active
-  ON zone_pauses(waiter_id) WHERE ended_at IS NULL;
-```
-
-- TTL: padrão 5 min (configurável: 5/10/15/30 min)
-- Auto-encerra quando `ends_at` é atingido (job recorrente popula `ended_at` e dispara evento)
-- Pode ser encerrada manualmente pelo gerente
-
-## Como afeta o pedido novo
-
-- **Customer escaneando QR de mesa atendida pelo waiter pausado:**
-  - O cardápio carrega normalmente
-  - Botão "Adicionar ao pedido" continua visível
-  - ETA exibido aumenta silenciosamente em +(duração restante da pausa)
-  - **Sem notificação de "pausado" pro customer** (silent pause)
-  - Pedido entra em queue interno até o pause acabar OU é submetido com atraso silencioso
-- **Customer escaneando QR de mesa de outro waiter:** comportamento normal
-- **Pedidos JÁ confirmados continuam fluindo** (cozinha continua preparando)
-
-### Pedido manual lançado pelo garçom durante a pausa
-
-> **Importante:** o garçom **não é barrado** de lançar pedidos manualmente durante a pausa das mesas dele. A pausa é sobre **fluxo**, não sobre **bloquear o garçom**.
-
-- Garçom abre o pedido manual pela aba "Novo" → escolhe a mesa → adiciona itens → confirma · funciona normal
-- O pedido criado entra no **mesmo congelador** que os pedidos vindos do cardápio digital do cliente (queue interno)
-- Quando o TTL acaba (ou o gerente libera manualmente), todos os pedidos congelados são submetidos em ordem cronológica
-- Justificativa: a pausa de zona alivia a **fila de pedidos novos**, não a capacidade do garçom de lançar pelos clientes que pedirem oralmente · barrar o garçom criaria fricção sem ganho operacional
-- Visualmente · o app do garçom mostra um chip mono caps tiny `· FILA EM PAUSA · LIBERA EM 04:23` no card do pedido recém-criado, pra deixar claro que ele está congelado mas será processado
+Gerente ou dono, em `/manager/pausa-zona` (tela `ScreenManagerOrdersPause`) ou a partir do detalhe de
+sobrecarga da equipe. A tela oferece 5, 10, 15 ou 30 minutos. O garçom não pausa a si mesmo.
 
 ## API
 
-```
-POST /staff/zone-pauses
-  body: { waiterId: string, durationMinutes: 5 | 10 | 15 | 30, reason?: string }
-  perms: manager
-  → 201 { id, endsAt }
+Todas as rotas ficam sob `/api/:slug/zone-pauses`
+(`apps/api/src/modules/zone-pause/zone-pause.controller.ts`):
 
-DELETE /staff/zone-pauses/:id
-  body: { reason?: string }
-  perms: manager
-  → 200 (encerra antes do TTL)
+| Rota                        | Quem pode                            | O que faz                                                                             |
+| --------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
+| `POST /zone-pauses`         | gerente ou dono                      | Inicia a pausa: `waiterId`, `durationMinutes` (1 a 240; padrão 5) e `reason` opcional |
+| `POST /zone-pauses/:id/end` | gerente ou dono                      | Encerra antes do prazo                                                                |
+| `DELETE /zone-pauses/:id`   | gerente ou dono                      | O mesmo que `/end`, em estilo REST                                                    |
+| `GET /zone-pauses`          | equipe ou cliente com sessão de mesa | Lista pausas (`active`, `waiterId`). Para o cliente, não devolve dados pessoais       |
 
-GET /staff/zone-pauses
-  query: { waiterId?, active?: boolean }
-  perms: manager
-  → 200 [{ ...zonePauses }]
-```
+Regras do serviço (`zone-pause.service.ts`):
 
-## Eventos WebSocket
+- só pausa quem tem papel `waiter` e está ativo; outro papel recebe 400
+  (`ZONE_PAUSE_INVALID_WAITER`);
+- um garçom tem no máximo uma pausa ativa; uma segunda recebe 400 (`ZONE_PAUSE_ALREADY_ACTIVE`);
+- quem iniciou e quem encerrou vêm da sessão autenticada da equipe, nunca do corpo da requisição.
 
-- `zone_pause.started` · payload `{ id, waiterId, endsAt, startedBy }`
-- `zone_pause.ended` · payload `{ id, waiterId, endedAt, endedBy?, autoExpired: boolean }`
+A varredura periódica (`ttl-tick.service.ts`, a cada 10 s) encerra as pausas vencidas e emite
+`zone_pause.ended` com `autoExpired: true`. O início emite `zone_pause.started`.
 
-Broadcast pra:
+## Efeito real
 
-- Garçom afetado (vê indicador no app dele · banner no header)
-- Customer já com sessão aberta nas mesas dele (front recebe e ajusta ETA silenciosamente)
-- Manager (atualiza Em Curso · Painel)
+| Onde                       | O que muda                                                                                                                                                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Entrega de pedidos prontos | O garçom em pausa **não** recebe entregas. Os filtros de pausa se repetem em todas as etapas da escolha do garçom (zona, último que atendeu a mesa, turno, qualquer ativo) em `apps/api/src/modules/orders/order-delivery.service.ts` |
+| Carga dos garçons          | O painel do gerente marca o garçom como pausado (`waiter-workload.service.ts`)                                                                                                                                                        |
+| App do garçom              | Banner em `/waiter` com o tempo restante, ligado e desligado em tempo real pelos eventos (`apps/web-staff/src/screens/waiter/ScreenHomeGrid.tsx`)                                                                                     |
+| Recepção                   | A pausa aparece na caixa de entrada passiva (`GET /:slug/host/inbox`)                                                                                                                                                                 |
+| App do cliente             | Aviso discreto "Pedidos com tempo de preparo um pouco maior agora" na home da mesa                                                                                                                                                    |
 
-## Frontend afetado
+O que a pausa **não** faz:
 
-- **Manager:** botão de ação no SOBRECARGA detail · `MInProgressCard` novo `kind="zone-pause"` no Painel quando ativa
-- **Garçom:** banner discreto no header do app ("Suas mesas estão em pausa por 04:23 · gerente liberará automaticamente") · som inhibit em pushes de pedido novo
-- **Customer (web):** ETA aumentado silenciosamente · sem notification badge ou banner
+- não bloqueia pedidos: o cliente continua pedindo e o garçom continua lançando pedido direto;
+- não bloqueia pagamento nem chamados;
+- não muda o número de ETA mostrado ao cliente: o app só exibe o aviso de texto.
 
-## Edge cases
+## ETA silencioso no cliente
 
-- Waiter desloga durante pause → pause continua (pedidos novos das mesas dele bloqueados até unpause ou TTL)
-- Outra waiter assume mesas durante pause → pause **cancela** automaticamente (a pause é pessoal · faz sentido só enquanto o waiter for o assigned)
-- Manager pausa zone do mesmo waiter 2x → idempotente (segundo POST atualiza `ends_at` do primeiro registro ativo)
-- Tentativa de fechar conta durante pause → **permitida** (pause não bloqueia pagamento, só pedidos novos)
-- Cliente espontaneamente sai sem pedir mais → pause segue ativa, mas não tem efeito prático
-- Waiter ganha nova mesa atribuída pelo manager durante pause → mesa nova herda o estado pausado
+O desenho previa aumentar a ETA "em silêncio" para as mesas do garçom pausado. O que existe hoje é
+mais simples (`apps/web-customer/src/hooks/useZonePause.ts`):
 
-## Não escopo
+- a home da mesa consulta `GET /:slug/zone-pauses?active=true` a cada 30 s, só depois que o cliente
+  entrou (os eventos de pausa vão para as salas da equipe, não para a da mesa);
+- o cliente não sabe qual garçom atende a mesa, então o hook usa **a primeira pausa ativa do
+  restaurante**. Com qualquer garçom pausado, todas as mesas veem o aviso;
+- o aviso é só texto; nenhum cálculo de ETA considera a pausa.
 
-- Pause de cozinha por estação (separado · ferramenta de Operação · Reordenar fila)
-- Pause de waiter individual via app dele (waiter não pausa a si mesmo · é decisão do gerente)
-- Auto-pause completo (V2 desta feature · depois de medir adoption)
-- Pause durante uma sessão específica (granularidade de mesa, não waiter — escopo separado)
+## Limites e divergências
 
-## Implementação sugerida
+| Tema                      | Situação                                                                                                                                                  |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Texto do banner do garçom | Diz "ZONA PAUSADA · comandas bloqueadas até…", mas nenhum pedido é bloqueado; o efeito real é não receber entregas                                        |
+| Aviso ao cliente          | Vale para o restaurante inteiro, não só para as mesas do garçom pausado                                                                                   |
+| ETA                       | Não é ajustada pela pausa                                                                                                                                 |
+| Nome                      | "Pausa de zona" pausa uma pessoa; o nome na interface não mudou                                                                                           |
+| Desenho original          | Previa fila congelada de pedidos, pausa automática por saturação e cancelamento da pausa quando outro garçom assume as mesas. Nada disso foi implementado |
 
-1. Tabela `zone_pauses` + migrations + index parcial em registros ativos
-2. Endpoints `POST /staff/zone-pauses` + `DELETE` + `GET` + guard de role manager
-3. WebSocket events `zone_pause.started` / `zone_pause.ended` + broadcast targeting
-4. Backend hook em `POST /tables/:n/orders`: verifica se há pause ativa pro waiter da mesa e ajusta `expectedReadyAt`
-5. Job recorrente (a cada 30s) detecta `ends_at < now()` em pauses ativas e dispara `auto-end`
-6. Manager front: botão de ação no `ScreenManagerStatDetail` (variante `sobrecarga`) + `MInProgressCard` `kind="zone-pause"` no Painel
-7. Garçom front: banner no header + supressão de pushes de pedido novo durante pause
-8. Customer front: ajuste silencioso de ETA (sem badge/banner de "pausado")
+## Referências de código
 
-## Métricas de sucesso
-
-- % de turnos com zone pause aplicada (sentinela · uso saudável: 5-20%; 0% indica feature não está sendo descoberta; >50% indica problema operacional crônico — necessidade de mais staff)
-- Duração média da zone pause (espera-se 5-7 min · se >12 min consistentemente, indica que 5 min é insuficiente)
-- Reincidência: % de waiters que recebem 2+ pauses no mesmo turno (alvo: <10% · acima disso, problema de alocação)
-- Impacto no CSAT: comparar rating de mesas que tiveram pause silenciosa vs mesas similares sem pause
+- `apps/api/src/modules/zone-pause/` (controller, serviço e testes)
+- `packages/database/migrations/tenant-template/021_create_zones_and_zone_pauses.sql` e
+  `032_zone_pauses_refactor.sql`
+- `apps/api/src/modules/orders/order-delivery.service.ts` (`resolveTargetWaiter`)
+- `apps/web-staff/src/screens/manager/ScreenManagerOrdersPause.tsx`
+- `apps/web-staff/src/screens/waiter/ScreenHomeGrid.tsx`
+- `apps/web-customer/src/hooks/useZonePause.ts` e `apps/web-customer/src/app/[slug]/mesa/[tableCode]/page.tsx`
+- Entrega e escolha do garçom: [Ciclo do pedido](../../arquitetura/ciclo-do-pedido.md)

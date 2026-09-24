@@ -1,85 +1,96 @@
 # Staging para o beta
 
-Modelo de staging do beta (decisão Caleb #10): **dois tenants** vivem no
-mesmo Postgres de staging.
+Plano de ambiente para o primeiro restaurante beta. **Não existe staging no ar**, e o repositório não
+tem caminho de produção pronto: o `docker-compose.yml` é de desenvolvimento e não há Dockerfile para a
+API nem para os fronts. Este documento registra como provisionar os restaurantes e o que precisa mudar
+na configuração antes de expor o sistema.
 
-| Schema         | Slug   | Nome                 | Papel                                                                    |
-| -------------- | ------ | -------------------- | ------------------------------------------------------------------------ |
-| `staging_demo` | `demo` | Restaurante Showcase | Tenant DEMO — mostrar o produto ao cliente antes de onboardar.           |
-| `staging_beta` | `beta` | Beta — a definir     | CASCA do tenant REAL do restaurante beta. Nome/menu reais no onboarding. |
+O modelo são **dois restaurantes** no mesmo Postgres de staging, sem cadastro self-service:
 
-O router resolve `:slug` via
+| Schema         | Slug   | Nome                 | Papel                                                                   |
+| -------------- | ------ | -------------------- | ----------------------------------------------------------------------- |
+| `staging_demo` | `demo` | Restaurante Showcase | demonstração do produto para o cliente antes do onboarding              |
+| `staging_beta` | `beta` | Beta — a definir     | casca do restaurante real; nome, cardápio, mesas e equipe no onboarding |
+
+A API resolve o `:slug` com
 `SELECT id, schema_name, is_active FROM public.restaurants WHERE slug = $1`
-(`apps/api/.../tenant/tenant.middleware.ts`). Um schema **não registrado em
-`public.restaurants` é invisível ao router** — por isso `create-tenant.ts`
-agora faz o UPSERT desse registro no final (ver abaixo).
+(`apps/api/src/modules/tenant/tenant.middleware.ts`). Um schema que não está em `public.restaurants` é
+invisível para as rotas; por isso o `create-tenant.ts` faz o UPSERT desse registro no final.
 
 ## Provisionar
 
-Aponte `DATABASE_URL` pro Postgres de staging e rode:
+Aponte `DATABASE_URL` para o Postgres de staging e rode:
 
 ```bash
 cd packages/database
-DATABASE_URL=postgresql://<user>:<pass>@<host>:<port>/<db> npm run provision:staging
+DATABASE_URL=postgresql://<usuario>:<senha>@<host>:<porta>/<banco> npm run provision:staging
 # equivalente: npx ts-node scripts/provision-staging.ts
 ```
 
-O script é **idempotente** — re-run não duplica:
+O script (`packages/database/scripts/provision-staging.ts`) é **idempotente**:
 
-- `createTenant` usa `CREATE SCHEMA IF NOT EXISTS` + tracking em
-  `__migrations__` + UPSERT `ON CONFLICT (slug)` em `public.restaurants`.
-- O seed de showcase (só o `staging_demo`) usa `WHERE NOT EXISTS` / `ON
-CONFLICT`, então re-rodar não gera linhas duplicadas.
+- a criação de cada restaurante usa `CREATE SCHEMA IF NOT EXISTS`, a tabela `__migrations__` e
+  `ON CONFLICT (slug)` em `public.restaurants`;
+- o seed de demonstração usa `WHERE NOT EXISTS` / `ON CONFLICT`, então rodar de novo não duplica linhas.
 
-### O que cada tenant recebe
+### O que cada restaurante recebe
 
-- **Ambos**: schema + todas as migrations do `tenant-template` + seeds
-  default (categorias Entradas/Principais/Bebidas/Sobremesas, settings) +
-  registro em `public.restaurants` (com um plano `Starter` default garantido
-  em `public.plans` se a tabela estiver vazia).
-- **`staging_demo` (showcase)** também recebe um seed **mínimo** pra ter algo
-  visível na tela: 1 categoria "Destaques da Casa", 2 itens (Bruschetta,
-  Risoto), 2 mesas (`D1`, `D2`) e 1 manager "Gerente Showcase" com **PIN
-  1234** (hash SHA-256, igual ao `staff-pin.util`). Trocar o PIN antes de
-  qualquer exposição externa.
-- **`staging_beta`** fica só na casca — sem menu/staff de showcase. O menu,
-  as mesas e a equipe reais entram no onboarding do cliente.
+- **Os dois:** schema com todas as migrations do `tenant-template`, os seeds padrão (categorias e
+  configurações) e o registro em `public.restaurants` (com um plano `Starter` criado se `public.plans`
+  estiver vazia).
+- **`staging_demo`:** um seed mínimo para ter o que mostrar: a categoria "Destaques da Casa", 2 pratos,
+  2 mesas (`D1`, `D2`) e o gerente "Gerente Showcase" com o PIN de demonstração `1234`.
+- **`staging_beta`:** só a casca.
 
-> `create-tenant.ts` ganhou args opcionais `--slug` e `--name` pra registrar
-> qualquer tenant novo diretamente:
-> `npm run create-tenant -- <schema> --slug <slug> --name "<Nome>"`.
+Observações sobre o gerente de demonstração:
 
-## Config / secrets: staging vs dev
+- O script grava o PIN como hash SHA-256 (formato legado). O login aceita esse formato e regrava o hash
+  com bcrypt no primeiro acesso (`apps/api/src/modules/staff-auth/staff-auth.service.ts`). Troque o PIN
+  antes de qualquer exposição externa.
+- O script não grava CPF para esse gerente, e o login da equipe é por CPF + PIN. Cadastre um CPF antes
+  de usar `/login` `[NÃO VERIFICADO em execução]`.
 
-Staging **não** é dev. Os defaults locais que destravam o ambiente são
-inseguros expostos. Setar no ambiente da API (`apps/api`) e do web-staff:
+Para registrar outro restaurante:
+`npm run create-tenant -- <schema> --slug <slug> --name "<Nome>"`.
 
-| Env                         | Dev (local)                                           | Staging (obrigatório)                                                                                                                                                                                       |
-| --------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `STAFF_API_KEY`             | vazio / `<chave-de-dev-antiga-bloqueada-em-producao>` | **segredo forte único**. `NODE_ENV=production` faz o boot abortar se ausente ou se for o literal committado (`assert-staff-key.ts`).                                                                        |
-| `NEXT_PUBLIC_STAFF_API_KEY` | —                                                     | **NUNCA setar**. A key saiu do bundle no épico de auth; hoje só vive server-side no proxy `apps/web-staff/.../api/proxy` como `STAFF_API_KEY`. Prefixo `NEXT_PUBLIC_` a vazaria pro JS do browser.          |
-| `STAFF_SESSION_REQUIRED`    | `false` (fallback `x-staff-id` legado ligado)         | Gate #34 é **automático e fail-closed** em `NODE_ENV=production`, `APP_ENV=staging` ou Vercel preview/production. Definir `true` continua útil para antecipar o gate em dev; nenhum deploy pode desligá-lo. |
-| `TV_ACCESS_PIN`             | não setado (TV KDS pública, no-op)                    | **setar um PIN**. Sem ele, as rotas de TV/KDS ficam abertas (`proxy route` e `web-staff/middleware.ts` tratam ausência como dev no-op).                                                                     |
-| `CORS_ORIGINS`              | default `http://localhost:3003,3002`                  | **domínios de staging** (CSV). Honrado por `main.ts` (HTTP) e `events.gateway.ts` (WebSocket).                                                                                                              |
-| `NODE_ENV`                  | `development`                                         | `production` (ativa os fail-fast de `STAFF_API_KEY` e `secure` nos cookies).                                                                                                                                |
+## Configuração: staging × desenvolvimento
+
+Os defaults que destravam o ambiente local são inseguros quando expostos. Em staging, configure a API,
+o serviço de IA e o web-staff assim (lista completa de variáveis em
+[ambiente local](../desenvolvimento/ambiente-local.md#variáveis-de-ambiente)):
+
+| Variável                    | Desenvolvimento                               | Staging                                                                                                                                                                                                |
+| --------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `NODE_ENV`                  | `development`                                 | `production`: liga os bloqueios de boot abaixo                                                                                                                                                         |
+| `STAFF_API_KEY`             | valor aleatório no `.env`                     | segredo forte e único. Em produção a API aborta se faltar ou se for a chave antiga que já esteve no repositório (`KNOWN_LEAKED_STAFF_KEY`, em `apps/api/src/common/config/assert-staff-key.ts`)        |
+| `SESSION_TOKEN_SECRET`      | valor aleatório no `.env`                     | segredo forte e único. Em produção a API aborta se faltar; defaults públicos conhecidos são recusados sempre (`apps/api/src/common/auth/session-auth-token.ts`)                                        |
+| `AI_SERVICE_API_KEY`        | default de desenvolvimento do Compose         | segredo forte. Sem ele, o serviço de IA recusa as chamadas quando `ENV`/`NODE_ENV` é `production` ou `staging`                                                                                         |
+| `NEXT_PUBLIC_STAFF_API_KEY` | não existe                                    | **nunca definir**: o prefixo `NEXT_PUBLIC_` embute o valor no JavaScript do navegador. A chave vive só no servidor, injetada pelo proxy `apps/web-staff/src/app/api/proxy/[...path]/route.ts`          |
+| `STAFF_SESSION_REQUIRED`    | `false` (aceita o `x-staff-id` legado)        | irrelevante: com `NODE_ENV=production` ou `APP_ENV`/`VERCEL_ENV` em `production`, `preview` ou `staging`, só o token de sessão da equipe é aceito (`apps/api/src/common/guards/staff-auth-context.ts`) |
+| `TV_ACCESS_PIN`             | vazio: TVs abertas, com aviso no log          | **definir um PIN.** Com PIN, as páginas `/cozinha/tv` e `/bar/tv` pedem o PIN (`apps/web-staff/src/proxy.ts`). Sem PIN em produção/staging, o proxy do web-staff bloqueia as chamadas de dados das TVs |
+| `CORS_ORIGINS`              | `http://localhost:3003,http://localhost:3002` | domínios de staging (CSV). Vale para HTTP (`apps/api/src/main.ts`) e WebSocket (`events.gateway.ts`)                                                                                                   |
+| `CUSTOMER_APP_URL`          | `http://<PUBLIC_HOST>:3003`                   | endereço público do app do cliente (destino do redirect do QR)                                                                                                                                         |
+
+Cookies: a API marca `secure` quando a requisição chega por HTTPS; o web-staff, quando
+`NODE_ENV=production`.
 
 ## Checklist de go-live do beta
 
-1. **Provisionar** os 2 tenants: `npm run provision:staging` (idempotente).
-2. **Migrations aplicadas em todos os tenants**: o boot da API roda
-   `migrate-tenants.ts` antes de subir (wirado no `command` do serviço `api`
-   em `docker-compose.yml`). Confirmar nos logs `[migrate-tenants] OK`.
-3. **Secrets setados** conforme a tabela acima — em especial `STAFF_API_KEY`
-   forte, `TV_ACCESS_PIN`, `CORS_ORIGINS`; confirme nos testes que o gate
-   automático de sessão staff está ativo no ambiente de deploy.
-   `NUNCA` `NEXT_PUBLIC_STAFF_API_KEY`.
-4. **Boot fail-fast passou**: a API sobe sem `STAFF_API_KEY nao configurada`
-   nem `usa o default committado` (`assert-staff-key.ts`).
-5. **Router enxerga os tenants**: `GET /demo/...` e `/beta/...` resolvem
-   (linha em `public.restaurants` com `is_active = true`).
-6. **Timeline íntegra**: rodar `apps/api/scripts/verify-timeline.ts` contra o
-   banco de staging — a session-timeline deve reconstruir sem furos.
-7. **Troca de PIN do showcase**: trocar o PIN default `1234` do "Gerente
-   Showcase" antes de qualquer demo externa.
-8. **Onboarding do beta**: quando o cliente real entrar, preencher `name`,
-   menu, mesas e staff reais no `staging_beta` (a casca já está provisionada).
+1. **Provisionar** os dois restaurantes: `npm run provision:staging`.
+2. **Migrations em todos os restaurantes**: rodar `packages/database/scripts/migrate-tenants.ts` antes
+   de subir a API (no Compose de desenvolvimento isso está no comando do serviço `api`) e conferir no
+   log `[migrate-tenants] OK · applied=… skipped=…`.
+3. **Segredos** conforme a tabela acima: `STAFF_API_KEY`, `SESSION_TOKEN_SECRET`,
+   `AI_SERVICE_API_KEY` e `TV_ACCESS_PIN` fortes; `CORS_ORIGINS` e `CUSTOMER_APP_URL` com os domínios
+   reais. Nunca `NEXT_PUBLIC_STAFF_API_KEY`.
+4. **Boot sem erro de segredo**: a API sobe sem `STAFF_API_KEY nao configurada` nem
+   `SESSION_TOKEN_SECRET nao configurada`.
+5. **Rotas enxergam os restaurantes**: `GET /api/demo/...` e `/api/beta/...` respondem (linha em
+   `public.restaurants` com `is_active = true`).
+6. **Linha do tempo íntegra**: de dentro do container da API, com `cwd` na raiz do repositório,
+   `npx ts-node apps/api/scripts/verify-timeline.ts --tenant demo` (só leitura; `--heal` corrige).
+7. **Gerente de demonstração**: CPF cadastrado e PIN trocado antes de qualquer demonstração externa.
+8. **Onboarding do beta**: preencher nome, cardápio, mesas e equipe reais no `staging_beta`.
+
+Riscos que continuam aceitos mesmo em staging (login do cliente só por CPF, Pix de demonstração, push
+sem provedor) estão em [riscos aceitos e pendências](../seguranca/riscos-aceitos-e-pendencias.md).

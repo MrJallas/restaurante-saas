@@ -1,163 +1,82 @@
-# Security follow-ups
+# Riscos aceitos e pendências
 
-> Estado do hardening avaliado durante o fechamento do re-scan OWASP
-> (2026-07-05, branch `fix/framework-bugfixes`). §A/§B/§C foram fechados, mas a
-> decisão de produto de 2026-07-11 reabriu conscientemente uma fronteira:
-> login de cliente somente por CPF. O risco abaixo é conhecido, reproduzível e
-> aceito temporariamente; não o classifique como segurança resolvida.
+Esta página lista o que é conhecido e ainda não está resolvido, separando o que foi **aceito de
+propósito** do que é **pendência**. As proteções que existem estão em
+[Modelo de segurança](modelo-de-seguranca.md).
 
-## ⚠️ RISCO ALTO ACEITO — login de cliente somente por CPF
+## Riscos aceitos
 
-Decisão explícita de Caleb em 2026-07-11: enquanto não existir recuperação
-forte, informar um CPF já cadastrado autentica aquele perfil mesmo em aparelho
-novo ou sem `recognition_token`. O backend reutiliza o token canônico e o emite
-somente em cookie HttpOnly; nunca no JSON.
+### Login do cliente só por CPF (risco alto)
 
-**Risco:** CPF é identificador, não segredo. Quem souber o CPF pode assumir o
-perfil, ler histórico/PII e executar ações pessoais permitidas ao cliente,
-inclusive solicitações LGPD. Classificação: account takeover/privacidade de
-alta severidade, aceita como dívida de produto. Rate-limit, cookie HttpOnly,
-isolamento por tenant e ownership downstream continuam, mas não provam posse.
+Desde 2026-07-11, informar um CPF já cadastrado autentica aquele perfil, mesmo em aparelho novo ou
+sem cookie de reconhecimento (`welcome` e `identify` em
+`apps/api/src/modules/customers/customers.service.ts`). O motivo e a saída prevista estão em
+[ADR 0006](../decisoes/0006-aceitar-login-do-cliente-so-por-cpf-temporariamente.md).
 
-**Comportamento operacional:** múltiplos aparelhos compartilham o mesmo token.
-Logout em qualquer um rotaciona a credencial e desconecta todos. O evento
-`customer_cpf_only_login_accepted` registra reclaim com CPF mascarado, sem nome
-ou token.
+- **Risco.** CPF identifica, mas não é segredo. Quem souber o CPF de alguém assume o perfil: vê o
+  histórico e os dados pessoais e pode executar as ações pessoais do cliente, inclusive o pedido de
+  exclusão LGPD. É uma tomada de conta de alta severidade.
+- **O que continua valendo.** Limite de tentativas por IP real, token só em cookie httpOnly,
+  isolamento por restaurante e checagem de dono nas rotas pessoais. Nada disso prova posse do CPF.
+- **Comportamento.** Os aparelhos que entram com o mesmo CPF compartilham o mesmo token. Logout em
+  qualquer um troca o token, e os outros aparelhos perdem o acesso. Cada entrada por CPF gera o evento de auditoria
+  `customer_cpf_only_login_accepted`, com o CPF mascarado e sem nome nem token.
+- **Classificação.** Por causa deste risco, a auditoria de 2026-07-11 fechou como **PARTIAL**, e não
+  PASS ([relatório](../archive/qa/2026-07-11-auditoria-integral/FINAL-REPORT.md)).
 
-**Correção futura recomendada:** telefone/e-mail previamente verificado + OTP
-de uso único com hash/TTL/rate-limit e resposta anti-enumeração. Sem canal
-verificado, recuperação presencial por host/gerente com autorização e código
-temporário. Depois da prova de posse: emitir credencial por dispositivo,
-rotacionar/revogar tokens antigos, invalidar Redis/WS e remover o modo CPF-only
-por feature flag. Testar replay, brute force, enumeração e cross-tenant.
+### Pix de demonstração
 
-## ✅ FECHADO
+O Pix não cobra dinheiro; o pagamento para em `awaiting_settlement`. É decisão de produto
+([ADR 0008](../decisoes/0008-manter-o-pix-como-demonstracao.md);
+[Pagamento e Pix](../produto/funcionalidades/pagamento-pix.md)).
 
-- **ws@8.18.3 → 8.21.0** (advisories GHSA-58qx uninitialized-mem + GHSA-96hv DoS):
-  bump de PATCH `engine.io` 6.6.6→6.6.9 (pina ws~8.21) + `socket.io-adapter`
-  2.5.6→2.5.8 (idem), ambos dentro do range `~6.6.0`/`~2.5.2` do socket.io@4.8.3 →
-  zero breaking, sem override. Validar WS no boot (smoke KDS/staff/customer).
-- **X-Powered-By**: `poweredByHeader: false` nos 2 FE.
-- **middleware→proxy** (deprecação Next 16): `middleware.ts`→`proxy.ts`,
-  `middleware()`→`proxy()` (o TV-gate; `config.matcher` idêntico). Build sem
-  deprecation.
-- **highlight sticky do salon-map**: casava por `sessionId` (removido no A07) →
-  por `num` (`highlightTableNum`).
-- **Permissions-Policy** (enforce, per-app): web-customer `geolocation=(self)`
-  (fluxo de mesa) + câmera/mic/pagamento/usb OFF; web-staff `camera=(self)`
-  (scan-qr) + geoloc/mic/pagamento/usb OFF.
-- **CSP em `Content-Security-Policy-Report-Only`** nos 2 FE: baseline seguro
-  (`object-src none`, `base-uri self`, `frame-ancestors none`, form-action self;
-  script/style com `unsafe-inline` que o Next precisa hoje). NÃO bloqueia nada —
-  é a etapa 1 do rollout. **Promover pra enforce** exige nonces (o Next injeta
-  script inline) + observar reports; ver §A abaixo.
-- **salon/tables/adjacent** + **table-merge (create/approve/reject)**: vazavam
-  `table_sessions.id` de OUTRA mesa pro CLIENTE (hijack customer→customer) →
-  cortados (testes `salon.service.test.ts`, `table-merge.controller.test.ts`).
-- **tv-unlock XFF-bypass** (regressão do Next 16): backstop global + teste.
-- **[A07 RAIZ] x-session-token SEPARADO do table_sessions.id** (decisão do dono,
-  opção B): `token = HMAC(SESSION_TOKEN_SECRET, sessionId)`. O id vira
-  identificador de recurso INÓCUO (seguro de expor em QUALQUER DTO — host/tables,
-  session-timeline, etc.); a credencial é o token, que nunca sai. Determinístico
-  (multi-device reusa uma chave; invalidação por id computa o token). SessionGuard
-  intocado. Sessões pré-split seguem no TTL 4h (zero disrupção). **Isso fecha a
-  família A07 na raiz — o §B "navegar-por-número" abaixo virou DESNECESSÁRIO.**
-  Prova E2E: token→200, id→401. `session-auth-token.ts` + testes; API 710/710.
+### TVs sem PIN em desenvolvimento
 
-## ⏳ RESTA
+Sem `TV_ACCESS_PIN`, as TVs da cozinha e do bar abrem sem PIN no ambiente de desenvolvimento, que é
+o padrão do `docker-compose.yml`. Em produção ou staging a falta do PIN bloqueia as TVs.
 
-### §A. CSP enforce — FEITO (nonce-based); resta só a observação de prod
+### Advisories moderadas do PostCSS interno do Next 16
 
-CSP agora é ENFORCE com nonce per-request no `src/proxy.ts` dos 2 FE:
-`script-src 'self' 'nonce-X' 'strict-dynamic'` bloqueia `<script>` injetado sem o
-nonce. `style-src 'unsafe-inline'` mantido (React `style={{}}` + styled-jsx).
-Validado no preview (renderiza, zero violação de CSP). **Resta (observação, não
-código):** em prod o `'unsafe-eval'` é removido (dev mantém pro HMR) — se alguma
-lib usar eval em prod, o report surge; adicionar um `report-uri`/endpoint de
-coleta e observar antes do launch. Se algo quebrar, re-permitir `'unsafe-eval'`
-no prod é o fallback documentado.
+Na auditoria de 2026-07-11, o `npm audit` apontou 2 advisories de severidade moderada, as duas na
+cópia do PostCSS que o Next 16 traz embutida. A única correção sugerida pelo npm é `npm audit fix
+--force`, que instalaria uma versão muito antiga do Next. A decisão foi não forçar e acompanhar uma
+versão do Next que atualize a cópia interna. A exposição é baixa: o CSS é compilado no build e o
+sistema não aceita folha de estilo enviada por usuário. Estado atual das advisories: `[NÃO
+VERIFICADO: npm audit não foi rodado nesta revisão]`.
 
-### §B. ~~nav-id staff~~ — RESOLVIDO pela separação token↔id (ver "✅ FECHADO")
+## Pendências
 
-Antes o `table_sessions.id` era o `x-session-token`, então expô-lo pro staff
-(host/tables, session-timeline) permitia forjar a sessão do cliente. A opção B
-(HMAC, escolhida pelo dono) separou os dois: o id agora é inócuo. **Não é mais
-necessário** o refactor "navegar-por-número" — o staff pode continuar usando o id
-como chave de navegação/recurso, porque ele deixou de ser credencial. §B fechado.
+| Pendência                              | Situação                                                                                                                                                                                                                                                                                                                                                                                                   | Onde olhar                                                                                                                  |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Prova de posse para o login do cliente | Trocar o login só por CPF por código de uso único (OTP) enviado a telefone ou e-mail já verificado, com hash, prazo, limite de tentativas e resposta que não revele se o CPF existe; sem canal verificado, recuperação presencial pela recepção ou gerente. Depois: credencial por aparelho, revogação dos tokens antigos, invalidação no Redis e no WebSocket, e o modo só-CPF desligado por configuração | [ADR 0006](../decisoes/0006-aceitar-login-do-cliente-so-por-cpf-temporariamente.md)                                         |
+| Provedor de push                       | `PushService` responde `provider_not_configured`; convite de avaliação e avisos não saem do sistema                                                                                                                                                                                                                                                                                                        | `apps/api/src/modules/jobs/push.service.ts`; [Avaliação e reclamação](../produto/funcionalidades/avaliacao-e-reclamacao.md) |
+| `QR_HMAC_SECRET`                       | O `docker-compose.yml` define um valor fixo de exemplo que nenhum código lê. O segredo real do QR fica por mesa, em `tables.qr_hmac_secret`                                                                                                                                                                                                                                                                | `docker-compose.yml`, serviço `api`                                                                                         |
+| Caminho de produção                    | Não há deploy: o compose roda em modo de desenvolvimento (`NODE_ENV=development`, servidores com recarga automática), só o serviço de IA tem Dockerfile e não há backup nem monitoramento. O checklist de staging lista os segredos exigidos                                                                                                                                                               | [Staging](../operacao/staging.md)                                                                                           |
+| Advisories de dependências             | Reavaliar a cada atualização; Python com `pip-audit` sobre os locks                                                                                                                                                                                                                                                                                                                                        | [Convenções](../desenvolvimento/convencoes.md)                                                                              |
+| Relatório de violação de CSP           | A CSP está aplicada com nonce; em produção sem `unsafe-eval`. Falta um endpoint de coleta de relatórios para observar violações antes de um lançamento                                                                                                                                                                                                                                                     | `apps/web-*/src/proxy.ts`                                                                                                   |
 
-- Nota opcional (limpeza, NÃO segurança): as remoções defensivas do id no
-  salon/adjacent e table-merge (feitas antes) poderiam ser revertidas já que o id
-  é seguro — mas o cliente não precisa dele mesmo, então ficam (menos superfície).
-- Config de PROD: setar `SESSION_TOKEN_SECRET` no ambiente (hoje cai no default de
-  dev). Rotacioná-lo desloga todo mundo (re-scan) — trocar em janela de baixa.
+## Itens fechados
 
-### §C. ~~LGPD erasure: 200-sem-protocolo~~ — FECHADO
+| Data       | O que foi fechado                                                                                                                                                                  |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-07-05 | PIN da equipe com bcrypt, com migração automática do hash antigo no login                                                                                                          |
+| 2026-07-04 | Sessão da equipe no servidor: cookie httpOnly e chave de serviço fora do código do navegador ([ADR 0007](../decisoes/0007-proteger-sessoes-com-token-derivado-e-bff-da-equipe.md)) |
+| 2026-07-05 | Token de sessão do cliente separado do id da sessão (HMAC com `SESSION_TOKEN_SECRET`); o id passou a poder aparecer em qualquer resposta                                           |
+| 2026-07-05 | Rotas de mesas adjacentes e de junção deixaram de devolver o id da sessão de outra mesa ao cliente                                                                                 |
+| 2026-07-05 | CSP aplicada com nonce nos dois apps; `Permissions-Policy` por app; `X-Powered-By` desligado; `middleware.ts` renomeado para `proxy.ts` (Next 16)                                  |
+| 2026-07-05 | `ws` atualizado para 8.21 (duas advisories), sem override                                                                                                                          |
+| 2026-07-05 | Desbloqueio de TV não aceita mais `X-Forwarded-For` forjado; redirecionamento de `/cozinha/unlock` só para caminho interno                                                         |
+| 2026-07-05 | O LLM não decide mais a entrada de alguém na mesa: toda proposta dele é descartada; decisão só pela frase literal do anfitrião ou pelo toque no app                                |
+| 2026-07-05 | Dados de usuário nas instruções ao LLM tratados como dado literal                                                                                                                  |
+| 2026-07-05 | Troca obrigatória de PIN também exigida no handshake do WebSocket                                                                                                                  |
+| 2026-07-11 | Exclusão LGPD com lease e token de tentativa (migration 079); troca do token e desconexão dos sockets. Validado na auditoria de 2026-07-11 e commitado em 2026-07-17               |
 
-`lgpd_data_request.py` agora distingue os dois casos por `backend_called =
-bool(ctx.api_client)`: se o backend FOI chamado e não devolveu `protocolNumber`
-(200-malformado OU exceção), retorna `status='pending'` honesto — nunca minta
-apagamento. A fabricação de protocolo (`_make_protocol` + `status='fulfilled'`)
-só ocorre com `backend_called == False` (handoff puro sem api_client, legítimo).
-Coberto por `test_backend_200_without_protocol_does_not_claim_erasure` +
-`test_handoff_without_api_client_still_mints` (distinção explícita). §C fechado.
+## Correções em relação ao texto antigo
 
----
+A versão anterior deste documento tinha trechos que não batem mais com o código:
 
-_Contexto: `MEMORY.md` → `project_rescan_megaloop_2026-07-04.md`;
-`docs/PIX-STATUS.md` (Pix é STUB por decisão de produto, não bug)._
-
-## Re-scan Fable-style (2026-07-05) — achou e fechou 2 P1 + 4 P2
-
-Scan multi-agente (8 dimensões, cada achado verificado adversarialmente). 13
-brutos → 2 P1 CONFIRMADOS (ambos meus desta sessão) + 6 P2. Fechados:
-
-- P1 **LLM01 não fechou de verdade**: o sanitizer não cobria a classe AFIRMATIVA
-  (sim/pode/liberar/deixa) que o prompt usa como gatilho de accept → nome de
-  joiner envenenado auto-admitia. Fix INICIAL: denylist estendida + gate na fala
-  do host — mas gate por regex é heurístico e VAZA (host diz uma afirmação
-  qualquer + nome envenenado → passa). **Fechamento DEFINITIVO (por construção,
-  não por heurístico):** `_llm_may_decide_join` DROPA todo accept/reject_join_request
-  emitido pelo LLM quando há join pendente. A admissão legítima só vem de (a)
-  `_join_decision_tool` — match determinístico da fala LITERAL do host, que
-  curto-circuita ANTES do LLM — ou (b) o TAP humano no HostJoinRequestBanner/Modal.
-  Nenhum depende de interpretar texto adjacente ao nome atacante-controlado, então
-  não há corrida armamentista de sanitização a perder. O sanitizer vira
-  defense-in-depth. Testes: `_llm_may_decide_join('accept_join_request', pending)
-is False`; outros tools e sem-pending → True. Regexes `_HOST_AFFIRM_RE`/
-  `_HOST_REJECT_RE` removidas.
-- P1 **CSP frame-ancestors 'none'** quebrava o iframe do cardápio (MenuOverlay) →
-  'self'.
-- P2 CSP bloqueava Google Fonts do tenant → hosts no style/font-src.
-- P2 ScreenHostProfile placebo '17:08' (mesmo do manager) → removido.
-- P2 open-redirect no /cozinha/unlock (next não validado) → só path interno.
-- P2 must_change_pin não checado no WS handshake de staff → rejeita+disconnect.
-  Não-acionados: must_change_pin no StaffOrSessionGuard (path da x-staff-key
-  COMPARTILHADA, sem identidade per-staff — non-issue); partySize-persist do host
-  (decisão de produto, exige coluna nova).
-  Estado: API 714/714, ai-service 387/387, tsc 0, boot 200, CSP+iframe+fontes ao vivo.
-  LLM01 re-fechado por construção (hard-drop do LLM), não por gate heurístico.
-
-## Re-scan verificação final (2026-07-05, rodada 2) — 4 brutos → 0 exploráveis
-
-Scan multi-agente (8 dimensões, cada achado com 2 refutadores céticos). 4 brutos:
-1 refutado direto, 3 sobreviventes — mas TODOS com veredito DIVIDIDO (1 refutador
-real, 1 falso-positivo). Verificados manualmente à mão:
-
-- ❌ **FALSO-POSITIVO — "LLM injection via customer.name (P1)"**: o nome vem de
-  `SELECT name FROM customers WHERE id=$1` com o customerId do cookie autenticado
-  (`buildCustomerContext`), ou seja é SEMPRE o nome do próprio cliente. Não é
-  cross-customer — no máximo self-injection, que não escala (a própria `message`
-  do cliente já é texto livre). `/chat` do ai-service está atrás da X-AI-Service-Key,
-  cliente não POSTa `customer_context` forjado. Refutado.
-- 🔧 **DEFENSE-IN-DEPTH (não explorável) — name/last_items/menu_summary/categories
-  crus no system prompt**: inconsistência real (só o joinerName era tratado como
-  dado literal). Fechado com `_neutralize_prompt_meta` — neutralização NARROW (só
-  tokens de tool-call + meta-instruções, sem tocar a classe afirmativa que
-  corromperia cardápio) + colapso de newline nos campos curtos. Aplicado nos dois
-  ramos do prompt. Não era P1/P2 explorável: cardápio é admin-controlado e mutações
-  via LLM já são gated (join dropado, destrutiva exige confirmação humana). Testes
-  em `test_prompt_data_hygiene.py` (7, incl. não-corrupção de cardápio legítimo).
-  Vetores confirmados SEGUROS pela refutação: authz/IDOR (host ownership validado
-  server-side), sessão/token (HMAC), multi-tenant, frontend/CSP, pagamentos,
-  request_table_merge (target_table_number é int computado por regex no backend).
-  Estado: API 714/714, ai-service 396/396, tsc 0. Árvore limpa.
+| Texto antigo                                                                          | Código atual                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "CSP em `Content-Security-Policy-Report-Only`"                                        | A CSP é **aplicada** com nonce por requisição (`src/proxy.ts` de cada app); o modo só-relatório foi a etapa anterior                                                                                      |
+| A ferramenta `lgpd_data_request` distinguia "backend chamado" e podia gerar protocolo | A ferramenta **nunca** chama o backend, nunca cria protocolo e nunca afirma exclusão; devolve só uma ação para o app ([Histórico de chat e LGPD](../produto/funcionalidades/historico-de-chat-e-lgpd.md)) |
+| `SESSION_TOKEN_SECRET` "cai no default de dev"                                        | O compose exige a variável; a API recusa valores padrão públicos em qualquer ambiente e exige a variável em produção                                                                                      |

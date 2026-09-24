@@ -1,24 +1,23 @@
 # restauranteSaaS Project Memory
 
-Atualizado em 2026-06-09 por auditoria multiagente Codex.
-
-Use este arquivo como mapa rapido do produto, das fontes de verdade e da
-matriz de testes. Ele nao substitui o codigo, o canvas nem os superprompts.
+Memoria de processo, criada em 2026-06-09 (auditoria multiagente Codex) e
+acrescida ate 2026-09-24 (reorganizacao de docs). A documentacao do produto
+esta em `README.md` e `docs/`; esta memoria registra processo, historico de
+rodadas e pendencias de trabalho com agentes. Ela nao substitui o codigo nem
+os docs publicos.
 
 ## Ordem Das Fontes
 
-1. `.ai/prompts/superprompts/SUPER-PROMPT-CONTINUACAO.md` e `.ai/prompts/superprompts/SUPER-PROMPT-V5.md`
-   explicam como o app deve funcionar e como retomar trabalho. Leia antes de
-   comparar tela atual contra canvas.
-2. Canvas final em `docs/design/canvas/` e handoff JSX sao a fonte visual
-   e de comportamento esperado por persona.
-3. Codigo atual em `apps/api`, `apps/web-customer`, `apps/web-staff` e
-   `services/ai-service` vence relatorios antigos quando houver divergencia.
-4. `docs/archive/qa/2026-05-15-auditoria-e2e-r23/**` e superscans sao evidencias historicas. Use para
-   pistas, mas revalide no codigo atual porque varios reports ja ficaram
-   defasados.
-5. `.ai/prompts/superprompts/SUPER-PROMPT-V2.md` e o protocolo de bug-hunt text-only valem
-   para rodadas de seguranca/contratos sem comparacao visual.
+1. Codigo atual em `apps/api`, `apps/web-customer`, `apps/web-staff`,
+   `packages/` e `services/ai-service`: vence qualquer doc ou relatorio.
+2. Decisoes registradas em `docs/decisoes/` (ADRs).
+3. Docs vivos de produto e arquitetura: `docs/produto/` e `docs/arquitetura/`.
+4. Canvas V20 em `docs/design/canvas/` (handoff JSX) como referencia visual e
+   de comportamento esperado por persona; o codigo vence o canvas.
+5. Pistas historicas, sempre revalidadas no codigo: `docs/archive/` (relatorios
+   de QA, planos antigos) e `.ai/prompts/` (superprompts, prompts de rodada).
+   `.ai/prompts/superprompts/SUPER-PROMPT-V2.md` e o protocolo de bug-hunt
+   text-only para rodadas de seguranca/contratos sem comparacao visual.
 
 ## Memoria E RAG Compartilhados
 
@@ -33,12 +32,10 @@ matriz de testes. Ele nao substitui o codigo, o canvas nem os superprompts.
   copia derivada de arquivo versionado em git. Busca hoje: o RAG canonico do
   vault para "por que decidimos X" (`rag/recall.sh ... --project restaurante-saas`)
   e Grep/Glob para "onde esta X no codigo". Nao levantar um segundo indice.
-- Sempre que uma rodada mudar comportamento de produto, prioridade das fontes,
-  rotas/personas, contratos backend/frontend, validacoes, riscos conhecidos ou
-  perguntas abertas, atualize este arquivo no mesmo branch/commit.
-- Quando o RAG local existir, consulte-o antes de buscas amplas e reindexe
-  depois de mudancas relevantes nos arquivos fonte indexados. Commite apenas
-  docs, scripts e manifests pequenos; nunca o vector DB/cache.
+- Sempre que uma rodada mudar comportamento de produto, rotas/personas ou
+  contratos backend/frontend, atualize o doc publico em `docs/` (e o ADR, se for
+  decisao) no mesmo branch/commit. Aqui entra so o que e de processo: prioridade
+  das fontes, comandos de validacao, riscos de trabalho e perguntas abertas.
 - Se a funcionalidade estiver ambigua, pergunte ao Caleb com exemplos concretos
   antes de registrar uma suposicao como verdade.
 
@@ -52,7 +49,9 @@ matriz de testes. Ele nao substitui o codigo, o canvas nem os superprompts.
   `restaurant_dev`, porta interna `5434`.
 - Redis: sessoes, rate-limit e filas auxiliares.
 - Mongo: historico de chat e auditoria/security logs.
-- Staff key dev: `<chave-de-dev-antiga-bloqueada-em-producao>`.
+- Staff key: `STAFF_API_KEY` do `.env` da raiz, sem default no compose (gerada
+  com `openssl rand -hex 32`); a chave antiga
+  `<chave-de-dev-antiga-bloqueada-em-producao>` e recusada em producao.
 
 Sempre confirme os bind mounts dos containers antes de validar visualmente:
 
@@ -107,7 +106,7 @@ Rotas principais:
 - `/:slug/pagamento`, `/:slug/pagamento/dividir`, `/:slug/pagamento/pix`,
   `/:slug/pagamento/erro`, `/:slug/pagamento/feedback`
 - `/:slug/identify`, `/:slug/waiting-approval`,
-  `/:slug/host/approve/{participant,join,merge}`
+  `/:slug/host/approve/{participant,merge}`
 - `/:slug/complaints`, `/:slug/complaints/new`, `/:slug/complaints/:id`,
   `/:slug/chat-history`, `/:slug/staff-messages`, `/:slug/eu`, `/:slug/conta`
 

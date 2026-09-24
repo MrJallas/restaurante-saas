@@ -1,246 +1,117 @@
-# V12 · Avaliação pós-entrega + Reclamação como chamado novo
+# Avaliação e reclamação
 
-Feature ponta-a-ponta cobrindo (i) o cliente avaliando o pedido após o garçom marcá-lo como `delivered`,
-(ii) reclamação chegando pro gerente como **chamado novo tipo `complaint`**, e (iii) a resposta
-retornando ao chat IA do cliente como `ManagerBubble` com **chip-action inset** opcional.
+O cliente avalia cada pedido entregue e pode abrir uma reclamação, que chega ao gerente como um
+chamado. A resposta do gerente volta para o app do cliente em tempo real.
 
-Canvas:
+## Avaliação do pedido
 
-- Cliente: [`app-cliente-canvas-v2.html`](../../app-cliente-canvas-v2.html) · 6 seções · 10 frames
-- Gerente: [`app-garcom-canvas-v12.html`](../../app-garcom-canvas-v12.html) · 7 seções · 7 frames
+**Quando nasce.** Quando o pedido vira `delivered` (o garçom confirma a entrega), a API cria uma linha
+em `order_ratings` para aquele pedido, ainda sem nota (`OrderRatingsService`, chamado por
+`order-delivery.service.ts` e `orders.service.ts`). É uma linha por pedido (`UNIQUE` em `order_id`).
 
-Handoff:
+**Convite.** A tarefa `RatingPushService` roda a cada minuto e procura avaliações pendentes criadas
+há mais de 13 min para enviar um push. Como não há provedor de push configurado
+(`apps/api/src/modules/jobs/push.service.ts` responde `provider_not_configured`), **o convite
+automático nunca chega**. A reserva no Redis (`rating-push:<id>`, 30 dias) é liberada quando o envio
+falha, então o sistema tenta de novo nos minutos seguintes.
 
-- `handoff/cliente/cliente-screens-v2.jsx` — todas as telas do cliente + `ManagerBubbleWithAction`
-- `handoff/garcom/garcom-complaint.jsx` — telas do gerente + `MComplaintInProgressCard` + `ScreenComplaintDetail`
+**Como o cliente chega à tela hoje.** Pela rota `/[slug]/orders/[orderId]/rating`, aberta por:
 
----
+- o chip "Avaliar" das mensagens da home depois do pagamento, quando há um pedido no contexto
+  (`services/ai-service/services/continuation.py`); sem pedido no contexto, o chip leva à avaliação
+  da visita (`/[slug]/pagamento/feedback`);
+- o endereço direto da rota.
 
-## Fluxograma
+**Envio.** `POST /api/:slug/order-ratings` (sessão de mesa obrigatória). O cliente é identificado pelo
+cookie `recognition_token`, nunca por um id no corpo, e o pedido precisa ser da mesa da sessão.
+Reenviar uma avaliação já feita devolve `alreadyRated: true` em vez de erro. `GET
+/api/:slug/order-ratings/:orderId` lê a avaliação, também restrita à mesa.
 
-### Cliente
+**Nota baixa vira reclamação** (`order-ratings.service.ts`):
 
-```
-ScreenWaiterDeliveryConfirm (garçom marca delivered)
-        │
-        ↓  (delay 3-5 min · backend agenda push)
-push lockscreen "Como foi o pedido?"
-        │  tap
-        ↓
-ScreenCustomerOrderRating (rota /[slug]/avaliar/[orderId])
-        │
-        ├─ rating ≥ 4 + textarea vazia → POST /customer/orders/:id/rating → finaliza
-        │     └─ opcional · ContinuationHome msg "Que bom que curtiu! Quer pedir um café?"
-        │
-        ├─ rating ≤ 3 OU textarea preenchida ────┐
-        │                                         ↓
-        └─ tap "Reportar um problema" ──→ ScreenCustomerComplaintCompose
-                                                  │
-                                                  ↓  POST /customer/orders/:id/complaint
-                                          ScreenCustomerComplaintWaiting
-                                                  │ (10s spinner OU tap "Voltar pra mesa")
-                                                  ↓
-                                          Home com continuation message especial
-                                          ("Sua reclamação está com a Renata · respondeu em ~2 min em média")
-                                                  │
-                                                  ↓  WS complaint.responded
-                                          ManagerBubble com chip-action no chat IA
-                                          + push de resposta (som "humano respondendo")
-```
+| Nota   | Comentário | Resultado                                                                         |
+| ------ | ---------- | --------------------------------------------------------------------------------- |
+| 1 ou 2 | preenchido | A reclamação é criada na hora e o app abre o acompanhamento dela                  |
+| 1 ou 2 | vazio      | O app abre o formulário de reclamação (`/[slug]/complaints/new`)                  |
+| 3      | qualquer   | O app abre o formulário de reclamação, com o comentário (se houver) já preenchido |
+| 4 ou 5 | qualquer   | Só grava a nota                                                                   |
 
-### Gerente
+**A nota conta para o garçom que entregou.** O indicador de avaliação da equipe
+(`apps/api/src/modules/dashboard/dashboard.service.ts`) faz a média das notas dos últimos 7 dias
+cruzando cada avaliação com `order_deliveries.claimed_by`, isto é, com o garçom que assumiu a
+entrega. Enquanto o convite por push não chega, poucas avaliações existem e o indicador tende a ficar
+vazio.
 
-```
-WS complaint.created (broadcast managers do tenant)
-        │
-        ↓
-push lockscreen "Reclamação · Mesa N · <nome>" (som crítico · NÃO silencia em zone-pause)
-        +
-Painel · Em curso · MInProgressCard kind="complaint" (border-left brick)
-        +
-Operação · Alertas · card no topo (CRÍTICO · HÁ X MIN · RECLAMAÇÃO)
-        │
-        ↓  tap
-ScreenCallDetail type="complaint"
-   hero brick lavado · estrelas filled brick · bubble do cliente com chip do tipo
-   │
-   ├─ chip "Já estou indo · 2 min"  (mais usado · primário)
-   ├─ chip "Vou verificar com a cozinha · 3 min"
-   ├─ chip "Mando uma cortesia pela espera"  → atalho pra ScreenManagerCompensateClient
-   └─ chip "Custom · escrever do meu jeito"  → composer textarea
-        │
-        ↓  POST /staff/complaints/:id/respond
-WS complaint.responded (target customer) · push pro cliente · cria entry em assistant_messages
-        +
-MInProgressCard vira state="resolved-summary" (border-left moss · 30 s antes de sumir)
-   "Caleb leu há 12 s · pode marcar como resolvida"
-        │
-        ↓  WS complaint.read · 30 s timeout · OU tap "Marcar como resolvida"
-POST /staff/complaints/:id/resolve · WS complaint.resolved · card some
-```
+## Reclamação
 
----
+Rotas sob `/api/:slug/complaints` (`apps/api/src/modules/complaints/complaints.controller.ts`):
 
-## Schema · `complaints`
+| Rota                           | Quem               | O que faz                                                                              |
+| ------------------------------ | ------------------ | -------------------------------------------------------------------------------------- |
+| `POST /complaints`             | cliente com sessão | Abre a reclamação: texto (até 2000 caracteres), tipo e nota opcionais, pedido opcional |
+| `GET /complaints/mine`         | cliente com sessão | Lista as reclamações do próprio cliente                                                |
+| `GET /complaints/:id`          | cliente com sessão | Acompanha uma reclamação                                                               |
+| `GET /complaints`              | equipe             | Lista para o gerente, com filtro por status                                            |
+| `POST /complaints/:id/respond` | gerente ou dono    | Responde ao cliente, com um atalho opcional                                            |
+| `POST /complaints/:id/forward` | gerente ou dono    | Encaminha para outro membro da equipe                                                  |
+| `POST /complaints/:id/resolve` | equipe             | Encerra a reclamação                                                                   |
 
-```sql
-CREATE TABLE complaints (
-  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  table_session_id uuid NOT NULL REFERENCES table_sessions(id),
-  customer_id      uuid NOT NULL REFERENCES customers(id),
-  order_id         uuid NOT NULL REFERENCES orders(id),
-  rating           smallint CHECK (rating BETWEEN 1 AND 5),  -- NULL se cliente foi direto pro complaint
-  problem_type     text CHECK (problem_type IN ('demora','item-errado','item-faltando','comida-fria','outro')),
-  description      text NOT NULL,
-  created_at       timestamptz NOT NULL DEFAULT now(),
-  responded_at     timestamptz,
-  responded_by     uuid REFERENCES staff(id),
-  resolved_at      timestamptz,
-  resolved_by      uuid REFERENCES staff(id),
-  thread_id        uuid                 -- liga ao thread em assistant_messages
-);
+Tipos de problema aceitos: `demora`, `item-errado`, `item-faltando`, `comida-fria` e `outro`
+(migration 033). Atalhos da resposta: `on-the-way`, `kitchen-check`, `courtesy` e `custom`.
 
-CREATE INDEX idx_complaints_unresolved
-  ON complaints(table_session_id, created_at)
-  WHERE resolved_at IS NULL;
-```
+Ciclo de estados: `pending_review` → (`in_progress`, se encaminhada) → `responded` → `closed`.
 
-Idempotência: backend garante **1 rating por order_id** (UNIQUE em `ratings.order_id`) e
-**1 complaint open por order_id** (UNIQUE PARTIAL `WHERE resolved_at IS NULL`).
+Regras que o código garante:
 
-`assistant_messages` ganha um `kind='complaint_response'` (já existe `kind` text). Nada novo, só
-um valor de enum lógico — `from_role='staff'` continua sendo o sinal canônico de que veio do
-gerente, e o `metadata` JSONB carrega `{ chipAction?: 'on-the-way'|'kitchen-check'|'courtesy'|'custom', complaintId }`.
+- o cliente, o pedido e a comanda vêm da sessão autenticada; ids enviados no corpo que não pertencem
+  à mesa são ignorados;
+- uma reclamação repetida em aberto para o mesmo pedido não é criada de novo (migration 068);
+- só um gerente responde: se dois tentam ao mesmo tempo, o segundo recebe "já respondida";
+- o encaminhamento cria uma cadeia em `escalation_chains` (tipo `complaint`) e avisa o destinatário.
 
----
+Telas do cliente: `/[slug]/complaints` (lista), `/[slug]/complaints/new` (nova) e
+`/[slug]/complaints/[id]` (acompanhamento).
 
-## Endpoints
+## O que o gerente vê
 
-### Customer
+- o evento `complaint.received` vai para a sala de gestão do restaurante e atualiza o painel inicial
+  do gerente (`/manager`) sem recarregar;
+- detalhe em `/manager/chamado/<id>`, onde o gerente responde, encaminha ou encerra; uma cortesia
+  pela espera é enviada em `/manager/compensate`;
+- a reclamação também aparece na caixa de entrada passiva da recepção e na linha do tempo da sessão.
 
-```
-POST /customer/orders/:orderId/rating
-  body: { rating: 1-5, comment?: string }
-  → 201 { id, savedAt }
-  side-effect: se rating ≥ 4 + comment vazio, encerra. Senão devolve { redirectTo: '/avaliar/.../complaint' }.
+A resposta fica gravada na própria reclamação (`response_text`) e chega ao cliente pelo evento
+`complaint.responded`, na sala privada dele. O encerramento emite `complaint.resolved`.
 
-POST /customer/orders/:orderId/complaint
-  body: { rating?: 1-5, problemType: enum, description: string }
-  → 201 { complaintId, threadId, eta: '~2 min' }
-  side-effect:
-    · INSERT em complaints
-    · WS complaint.created (broadcast managers do tenant)
-    · push pro device dos managers on-shift
-    · cria entry em painel.in_progress (kind='complaint')
-```
+## Push
 
-### Manager (staff)
+Nenhum push sai do sistema hoje: nem o convite de avaliação, nem aviso ao gerente, nem a resposta ao
+cliente. Tudo o que é imediato usa o WebSocket e só chega a quem está com o app aberto. Integrar um
+provedor (APNs/FCM) é pendência registrada em
+[Riscos aceitos e pendências](../../seguranca/riscos-aceitos-e-pendencias.md).
 
-```
-GET /staff/complaints?status=open|resolved|all
-  → 200 [{ id, customerName, table, rating, problemType, description, createdAt, ... }]
+## Desenho original
 
-POST /staff/complaints/:id/respond
-  body: { content: string, chipAction?: 'on-the-way'|'kitchen-check'|'courtesy'|'custom' }
-  → 200 { messageId, deliveredAt }
-  side-effect:
-    · UPDATE complaints SET responded_at=now(), responded_by=$staff
-    · INSERT em assistant_messages (from_role='staff', kind='complaint_response',
-                                    metadata: { chipAction, complaintId })
-    · WS complaint.responded (target customer device · "human-responding" sound)
-    · MInProgressCard vira state='resolved-summary' por 30s no painel do gerente
+O desenho visual desta funcionalidade está no canvas:
 
-POST /staff/complaints/:id/resolve
-  body: { reason?: string }
-  → 200 { resolvedAt }
-  side-effect:
-    · UPDATE complaints SET resolved_at=now(), resolved_by=$staff
-    · WS complaint.resolved (broadcast managers) · MInProgressCard some
+- cliente: [app-cliente-canvas-v2.html](../../design/canvas/app-cliente-canvas-v2.html);
+- gerente: [app-garcom-canvas-v12.html](../../design/canvas/app-garcom-canvas-v12.html).
 
-POST /staff/complaints/:id/forward
-  body: { toStaffId: uuid }
-  → 200 { forwardedAt }  -- ação do MoreSheet "Encaminhar pra outro gerente"
-```
+Diferenças entre o desenho e o código:
 
----
+| Desenho                                                        | Código atual                                                                                 |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Rotas `/customer/orders/:id/rating` e `/staff/complaints/*`    | `/:slug/order-ratings` e `/:slug/complaints`                                                 |
+| Tela `/[slug]/avaliar/[orderId]`                               | `/[slug]/orders/[orderId]/rating`                                                            |
+| Push 3 a 5 min após a entrega, com som próprio                 | Tarefa de 13 min sem provedor de push; nada é entregue                                       |
+| Resposta do gerente gravada como mensagem do assistente        | Resposta gravada na própria reclamação                                                       |
+| Evento `complaint.created` e confirmação de leitura automática | Evento `complaint.received`; o emissor de `complaint.read` existe, mas nenhum código o chama |
 
-## WebSocket events
+## Referências de código
 
-| event                 | target                       | payload                                                         |
-| --------------------- | ---------------------------- | --------------------------------------------------------------- |
-| `complaint.created`   | broadcast managers do tenant | `{ complaintId, tableNumber, customerId, problemType, rating }` |
-| `complaint.responded` | target customer device       | `{ complaintId, messageId, content, chipAction? }`              |
-| `complaint.read`      | target manager que respondeu | `{ complaintId, readAt }`                                       |
-| `complaint.resolved`  | broadcast managers           | `{ complaintId, resolvedAt, resolvedBy }`                       |
-
-`complaint.read` dispara automaticamente quando o cliente abre o chat e a `ManagerBubble` entra
-no viewport (IntersectionObserver no client). `30 s` após `complaint.responded`, se não houver
-`complaint.read`, o `MInProgressCard` ainda some — o card resolved-summary é puramente de
-feedback ao gerente, não bloqueia a transição.
-
----
-
-## Componentes-chave
-
-| Componente                       | Arquivo                  | Notas                                                                          |
-| -------------------------------- | ------------------------ | ------------------------------------------------------------------------------ |
-| `ScreenCustomerOrderRating`      | `cliente-screens-v2.jsx` | 5 estrelas + textarea opcional. CTAs condicionais.                             |
-| `ScreenCustomerComplaintCompose` | `cliente-screens-v2.jsx` | 5 chips de tipo · textarea obrig. · `RENATA · ON-LINE AGORA` indicator.        |
-| `ScreenCustomerComplaintWaiting` | `cliente-screens-v2.jsx` | Spinner reassurance · 10 s antes de redirect.                                  |
-| `ManagerBubbleWithAction`        | `cliente-screens-v2.jsx` | Extende `ManagerBubble` (V4) com `<ChipActionInset kind="...">`.               |
-| `MComplaintInProgressCard`       | `garcom-complaint.jsx`   | Pattern V4 (border-left brick/moss). 2 estados: `active` · `resolved-summary`. |
-| `ScreenComplaintDetail`          | `garcom-complaint.jsx`   | Hero brick · 4 chips · composer custom · MoreSheet.                            |
-
-### `ChipActionInset` — kinds disponíveis
-
-| `kind`          | Eyebrow + label                           | Ícone    |
-| --------------- | ----------------------------------------- | -------- |
-| `on-the-way`    | Renata avisou · "Chega em 3 min"          | clock    |
-| `kitchen-check` | Renata avisou · "Foi falar com a cozinha" | check    |
-| `courtesy`      | Renata avisou · "Cortesia a caminho"      | giftSeal |
-
-Visual: inset row dentro do mesmo card `ManagerBubble`, separada da prosa por `border-top: 1px C.borderSoft`,
-com mono caps eyebrow + ícone outline em circle 28×28. **Não floating · não card separado.**
-
----
-
-## Pontos delicados
-
-1. **Som distinto pro push de resposta da gerente** — não usar o som da IA. iOS usa um `UNNotificationSound`
-   custom registrado como `human-responding.caf`. Android usa NotificationChannel com
-   `setSound()` separado pra `complaint_responses`.
-2. **Zone-pause não silencia complaint** — em `garcom-app/notification-router.ts`, complaints
-   passam por cima do mute. Tratar como "always-deliver" mesmo quando o turno está em pausa.
-3. **Idempotência do rating** — backend deve respeitar UNIQUE em `ratings.order_id`. Re-tentativa
-   do cliente deve devolver `200 { alreadyRated: true }` ao invés de 409.
-4. **Read receipt em rolling-window** — quando a thread com gerente está ativa (≤ 5 min após a
-   última msg dela), respostas do cliente vão pra `ManagerThread`, não pra IA. Após 5 min sem
-   atividade, volta pro routing IA default.
-5. **Chip-action é opcional** — se a resposta da gerente foi puramente texto livre (chip "Custom"),
-   `metadata.chipAction` fica `null` e o `ManagerBubble` renderiza só a prosa, sem inset.
-
----
-
-## Checklist de implementação
-
-### Backend
-
-- [ ] migration `complaints` + index parcial unresolved
-- [ ] endpoints customer (rating · complaint) + manager (list · respond · resolve · forward)
-- [ ] WS events `complaint.created` · `complaint.responded` · `complaint.read` · `complaint.resolved`
-- [ ] `assistant_messages.kind='complaint_response'` validation + metadata schema
-- [ ] notification-router respeita complaint over zone-pause
-
-### apps/web-customer
-
-- [ ] rota `/[slug]/avaliar/[orderId]` + páginas rating/complaint/waiting
-- [ ] componente `ManagerBubble` aceita prop `chipAction`
-- [ ] continuation-message kind `pos_reclamacao`
-
-### apps/web-staff
-
-- [ ] `Call.type` adiciona `'complaint'`
-- [ ] `MInProgressCard` aceita `kind='complaint'` (active + resolved-summary)
-- [ ] `ScreenCallDetail` aceita `type='complaint'` com 4 chips
-- [ ] entry em Operação · Alertas (card crítico no topo)
-- [ ] push channel separado com som crítico · always-deliver
+- `apps/api/src/modules/order-ratings/`, `apps/api/src/modules/complaints/`
+- `apps/api/src/modules/jobs/rating-push.service.ts` e `push.service.ts`
+- `apps/web-customer/src/app/[slug]/orders/[orderId]/rating/page.tsx`
+- `apps/web-customer/src/screens/feedback-and-history/ScreenCustomerOrderRating.tsx`
+- Migrations `026_create_complaints_and_order_ratings.sql`, `033_complaints_problem_type.sql` e
+  `068_complaints_dedup_unique.sql`

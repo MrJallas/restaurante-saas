@@ -1,19 +1,15 @@
-# Instructions for coding agents
+# Instruções para agentes de código
 
-Before any non-trivial audit or implementation:
+Antes de qualquer auditoria ou implementação não trivial:
 
-1. Read `MEMORY.md`, then `CLAUDE.md`.
-2. To recall a decision and WHY it was made, query the canonical vault RAG:
-   `bash '/Users/calebmedeiros/obsidian/memorias de caleb/rag/recall.sh' "your question" --project restaurante-saas`
-   It indexes the reasoning about this codebase (logs, decisions, briefs).
-3. To find WHERE something lives in the code, use Grep/Glob directly. The repo
-   no longer ships a second local index: it drifted to 55% correct and started
-   serving stale `CLAUDE.md`/`MEMORY.md` chunks with an air of authority, while
-   Grep always reads the current tree.
-4. For interactive iOS/mobile auditing, read `docs/audits/serve-sim.md` and use
-   `scripts/audit/start-serve-sim.sh`.
-5. Keep durable decisions aligned across `MEMORY.md` and `CLAUDE.md`. Keep
-   screenshots, traces and videos out of Git.
+1. Leia `CLAUDE.md` (regras, telas V20 travadas e invariantes), `.ai/README.md` e `.ai/MEMORY.md`.
+2. "Por que decidimos X": `docs/decisoes/` e o RAG do autor (comando em `.ai/README.md`).
+   "Onde está X": Grep/Glob na árvore atual. Não crie índice vetorial dentro do repositório.
+3. Auditoria iOS interativa: `docs/desenvolvimento/testes-no-ios.md` e `scripts/audit/start-serve-sim.sh`.
+4. Mudou comportamento, contrato ou rota? Atualize o doc de `docs/` (e o ADR, se for decisão) no mesmo
+   commit. Em `.ai/MEMORY.md` registre só o que é de processo.
+5. `README.md` e `docs/` são públicos: nada sobre agentes neles. Material de agente fica em `.ai/`.
+6. Sem screenshots, traces ou vídeos no Git: evidência vai para `output/` (o Playwright limpa
+   `test-results/` a cada execução).
 
-Do not infer that Simulator-only validation proves device performance or
-hardware behavior. Confirm hardware-sensitive findings on a physical iPhone.
+Validação só no Simulator não prova desempenho nem comportamento de hardware: confirme em iPhone físico.

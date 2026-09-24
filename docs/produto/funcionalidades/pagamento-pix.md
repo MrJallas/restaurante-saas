@@ -1,86 +1,106 @@
-# Status do pagamento Pix — STUB INTENCIONAL (não é bug)
+# Pagamento e Pix
 
-> **Para qualquer agente/dev auditando pagamentos:** o Pix deste projeto **não
-> está implementado de verdade** — é um _stub de demonstração_ **de propósito**.
-> Isso é uma **decisão de produto do Caleb (2026-07-04)**, não um defeito. **Não
-> abra como bug, não "conserte" gerando um QR real ou auto-confirmando.** Se um
-> scan/auditoria apontar "Pix não tem estado terminal de sucesso", "QR não é
-> honrado pelo banco", ou "0 callers de webhook" — é isto aqui, esperado.
+O cliente fecha a conta pelo celular. A conta, a taxa de serviço e a divisão são calculadas de
+verdade no backend. O **Pix é uma demonstração**: nenhum dinheiro é cobrado e nenhum banco é
+consultado. Isso é decisão de produto, não defeito
+([ADR 0008](../../decisoes/0008-manter-o-pix-como-demonstracao.md)).
 
-## Por que é stub agenda
+## Estado atual
 
-O Caleb ainda **não tem um cliente (restaurante) fechado**. Integrar Pix de
-verdade exige CNPJ + conta num PSP + credenciais reais + custo por transação —
-não faz sentido antes de haver um cliente. **Depois que fechar o primeiro
-cliente**, decide-se _qual_ PSP e implementa-se. Até lá, a tela do Pix continua
-como está hoje (mostra o QR de demonstração) e o registro fica honesto: é demo.
+| Parte                                                             | Estado                                                                                               |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Conta com subtotal, desconto de promoção, taxa de serviço e total | Real, calculada no backend (`GET /api/:slug/orders/bill`)                                            |
+| Divisão da conta (igual, por item, valores livres)                | Real, calculada no backend (`POST /api/:slug/payments/bill/split/compute`)                           |
+| Registro do pagamento e trava contra cobrança dupla               | Real (`POST /api/:slug/payments`)                                                                    |
+| Pix (QR e copia-e-cola)                                           | **Demonstração**. A tela mostra o selo "Pagamento simulado · nenhum valor será cobrado"              |
+| Cartão                                                            | Fora da lista de formas de pagamento desde 2026-07-04                                                |
+| Dinheiro ou pagamento no caixa                                    | Não existe no app do cliente. A tela `/cashier` da equipe é só um aviso de "caixa ainda não ativado" |
 
-## O que existe hoje (o encanamento, sem o cano de dinheiro)
+Na tela de formas de pagamento (`/[slug]/pagamento`) só aparece o Pix, com a legenda "QR Code ·
+simulado nesta versão".
 
-| Camada                                                                                         | Estado                                                                                                                           |
-| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Tabela `payments` + máquina de estados (`pending → awaiting_settlement → confirmed`)           | ✅ real                                                                                                                          |
-| Tela `apps/web-customer/src/app/[slug]/pagamento/pix/page.tsx` (QR + copia-e-cola + countdown) | ⚠️ **demo** — `pixCopyPaste` é string gerada localmente, **não** um BR Code emitido por banco; o app de banco real **não** honra |
-| `POST /:slug/payments/:id/confirm`                                                             | ⚠️ em prod grava só `awaiting_settlement` (nunca `confirmed`/`paid_at`) — ver `payments.service.ts` A04-PAY-01                   |
-| `pspTransactionId` no `/confirm`                                                               | ⚠️ campo livre que o cliente manda; **não** validado contra ninguém                                                              |
-| Webhook de PSP                                                                                 | ❌ **não existe**                                                                                                                |
-| Integração com PSP (Efí/Mercado Pago/Asaas/banco)                                              | ❌ **não existe** (0 SDK/http no repo)                                                                                           |
+## Comanda da mesa × minha comanda
 
-A flag `PAYMENTS_ALLOW_CLIENT_CONFIRM` só liga auto-confirm em **dev/e2e/mock**.
-Em produção fica **off** — de propósito, senão o cliente marcaria o próprio Pix
-como pago sem pagar (a fraude que o fix de segurança A04-PAY-01 fechou).
+Ao adicionar um item, o cliente escolhe em qual comanda ele entra. Cada pedido grava
+`billing_mode`:
 
-## Como Pix funciona de verdade (mental model pro futuro)
+| Modo                         | Quem paga                                      |
+| ---------------------------- | ---------------------------------------------- |
+| `table` (comanda da mesa)    | Entra na conta compartilhada da mesa           |
+| `individual` (minha comanda) | Entra na comanda de quem pediu (a visita dele) |
 
-Não existe "API do governo" que um comerciante chame direto. O Banco Central
-**opera os trilhos** (SPI liquida, DICT resolve chaves) e **padroniza** uma API
-Pix, mas o acesso é **intermediado por um participante** (um banco ou uma
-fintech-PSP autorizada). O restaurante **nunca** fala direto com o BCB.
+Um carrinho com itens das duas comandas vira dois pedidos, um por modo. Na hora de pagar, cada
+escopo tem o próprio total devido (`apps/api/src/modules/payments/payments.service.ts`):
 
-```
-seu backend ──API Pix (mTLS+OAuth)──▶ PSP/banco (participante) ──▶ SPI/DICT (BCB)
-     ▲                                       │
-     └──────────── WEBHOOK ◀─────────────────┘   ← "o Pix chegou?" = ISTO
-        (PSP avisa quando o dinheiro cai; é a ÚNICA verificação automática)
-```
+- **conta da mesa**: pedidos em comanda da mesa;
+- **comanda individual**: pedidos em comanda individual do cliente identificado;
+- **parte do rateio**: o cliente paga a parte dele na divisão da conta da mesa, e o valor abate o
+  devido da mesa.
 
-A **verificação real de que o Pix chegou** = o **webhook** que o PSP dispara
-quando o crédito cai (com `endToEndId`, valor, txid). Sem integrar um PSP, a
-única alternativa é humana: o dinheiro cai numa chave Pix estática real e o
-gerente confere no app do banco e confirma manualmente.
+Quem paga "a minha parte" é identificado pelo cookie `recognition_token` no servidor, nunca por um
+id enviado pelo app. O total devido desconta o que já foi pago e também o Pix que está aguardando
+compensação, para não cobrar duas vezes. Pagamentos simultâneos do mesmo escopo são serializados
+(testes `payments.service.concurrent-double-charge.test.ts` e
+`payments.service.split-canonical.test.ts`).
 
-## Dicas pro próximo agente (quando for implementar)
+## Taxa de serviço e rateio no backend
 
-**Precisa do Caleb (mundo real, não dá pra codar):** CNPJ/MEI, conta no PSP
-escolhido, credenciais (access token ou certificado), e uma URL HTTPS pública
-pro webhook em produção.
+O `BillingService` (`apps/api/src/modules/billing/billing.service.ts`) é a única fonte de verdade da
+conta:
 
-**Engenharia (encaixa sem reescrever a máquina de estados):**
+- lê a taxa de `settings.service_fee_pct` (migration 050); valor ausente ou inválido vale 10%;
+- aplica o desconto da promoção ativa que der o **maior** desconto (promoções não somam) e que
+  respeite a janela de validade e o pedido mínimo;
+- `GET /orders/bill` e `POST /payments` usam o mesmo cálculo, então o valor mostrado é o valor
+  cobrado.
 
-1. **`PixProvider`** (novo, `apps/api/src/modules/payments/providers/`): cria a
-   cobrança real via API Pix do PSP (`PUT /v2/cob/{txid}`) e devolve o **BR Code
-   de verdade** pra gravar em `pix_copy_paste`/`pix_qr_code`, no lugar da string
-   local de hoje (`payments.service.ts:~285`).
-2. **`webhook.controller`** (novo): recebe o POST do PSP, valida
-   (`valor === amount_cents`, `txid`, `endToEndId`), e só então marca
-   `confirmed`/`paid_at`. Vira o **confirmador autorizado** no lugar do cliente
-   (que hoje só chega a `awaiting_settlement`). A regra A04-PAY-01 já reserva
-   esse caminho — o webhook é exatamente o "webhook de PSP autenticado" que o
-   comentário em `payments.service.ts:25` prevê.
-3. **Baixa manual de staff** (opcional, interino): rota de confirm autorizada
-   por `req.staffAuth` (Gate #34) pro caixa/gerente confirmar "recebi o Pix"
-   olhando o banco — reusa a mesma transição pra `confirmed`.
-4. **3º bucket no dashboard:** `awaiting_settlement` hoje é invisível no
-   faturamento (só `confirmed`/`paid` contam). Ao ligar o PSP, decidir se
-   "aguardando compensação" aparece como pendente no dashboard do gerente.
+O app do cliente não calcula taxa nem desconto. O motivo (a taxa de 10% existia só na tela) está em
+[ADR 0011](../../decisoes/0011-calcular-taxa-de-servico-e-rateio-da-mesa-no-backend.md).
 
-**Escolha de PSP (recomendação):** Mercado Pago é o de menor atrito pra começar
-(Pix API + webhook só com access token, sem certificado mTLS, tem sandbox). Efí
-(ex-Gerencianet) é mais barato/grátis em produção mas exige certificado. Bancos
-(Inter/Itaú/BB) só se já houver conta PJ.
+## Por que o Pix é demonstração
 
-## Decisão registrada
+Integrar Pix de verdade exige CNPJ, conta num provedor de pagamentos (PSP), credenciais e custo por
+transação. Sem um restaurante cliente, o projeto não tem esses itens. O que existe hoje:
 
-- Vault/RAG: `brain/decisions/2026-07-04-pix-stub-ate-cliente.md`
-- Memória do projeto: `MEMORY.md` (seção Pagamento/Pix)
-- Data: 2026-07-04 · Decisor: Caleb
+| Camada                                                                  | Estado                                                                                  |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Tabela `payments` e estados `pending → awaiting_settlement → confirmed` | Real                                                                                    |
+| QR e copia-e-cola                                                       | Texto gerado pelo próprio backend; não é um BR Code emitido por banco. Expira em 10 min |
+| `POST /api/:slug/payments/:id/confirm`                                  | Grava só `awaiting_settlement` ("aguardando compensação"), nunca `confirmed`            |
+| Webhook de PSP                                                          | Não existe                                                                              |
+| Integração com PSP                                                      | Não existe (nenhum SDK ou chamada HTTP a PSP no repositório)                            |
+
+A confirmação pelo próprio cliente só marca o pagamento como pago se
+`PAYMENTS_ALLOW_CLIENT_CONFIRM=true` e o ambiente **não** for de produção, staging ou preview
+(`clientConfirmMarksPaid` em `payments.service.ts`). O `docker-compose.yml` não define essa variável:
+no ambiente local o Pix também para em `awaiting_settlement`. Sem essa regra, qualquer cliente
+poderia marcar o próprio Pix como pago sem pagar.
+
+Consequência para a demonstração: nenhuma conta termina "quitada"; os indicadores de faturamento do
+gerente só somam pagamentos `confirmed` ou `paid` (`apps/api/src/modules/dashboard/dashboard.service.ts`).
+
+## Como integrar um provedor
+
+O desenho atual permite ligar um PSP sem reescrever a máquina de estados:
+
+1. **Provedor de Pix** em `apps/api/src/modules/payments/`: cria a cobrança na API Pix do PSP e grava
+   o BR Code real no lugar do texto de demonstração.
+2. **Webhook**: rota nova que recebe o aviso do PSP, confere valor, identificador da cobrança
+   (`txid`) e identificador da transação (`endToEndId`) e só então marca `confirmed`. É o único jeito
+   automático de saber que o dinheiro chegou.
+3. **Baixa manual pela equipe** (opcional, provisória): uma rota autorizada para o caixa ou o gerente
+   confirmar o Pix olhando o extrato do banco.
+4. **Painel financeiro**: decidir se `awaiting_settlement` aparece como pendente no faturamento.
+
+Pré-requisitos fora do código: CNPJ ou MEI, conta no PSP, credenciais (token ou certificado) e um
+endereço HTTPS público para o webhook. Os PSPs considerados no planejamento diferem em exigência de
+certificado mTLS e existência de ambiente de testes.
+
+## Referências de código
+
+- `apps/api/src/modules/billing/billing.service.ts`
+- `apps/api/src/modules/payments/payments.service.ts` e `payments.controller.ts`
+- `apps/web-customer/src/app/[slug]/pagamento/page.tsx`, `pagamento/pix/page.tsx` e
+  `pagamento/dividir/page.tsx`
+- Migrations `012_create_payments.sql`, `050_customer_geofence_and_fee.sql` e
+  `073_bill_split_notifications.sql`

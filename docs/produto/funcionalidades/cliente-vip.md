@@ -1,114 +1,89 @@
-# VIP customer · feature spec
+# Cliente VIP
 
-> Status: a desenhar (entry point existe na MoreSheet do `ScreenManagerTableMenu`).
-> Backend: a implementar.
+A marcação VIP dá prioridade a uma mesa durante a visita: os pedidos dela sobem na fila da cozinha e
+do bar e a mesa ganha destaque nas telas da equipe. O cliente não vê a marcação.
 
-## O que é
+## Escopo: a sessão da mesa
 
-Marcação de **sessão como VIP**. Vale só durante a sessão da mesa — não vira atributo permanente do cliente. Impacta priorização de chamados e apresentação visual da mesa.
+VIP é uma **marca da sessão**, não do cliente. Vale enquanto a sessão da mesa estiver aberta; a
+próxima sessão da mesma mesa começa sem marcas.
+
+A mesma estrutura guarda três marcas: `vip`, `allergy` (alergia na mesa) e `reincidente`. Cada marca
+fica em dois lugares:
+
+| Onde                                    | Para quê                                                        | Migration |
+| --------------------------------------- | --------------------------------------------------------------- | --------- |
+| `session_flags` (uma linha por marca)   | Auditoria: quem marcou, quando, motivo, quem desmarcou e quando | 028       |
+| `table_sessions.flags` (lista de texto) | Leitura rápida nas consultas de fila, mapa e prioridade         | 031       |
+
+`apps/api/src/modules/vip/vip.service.ts` escreve nos dois na mesma operação.
 
 ## Quem marca
 
-- **Gerente:** `ScreenManagerTableMenu` · MoreSheet (3 pontinhos do topbar) · "Marcar como VIP nessa sessão"
-- **Recepcionista:** mesma MoreSheet na variante host
-- **Garçom:** **não** marca — só consome (vê o badge, recebe os pushes priorizados)
+| Caminho                                                                                                   | Quem o backend aceita                                                        | Quem usa hoje                                                                        |
+| --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `POST /api/:slug/staff/sessions/:tableSessionId/flags` (`flag`, `action: add\|remove`, `reason` opcional) | Gerente ou dono (`StaffOnlyGuard` + `ManagerOnlyGuard`, `vip.controller.ts`) | Menu da mesa do gerente, `/manager/table-menu/<mesa>` (`ScreenManagerTableMenu.tsx`) |
+| `GET /api/:slug/staff/sessions/:tableSessionId/flags`                                                     | Qualquer membro da equipe autenticado                                        | Telas da equipe                                                                      |
+| `POST /api/:slug/host/tables/:tableNumber/vip`                                                            | Recepção, gerente ou dono (`HostOrManagerGuard`)                             | Nenhuma tela chama esta rota                                                         |
 
-## Persistência
+Quem marcou vem sempre da sessão autenticada da equipe; ids enviados no corpo são ignorados. O
+garçom não marca VIP: só vê o destaque.
 
-- Coluna nova em `table_sessions`:
-  ```sql
-  ALTER TABLE table_sessions ADD COLUMN flags text[] DEFAULT '{}';
-  -- valores possíveis: 'vip' | 'allergy' | 'reincidente' | ...
-  ```
-- Session-scoped: limpa quando `closeBill()` fecha a mesa.
-- **Não** vira marca em `customers` (loyalty fica em outro lugar · ver "Não escopo").
-- Auditoria em `session_audit_logs`: evento `vip_marked` / `vip_unmarked` com `staff_id` + `at` + `reason?`
+## Prioridade
 
-## Cálculo de prioridade (extender o balanceador existente)
+**Fila da cozinha e do bar (KDS).** `apps/api/src/modules/orders/kds-query.service.ts` ordena os
+pedidos em três faixas e, dentro de cada faixa, por ordem de chegada:
 
-Hoje `priorityOf(call, loads)` retorna `'high' | 'medium' | 'low'` baseado em saturação. **Adicionar overrides absolutos antes do branch de saturação:**
+1. **urgência**: pedido que o gerente puxou para a frente (`orders.priority_rank > 0`);
+2. **VIP**: sessão marcada `vip` **ou** cliente com `customers.is_vip`;
+3. **normal**.
 
-```ts
-function priorityOf(call: Call, loads: Record<Station, StationLoad>): Priority {
-  // OVERRIDES ABSOLUTOS (por cima da saturação) ─────
-  if (call.flags?.includes('allergy')) return 'high'; // segurança alimentar
-  if (call.flags?.includes('vip')) return 'high'; // experiência
+A mesma ordem vale para a estimativa de tempo mostrada ao cliente (`eta-decorator.service.ts`): um
+pedido VIP entra na fila antes dos normais. As TVs mostram o selo VIP no cartão do pedido
+(`apps/web-staff/src/components/tv/KdsOrderCard.tsx`).
 
-  // Casos contextuais existentes:
-  if (call.type === 'pediu-conta' && call.elapsedMin > 5) return 'high';
-  if (call.type === 'pronto-cozinha' && call.elapsedMin > 3) return 'high';
+**Chamados de garçom.** `apps/api/src/modules/vip/priority.util.ts` define uma regra (alergia e VIP
+sempre em prioridade alta; depois tempo de espera e tipo do chamado), mas nenhum código de produção
+a chama hoje. A lista de chamados do garçom (`GET /api/:slug/waiter-calls/pending`) devolve as marcas
+da sessão; a ordenação por VIP não é aplicada no servidor.
 
-  // Fallback: saturação da estação de origem
-  const sat = saturation(loads[call.sourceStation]);
-  if (sat >= HIGH_THRESHOLD) return 'high';
-  if (sat >= MED_THRESHOLD) return 'medium';
-  return 'low';
-}
-```
+## Tempo real
 
-## Tie-break entre múltiplos `high`
+Cada mudança emite `session.flag_changed` para a sala de gestão do restaurante e para a sala da
+sessão, e fica registrada na linha do tempo da sessão. O app do cliente não usa esse evento.
 
-Quando mais de uma chamada é `high` ao mesmo tempo, ordenar por:
+## `customers.is_vip` (legado)
 
-1. `allergy` (segurança · primeiro de todos)
-2. `vip` (experiência)
-3. `elapsedMin` desc (quem espera mais)
-4. tipo: `pronto-cozinha` > `pediu-conta` > `chamou-garcom` > `mais-bebida`
+Existe também uma marca **permanente** no cadastro do cliente, `customers.is_vip` (migration 020). A
+migration 031 a declarou obsoleta em comentário do schema, mas a coluna continua valendo na
+prioridade do KDS (item 2 acima). Rotas: `POST` e `DELETE /api/:slug/customer/:customerId/vip`, só
+gerente ou dono. O app da equipe tem o cliente HTTP para essas rotas, mas nenhuma tela o usa.
 
-Documentado em ordem decrescente — quanto mais cedo na lista, mais peso.
+## Pendências conhecidas
 
-## API
+- O evento `session.flag_changed` sai com `tableNumber: 0` e nome de quem marcou vazio
+  (`vip.service.ts`, marcado como pendente no próprio código). As telas buscam os dados de novo por
+  HTTP ao receber o evento.
+- A regra de prioridade de chamados (`priority.util.ts`) está escrita e não é usada.
+- Não há decisão de produto sobre mostrar a marcação ao cliente.
 
-```
-POST /staff/sessions/:tableSessionId/flags
-  body: { flag: 'vip' | 'allergy', action: 'add' | 'remove' }
-  perms: manager · host
-  → 200 { flags: string[], updatedAt }
+## Divergências com registros antigos
 
-GET /staff/sessions/:tableSessionId
-  → resposta inclui `flags` no payload (já vai incluir, é só não filtrar)
-```
+| Registro                              | O que dizia                                                                     | O que o código faz                                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Desenho original desta funcionalidade | Gerente **e recepção** marcam pelo menu da mesa                                 | A tela da recepção não tem essa ação. O backend aceita a recepção só pela rota `/host/tables/:n/vip`, que nenhuma tela usa     |
+| Desenho original                      | Auditoria em `session_audit_logs`                                               | Auditoria em `session_flags`                                                                                                   |
+| Desenho original                      | `customers.is_vip` fora do escopo                                               | A coluna existe e entra na prioridade do KDS                                                                                   |
+| Notas de trabalho anteriores          | Uma dizia que a recepção não deve ver VIP; outra, que recepção e gerente marcam | O mapa da recepção mostra quais mesas são VIP (`host.service.ts`, campo `has_vip`); marcar é, na prática, do gerente e do dono |
 
-## Eventos WebSocket
+Qual das versões vale como regra de produto está em aberto; esta página descreve o código.
 
-- `session.flag_changed` — broadcast pra todos os garçons da praça da mesa
-  - payload: `{ sessionId, tableNumber, flags: string[], by: { staffId, name } }`
-- Imediato: backend dispara `call_priority_changed` pra **toda call ativa** dessa sessão (o front re-renderiza prioridade sem F5)
+## Referências de código
 
-## Frontend · onde o VIP aparece
-
-- **Card de mesa no Mapa (Operação · Mapa)** — badge de coroa minimal 12px no canto sup direito quando `flags.includes('vip')`. Sem pesar — só sinal.
-- **Card de chamado (lista de chamados do garçom)** — pill mono caps `VIP` ao lado do nº da mesa, fundo lavado da mesma cor da prioridade alta.
-- **Detalhe do chamado** — eyebrow `PRIORIDADE ALTA · VIP` (em vez do `PRIORIDADE ALTA` genérico).
-- **TableMenu MoreSheet** — quando já é VIP, o item vira "**Remover VIP** dessa sessão" (toggle).
-
-## Edge cases
-
-- Marcar VIP **depois** que a chamada já foi classificada `low` → reclassificação imediata via `call_priority_changed`.
-- Marcar VIP **na mesma sessão duas vezes** (idempotente · `flags` é set, não array).
-- Sessão fechada · novo cliente senta na mesma mesa → mesa começa nova sessão **sem** o flag (correto · session-scoped).
-- Garçom **não** consegue marcar (403 no backend).
-- Auditoria sempre grava — não tem flag VIP "silencioso".
-
-## Não escopo
-
-- Cosmetics customer-facing (placa de mesa · drink de boas-vindas · cardápio especial) — feature separada, depende de inventário
-- Loyalty / programa de pontos — feature separada, mora no perfil do cliente, não na sessão
-- VIP automático por aniversário — feature separada, integra com reservas
-- "Always VIP" no perfil — campo `customers.is_vip` — separado, requisito de governança
-
-## Implementação sugerida
-
-1. Migração `flags text[]` em `table_sessions` + seed pra sessões abertas com `'{}'`
-2. Endpoint `POST /staff/sessions/:id/flags` + guard manager/host
-3. Estender `priorityOf()` com os 2 overrides + atualizar tie-break
-4. Disparar `call_priority_changed` pra todas as calls ativas da sessão ao mudar flags
-5. Front: TableMenu MoreSheet wire ao endpoint + render do toggle
-6. Front: badge no card de mesa (Mapa) + pill no card de chamado + eyebrow no detalhe
-7. Auditoria: append em `session_audit_logs` em todo POST `/flags`
-
-## Métricas de sucesso (sugestão)
-
-- % de sessões com VIP marcado por turno (sentinela · uso saudável seria 5-15%; 0% indica feature não está sendo descoberta; >30% indica diluição)
-- Tempo médio de resposta a chamado VIP vs não-VIP (validar que o override realmente acelera atendimento)
-- Reincidência: % de mesas que **viraram** VIP no meio da sessão vs marcadas no início
+- `apps/api/src/modules/vip/` (controller, serviço e `priority.util.ts`)
+- `apps/api/src/modules/host/host.controller.ts` e `host.service.ts` (`toggleVip`)
+- `apps/api/src/modules/customers/customers.controller.ts` (`markVip`, `unmarkVip`)
+- `apps/api/src/modules/orders/kds-query.service.ts` e `eta-decorator.service.ts`
+- `packages/database/migrations/tenant-template/020_add_customers_is_vip.sql`,
+  `028_create_session_flags.sql` e `031_table_sessions_flags.sql`
+- Fila por estação: [Ciclo do pedido](../../arquitetura/ciclo-do-pedido.md)

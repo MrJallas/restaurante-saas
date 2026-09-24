@@ -1,35 +1,29 @@
-# CLAUDE.md — Project guidance for AI assistants
+# CLAUDE.md — regras para assistentes de código
 
-Instructions for any AI agent (Claude Code, codex, etc.) operating on this
-repository. **READ FIRST** before making changes.
+Instruções para qualquer agente de código (Claude Code, Codex etc.) que trabalhe neste repositório.
+**Leia antes de mudar qualquer coisa.** A documentação do produto está em `README.md` e `docs/`; o
+material de trabalho com agentes fica em `.ai/`.
 
 ---
 
-## Shared Memory And RAG Discipline
+## Antes de mexer
 
-This repository uses project memory as an active coordination surface between
-Codex, Claude Code and future local RAG tooling.
-
-1. Read `MEMORY.md` before any non-trivial audit, implementation, review,
-   prompt run or product-behavior decision.
-2. Keep `MEMORY.md` updated in the same branch/commit when work changes product
-   behavior, source priority, prompt state, validation commands, known risks,
-   open questions, persona routes or backend/frontend contracts.
-3. Retrieval has two surfaces, and they are not interchangeable:
-   - **Why a decision was made** → the canonical vault RAG:
-     `bash '/Users/calebmedeiros/obsidian/memorias de caleb/rag/recall.sh' "question" --project restaurante-saas`.
-     It indexes the reasoning about this codebase, not the codebase.
-   - **Where something lives in the code** → Grep/Glob, which always read the
-     current tree.
-     The repo-local vector index was retired on 2026-08-31: it had drifted to 55%
-     correct and was serving stale `CLAUDE.md`/`MEMORY.md` chunks as if current.
-     If semantic search over repo docs is ever wanted again, ingest the selected
-     docs into the vault — do not stand up a second index.
-4. Do not commit vector databases, embeddings, trace dumps, browser videos or
-   heavy screenshot packs. Commit text-first memory docs and small evidence
-   manifests.
-5. Keep this file aligned with `MEMORY.md`. If product behavior is unclear, ask
-   Caleb before inventing rules.
+1. Leia [`.ai/README.md`](.ai/README.md) e [`.ai/MEMORY.md`](.ai/MEMORY.md) antes de qualquer
+   auditoria, implementação, revisão ou decisão de comportamento que não seja trivial.
+2. "Por que decidimos X": [`docs/decisoes/`](docs/decisoes/README.md) (ADRs) e o RAG do autor, cujo
+   comando está em `.ai/README.md`. "Onde está X": Grep/Glob na árvore atual. Não crie índice
+   vetorial dentro do repositório: o índice local foi aposentado em 2026-08-31 porque tinha só 55% de
+   acerto e servia trechos velhos como se fossem atuais.
+3. Mudou comportamento, contrato, rota ou comando de validação? Atualize o doc da área em `docs/` (e o
+   ADR, se for decisão) **no mesmo commit**. Em `.ai/MEMORY.md` entra só o que é de processo.
+4. `README.md`, `docs/` e os READMEs de `apps/`, `packages/` e `services/` são públicos: nada sobre
+   agentes de IA de desenvolvimento neles. Material de agente vai para `.ai/`.
+5. Commits sem atribuição de IA. Nada de banco vetorial, embeddings, traces, vídeos ou pacotes de
+   capturas no Git: evidência vai para `output/` (ignorado); relatório curado, em texto, para
+   `docs/archive/qa/<data>-<slug>/`.
+6. Comportamento de produto indefinido: pergunte ao Caleb antes de inventar regra.
+7. Convenções de engenharia (migrations, SQL, estados operacionais, anti-placebo, commits, fluxo de
+   correção): [`docs/desenvolvimento/convencoes.md`](docs/desenvolvimento/convencoes.md).
 
 ---
 
@@ -80,88 +74,63 @@ locked unless the user explicitly asks for changes.**
 
 Se em dúvida, **mostre diff antes de aplicar** ou pergunte ao user.
 
+**Design canon**: `docs/design/canvas/handoff/cliente/cliente-journey-v20.jsx` e
+`cliente-late-arrival.jsx`. V20 é o source-of-truth — V13/V14 são legacy. Decisão em
+[ADR 0012](docs/decisoes/0012-adotar-o-v20-como-canon-visual-e-congelar-telas-do-cliente.md); mapa
+canon × legado e como abrir o canvas em [`docs/design/README.md`](docs/design/README.md).
+
 ---
 
-## 📚 Outros pontos
+## Invariantes que não podem regredir
 
-- **Design canon**: `docs/design-canvas/handoff/cliente/cliente-journey-v20.jsx`
-  e `cliente-late-arrival.jsx`. V20 é o source-of-truth — V13/V14 são
-  legacy.
-- **Late-arrival boundary**: não criar/reintroduzir tool de IA para iniciar
-  late-arrival. O fluxo real (e ÚNICO) começa no QR da mesa ocupada:
-  `POST /:slug/customer/welcome` (ou `/recognize`) chama
-  `TableSessionService.upsertParticipant`, que grava a row em
-  `session_participants` com `status='pending'`; o **customer-host da mesa**
-  aprova ou rejeita por `POST /:slug/table/participants/decide`, e o resultado
-  volta pelo WS `participant:decision` (+ poll de
-  `GET /:slug/table/participants`). O próprio solicitante desiste por
-  `POST /:slug/table/participants/cancel`.
-  **A decisão NUNCA escala pra staff** (decisão de produto V16). O segundo
-  sistema que existia pra isso — tabela `late_arrival_requests`, rota
-  `POST /:slug/late-arrival-requests`, `escalation_chains` kind `late_arrival`
-  e as telas de staff — implementava exatamente a escalada descontinuada,
-  tinha ZERO registros nos 4 tenants e era inalcançável pelo app; foi removido
-  na **migration 081** (2026-08-31). Não ressuscite: se aparecer necessidade de
-  avisar a recepção, é notificação PASSIVA pós-aprovação, não um aprovador
-  novo.
-- **Customer bootstrap throttles**: `/customer/welcome` usa bucket por IP real
-  do peer + table session (default 30/15min, `CUSTOMER_WELCOME_RATE_*`);
-  `/customer/identify` permanece 5/IP/15min. Nunca confiar em XFF nesses
-  limites.
-- **Continuation API**: `services/ai-service/services/continuation.py` ·
-  pool de templates por kind. Slots ausentes caem em fallback (round 4
-  C-NEW-4) — não revert.
-- **Migration runner**: `packages/database/scripts/migrate-tenants.ts`
-  aplica migrations novas em tenants existentes via `__migrations__`
-  tracking. Wirado no boot da API via docker-compose. Migration 037 é
-  idempotente — manter o `DO $$ ... IF NOT EXISTS` pattern em migrations
-  novas.
-- **Chips canônicos**: tools customer-side de mutação retornam
-  `chips: [...]` sempre (round 4 C-NEW-3). Coverage ≥9/10 enforced em
-  `tests/test_tools_registry.py::test_chips_coverage_at_least_9_of_10_mutations`.
-- **Carga real dos garçons**: o contrato gerencial vive em
-  `GET /:slug/dashboard/team-kpis.waiterWorkload`. A projeção distribui cada
-  sessão ativa uma única vez entre candidatos por zona/turno/pausa; não volte a
-  multiplicar `occupied_tables` por cada garçom da mesma zona. O alerta
-  `manager_staff_workload_imbalance` é singleton com cooldown e manager-only.
-  Mapa e drill-down consomem esse mesmo snapshot; normalize o BIGINT/string de
-  `tables-overview.number`, filtre `onShift` na seção "em turno" e preserve o
-  `slug` ao navegar por ações de alerta.
-- **Atraso por estação**: `lateOrders` é kitchen-only enquanto não existir um
-  target de bar configurável. Use `order_items.prep_started_at` (migration 078),
-  `oi.status='in_progress'` e `mi.kind <> 'drink'`; some `oi.quantity` apenas das
-  comidas ativas. Nunca derive o relógio de `orders.updated_at`/history agregado
-  nem use os 5 minutos do protótipo como SLA real. O DTO carrega o próprio
-  `targetMinutes`; mapa, telas e `waiterWorkload` devem preservar essa mesma
-  definição.
-- **Identidade customer**: `SessionData.customerId` é compartilhado pela mesa e
-  nunca autoriza PII ou ações pessoais. Use `CallerResolverService` com
-  `recognition_token`; sem cookie, falhe fechado ou devolva somente conteúdo
-  genérico/table-scoped. Exceção de produto temporária (Caleb, 2026-07-11):
-  `welcome`/`identify` podem emitir o cookie canônico só com CPF conhecido. Não
-  trate isso como auth forte nem como segurança resolvida; preserve rate-limit,
-  token fora do body, log mascarado e isolamento tenant.
-- **LGPD erasure**: somente o botão out-of-band do browser autenticado chama
-  `POST /:slug/lgpd-requests`. Tool-call do LLM jamais apaga. Preserve lease e
-  CAS da migration 079, rotação do token, invalidação do cache e desconexão do
-  socket após fulfillment.
-- **Estados operacionais**: erro/loading não são vazio, tranquilidade ou
-  not-found. Preserve dados stale, mostre retry e desabilite toda mutação até
-  carregar a entidade autoritativa (QR, chamado, reserva, fila, entregas).
-- **KDS por estação**: todo preparo atualiza `order_items`; cook/bartender usam
-  kitchen/bar. `/bar` é individual por `staff_token`; `/bar/tv` segue protegido
-  por PIN. Não volte a derivar o estágio local só de `orders.status`.
-- **Dependências Python**: Docker instala `services/ai-service/requirements.lock`.
-  Dependências de teste ficam no `requirements-dev.lock`; regenere os dois para
-  Python 3.11 e valide o lock com `pip-audit`.
-- **Fechamento do loop 2026-07-11**: leia
-  `qa-reports/loop-audit-2026-07-11/FINAL-REPORT.md` antes de reabrir achados.
-  O gate final foi 1.597 testes + lint/build forçados + noite Playwright, em
-  duas rodadas limpas. No SQL station-scoped, preserve o cast `$1::varchar` no
-  `SET status` e no `CASE`; sem ele o PostgreSQL retorna 42P08 apesar dos fakes
-  unitários passarem. `/cashier` é holding sem liquidação e Pix é demo. CPF-only
-  foi aceito temporariamente e torna o release PARTIAL por risco de takeover;
-  a correção futura é OTP em canal verificado ou confirmação presencial, não
-  uma mudança silenciosa. Preserve também o cleanup de QRTEST91/92 no `finally`
-  do spec da noite; a rodada deve terminar sem estado operacional ativo nas
-  mesas de teste.
+- **Chegada tardia**: quem chega a uma mesa ocupada escaneia o QR, vira participante `pending`
+  (`TableSessionService.upsertParticipant`) e **só o cliente-anfitrião** decide
+  (`POST /:slug/table/participants/decide` → WS `participant:decision`; desistência em
+  `.../participants/cancel`). Nunca escala para a equipe, nunca por ferramenta de IA. O segundo sistema
+  (`late_arrival_requests`) foi removido na migration 081: não ressuscite; aviso à recepção, se vier, é
+  notificação passiva pós-aprovação. [ADR 0005](docs/decisoes/0005-deixar-o-cliente-anfitriao-aprovar-quem-chega-depois.md)
+- **Primeiro scan de mesa livre** sem liberação vira verificação da recepção (60 s por nível; recepção →
+  gerente → garçom). [ADR 0004](docs/decisoes/0004-validar-o-primeiro-scan-do-qr-na-recepcao.md)
+- **Identidade do cliente**: `SessionData.customerId` é da mesa e nunca autoriza PII nem ação pessoal;
+  use `CallerResolverService` com `recognition_token` e falhe fechado sem cookie. Login só por CPF
+  conhecido é exceção temporária aceita, não segurança resolvida: preserve rate limit, token fora do
+  body, log mascarado e isolamento por restaurante.
+  [ADR 0006](docs/decisoes/0006-aceitar-login-do-cliente-so-por-cpf-temporariamente.md)
+- **LGPD**: só o botão fora do chat, no navegador autenticado, chama `POST /:slug/lgpd-requests`; a
+  ferramenta do LLM nunca apaga. Preserve lease e CAS (migration 079), rotação do token, invalidação do
+  cache e desconexão do socket. [ADR 0009](docs/decisoes/0009-excluir-dados-pessoais-so-por-acao-explicita-do-cliente.md)
+- **Pix** é demonstração intencional; `/cashier` não liquida.
+  [ADR 0008](docs/decisoes/0008-manter-o-pix-como-demonstracao.md)
+- **Dinheiro**: taxa de serviço e rateio da mesa só no backend (`BillingService`).
+  [ADR 0011](docs/decisoes/0011-calcular-taxa-de-servico-e-rateio-da-mesa-no-backend.md)
+- **Migrations** idempotentes (`DO $$ … IF NOT EXISTS`; ex.: 037), nunca editadas depois de aplicadas;
+  o runner `packages/database/scripts/migrate-tenants.ts` roda no boot e falha é fatal.
+  [ADR 0010](docs/decisoes/0010-aplicar-migrations-idempotentes-no-boot-e-falhar-se-quebrarem.md)
+- **Estados operacionais e anti-placebo**: erro/loading não é vazio, tranquilidade nem not-found;
+  preserve dado stale, mostre retry e bloqueie mutação até carregar a entidade autoritativa. Botão sem
+  backend é bug. [Convenções](docs/desenvolvimento/convencoes.md)
+- **KDS por estação**: todo preparo atualiza `order_items`; `cook`/`bartender` usam kitchen/bar; não
+  derive o estágio só de `orders.status`. `lateOrders` é só cozinha, com `prep_started_at` (migration
+  078), nunca `orders.updated_at`. No SQL por estação, mantenha `$1::varchar` no `SET status` e no
+  `CASE` (sem ele: erro 42P08, com fakes verdes). [Ciclo do pedido](docs/arquitetura/ciclo-do-pedido.md)
+- **Carga dos garçons** (`GET /:slug/dashboard/team-kpis` → `waiterWorkload`): cada sessão ativa conta
+  uma vez; alerta `manager_staff_workload_imbalance` singleton e só para gerente; normalize o
+  `tables-overview.number`, filtre `onShift` na seção "em turno" e preserve o `slug` na navegação.
+- **SQL**: `UPDATE/DELETE … RETURNING` consumido passa por `unwrapRows`/`unwrapAffected`
+  (`apps/api/src/modules/tenant/query-utils.ts`); fakes imitam a tupla `[rows, rowCount]`.
+- **Throttles** de `/customer/welcome` (IP real + sessão, `CUSTOMER_WELCOME_RATE_*`) e
+  `/customer/identify` (5/IP/15 min): nunca confie em `X-Forwarded-For`.
+- **Continuation API** (`services/ai-service/services/continuation.py`): slot ausente cai em
+  fallback; não reverta.
+- **Chips canônicos**: ferramentas de mutação do cliente sempre devolvem `chips`; cobertura ≥ 9/10 em
+  `services/ai-service/tests/test_tools_registry.py::test_chips_coverage_at_least_9_of_10_mutations`.
+- **Python**: Docker instala `requirements.lock`; testes, `requirements-dev.lock`; regenere os dois
+  para Python 3.11 e rode `pip-audit`.
+- **Playwright em série**: nunca dois processos ao mesmo tempo (QRTEST91/92 compartilhadas); preserve a
+  limpeza das mesas de teste no `finally` do spec da noite. [Testes](docs/desenvolvimento/testes.md)
+
+## Antes de reabrir um achado
+
+Leia [`docs/archive/qa/2026-07-11-auditoria-integral/FINAL-REPORT.md`](docs/archive/qa/2026-07-11-auditoria-integral/FINAL-REPORT.md):
+gate de 1.597 testes em duas rodadas limpas, `PARTIAL` 96/100 pelo risco aceito do login só por CPF
+(correção futura: OTP em canal verificado ou confirmação presencial, nunca mudança silenciosa).
