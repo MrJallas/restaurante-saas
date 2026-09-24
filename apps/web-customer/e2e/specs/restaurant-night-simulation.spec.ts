@@ -14,6 +14,7 @@ import {
   activeSessions,
   fillWelcome,
   latestScanRequest,
+  loginStaffApp,
   openCustomerViaQr,
   participantsForSession,
   psql,
@@ -126,11 +127,8 @@ async function newStaffSurface(
 }
 
 async function loginStaffSurface(runtime: RuntimePage, staff: { cpf: string }): Promise<void> {
-  await runtime.page.goto(`${STAFF_BASE_URL}/login`, { waitUntil: 'domcontentloaded' });
-  await runtime.page.getByPlaceholder('90000000001').fill(staff.cpf);
-  await runtime.page.getByPlaceholder('1234').fill(process.env.E2E_STAFF_PIN ?? '1234');
-  await runtime.page.getByRole('button', { name: 'Entrar' }).click();
-  await expect(runtime.page).not.toHaveURL(/\/login(?:\?|$)/, { timeout: 15_000 });
+  // Helper compartilhado: repreenche até o React hidratar (ver loginStaffApp).
+  await loginStaffApp(runtime.page, staff);
 }
 
 async function readOpaqueSessionToken(context: BrowserContext): Promise<string> {

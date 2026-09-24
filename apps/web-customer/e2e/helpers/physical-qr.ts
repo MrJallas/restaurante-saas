@@ -710,9 +710,17 @@ function cpfDigit(input: string): number {
  */
 export async function loginStaffApp(page: Page, staff: Pick<StaffRow, 'cpf'>): Promise<void> {
   await page.goto(`${STAFF_BASE_URL}/login`, { waitUntil: 'domcontentloaded' });
-  await page.getByPlaceholder('90000000001').fill(staff.cpf);
-  await page.getByPlaceholder('1234').fill(process.env.E2E_STAFF_PIN ?? '1234');
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  const submit = page.getByRole('button', { name: 'Entrar' });
+  // Os campos são controlados (useState). Com o Next dev compilando a página
+  // na hora, o `fill` pode cair no HTML do SSR antes da hidratação: o React
+  // sobe com estado vazio e o botão fica desabilitado para sempre. Repreenche
+  // até o botão habilitar, sinal de que o estado do React pegou os valores.
+  await expect(async () => {
+    await page.getByPlaceholder('90000000001').fill(staff.cpf);
+    await page.getByPlaceholder('1234').fill(process.env.E2E_STAFF_PIN ?? '1234');
+    await expect(submit).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await submit.click();
   await expect(page).not.toHaveURL(/\/login(?:\?|$)/, { timeout: 15_000 });
 }
 
