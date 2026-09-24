@@ -157,8 +157,9 @@ export class CustomersController {
    *  - Rate limit por IP: 5 tentativas em 15min, depois 429 lock por
    *    15min. Antes era unauth+sem throttle → bruteforce CPF de leak DB
    *    + auto-login viable. Conta tanto sucessos quanto falhas pra
-   *    impedir bypass via CPFs inválidos. Pattern Redis incr+expire
-   *    igual ao staff.verifyPin.
+   *    impedir bypass via CPFs inválidos. A tentativa é reservada antes
+   *    do lookup (consumeAttemptOr429), então rajada paralela não passa
+   *    de 5.
    *  - `recognitionToken` REMOVIDO do body de resposta — só vai pelo
    *    cookie HttpOnly. Mesmo que CSRF passasse ou logs vazassem o
    *    body, o token não escapa. Caller legítimo (apps web) usa cookie
@@ -176,24 +177,22 @@ export class CustomersController {
     },
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ipKey = this.identifyClientKey(req);
-    await this.assertIdentifyRateLimit(ipKey);
+    // A tentativa é consumida antes do lookup, sucesso ou falha: CPF em formato
+    // inválido também conta, e uma rajada paralela não passa do limite.
+    await this.consumeAttemptOr429(
+      this.identifyClientKey(req),
+      IDENTIFY_RATE_MAX,
+      IDENTIFY_RATE_WINDOW_SECONDS,
+      IDENTIFY_RATE_LOCK_SECONDS,
+      'Muitas tentativas. Tente novamente em alguns minutos.',
+    );
 
-    let result;
-    try {
-      result = await this.customersService.identify(
-        dto.cpf,
-        dto.name,
-        dto.currentSessionId,
-        req.cookies?.recognition_token ?? null,
-      );
-    } catch (err) {
-      // Conta falhas pro mesmo limite — atacante não bypassa testando
-      // formats inválidos pra mapear espaço CPF.
-      await this.bumpIdentifyAttempts(ipKey);
-      throw err;
-    }
-    await this.bumpIdentifyAttempts(ipKey);
+    const result = await this.customersService.identify(
+      dto.cpf,
+      dto.name,
+      dto.currentSessionId,
+      req.cookies?.recognition_token ?? null,
+    );
 
     res.cookie(
       'recognition_token',
@@ -227,26 +226,22 @@ export class CustomersController {
     return `customers:identify:${throttleClientIp(req)}`;
   }
 
-  private async assertIdentifyRateLimit(ipKey: string): Promise<void> {
-    const lockKey = `${ipKey}:lock`;
-    if (await this.redis.get(lockKey)) {
-      throw new HttpException(
-        'Muitas tentativas. Tente novamente em alguns minutos.',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-  }
-
-  private async bumpIdentifyAttempts(ipKey: string): Promise<void> {
-    const lockKey = `${ipKey}:lock`;
-    const attemptsKey = `${ipKey}:attempts`;
-    const attempts = await this.redis.incr(attemptsKey);
-    if (attempts === 1) {
-      await this.redis.expire(attemptsKey, IDENTIFY_RATE_WINDOW_SECONDS);
-    }
-    if (attempts >= IDENTIFY_RATE_MAX) {
-      await this.redis.set(lockKey, '1', IDENTIFY_RATE_LOCK_SECONDS);
-      await this.redis.del(attemptsKey);
+  /**
+   * Reserva uma tentativa no bucket ANTES de processar (RedisService.
+   * consumeAttempt, atômico). Antes checava a trava, processava e só então
+   * incrementava: numa rajada paralela todas passavam pela checagem antes do
+   * primeiro incremento e o limite estourava (100 welcomes simultâneos contra
+   * limite 30 processavam 38; no /identify, cada extra era um CPF consultado).
+   */
+  private async consumeAttemptOr429(
+    bucketKey: string,
+    max: number,
+    windowSeconds: number,
+    lockSeconds: number,
+    message: string,
+  ): Promise<void> {
+    if (!(await this.redis.consumeAttempt(bucketKey, max, windowSeconds, lockSeconds))) {
+      throw new HttpException(message, HttpStatus.TOO_MANY_REQUESTS);
     }
   }
 
@@ -259,29 +254,6 @@ export class CustomersController {
     tableSessionId: string,
   ): string {
     return `customers:welcome:${throttleClientIp(req)}:${tableSessionId}`;
-  }
-
-  private async assertWelcomeRateLimit(bucketKey: string): Promise<void> {
-    const lockKey = `${bucketKey}:lock`;
-    if (await this.redis.get(lockKey)) {
-      throw new HttpException(
-        'Muitas tentativas de boas-vindas. Aguarde alguns minutos.',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-  }
-
-  private async bumpWelcomeAttempts(bucketKey: string): Promise<void> {
-    const lockKey = `${bucketKey}:lock`;
-    const attemptsKey = `${bucketKey}:attempts`;
-    const attempts = await this.redis.incr(attemptsKey);
-    if (attempts === 1) {
-      await this.redis.expire(attemptsKey, this.welcomeRateWindowSeconds);
-    }
-    if (attempts >= this.welcomeRateMax) {
-      await this.redis.set(lockKey, '1', this.welcomeRateLockSeconds);
-      await this.redis.del(attemptsKey);
-    }
   }
 
   /**
@@ -333,16 +305,15 @@ export class CustomersController {
   }
 
   /**
-   * Round 9 (B-NEW-35): rate-limit por IP + bumping pro reuso do mesmo
-   * pattern da `/identify`. A decisão vigente permite account takeover com um
+   * Round 9 (B-NEW-35): rate-limit por IP no mesmo padrão do `/identify`. A decisão vigente permite account takeover com um
    * CPF conhecido; o limite reduz enumeração automatizada, mas não é tratado
    * como autenticação forte.
    *
    * Regras:
    *  - 30 attempts em 15min por IP real + sessão de mesa (configurável).
-   *  - 429 lock 15min após atingir o limite (configurável).
-   *  - Falhas (CPF inválido, name ausente) também contam pro limite
-   *    pra impedir bypass via formats inválidos.
+   *  - A 31ª leva 429 e arma o lock de 15min (configurável).
+   *  - A tentativa é reservada ao chegar: falhas (CPF inválido, name
+   *    ausente) também contam, e 100 welcomes simultâneos processam 30.
    *
    * Service.welcome reutiliza o token canônico e o emite só em cookie HttpOnly
    * para o reclaim CPF-only. Não retornar esse bearer no body.
@@ -361,24 +332,22 @@ export class CustomersController {
     },
     @Res({ passthrough: true }) res: Response,
   ) {
-    const welcomeBucket = this.welcomeClientKey(req, session.sessionId);
-    await this.assertWelcomeRateLimit(welcomeBucket);
+    await this.consumeAttemptOr429(
+      this.welcomeClientKey(req, session.sessionId),
+      this.welcomeRateMax,
+      this.welcomeRateWindowSeconds,
+      this.welcomeRateLockSeconds,
+      'Muitas tentativas de boas-vindas. Aguarde alguns minutos.',
+    );
 
     const callerRecognitionToken = req.cookies?.recognition_token ?? null;
-    let result;
-    try {
-      result = await this.customersService.welcome(
-        dto.name,
-        dto.cpf,
-        session.sessionId,
-        callerRecognitionToken,
-        dto.location,
-      );
-    } catch (err) {
-      await this.bumpWelcomeAttempts(welcomeBucket);
-      throw err;
-    }
-    await this.bumpWelcomeAttempts(welcomeBucket);
+    const result = await this.customersService.welcome(
+      dto.name,
+      dto.cpf,
+      session.sessionId,
+      callerRecognitionToken,
+      dto.location,
+    );
 
     res.cookie(
       'recognition_token',

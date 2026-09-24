@@ -37,36 +37,70 @@ import { ManagerOnlyGuard } from '../../common/guards/manager-only.guard';
 
 // Redis em memória com TTL ignorado — só o comportamento de contador/lock
 // importa aqui. Registra as chaves usadas pra provar que o XFF forjado NÃO
-// fragmenta o bucket.
+// fragmenta o bucket. Cada operação cede um macrotask, como o round-trip de
+// rede do Redis real: sem isso, uma rajada paralela nunca intercala e a
+// corrida check-then-increment não aparece.
+const networkHop = () => new Promise<void>((resolve) => setImmediate(resolve));
+
 class FakeRedis {
   store = new Map<string, string>();
   counters = new Map<string, number>();
   seenKeys = new Set<string>();
 
   async get(key: string): Promise<string | null> {
+    await networkHop();
     return this.store.get(key) ?? null;
   }
   async set(key: string, value: string, _ttlSeconds?: number): Promise<void> {
+    await networkHop();
     this.store.set(key, value);
   }
   async del(key: string): Promise<void> {
+    await networkHop();
     this.store.delete(key);
     this.counters.delete(key);
   }
   async incr(key: string): Promise<number> {
+    await networkHop();
     this.seenKeys.add(key);
     const next = (this.counters.get(key) ?? 0) + 1;
     this.counters.set(key, next);
     return next;
   }
   async expire(): Promise<void> {
-    // TTL irrelevante para o teste em memória.
+    await networkHop();
+  }
+  /** Mesma semântica do script Lua de RedisService.consumeAttempt, atômica. */
+  async consumeAttempt(bucketKey: string, max: number): Promise<boolean> {
+    await networkHop();
+    const attemptsKey = `${bucketKey}:attempts`;
+    const lockKey = `${bucketKey}:lock`;
+    this.seenKeys.add(attemptsKey);
+    if (this.store.has(lockKey)) return false;
+    const next = (this.counters.get(attemptsKey) ?? 0) + 1;
+    this.counters.set(attemptsKey, next);
+    if (next > max) {
+      this.store.set(lockKey, '1');
+      this.counters.delete(attemptsKey);
+      return false;
+    }
+    return true;
   }
 }
 
 const VALID_CPF = '39053344705';
 const WELCOME_SESSION_A = '11111111-1111-4111-8111-111111111111';
 const WELCOME_SESSION_B = '22222222-2222-4222-8222-222222222222';
+
+let customersService: { identify: jest.Mock; welcome: jest.Mock };
+
+// O supertest abre um `listen` por requisição quando o servidor não escuta;
+// numa rajada paralela eles colidem (ECONNRESET). Escuta uma vez só.
+async function listening(app: INestApplication) {
+  const server = app.getHttpServer() as import('http').Server;
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return server;
+}
 
 function makeApp(redis: FakeRedis) {
   return async () => {
@@ -75,7 +109,7 @@ function makeApp(redis: FakeRedis) {
       providers: [
         {
           provide: CustomersService,
-          useValue: {
+          useValue: (customersService = {
             // Sucesso trivial — o que importa é o rate-limit em volta.
             identify: jest.fn(async () => ({
               customerId: 'cust-1',
@@ -95,7 +129,7 @@ function makeApp(redis: FakeRedis) {
               locationCheck: null,
               recognitionToken: 'tok-welcome-1',
             })),
-          },
+          }),
         },
         { provide: RedisService, useValue: redis },
         { provide: CallerResolverService, useValue: {} },
@@ -188,6 +222,32 @@ describe('POST /:slug/customer/identify — rate-limit por IP real (não XFF for
     expect(attemptKeys).toHaveLength(1);
     expect(attemptKeys[0]).toMatch(/^customers:identify:/);
   });
+
+  it('rajada paralela do mesmo peer: só 5 CPFs chegam ao lookup, o resto leva 429', async () => {
+    const server = await listening(app);
+    const responses = await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        request(server)
+          .post('/demo/customer/identify')
+          .send({ cpf: String(10000000000 + i) }),
+      ),
+    );
+
+    const statuses = responses.map((r) => r.status);
+    expect(statuses.filter((s) => s === 201)).toHaveLength(5);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(15);
+    expect(customersService.identify).toHaveBeenCalledTimes(5);
+  });
+
+  it('falha do lookup também consome a tentativa', async () => {
+    const server = app.getHttpServer();
+    customersService.identify.mockRejectedValue(new Error('CPF inválido'));
+    for (let i = 0; i < 5; i++) {
+      await request(server).post('/demo/customer/identify').send({ cpf: VALID_CPF }).expect(500);
+    }
+    await request(server).post('/demo/customer/identify').send({ cpf: VALID_CPF }).expect(429);
+    expect(customersService.identify).toHaveBeenCalledTimes(5);
+  });
 });
 
 function welcomeRequest(
@@ -257,6 +317,21 @@ describe('POST /:slug/customer/welcome — grupos reais por IP + sessão de mesa
     const attemptKeys = [...redis.seenKeys].filter((key) => key.endsWith(':attempts'));
     expect(attemptKeys).toHaveLength(1);
     expect(attemptKeys[0]).toContain(`:${WELCOME_SESSION_A}:attempts`);
+  });
+
+  it('rajada de 100 welcomes simultâneos na mesma mesa: exatamente 30 processados', async () => {
+    await boot();
+    const server = await listening(app!);
+    const responses = await Promise.all(
+      Array.from({ length: 100 }, (_, i) =>
+        welcomeRequest(server, WELCOME_SESSION_A, `203.0.113.${i}`),
+      ),
+    );
+
+    const statuses = responses.map((r) => r.status);
+    expect(statuses.filter((s) => s === 201)).toHaveLength(30);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(70);
+    expect(customersService.welcome).toHaveBeenCalledTimes(30);
   });
 
   it('isola mesas diferentes atrás do mesmo Wi-Fi/NAT', async () => {

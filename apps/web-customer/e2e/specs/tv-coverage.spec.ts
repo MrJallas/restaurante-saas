@@ -753,6 +753,28 @@ test.describe('P1-X7-3 — /customer/welcome rate-limited', () => {
     ).toBe(true);
     expect(statuses.filter((s) => s === 429).length).toBeGreaterThanOrEqual(extra);
   });
+
+  // A tentativa é reservada ao chegar (script Lua no Redis). Antes a checagem
+  // da trava vinha antes do processamento e o incremento depois: uma rajada
+  // paralela passava inteira pela checagem e o limite estourava.
+  test('rajada paralela processa exatamente o limite, nem uma a mais', async () => {
+    clearWelcomeAndThrottleLocks();
+    const limit = Number(process.env.CUSTOMER_WELCOME_RATE_MAX ?? 30);
+    const { token } = await m01Session();
+    const statuses = await Promise.all(
+      Array.from({ length: limit * 3 }, (_, i) =>
+        fetch(`${API}/customer/welcome`, {
+          method: 'POST',
+          headers: { 'x-session-token': token, 'content-type': 'application/json' },
+          body: JSON.stringify({ name: `QA-R5-Flood${i}`, cpf: `${String(10000000000 + i)}` }),
+        }).then((res) => res.status),
+      ),
+    );
+    expect(
+      statuses.filter((s) => s !== 429),
+      `${statuses}`,
+    ).toHaveLength(limit);
+  });
 });
 
 // P2-X7-1: feedbacks race — parallel POSTs yield 1 row

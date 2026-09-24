@@ -104,6 +104,42 @@ export class RedisService implements OnModuleDestroy {
     });
   }
 
+  /**
+   * Limite de tentativas com trava, consumido NA CHEGADA e num único script Lua
+   * (atômico no Redis). Chaves `<bucket>:attempts` e `<bucket>:lock`.
+   *
+   * O padrão anterior checava a trava, processava e só depois incrementava:
+   * uma rajada paralela passava inteira pela checagem antes do primeiro
+   * incremento (100 welcomes simultâneos contra limite 30 processavam 38).
+   * Aqui cada chamada reserva a vaga antes de processar: com a trava ativa ou
+   * acima de `max` na janela, devolve `false` e a chamada não é processada. A
+   * `max + 1`-ésima arma a trava por `lockSeconds` e zera o contador, então,
+   * vencida a trava, a janela recomeça do zero.
+   */
+  async consumeAttempt(
+    bucketKey: string,
+    max: number,
+    windowSeconds: number,
+    lockSeconds: number,
+  ): Promise<boolean> {
+    return this.timed(async () => {
+      const result = await this.client.eval(
+        "if redis.call('exists', KEYS[2]) == 1 then return 0 end; " +
+          "local c = redis.call('incr', KEYS[1]); " +
+          "if c == 1 then redis.call('expire', KEYS[1], ARGV[2]) end; " +
+          "if c > tonumber(ARGV[1]) then redis.call('set', KEYS[2], '1', 'EX', ARGV[3]); redis.call('del', KEYS[1]); return 0 end; " +
+          'return 1',
+        2,
+        `${bucketKey}:attempts`,
+        `${bucketKey}:lock`,
+        String(max),
+        String(windowSeconds),
+        String(lockSeconds),
+      );
+      return Number(result) === 1;
+    });
+  }
+
   async lpop(key: string): Promise<string | null> {
     return this.timed(() => this.client.lpop(key));
   }

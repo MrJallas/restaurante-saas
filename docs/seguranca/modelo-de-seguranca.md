@@ -106,6 +106,10 @@ desenvolvimento aos bancos é por `docker exec` nos containers.
 "IP real" é o endereço da conexão TCP (`common/utils/throttle-client-ip.ts`). Cabeçalhos como
 `X-Forwarded-For` são forjáveis e nunca entram na chave.
 
+No `welcome` e no `identify`, a tentativa é reservada na chegada, antes de processar, num único script
+no Redis (`RedisService.consumeAttempt`): sucesso e falha contam igual, e uma rajada paralela processa
+no máximo o limite. A seguinte recebe 429 e arma a trava de 15 min.
+
 ## Cabeçalhos e CSP
 
 - **API** (`common/security/security-headers.ts`): `nosniff`, `X-Frame-Options: DENY`, CSP
