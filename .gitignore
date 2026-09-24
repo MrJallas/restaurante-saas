@@ -21,7 +21,7 @@ test-results/
 playwright-report/
 artifacts/
 
-# Playwright MCP (cache de browser automation via MCP — sessao-local)
+# Cache local de automação de navegador (não versionar)
 .playwright-mcp/
 
 # Playwright CLI e capturas locais (traces, vídeos, screenshots e HARs).
@@ -37,24 +37,23 @@ output/
 # Worktrees locais de ferramentas de desenvolvimento (não versionar nada dentro).
 .claude/worktrees/
 
-# Screenshots no root (debug/contextualizacao de sessao — nao versionar)
+# Capturas soltas na raiz (depuração — não versionar)
 /*.png
 /*.jpg
 /*.jpeg
 /*.webp
 /*.gif
 
-# === backups de .env — NUNCA versionar (contem JWT_SECRET, ENCRYPTION_MASTER_KEY) ===
+# === backups de .env — NUNCA versionar (contêm segredos) ===
 .env.bak*
 .env.backup*
 *.env.bak
 
 # Rascunhos locais (não versionados)
 .ai/rascunhos/
-.rag-drafts/
 
-# === reorganizacao-2026-09 ===
-# Caches gerados que as regras acima nao cobriam
+# === reorganização 2026-09 ===
+# Caches gerados que as regras acima não cobriam
 .pytest_cache/
 .swc/
 **/e2e/.auth/

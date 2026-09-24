@@ -185,8 +185,10 @@ npm exec --workspace @restaurant/web-staff -- tsc --noEmit -p tsconfig.json
 docker logs restaurant-api --since 2m 2>&1 | grep -E "ERROR|QueryFailedError|ExceptionsHandler" || true
 ```
 
-Esperado: a noite completa e os testes do QR físico passam (o teste "Mongo fora do ar" para e religa o
-container do MongoDB); nenhum `QueryFailedError` recorrente.
+Esperado: a noite completa passa, e nenhum `QueryFailedError` se repete no log. No `physical-qr-heavy`,
+o teste "Mongo fora do ar" para e religa o container do MongoDB. Hoje, sem mudança no código, o
+cenário 9 desse spec falha (espera `scan_verification.resolved` no socket do garçom no fim da escalada)
+e os 9 cenários seguintes não rodam; ver [resultado medido](testes.md#resultado-medido).
 
 ## Critérios de falha
 

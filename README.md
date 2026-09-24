@@ -280,8 +280,9 @@ A recepção tem **cerca de 60 segundos** para decidir cada scan; por isso, abra
 
 Outros caminhos úteis:
 
-- **Liberar antes de o cliente chegar**: em `/host`, clique em **Liberar** numa mesa livre, escolha o número de pessoas e
-  confirme em **Liberar mesa**. Por 15 minutos, o primeiro scan dessa mesa entra direto, sem aprovação.
+- **Liberar antes de o cliente chegar**: em `/host`, clique em **Liberar** numa mesa livre, escolha
+  o número de pessoas e confirme em **Liberar mesa**. Por 15 minutos, o primeiro scan dessa mesa entra
+  direto, sem aprovação.
 - **Quem chega depois** numa mesa ocupada é aprovado pelo cliente anfitrião, no app dele, e não pela
   recepção.
 - **Recomeçar uma mesa**: `bash scripts/demo/reset-mesa.sh M03` encerra a sessão ativa; feche a aba

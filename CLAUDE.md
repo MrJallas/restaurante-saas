@@ -27,55 +27,52 @@ material de trabalho com agentes fica em `.ai/`.
 
 ---
 
-## 🔒 V20 Customer UI · DO NOT MODIFY
+## 🔒 Telas do cliente V20 · não modificar
 
-The customer-facing surfaces below were **hand-designed by the project owner
-in Round 4** as part of the V20 design language. Visual decisions (spacing,
-typography, layout, copy, color tokens) are intentional and were validated
-side-by-side via Playwright preview iterations. **Treat these files as
-locked unless the user explicitly asks for changes.**
+As telas do cliente abaixo foram **desenhadas à mão pelo autor na rodada 4**, como parte da linguagem
+visual V20. As decisões visuais (espaçamento, tipografia, layout, textos, tokens de cor) são
+intencionais e foram validadas lado a lado em iterações de preview com Playwright. **Trate estes
+arquivos como travados, a menos que o autor peça mudança explicitamente.**
 
-### Locked files (visual + layout)
+### Arquivos travados (visual e layout)
 
-| File                                                                                                                                                                             | What it owns                                                                                                                                                                                                                                                                                                                                     |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [apps/web-customer/src/components/welcome/WelcomeModal.tsx](apps/web-customer/src/components/welcome/WelcomeModal.tsx)                                                           | Welcome flow · mono eyebrow `MESA N · BEM-VINDO`, title 26/700 "Pra começar, quem é você?", FieldShell pattern, helper mono uppercase, PillButton filled com seta canon. Centralizado via `grid place-items-center` em `h-[100dvh]`. Inputs com label "Seu nome" / "Seu CPF"                                                                     |
-| [apps/web-customer/src/components/welcome/CpfInput.tsx](apps/web-customer/src/components/welcome/CpfInput.tsx)                                                                   | CPF input "naked" — NÃO gerencia próprio border; sinaliza `onFocusChange` pro shell pai. Não readicionar border/padding aqui                                                                                                                                                                                                                     |
-| [apps/web-customer/src/screens/customer-host-flows/ScreenCustomerIdentifyBeforeJoin.tsx](apps/web-customer/src/screens/customer-host-flows/ScreenCustomerIdentifyBeforeJoin.tsx) | **Gate de CPF** (não é late-arrival) · a tela que 11 call-sites usam quando `useRequireCustomerId` / ScreenCustomerMe / assistente bouncham um cliente já sentado. Mesmo canon do WelcomeModal (eyebrow + title + FieldShell + helper + CTA). Label canon: **"Seu nome"** (não "Seu primeiro nome")                                              |
-| [apps/web-customer/src/screens/customer-host-flows/ScreenCustomerWaitingApproval.tsx](apps/web-customer/src/screens/customer-host-flows/ScreenCustomerWaitingApproval.tsx)       | Waiting screen · bloco unificado eyebrow→title→sub→ícone→pill→CTA centralizado. Sem `flex-1` spacer empurrando CTA pro bottom. Serve DOIS fluxos: junção de mesas (rota `/waiting-approval`) e chegada tardia do System A (montada inline pelo `PendingApprovalWrapper` de `/mesa/[tableCode]`, onde `mode='late-arrival'` é só escolha de copy) |
-| [apps/web-customer/src/components/ui/CallWaiterSheet.tsx](apps/web-customer/src/components/ui/CallWaiterSheet.tsx)                                                               | Bottom-sheet vaul-style para `call_waiter` · 5 motivos canon V20 (Trazer cardápio · Fazer pedido · Servir bebida · Pedir conta · Outro motivo) com icon+label+sub. Drag full-area via pointer events + `touch-action: pan-y`                                                                                                                     |
-| [apps/web-customer/src/app/[slug]/mesa/[tableCode]/page.tsx](apps/web-customer/src/app/[slug]/mesa/[tableCode]/page.tsx) (linhas do `reclaimBanner`)                             | Reclaim banner · V20 canon discreet hint (`border-soft + bg-surface + mono eyebrow CONTA RECONHECIDA`). NÃO voltar pro amber/yellow                                                                                                                                                                                                              |
-| [apps/web-customer/src/app/[slug]/assistente/page.tsx](apps/web-customer/src/app/[slug]/assistente/page.tsx) (landing branch `!chatStarted`)                                     | Landing /assistente · home-like (2 PillButtons grandes "Chamar garçom" + "Ver cardápio" + `HomeHero` com greeting da continuation API). Bubbles de chat só aparecem após 1ª msg do customer; greeting vira o 1º AI bubble preservando contexto                                                                                                   |
+| Arquivo                                                                                                                                                                          | O que define                                                                                                                                                                                                                                                                                                                                            |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [apps/web-customer/src/components/welcome/WelcomeModal.tsx](apps/web-customer/src/components/welcome/WelcomeModal.tsx)                                                           | Boas-vindas · eyebrow mono `MESA N · BEM-VINDO`, título 26/700 "Pra começar, quem é você?", padrão FieldShell, helper mono em caixa alta, PillButton preenchido com a seta canônica. Centralizado com `grid place-items-center` em `h-[100dvh]`. Campos com os rótulos "Seu nome" / "Seu CPF"                                                           |
+| [apps/web-customer/src/components/welcome/CpfInput.tsx](apps/web-customer/src/components/welcome/CpfInput.tsx)                                                                   | Campo de CPF "nu": NÃO controla a própria borda; avisa o shell pai por `onFocusChange`. Não readicionar borda nem padding aqui                                                                                                                                                                                                                          |
+| [apps/web-customer/src/screens/customer-host-flows/ScreenCustomerIdentifyBeforeJoin.tsx](apps/web-customer/src/screens/customer-host-flows/ScreenCustomerIdentifyBeforeJoin.tsx) | **Gate de CPF** (não é chegada tardia) · a tela que 11 pontos de chamada usam quando `useRequireCustomerId` / ScreenCustomerMe / o assistente devolvem um cliente já sentado. Mesmo canon do WelcomeModal (eyebrow + título + FieldShell + helper + CTA). Rótulo canônico: **"Seu nome"** (não "Seu primeiro nome")                                     |
+| [apps/web-customer/src/screens/customer-host-flows/ScreenCustomerWaitingApproval.tsx](apps/web-customer/src/screens/customer-host-flows/ScreenCustomerWaitingApproval.tsx)       | Tela de espera · bloco único eyebrow→título→subtítulo→ícone→pill→CTA, centralizado. Sem espaçador `flex-1` empurrando o CTA para baixo. Serve DOIS fluxos: junção de mesas (rota `/waiting-approval`) e chegada tardia do System A (montada inline pelo `PendingApprovalWrapper` de `/mesa/[tableCode]`, onde `mode='late-arrival'` só escolhe o texto) |
+| [apps/web-customer/src/components/ui/CallWaiterSheet.tsx](apps/web-customer/src/components/ui/CallWaiterSheet.tsx)                                                               | Folha inferior no estilo vaul para `call_waiter` · 5 motivos canônicos V20 (Trazer cardápio · Fazer pedido · Servir bebida · Pedir conta · Outro motivo) com ícone, rótulo e subtítulo. Arraste em toda a área por pointer events + `touch-action: pan-y`                                                                                               |
+| [apps/web-customer/src/app/[slug]/mesa/[tableCode]/page.tsx](apps/web-customer/src/app/[slug]/mesa/[tableCode]/page.tsx) (linhas do `reclaimBanner`)                             | Banner de conta reconhecida · aviso discreto do canon V20 (`border-soft + bg-surface + eyebrow mono CONTA RECONHECIDA`). NÃO voltar para âmbar/amarelo                                                                                                                                                                                                  |
+| [apps/web-customer/src/app/[slug]/assistente/page.tsx](apps/web-customer/src/app/[slug]/assistente/page.tsx) (ramo de entrada `!chatStarted`)                                    | Entrada do /assistente · parecida com a home (2 PillButtons grandes "Chamar garçom" + "Ver cardápio" + `HomeHero` com a saudação da API de continuação). Os balões de conversa só aparecem depois da 1ª mensagem do cliente; a saudação vira o 1º balão da IA, preservando o contexto                                                                   |
 
 ### Regras de ouro
 
-1. **Não trocar tokens visuais** (`text-ink`, `text-mute`, `text-faint`,
-   `border-soft`, `bg-surface`, `bg-bg`) por outros tokens nesses arquivos.
-2. **Não alterar tipografia** (`font-mono` eyebrows 10px tracking-[1.5px],
-   titles 26/700 tracking-[-0.024em], body 15/500).
-3. **Não alterar layout central** (`grid place-items-center`, `h-[100dvh]`)
-   pra empurrar conteúdo pra topo/bottom.
-4. **Não trocar copy** "Seu nome" → "Seu primeiro nome" (decisão V20
-   confirmada com user).
-5. **Não reintroduzir** modal-card com `border-ink` 1.5px e `box-shadow
-0 24px 60px` no WelcomeModal — V13 style abandonado.
-6. **Não reativar** `flex-1` spacer entre conteúdo e CTA em screens onde
-   o V20 colou os elementos.
-7. **Não substituir** PillButton custom por `<button>` simples nesses
-   surfaces.
+1. **Não trocar tokens visuais** (`text-ink`, `text-mute`, `text-faint`, `border-soft`, `bg-surface`,
+   `bg-bg`) por outros tokens nesses arquivos.
+2. **Não alterar a tipografia** (eyebrows `font-mono` 10px tracking-[1.5px], títulos 26/700
+   tracking-[-0.024em], corpo 15/500).
+3. **Não alterar o layout central** (`grid place-items-center`, `h-[100dvh]`) para empurrar conteúdo
+   para cima ou para baixo.
+4. **Não trocar o texto** "Seu nome" por "Seu primeiro nome" (decisão V20 confirmada com o autor).
+5. **Não reintroduzir** o modal-card com `border-ink` de 1.5px e `box-shadow 0 24px 60px` no
+   WelcomeModal: estilo V13, abandonado.
+6. **Não reativar** o espaçador `flex-1` entre conteúdo e CTA nas telas em que o V20 juntou os
+   elementos.
+7. **Não substituir** o PillButton próprio por `<button>` simples nessas telas.
 
-### Quando edits são OK
+### Quando editar é permitido
 
-- User PEDE EXPLICITAMENTE pra alterar (ex.: "muda o copy do CTA pra X").
-- Bugfix funcional não-visual (ex.: adicionar `aria-*`, fix de event
-  handler que não dispara). Mantém o visual idêntico.
-- Refactor estrutural (ex.: extrair `FieldShell` pra primitivo
-  compartilhado em `components/ui/`) — preservando 100% da aparência.
+- O autor PEDE EXPLICITAMENTE a alteração (ex.: "muda o texto do CTA para X").
+- Correção funcional não visual (ex.: adicionar `aria-*`, corrigir um handler que não dispara),
+  mantendo o visual idêntico.
+- Refatoração estrutural (ex.: extrair o `FieldShell` para um primitivo compartilhado em
+  `components/ui/`), preservando 100% da aparência.
 
-Se em dúvida, **mostre diff antes de aplicar** ou pergunte ao user.
+Na dúvida, **mostre o diff antes de aplicar** ou pergunte ao autor.
 
 **Design canon**: `docs/design/canvas/handoff/cliente/cliente-journey-v20.jsx` e
-`cliente-late-arrival.jsx`. V20 é o source-of-truth — V13/V14 são legacy. Decisão em
+`cliente-late-arrival.jsx`. O V20 é a fonte da verdade; V13/V14 são legado. Decisão em
 [ADR 0012](docs/decisoes/0012-adotar-o-v20-como-canon-visual-e-congelar-telas-do-cliente.md); mapa
 canon × legado e como abrir o canvas em [`docs/design/README.md`](docs/design/README.md).
 

@@ -139,8 +139,8 @@ convertem as ferramentas para o formato de cada API, mas não foram validados po
 | `AI_SERVICE_API_KEY`                             | valor de desenvolvimento                       | Chave entre API e serviço                                                                                                                                           |
 | `HOME_CONTINUATION_ENABLED`                      | `true`                                         | `false` no `.env.example`: a home mostra os botões canônicos em vez das sugestões                                                                                   |
 
-O `.env.example` traz esses mesmos padrões (exceto `HOME_CONTINUATION_ENABLED=false`) e um bloco alternativo para a API da OpenAI. Passo a passo
-em [Ambiente local](../desenvolvimento/ambiente-local.md).
+O `.env.example` traz esses mesmos padrões (exceto `HOME_CONTINUATION_ENABLED=false`) e um bloco
+alternativo para a API da OpenAI. Passo a passo em [Ambiente local](../desenvolvimento/ambiente-local.md).
 
 ## Tempos
 

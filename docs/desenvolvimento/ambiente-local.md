@@ -3,7 +3,7 @@
 Versão longa do "Como subir e testar" do [README](../../README.md). O jeito suportado de rodar o
 projeto é o Docker Compose da raiz: Postgres, Redis, MongoDB, API, serviço de IA e os dois apps web
 sobem em containers. Node e Python no computador só são necessários para rodar testes fora dos
-containers.
+containers e, no caso do Node, para gerar a imagem do QR (`npx qrcode`, em "Testar no celular").
 
 ## Pré-requisitos
 
@@ -12,7 +12,8 @@ containers.
   para a VM do Docker: a API roda com `--max-old-space-size=6144` (`docker-compose.yml`, serviço `api`).
 - Portas 3001, 3002 e 3003 livres.
 - Internet no primeiro boot (imagens, `npm install` dentro dos containers, imagem do serviço de IA).
-- Opcional: Node.js ≥ 20.19 (`engines` do `package.json` raiz) e Python 3.11, para testes no host.
+- Opcional: Node.js ≥ 20.19 (`engines` do `package.json` raiz), para testes no host e para o
+  `npx qrcode`; Python 3.11, para testes no host.
 
 ## Serviços, portas e nomes fixos
 

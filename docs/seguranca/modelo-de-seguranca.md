@@ -111,10 +111,10 @@ desenvolvimento aos bancos é por `docker exec` nos containers.
 - **API** (`common/security/security-headers.ts`): `nosniff`, `X-Frame-Options: DENY`, CSP
   `default-src 'none'`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-site`;
   HSTS só em produção. CORS restrito a `CORS_ORIGINS`.
-- **Apps web** (`src/proxy.ts` de cada um): CSP aplicada (não só relatada) com nonce por requisição e
-  `strict-dynamic` em `script-src`; `unsafe-eval` só em desenvolvimento. `style-src` ainda aceita
-  `unsafe-inline`. `Permissions-Policy` por app (cliente: só geolocalização; equipe: só câmera, para
-  ler o QR). O cabeçalho `X-Powered-By` foi desligado.
+- **Apps web**: CSP aplicada (não só relatada) com nonce por requisição e `strict-dynamic` em
+  `script-src` (`src/proxy.ts` de cada um); `unsafe-eval` só em desenvolvimento; `style-src` ainda
+  aceita `unsafe-inline`. No `next.config.js` de cada app ficam a `Permissions-Policy` (cliente: só
+  geolocalização; equipe: só câmera, para ler o QR) e o `X-Powered-By` desligado.
 
 ## TVs
 

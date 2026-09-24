@@ -69,7 +69,10 @@ Módulos por área:
 ## Testes
 
 152 arquivos `*.test.ts` com Jest e Supertest, sem banco real (dependências entram como fakes).
-Convenções, modelo de teste HTTP e os 6 specs legados `*.spec.ts` estão em [`TESTING.md`](TESTING.md).
+Convenções e o modelo de teste HTTP estão em [`TESTING.md`](TESTING.md). Fora do Jest ficam 6 specs
+legados `*.spec.ts`, rodados à mão com ts-node: `common/guards/auth-guards`, `common/utils/geofence`,
+`modules/assistant/assistant-history`, `modules/customer-staff-messages/customer-staff-messages`,
+`modules/security-audit/security-audit.service` e `modules/tenant/query-utils`.
 Visão geral de todas as suítes em [testes](../../docs/desenvolvimento/testes.md).
 
 ## Documentação relacionada

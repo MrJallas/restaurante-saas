@@ -106,7 +106,8 @@ O assistente **nunca** escreve texto sobre LGPD por conta própria e **nunca** a
 
 Os textos abaixo são a fonte. O módulo `services/ai-service/services/lgpd_messages.py` os copia
 byte a byte e o teste `services/ai-service/tests/test_lgpd_messages.py` impede que o módulo se afaste
-deles. Mudar um texto exige mudar este documento, o módulo e o teste no mesmo commit.
+de `LGPD_NOTICE`, `LGPD_ERASURE_CONFIRMATION` e dos dois rótulos dos botões (`LGPD_REQUIRES_LOGIN`
+ainda não tem teste). Mudar um texto exige mudar este documento, o módulo e o teste no mesmo commit.
 
 ```text
 LGPD_NOTICE: Você, como consumidor, tem direito por lei (LGPD) de pedir a exclusão dos seus dados a qualquer momento. Posso encaminhar sua solicitação pra gerência?

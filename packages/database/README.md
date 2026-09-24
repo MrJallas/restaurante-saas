@@ -63,9 +63,12 @@ O que cada item significa e as ressalvas de reaplicação estão em
 ## MongoDB
 
 - `mongo-init.js` é montado em `/docker-entrypoint-initdb.d/` e só roda quando o volume do MongoDB está
-  vazio. Cria, no banco `restaurant_chat`, os índices de `chat_threads`, `chat_messages` e
-  `customer_courtesy_history`, com expiração por `expiresAt` e campos em camelCase.
-- `scripts/mongo-init.ts` (`npm run mongo:init`) faz o mesmo sobre um volume existente e também cobre o
-  banco `restaurant_security` (lê `MONGODB_URI`, `MONGODB_DB`, `MONGODB_SECURITY_DB`).
+  vazio. No banco `restaurant_chat`, cria os índices de `chat_threads`, `chat_messages` e
+  `customer_courtesy_history` (expiração por `expiresAt`, campos em camelCase) e os de `shift_logs`; no
+  banco `restaurant_security`, os de `qr_scan_events`, `scan_verification_events` e
+  `security_audit_events`, também com expiração por `expiresAt`.
+- `scripts/mongo-init.ts` (`npm run mongo:init`) faz o mesmo, de forma idempotente, sobre um volume que
+  já existe (lê `MONGODB_URI`, `MONGODB_DB`, `MONGODB_SECURITY_DB`). Rode de dentro do container da API,
+  porque o MongoDB não publica porta no computador.
 
 Onde cada dado vive e por quê: [dados e armazenamento](../../docs/arquitetura/dados-e-armazenamento.md).

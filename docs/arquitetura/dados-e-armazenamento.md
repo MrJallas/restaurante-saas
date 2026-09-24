@@ -83,8 +83,9 @@ usam nomes em camelCase (`tenantId`, `customerId`, `threadId`, `expiresAt`).
 
 Os nomes dos bancos vêm de `MONGODB_DB` e `MONGODB_SECURITY_DB`. Os índices (TTL e consulta) são
 criados por `packages/database/mongo-init.js`, que o container do MongoDB executa **só no primeiro
-boot** de um volume vazio. Para um volume existente, use `npm run mongo:init --workspace
-@restaurant/database` (versão `scripts/mongo-init.ts`). O histórico de conversas também garante o
+boot** de um volume vazio. Para um volume existente, rode de dentro do container da API:
+`docker exec restaurant-api sh -c "cd /repo/packages/database && npm run mongo:init"` (versão
+`scripts/mongo-init.ts`). O histórico de conversas também garante o
 próprio índice TTL na primeira gravação.
 
 **Linha do tempo da sessão.** O emissor de eventos do WebSocket grava cada evento relevante em
